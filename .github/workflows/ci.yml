@@ -83,8 +83,9 @@ jobs:
         run: |
           pnpm app:build
           pnpm ext:package
+          # --publish never: on a CI runner electron-builder would otherwise try to publish by itself
           pnpm --filter @grove/desktop exec electron-builder --config electron-builder.yml \
-            -c.extraMetadata.version=${{ steps.version.outputs.version }}
+            --publish never -c.extraMetadata.version=${{ steps.version.outputs.version }}
 
       - name: publish
         run: |

@@ -37,6 +37,9 @@ async function makeCombo(
   }
   await page.getByTestId("save-combo").click();
   await expect(page.getByTestId("combo-dialog")).toHaveCount(0);
+  // the new combo is selected, so its folders are the rows on screen. without this, "nothing
+  // says Creating" is also true before the rows have rendered at all.
+  await expect(page.getByTestId("folder-row")).toHaveCount(folders.length);
 }
 
 test("create a combo with worktrees and a reference, then open it", async () => {

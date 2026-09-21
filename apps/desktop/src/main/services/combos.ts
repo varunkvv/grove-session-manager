@@ -192,11 +192,13 @@ export class ComboService {
   }
 
   ensure(combo: Combo, context: OutcomeContext, repairStale = false): Promise<FolderOutcome[]> {
+    // before it is queued, not when the lane gets round to it: otherwise a new combo reads
+    // "Not created yet" for an instant, and anything waiting on "Creating" sees nothing to wait for
+    this.setBusyAll(combo, "creating");
     return this.mutate(async () => {
       await ensureRoot(combo);
       // there from the first session on, not only after the first "open"
       await syncLongWorkPolicy(combo);
-      this.setBusyAll(combo, "creating");
       try {
         const outcomes = await ensureWorktrees(combo, {
           gitPath: this.opts.gitPath,
@@ -241,8 +243,8 @@ export class ComboService {
   }
 
   teardown(combo: Combo): Promise<TeardownOutcome[]> {
+    this.setBusyAll(combo, "removing");
     return this.mutate(async () => {
-      this.setBusyAll(combo, "removing");
       try {
         return await teardownCombo(combo, { gitPath: this.opts.gitPath });
       } finally {

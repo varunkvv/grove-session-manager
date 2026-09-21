@@ -1,6 +1,6 @@
 // screenshots of the real app for review. not golden diffs: they exist so the design gets looked at.
 import path from "node:path";
-import { test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   type Fixture,
   makeFixture,
@@ -142,6 +142,7 @@ test("combos, drift and the dialogs", async () => {
   await page.getByTestId("folder-card").nth(1).getByTestId("branch-new").click();
   await shot("04-combo-dialog");
   await page.getByTestId("save-combo").click();
+  await expect(page.getByTestId("folder-row")).toHaveCount(3);
 
   await waitFor(
     async () =>

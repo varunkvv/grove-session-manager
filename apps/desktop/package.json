@@ -15,7 +15,7 @@
     "start": "electron out/main/index.cjs",
     "pretest:e2e": "pnpm run electron:ensure && pnpm run build",
     "test:e2e": "playwright test --grep-invert packaged",
-    "package": "pnpm run build && pnpm --filter grove-companion package && electron-builder --config electron-builder.yml",
+    "package": "pnpm run build && pnpm --filter grove-companion package && electron-builder --config electron-builder.yml --publish never",
     "test:packaged": "playwright test e2e/packaged.spec.ts"
   },
   "devDependencies": {
@@ -38,5 +38,9 @@
     "vitest": "catalog:",
     "zustand": "^5.0.15"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/varunkvv/grove-session-manager.git"
+  }
 }
