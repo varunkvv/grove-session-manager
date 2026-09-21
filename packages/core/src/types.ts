@@ -1,3 +1,5 @@
+import type { ModelUsage } from "./transcript/usage.ts";
+
 export interface Warning {
   code: string;
   message: string;
@@ -69,6 +71,8 @@ export interface SessionRecord extends ParsedMeta {
   titleSource?: TitleSource;
   /** last user/assistant timestamp, else mtime. sort and "2d ago" use this. */
   activityMs: number;
+  /** tokens per model, subagents included, biggest first. absent until the usage pass reaches it. */
+  usage?: ModelUsage[];
 }
 
 export type ComboRelation = "root" | "inside";

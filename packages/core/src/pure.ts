@@ -6,4 +6,5 @@ export * from "./sessions/search.ts";
 export * from "./slug.ts";
 export * from "./time.ts";
 export { pickTitle, squash } from "./transcript/title.ts";
+export * from "./transcript/usage.ts";
 export * from "./types.ts";

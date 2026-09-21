@@ -30,6 +30,8 @@ Message-bearing entries (user/assistant/attachment/system) carry: `cwd, gitBranc
 
 **Scan:** `projects/<dir>/<stem>.jsonl`, depth 2 only, stem without `.`, size > 0. Siblings to ignore: `<sessionId>/` (custom-title.json, subagents/, tool-results/, workflows/), `memory/`, `*.orphaned-*.jsonl`, `*.jsonl.superseded-*`. Some project dirs hold no transcript. `sessionId` == filename stem always. One sessionId per file.
 
+**Token usage:** each assistant line carries `message.model`, `message.id` and `message.usage` (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`). One API response is written as one line per content block, all with the same `message.id`, and later blocks can carry a larger `output_tokens` (906 of ~10k responses). Blocks of one response are usually adjacent, not always (36 cases). So: last line per id wins. `model: "<synthetic>"` marks entries Claude Code writes itself (API errors), zero spend. Usage is spread over the whole file, so it is the one thing we read in full: once, then incrementally from a saved byte offset, only whole lines. Subagent transcripts are `<sessionId>/subagents/*.jsonl` and `<sessionId>/subagents/workflows/<wf>/*.jsonl`, and count toward the session. A `cost-state` record (rare, not per turn) holds Claude Code's own `modelUsage`: its cache read / write totals match our sum exactly, its input and output are higher - it also counts side calls that never land in the transcript.
+
 **Slug (byte-identical in CLI and extension):**
 ```js
 function slug(cwd){ const s = cwd.replace(/[^a-zA-Z0-9]/g,'-'); if (s.length <= 200) return s;

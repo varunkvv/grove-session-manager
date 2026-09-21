@@ -1,4 +1,4 @@
-import { type DayBucket, dayBucket, snippetAround, tokenize } from "@grove/core/pure";
+import { type DayBucket, dayBucket, modelLabel, snippetAround, tokenize } from "@grove/core/pure";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 
 export type Scope = "combo" | "all";
@@ -31,6 +31,7 @@ function haystack(r: SessionRow): string {
       r.tag,
       r.prNumber ? `#${r.prNumber} ${r.prRepo ?? ""}` : undefined,
       r.sessionId,
+      ...(r.usage ?? []).map((u) => modelLabel(u.model)),
     ]
       .filter(Boolean)
       .join("\n")

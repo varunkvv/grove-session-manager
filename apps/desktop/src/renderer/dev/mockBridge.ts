@@ -38,12 +38,40 @@ const sessions: SessionRow[] = [
     cwdBase: "prod-debug",
     firstPrompt:
       "the primary is pinned at 95% cpu since 02:00, can you check which queries changed",
+    usage: [
+      {
+        model: "claude-opus-5",
+        input: 1_204,
+        output: 412_300,
+        cacheRead: 38_400_000,
+        cacheWrite: 1_210_000,
+        messages: 212,
+      },
+      {
+        model: "claude-haiku-4-5-20251001",
+        input: 96,
+        output: 8_120,
+        cacheRead: 640_000,
+        cacheWrite: 90_400,
+        messages: 14,
+      },
+    ],
   }),
   session("Webhook retries missing - trace the delivery chain", 42 * MIN, {
     comboName: "prod-debug",
     comboRelation: "root",
     gitBranch: "prod-debug",
     firstPrompt: "walk the webhook delivery chain and find where the retry is lost",
+    usage: [
+      {
+        model: "claude-sonnet-5",
+        input: 310,
+        output: 96_400,
+        cacheRead: 9_800_000,
+        cacheWrite: 402_000,
+        messages: 88,
+      },
+    ],
   }),
   session("export api project", 3 * H, {
     titleSource: "customTitle",

@@ -135,7 +135,18 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
       parentUuid: `${o.sessionId.slice(0, 8)}-0000-4000-8000-000000000001`,
       uuid: `${o.sessionId.slice(0, 8)}-0000-4000-8000-000000000002`,
       timestamp: stamp(0),
-      message: { role: "assistant", content: [{ type: "text", text: "sure" }] },
+      message: {
+        role: "assistant",
+        id: `msg_${o.sessionId.slice(0, 8)}`,
+        model: "claude-opus-5",
+        content: [{ type: "text", text: "sure" }],
+        usage: {
+          input_tokens: 3,
+          output_tokens: 1_200,
+          cache_read_input_tokens: 40_000,
+          cache_creation_input_tokens: 8_000,
+        },
+      },
     },
     ...(o.title ? [{ type: "ai-title", aiTitle: o.title, sessionId: o.sessionId }] : []),
   ];

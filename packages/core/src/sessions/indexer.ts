@@ -3,9 +3,11 @@ import { isObject, mapLimit } from "../fsx.ts";
 import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
 import { pickTitle } from "../transcript/title.ts";
+import { summarizeUsage } from "../transcript/usage.ts";
 import type { ParsedMeta, SessionRecord } from "../types.ts";
 import { type CacheEntry, cacheKey, loadCache, saveCache, sweepOldCaches } from "./cache.ts";
 import { type FileStat, scanProjects, sidecarTitlePath, statTranscript } from "./scan.ts";
+import { type SessionTallies, scanSessionUsage } from "./usage.ts";
 
 export interface SessionIndexOptions {
   projectsDir: string;
@@ -16,6 +18,8 @@ export interface SessionIndexOptions {
   concurrency?: number;
   /** 'if-cold': write only after a refresh that had to parse a lot. keeps one writer in steady state. */
   persist?: "always" | "if-cold" | "never";
+  /** count tokens per model. reads every transcript in full once, so it is opt-in. */
+  usage?: boolean;
 }
 
 export interface RefreshStats {
@@ -36,8 +40,11 @@ export type IndexHealth = "ok" | "degraded" | "empty";
 
 const COLD_THRESHOLD = 20;
 
-function toRecord(s: FileStat, meta: ParsedMeta | null): SessionRecord {
+const USAGE_CONCURRENCY = 4;
+
+function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies): SessionRecord {
   const m: ParsedMeta = meta ?? { recognized: 0 };
+  const models = usage ? summarizeUsage(Object.values(usage)) : [];
   return {
     ...m,
     ...pickTitle(m),
@@ -48,6 +55,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null): SessionRecord {
     size: s.size,
     parsed: meta !== null,
     activityMs: m.lastActivityMs ?? s.mtimeMs,
+    ...(models.length ? { usage: models } : {}),
   };
 }
 
@@ -85,6 +93,7 @@ function displayKey(r: SessionRecord): string {
     r.activityMs,
     r.parsed,
     r.entrypoint,
+    r.usage,
   ]);
 }
 
@@ -94,6 +103,7 @@ export class SessionIndex {
   private readonly maxParsed: number;
   private readonly concurrency: number;
   private readonly persist: "always" | "if-cold" | "never";
+  private readonly usage: boolean;
   private cache = new Map<string, CacheEntry>();
   private records = new Map<string, SessionRecord>();
   private dirty = false;
@@ -105,6 +115,7 @@ export class SessionIndex {
     this.maxParsed = opts.maxParsed ?? 5000;
     this.concurrency = opts.concurrency ?? 16;
     this.persist = opts.persist ?? "always";
+    this.usage = opts.usage ?? false;
   }
 
   /** cache only, no filesystem walk. lets a UI paint before the first refresh finishes. */
@@ -123,11 +134,11 @@ export class SessionIndex {
     for (const s of stats) {
       const hit = this.cache.get(s.path);
       if (hit && hit.key === cacheKey(s)) {
-        next.set(s.path, toRecord(s, hit.meta));
+        next.set(s.path, toRecord(s, hit.meta, hit.usage?.files));
         cacheHits++;
       } else {
         // listed straight away by time and path. the parse below upgrades it in place.
-        next.set(s.path, toRecord(s, null));
+        next.set(s.path, toRecord(s, null, hit?.usage?.files));
         misses.push(s);
       }
     }
@@ -149,11 +160,12 @@ export class SessionIndex {
     await mapLimit(toParse, this.concurrency, async (s) => {
       if (opts.signal?.aborted) return;
       const meta = await parseFile(s);
+      const usage = this.cache.get(s.path)?.usage;
       if (meta) {
-        this.cache.set(s.path, { key: cacheKey(s), meta });
+        this.cache.set(s.path, { key: cacheKey(s), meta, ...(usage ? { usage } : {}) });
         this.dirty = true;
       }
-      const rec = toRecord(s, meta);
+      const rec = toRecord(s, meta, usage?.files);
       this.records.set(s.path, rec);
       pending.push(rec);
       if (pending.length >= 50 || Date.now() - lastEmit > 100) {
@@ -163,6 +175,8 @@ export class SessionIndex {
       }
     });
     if (pending.length) opts.onBatch?.(pending);
+
+    if (this.usage) await this.countUsage(stats, opts);
 
     const cold = toParse.length >= COLD_THRESHOLD;
     if (this.persist === "always" || (this.persist === "if-cold" && cold)) await this.flush();
@@ -174,6 +188,48 @@ export class SessionIndex {
       unparsed: misses.length - toParse.length,
       removed,
     };
+  }
+
+  /**
+   * a second pass, after every row already has its title: reading whole files is the slow part,
+   * and nobody should wait on it to see their sessions. newest first, like the parse.
+   */
+  private async countUsage(stats: FileStat[], opts: RefreshOptions): Promise<void> {
+    const todo = stats.filter((s) => {
+      const entry = this.cache.get(s.path);
+      return entry && entry.usage?.key !== cacheKey(s);
+    });
+    let pending: SessionRecord[] = [];
+    let lastEmit = Date.now();
+    await mapLimit(todo, USAGE_CONCURRENCY, async (s) => {
+      if (opts.signal?.aborted) return;
+      const rec = await this.updateUsage(s);
+      if (!rec) return;
+      pending.push(rec);
+      if (pending.length >= 50 || Date.now() - lastEmit > 250) {
+        opts.onBatch?.(pending);
+        pending = [];
+        lastEmit = Date.now();
+      }
+    });
+    if (pending.length) opts.onBatch?.(pending);
+  }
+
+  /**
+   * subagent files are re-read when the session's own transcript changes, not on their own: the
+   * watcher only sees top-level transcripts, and a subagent finishing always appends to its parent.
+   */
+  private async updateUsage(s: FileStat): Promise<SessionRecord | undefined> {
+    const entry = this.cache.get(s.path);
+    if (!entry) return undefined;
+    const files = await scanSessionUsage(s.path, entry.usage?.files);
+    // the file may have been removed or re-parsed meanwhile. only land on the entry we started from.
+    if (this.cache.get(s.path) !== entry) return undefined;
+    entry.usage = { key: cacheKey(s), files };
+    this.dirty = true;
+    const rec = toRecord(s, entry.meta, files);
+    if (this.records.has(s.path)) this.records.set(s.path, rec);
+    return rec;
   }
 
   /** one file changed on disk. `changed` is false when nothing a row displays moved. */
@@ -188,12 +244,19 @@ export class SessionIndex {
     } else {
       meta = await parseFile(s);
       if (meta) {
-        this.cache.set(file, { key: cacheKey(s), meta });
+        this.cache.set(file, {
+          key: cacheKey(s),
+          meta,
+          ...(hit?.usage ? { usage: hit.usage } : {}),
+        });
         this.dirty = true;
       }
     }
-    const record = toRecord(s, meta);
+    let record = toRecord(s, meta, hit?.usage?.files);
     this.records.set(file, record);
+    if (this.usage && this.cache.get(file)?.usage?.key !== cacheKey(s)) {
+      record = (await this.updateUsage(s)) ?? record;
+    }
     return { changed: !before || displayKey(before) !== displayKey(record), record };
   }
 

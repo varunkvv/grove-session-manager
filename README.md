@@ -54,6 +54,14 @@ running session's next long task. Flip it in the app (the switch in an open comb
 
 It is a default by instruction, not an enforcement: Claude still decides what counts as long.
 
+### Tokens per model
+
+Every row shows what the session spent, per model (the two biggest on the row, all of them in the action menu), subagents
+included. The counts come from `message.usage` on each response in the transcript. That is the one thing that needs the
+whole file, so it is read once in a background pass after the list is up, then only what was appended. Cache reads and
+writes match Claude Code's own `/cost`. Its input and output run a bit higher, because it also counts side calls (titles,
+compaction) that are never written to the transcript.
+
 ## On disk
 
 ```

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildList, nextActiveKey } from "../../src/renderer/logic/rows.ts";
+import { usageChip, usageTooltip } from "../../src/renderer/logic/usage.ts";
 import type { SessionRow } from "../../src/shared/ipc.ts";
 
 const NOW = Date.parse("2026-09-20T15:00:00");
@@ -104,5 +105,37 @@ describe("nextActiveKey", () => {
     expect(nextActiveKey(["a", "b", "c"], ["a", "c"], "b", false)).toBe("c");
     expect(nextActiveKey(["a", "b"], ["a"], "b", false)).toBe("a");
     expect(nextActiveKey(["a"], [], "a", false)).toBeNull();
+  });
+});
+
+describe("token usage on a row", () => {
+  const u = (model: string, output: number) => ({
+    model,
+    input: 0,
+    output,
+    cacheRead: output * 10,
+    cacheWrite: 0,
+    messages: 1,
+  });
+  const usage = [
+    u("claude-opus-5", 300_000),
+    u("claude-sonnet-5", 20_000),
+    u("claude-haiku-4-5-20251001", 900),
+  ];
+
+  it("shows the two biggest models and counts the rest", () => {
+    expect(usageChip(usage)).toBe("opus 5 3.3M · sonnet 5 220k +1");
+    expect(usageChip(usage.slice(0, 1))).toBe("opus 5 3.3M");
+    expect(usageTooltip(usage).split("\n")).toHaveLength(3);
+  });
+
+  it("a model name finds the sessions that used it", () => {
+    const list = buildList([row("x", { title: "one", usage }), row("y", { title: "two" })], {
+      scope: "all",
+      combo: null,
+      query: "haiku",
+      now: NOW,
+    });
+    expect(list.keys).toEqual(["x"]);
   });
 });

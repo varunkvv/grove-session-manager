@@ -3,10 +3,16 @@ import path from "node:path";
 import { isObject, readJsonGuarded, writeFileAtomic } from "../fsx.ts";
 import { PARSER_VERSION } from "../transcript/parse.ts";
 import type { ParsedMeta } from "../types.ts";
+import type { SessionTallies } from "./usage.ts";
 
 export interface CacheEntry {
   key: string;
   meta: ParsedMeta;
+  /**
+   * token counts, with their own key: they are worked out in a later, slower pass, and a re-parse
+   * of the head and tail must not throw away the offsets that make the next count incremental.
+   */
+  usage?: { key: string; files: SessionTallies };
 }
 
 export interface CacheFile {

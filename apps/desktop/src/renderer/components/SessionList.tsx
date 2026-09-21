@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, type ReactNode, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import type { ListItem } from "../logic/rows.ts";
+import { usageChip, usageTooltip } from "../logic/usage.ts";
 import { cx, Icon, Mono } from "./ui.tsx";
 
 const ROW = 56;
@@ -90,6 +91,13 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           )}
         </span>
         <span className="flex shrink-0 items-baseline gap-2.5">
+          {row.usage && row.usage.length > 0 && (
+            <Mono className="max-w-56 truncate text-fg-4" title={usageTooltip(row.usage)}>
+              <span data-testid="row-usage">
+                <Highlighted text={usageChip(row.usage)} tokens={p.tokens} />
+              </span>
+            </Mono>
+          )}
           {row.prNumber !== undefined && (
             <Mono className="text-fg-3">
               <Highlighted text={`#${row.prNumber}`} tokens={p.tokens} />

@@ -67,6 +67,8 @@ test("first run with no combos, and the finder over real transcripts", async () 
   await expect(rows.nth(1)).toContainText("2d ago");
   // a session that is only a slash command still appears, titled by the command
   await expect(rows.nth(2)).toContainText("/mcp");
+  // tokens per model, counted from the whole transcript in a second pass
+  await expect(rows.first().getByTestId("row-usage")).toHaveText("opus 5 49k");
   // search is focused on open
   await expect(page.getByTestId("search")).toBeFocused();
 
@@ -83,6 +85,11 @@ test("first run with no combos, and the finder over real transcripts", async () 
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("search")).toBeFocused();
   await expect(rows.nth(1)).toHaveAttribute("data-active", "true");
+
+  // the action menu breaks the count down
+  await page.keyboard.press("Meta+k");
+  await expect(page.getByTestId("menu-usage")).toContainText("opus 5");
+  await expect(page.getByTestId("menu-usage")).toContainText("1.2k");
 });
 
 test("acting on a session that belongs to no combo", async () => {

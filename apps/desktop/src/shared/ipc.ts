@@ -7,6 +7,7 @@ import type {
   FolderOutcome,
   FolderState,
   LongWorkMode,
+  ModelUsage,
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
@@ -38,6 +39,8 @@ export interface SessionRow {
   entrypoint?: string;
   activityMs: number;
   parsed: boolean;
+  /** tokens per model, subagents included, biggest first. absent until the whole file is counted. */
+  usage?: ModelUsage[];
 }
 
 export type FolderViewState = FolderState | "unknown";

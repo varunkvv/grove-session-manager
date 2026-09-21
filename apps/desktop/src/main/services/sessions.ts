@@ -71,6 +71,7 @@ function toRow(
     if (record.pr.repo) row.prRepo = record.pr.repo;
   }
   if (record.entrypoint) row.entrypoint = record.entrypoint;
+  if (record.usage) row.usage = record.usage;
   return row;
 }
 
@@ -100,6 +101,7 @@ export class SessionService {
       cacheDir: opts.cacheDir,
       maxParsed: opts.maxParsed,
       persist: "always",
+      usage: true,
     });
     this.patches = new PatchCoalescer<SessionRow>({
       intervalMs: PATCH_INTERVAL_MS,

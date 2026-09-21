@@ -19,6 +19,7 @@ export * from "./sessions/cache.ts";
 export * from "./sessions/indexer.ts";
 export * from "./sessions/membership.ts";
 export * from "./sessions/scan.ts";
+export * from "./sessions/usage.ts";
 export * from "./sessions/watch.ts";
 export * from "./settings.ts";
 export * from "./transcript/parse.ts";
