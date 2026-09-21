@@ -1,0 +1,42 @@
+{
+  "name": "@grove/desktop",
+  "productName": "Grove",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-repo workspaces and a session finder for Claude Code",
+  "author": "Varun Vijayaraghavan",
+  "main": "out/main/index.cjs",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "electron:ensure": "electron --version",
+    "start": "electron out/main/index.cjs",
+    "pretest:e2e": "pnpm run electron:ensure && pnpm run build",
+    "test:e2e": "playwright test --grep-invert packaged",
+    "package": "pnpm run build && pnpm --filter grove-companion package && electron-builder --config electron-builder.yml",
+    "test:packaged": "playwright test e2e/packaged.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@grove/core": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-virtual": "^3.14.13",
+    "@types/node": "catalog:",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "esbuild": "catalog:",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "zustand": "^5.0.15"
+  },
+  "license": "MIT"
+}

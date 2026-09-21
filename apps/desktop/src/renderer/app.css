@@ -1,0 +1,209 @@
+@import "tailwindcss";
+
+/*
+ * the theme is reset on purpose: only these tokens exist, so a stray bg-red-500 or a stock shadow
+ * simply does not compile. one accent, used only for state that matters.
+ *
+ * every colour is light-dark(light, dark). which half applies is decided by the `color-scheme`
+ * property below, so the appearance switches by changing one declaration rather than by
+ * duplicating the palette. electron 44 does not pass nativeTheme.themeSource through to the
+ * renderer's prefers-color-scheme, so the pinned case is driven by an attribute instead.
+ */
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --radius-*: initial;
+  --text-*: initial;
+  --font-*: initial;
+
+  --color-rail: light-dark(#eeebe2, #1a1918);
+  --color-canvas: light-dark(#faf9f5, #1f1e1d);
+  --color-raised: light-dark(#edebe4, #262624);
+  --color-active: light-dark(#e3e0d7, #30302e);
+  --color-overlay: light-dark(#ffffff, #2b2a28);
+  --color-line: light-dark(rgb(0 0 0 / 0.09), rgb(255 255 255 / 0.07));
+  --color-line-strong: light-dark(rgb(0 0 0 / 0.17), rgb(255 255 255 / 0.14));
+  --color-fg: light-dark(#1f1e1d, #f5f4ef);
+  --color-fg-2: light-dark(#4b4944, #c2c0b6);
+  --color-fg-3: light-dark(#74726b, #8f8d86);
+  --color-fg-4: light-dark(#949188, #6b6a65);
+  --color-accent: light-dark(#b5502f, #d97757);
+  --color-accent-soft: light-dark(rgb(181 80 47 / 0.14), rgb(217 119 87 / 0.16));
+  --color-destructive: light-dark(#c4292e, #e5484d);
+  --color-scrim: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.45));
+  --color-ring: light-dark(rgb(0 0 0 / 0.5), rgb(255 255 255 / 0.45));
+  --color-thumb: light-dark(rgb(0 0 0 / 0.16), rgb(255 255 255 / 0.1));
+  --color-thumb-hover: light-dark(rgb(0 0 0 / 0.28), rgb(255 255 255 / 0.2));
+  --color-transparent: transparent;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-meta: 11px;
+  --text-meta--line-height: 16px;
+  --text-sm: 12px;
+  --text-sm--line-height: 18px;
+  --text-body: 13px;
+  --text-body--line-height: 20px;
+  --text-title: 15px;
+  --text-title--line-height: 22px;
+  --text-hero: 20px;
+  --text-hero--line-height: 28px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+}
+
+:root {
+  /* no attribute: follow macOS, which is what prefers-color-scheme still reports correctly */
+  color-scheme: light dark;
+  /* not a @theme shadow: tailwind inlines those at build time, so one could never switch */
+  --shadow-overlay:
+    0 8px 30px light-dark(rgb(0 0 0 / 0.13), rgb(0 0 0 / 0.5)),
+    0 0 0 1px light-dark(rgb(0 0 0 / 0.09), rgb(255 255 255 / 0.08));
+}
+
+/* set by the renderer when the Appearance setting pins it. also makes macOS draw its own
+   chrome - the traffic lights, native menus, scrollbars - to match. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+.overlay-shadow {
+  box-shadow: var(--shadow-overlay);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+input,
+textarea {
+  user-select: text;
+  cursor: text;
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--color-fg-2);
+  cursor: default;
+}
+
+select {
+  appearance: none;
+}
+
+.drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.selectable {
+  user-select: text;
+  cursor: text;
+}
+
+mark {
+  background: var(--color-accent-soft);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--color-accent-soft);
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+
+input:focus-visible {
+  outline: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-thumb);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-thumb-hover);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+dialog {
+  /* tailwind's reset zeroes the margin that centres a modal dialog */
+  margin: auto;
+  padding: 0;
+  border: none;
+  color: inherit;
+  background: var(--color-overlay);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
+  max-height: calc(100vh - 80px);
+}
+
+dialog::backdrop {
+  background: var(--color-scrim);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+.fade {
+  transition:
+    background-color 120ms ease-out,
+    opacity 120ms ease-out,
+    color 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade {
+    transition: none;
+  }
+}

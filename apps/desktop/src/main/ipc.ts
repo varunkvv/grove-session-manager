@@ -1,0 +1,473 @@
+import { chmod, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+import {
+  buildResumeCommand,
+  classifyPath,
+  isValidSessionId,
+  openInEditor,
+  prepareFolderOpen,
+  runDetached,
+  type Settings,
+  samePath,
+  saveSettings,
+  targetDirFor,
+} from "@grove/core";
+import type { BrowserWindow, OpenDialogOptions } from "electron";
+import * as electron from "electron";
+import type {
+  Api,
+  AppSettings,
+  Bootstrap,
+  Outcome,
+  PathInfoView,
+  SessionAction,
+  SessionKey,
+  SessionRow,
+} from "../shared/ipc.ts";
+import type { AppEnv } from "./env.ts";
+import { AppError, toOutcomeError } from "./errors.ts";
+import { log } from "./log.ts";
+import { isTrustedUrl } from "./origin.ts";
+import type { Pusher } from "./push.ts";
+import type { ComboService } from "./services/combos.ts";
+import { parseDraft } from "./services/draft.ts";
+import type { EditorService } from "./services/editor.ts";
+import {
+  claudeBinCandidates,
+  isResumeScriptName,
+  RESUME_SCRIPT_MAX_AGE_MS,
+  resumeScriptBody,
+  resumeScriptPath,
+} from "./services/resumeScript.ts";
+import type { SessionService } from "./services/sessions.ts";
+import { keptFolderToast } from "./services/views.ts";
+
+export interface Deps {
+  env: AppEnv;
+  projectsDir: string;
+  settings: () => Settings;
+  setSettings: (s: Settings) => void;
+  sessions: SessionService;
+  combos: ComboService;
+  editor: EditorService;
+  pusher: Pusher;
+  window: () => BrowserWindow | null;
+}
+
+/**
+ * the handlers return plain values and throw on failure. the wrapper below turns a method whose
+ * contract is an Outcome into `{ ok }`, so no handler has to remember to build one.
+ */
+type Unwrap<T> = T extends Outcome<infer V> ? V : T;
+type Handlers = {
+  [K in keyof Api]: (...args: Parameters<Api[K]>) => Promise<Unwrap<Awaited<ReturnType<Api[K]>>>>;
+};
+
+const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
+  "rescan",
+  "runSessionAction",
+  "createCombo",
+  "updateCombo",
+  "deleteCombo",
+  "reconcile",
+  "ensureCombo",
+  "repairFolder",
+  "repairCombo",
+  "teardownCombo",
+  "forceRemoveFolder",
+  "openCombo",
+  "setLongWork",
+  "installCompanion",
+  "updateSettings",
+  "reveal",
+  "copyText",
+]);
+
+function toAppSettings(s: Settings): AppSettings {
+  return { ...s };
+}
+
+async function isDirectory(p: string | undefined): Promise<boolean> {
+  if (!p) return false;
+  try {
+    return (await stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function requireSession(deps: Deps, key: SessionKey): SessionRow {
+  const row = deps.sessions.get(key);
+  if (!row) throw new AppError("no-session", "That session is no longer in the list.");
+  return row;
+}
+
+/**
+ * where a session's own folder is. for a session inside a combo that is the worktree it ran in,
+ * which is what the Claude Code panel wants as workspaceFolders[0].
+ */
+function folderForSession(row: SessionRow): string | undefined {
+  return row.cwd;
+}
+
+async function sweepResumeScripts(stateDir: string): Promise<void> {
+  const dir = path.join(stateDir, "run");
+  try {
+    for (const name of await readdir(dir)) {
+      if (!isResumeScriptName(name)) continue;
+      const file = path.join(dir, name);
+      const info = await stat(file).catch(() => null);
+      if (info && Date.now() - info.mtimeMs > RESUME_SCRIPT_MAX_AGE_MS)
+        await unlink(file).catch(() => {});
+    }
+  } catch {
+    // nothing written yet
+  }
+}
+
+async function isFile(p: string): Promise<boolean> {
+  try {
+    return (await stat(p)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Terminal runs a .command file without the person's shell setup, so an absolute path matters */
+async function resolveClaudeBin(deps: Deps): Promise<string> {
+  const configured = deps.env.claudeBinOverride ?? deps.settings().claudePath;
+  for (const candidate of claudeBinCandidates(deps.env.home, configured)) {
+    if (await isFile(candidate)) return candidate;
+  }
+  return "claude";
+}
+
+function buildHandlers(deps: Deps): Handlers {
+  const { sessions, combos, editor, pusher, env } = deps;
+  let lastPickedDir: string | undefined;
+
+  const api: Handlers = {
+    async bootstrap(): Promise<Bootstrap> {
+      return {
+        revs: pusher.currentRevs(),
+        env: {
+          appRoot: env.appRoot,
+          projectsDir: deps.projectsDir,
+          home: env.home,
+          platform: process.platform,
+          isDev: env.isDev,
+        },
+        settings: toAppSettings(deps.settings()),
+        editor: await editor.status(),
+        combos: combos.views(),
+        ...(combos.problemMessage() ? { combosProblem: combos.problemMessage() } : {}),
+        sessions: sessions.list(),
+        index: sessions.status(),
+      };
+    },
+
+    async rescan() {
+      await Promise.all([sessions.refresh(), combos.load(true).then(() => combos.reconcileAll())]);
+    },
+
+    async sessionActions(key) {
+      const row = requireSession(deps, key);
+      const label = editor.current().label;
+      const companion = await editor.companionInstalled();
+      const folder = folderForSession(row);
+      const folderExists = await isDirectory(folder);
+      const hint = companion ? undefined : "opens without landing";
+      const actions: SessionAction[] = [];
+      if (row.comboName) {
+        actions.push({
+          id: "combo-land",
+          label: `Open ${row.comboName} and land on session`,
+          enabled: true,
+          ...(hint ? { hint } : {}),
+        });
+      }
+      actions.push({
+        id: "folder-land",
+        label: `Open folder in ${label} and land on session`,
+        enabled: folderExists,
+        ...(folderExists ? (hint ? { hint } : {}) : { hint: "the folder is gone" }),
+      });
+      actions.push({ id: "terminal", label: "Resume in Terminal", enabled: true });
+      actions.push({ id: "copy-command", label: "Copy resume command", enabled: true });
+      actions.push({ id: "copy-id", label: "Copy session ID", enabled: true, secondary: true });
+      actions.push({
+        id: "reveal",
+        label: "Reveal transcript in Finder",
+        enabled: true,
+        secondary: true,
+      });
+      return actions;
+    },
+
+    async runSessionAction(key, action) {
+      const row = requireSession(deps, key);
+      if (!isValidSessionId(row.sessionId)) {
+        throw new AppError("bad-session-id", "That session has no usable ID.");
+      }
+      const folder = folderForSession(row);
+      switch (action) {
+        case "combo-land": {
+          if (!row.comboName) throw new AppError("no-combo", "That session is not in a combo.");
+          await api.openCombo(row.comboName, key);
+          return {};
+        }
+        case "folder-land": {
+          if (!(await isDirectory(folder))) {
+            throw new AppError("cwd-missing", "That session's folder no longer exists.");
+          }
+          const prepared = await prepareFolderOpen(env.appRoot, folder as string, {
+            sessionId: row.sessionId,
+            source: "app",
+          });
+          if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
+          const launched = await openInEditor(folder as string, editor.current());
+          if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+          return (await editor.companionInstalled())
+            ? {}
+            : {
+                message: `${editor.current().label} opened without landing: the companion extension is missing.`,
+              };
+        }
+        case "terminal": {
+          const file = resumeScriptPath(env.stateDir, row.sessionId);
+          await mkdir(path.dirname(file), { recursive: true });
+          await writeFile(
+            file,
+            resumeScriptBody({
+              sessionId: row.sessionId,
+              cwd: (await isDirectory(folder)) ? folder : undefined,
+              claudeBin: await resolveClaudeBin(deps),
+            }),
+          );
+          await chmod(file, 0o755);
+          const opened = await runDetached(env.openBin, [file]);
+          if (!opened.ok) throw new AppError(opened.error.code, opened.error.message);
+          void sweepResumeScripts(env.stateDir);
+          return {};
+        }
+        case "copy-command": {
+          const cwd = (await isDirectory(folder)) ? folder : undefined;
+          electron.clipboard.writeText(
+            buildResumeCommand(row.sessionId, cwd, await resolveClaudeBin(deps)),
+          );
+          return { message: "Resume command copied" };
+        }
+        case "copy-id":
+          electron.clipboard.writeText(row.sessionId);
+          return { message: "Session ID copied" };
+        case "reveal":
+          electron.shell.showItemInFolder(row.key);
+          return {};
+      }
+    },
+
+    async validateComboName(name, self) {
+      return combos.validateName(name, self);
+    },
+
+    async validateDraft(raw, self) {
+      const { draft, problems } = await parseDraft(raw);
+      if (!draft) return { problems };
+      return { problems: [...problems, ...combos.problemsWithDraft(draft, self)] };
+    },
+
+    async pickDirectories() {
+      const win = deps.window();
+      const options: OpenDialogOptions = {
+        title: "Add folders to this combo",
+        // electron 43+ defaults to ~/Downloads when no defaultPath is given
+        defaultPath: lastPickedDir ?? env.home,
+        properties: ["openDirectory", "multiSelections", "createDirectory"],
+      };
+      const result = win
+        ? await electron.dialog.showOpenDialog(win, options)
+        : await electron.dialog.showOpenDialog(options);
+      if (result.canceled) return [];
+      lastPickedDir = path.dirname(result.filePaths[0] ?? env.home);
+      return result.filePaths;
+    },
+
+    async inspectPath(target): Promise<PathInfoView> {
+      if (typeof target !== "string" || !path.isAbsolute(target)) {
+        throw new AppError("bad-path", "That is not an absolute path.");
+      }
+      const info = await classifyPath(target, { gitPath: deps.settings().gitPath });
+      return {
+        path: info.path,
+        exists: info.exists,
+        isGitRepo: info.isGitRepo,
+        canBeWorktree: info.allowedModes.includes("worktree"),
+        ...(info.currentBranch ? { currentBranch: info.currentBranch } : {}),
+        ...(info.head ? { head: info.head } : {}),
+        branches: info.branches,
+        suggestedDirName: info.suggestedDirName,
+      };
+    },
+
+    async createCombo(raw) {
+      const { draft, problems } = await parseDraft(raw);
+      if (!draft) throw new AppError("invalid", problems.join(" "));
+      const all = [...problems, ...combos.problemsWithDraft(draft)];
+      if (all.length > 0) throw new AppError("invalid", all.join(" "));
+      const combo = await combos.create(draft);
+      // the folders appear as "not created yet" and fill in as git works
+      void combos.ensure(combo, "create");
+      return { name: combo.name };
+    },
+
+    async updateCombo(name, raw) {
+      const { draft, problems } = await parseDraft(raw);
+      if (!draft) throw new AppError("invalid", problems.join(" "));
+      const all = [...problems, ...combos.problemsWithDraft(draft, name)];
+      if (all.length > 0) throw new AppError("invalid", all.join(" "));
+      const { combo, kept } = await combos.update(name, draft);
+      for (const outcome of kept) pusher.send("toast", keptFolderToast(outcome));
+      void combos.ensure(combo, "update");
+      return { name: combo.name };
+    },
+
+    async deleteCombo(name, trashRoot) {
+      const combo = combos.find(name);
+      const { remaining } = await combos.remove(name);
+      if (remaining.length > 0) return { remaining };
+      if (trashRoot) {
+        // the root holds the person's CLAUDE.md and .claude settings, so it goes to the Trash
+        await electron.shell.trashItem(combo.root).catch((e: unknown) => {
+          log.warn("trash combo root:", e);
+        });
+      }
+      return { remaining: [] };
+    },
+
+    async reconcile(name, withDirty) {
+      if (name) await combos.reconcile(combos.find(name), withDirty ?? false);
+      else await combos.reconcileAll(withDirty ?? false);
+    },
+
+    async ensureCombo(name) {
+      return combos.ensure(combos.find(name), "ensure");
+    },
+
+    async repairFolder(name, folderPath) {
+      return combos.repair(combos.find(name), folderPath);
+    },
+
+    async repairCombo(name) {
+      return combos.repair(combos.find(name));
+    },
+
+    async teardownCombo(name) {
+      const outcomes = await combos.teardown(combos.find(name));
+      return outcomes.filter((o) => o.folder.mode === "worktree");
+    },
+
+    async forceRemoveFolder(name, folderPath) {
+      return combos.forceRemove(combos.find(name), folderPath);
+    },
+
+    async openCombo(name, sessionKey) {
+      const combo = combos.find(name);
+      let sessionId: string | undefined;
+      if (sessionKey) {
+        const row = requireSession(deps, sessionKey);
+        if (isValidSessionId(row.sessionId)) sessionId = row.sessionId;
+      }
+      const report = await combos.open(combo, sessionId);
+      const launched = await openInEditor(report.workspaceFile, editor.current());
+      if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+      for (const warning of report.warnings) {
+        pusher.send("toast", { level: "error", title: `${name}: ${warning}` });
+      }
+      return {
+        launched: true,
+        landing: Boolean(sessionId) && (await editor.companionInstalled()),
+        outcomes: report.outcomes,
+        warnings: report.warnings,
+      };
+    },
+
+    async setLongWork(name, mode) {
+      if (mode !== "background" && mode !== "foreground") {
+        throw new AppError("invalid", "Long work is either background or foreground.");
+      }
+      await combos.setLongWork(name, mode);
+    },
+
+    async editorStatus(refresh) {
+      const status = await editor.status(refresh ?? false);
+      pusher.send("editor:status", status);
+      return status;
+    },
+
+    async installCompanion() {
+      await editor.installCompanion();
+      pusher.send("editor:status", await editor.status(true));
+    },
+
+    async getSettings() {
+      return toAppSettings(deps.settings());
+    },
+
+    async updateSettings(patch) {
+      const next = await saveSettings(env.appRoot, patch as Partial<Settings>);
+      deps.setSettings(next);
+      editor.applySettings(next);
+      pusher.send("editor:status", await editor.status(true));
+      return toAppSettings(next);
+    },
+
+    async reveal(target) {
+      if (target.kind === "session") {
+        electron.shell.showItemInFolder(requireSession(deps, target.key).key);
+        return;
+      }
+      const combo = combos.find(target.name);
+      if (target.kind === "combo") {
+        electron.shell.showItemInFolder(combo.root);
+        return;
+      }
+      const folder = combo.folders.find((f) => samePath(f.path, target.folderPath));
+      electron.shell.showItemInFolder(folder ? targetDirFor(combo, folder) : combo.root);
+    },
+
+    async copyText(text) {
+      if (typeof text !== "string") throw new AppError("bad-text", "Nothing to copy.");
+      electron.clipboard.writeText(text);
+    },
+
+    async reportCspViolation(detail) {
+      log.warn("csp violation:", detail);
+    },
+  };
+  return api;
+}
+
+export function registerIpc(deps: Deps): void {
+  const handlers = buildHandlers(deps);
+  const api = handlers as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  for (const name of Object.keys(api) as Array<keyof Api>) {
+    electron.ipcMain.handle(`grove:${name}`, async (event, ...args) => {
+      // only our own page may call in. a frame that navigated elsewhere is not it.
+      if (!isTrustedUrl(event.senderFrame?.url, deps.env.devServerUrl)) {
+        throw new Error("blocked");
+      }
+      try {
+        const value = await api[name]?.(...args);
+        return OUTCOME_METHODS.has(name) ? { ok: true, value } : value;
+      } catch (e) {
+        const error = toOutcomeError(e);
+        if (!OUTCOME_METHODS.has(name)) {
+          log.error(`ipc ${name}:`, e);
+          throw new Error(error.message);
+        }
+        if (error.code === "internal") log.error(`ipc ${name}:`, e);
+        return { ok: false, error };
+      }
+    });
+  }
+}

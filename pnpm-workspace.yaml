@@ -1,0 +1,17 @@
+packages:
+  - packages/*
+  - apps/*
+  - extension
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - "@biomejs/biome"
+
+catalog:
+  "@biomejs/biome": ^2.5.14
+  "@types/node": ^22.0.0
+  esbuild: ^0.28.2
+  typescript: ^7.0.2
+  vite: ^8.3.0
+  vitest: ^5.0.1

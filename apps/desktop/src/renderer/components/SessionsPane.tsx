@@ -1,0 +1,210 @@
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { SessionKey } from "../../shared/ipc.ts";
+import { buildList, type ListModel, nextActiveKey } from "../logic/rows.ts";
+import { activate, focusSearch, openCombo, openMenu } from "../state/actions.ts";
+import { useStore } from "../state/store.ts";
+import { Banner } from "./Chrome.tsx";
+import { optionId, SessionList } from "./SessionList.tsx";
+import { Button, Icon, Kbd, Segmented, Spinner } from "./ui.tsx";
+
+const LIST_ID = "session-listbox";
+
+/** the list the keyboard handler in App works against. kept outside React so a keypress never waits for a render. */
+export const listRef: { current: ListModel; pageSize: number } = {
+  current: { items: [], keys: [], tokens: [], elsewhere: 0, scoped: false },
+  pageSize: 8,
+};
+
+function EmptyState({ model }: { model: ListModel }) {
+  const { query, selectedCombo, sessions, env, editor, index, set } = useStore();
+  const label = editor?.label ?? "the editor";
+  if (query.trim()) {
+    return (
+      <Empty title={`No sessions match "${query.trim()}"`}>
+        {model.scoped && model.elsewhere > 0 && (
+          <>
+            <p>
+              {model.elsewhere} {model.elsewhere === 1 ? "match" : "matches"} in all sessions.
+            </p>
+            <Button className="mt-4" onClick={() => set({ scope: "all" })} data-testid="search-all">
+              Search all sessions
+            </Button>
+          </>
+        )}
+      </Empty>
+    );
+  }
+  if (model.scoped && selectedCombo) {
+    return (
+      <Empty title={`No sessions in ${selectedCombo} yet`}>
+        <p>Open the combo and start a conversation in {label}. It shows up here on its own.</p>
+        <Button variant="primary" className="mt-4" onClick={() => void openCombo(selectedCombo)}>
+          Open in {label}
+        </Button>
+      </Empty>
+    );
+  }
+  if (sessions.length === 0 && index.phase !== "idle" && index.phase !== "degraded") {
+    return (
+      <div className="flex flex-1 items-center justify-center gap-2 text-fg-3">
+        <Spinner /> Reading sessions
+      </div>
+    );
+  }
+  return (
+    <Empty title="No Claude Code sessions found">
+      <p>
+        Looked in{" "}
+        <span className="font-mono text-meta">{env?.projectsDir ?? "~/.claude/projects"}</span>. New
+        sessions appear here within a second of your first message.
+      </p>
+    </Empty>
+  );
+}
+
+function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
+  return (
+    <div
+      className="flex flex-1 flex-col items-center justify-center px-10 text-center"
+      data-testid="list-empty"
+    >
+      <h2 className="text-hero font-semibold">{title}</h2>
+      <div className="mt-2 max-w-md text-fg-3">{children}</div>
+    </div>
+  );
+}
+
+export function SessionsPane() {
+  const sessions = useStore((s) => s.sessions);
+  const scope = useStore((s) => s.scope);
+  const selectedCombo = useStore((s) => s.selectedCombo);
+  const combos = useStore((s) => s.combos);
+  const query = useStore((s) => s.query);
+  const activeKey = useStore((s) => s.activeKey);
+  const now = useStore((s) => s.now);
+  const index = useStore((s) => s.index);
+  const set = useStore((s) => s.set);
+  const setScope = useStore((s) => s.setScope);
+
+  const model = useMemo(
+    () => buildList(sessions, { scope, combo: selectedCombo, query, now }),
+    [sessions, scope, selectedCombo, query, now],
+  );
+
+  // keep the active row stable across live updates. a new query starts again from the top.
+  const prev = useRef({ keys: [] as SessionKey[], query, scope, combo: selectedCombo });
+  useEffect(() => {
+    const p = prev.current;
+    const reset = p.query !== query || p.scope !== scope || p.combo !== selectedCombo;
+    const next = nextActiveKey(p.keys, model.keys, useStore.getState().activeKey, reset);
+    prev.current = { keys: model.keys, query, scope, combo: selectedCombo };
+    if (next !== useStore.getState().activeKey) set({ activeKey: next });
+  }, [model, query, scope, selectedCombo, set]);
+
+  listRef.current = model;
+  const onPageSize = useCallback((rows: number) => {
+    listRef.pageSize = rows;
+  }, []);
+  const onActivate = useCallback((key: SessionKey) => void activate(key), []);
+  const onMenu = useCallback((key: SessionKey) => void openMenu(key), []);
+
+  const scanning = index.phase === "scanning" || index.phase === "cache";
+
+  return (
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-canvas"
+      aria-label="Sessions"
+    >
+      <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-line px-4">
+        {combos.length > 0 && (
+          <Segmented
+            label="Scope"
+            value={scope === "combo" && selectedCombo ? "combo" : "all"}
+            onChange={(v) => {
+              setScope(v);
+              focusSearch(false);
+            }}
+            options={[
+              {
+                value: "combo",
+                label: selectedCombo ?? "Combo",
+                disabled: !selectedCombo,
+                testId: "scope-combo",
+              },
+              { value: "all", label: "All sessions", testId: "scope-all" },
+            ]}
+          />
+        )}
+        <div className="no-drag relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-raised px-2.5 focus-within:bg-active">
+          <Icon name="search" className="text-fg-3" />
+          <input
+            id="search"
+            data-testid="search"
+            autoFocus
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={LIST_ID}
+            aria-autocomplete="list"
+            aria-activedescendant={activeKey ? optionId(activeKey) : undefined}
+            aria-label="Search sessions"
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="Search sessions - title, prompt, combo, branch, #PR"
+            value={query}
+            onChange={(e) => set({ query: e.target.value })}
+            className="h-full min-w-0 flex-1 bg-transparent px-2 text-body text-fg placeholder:text-fg-4"
+          />
+          {scanning ? <Spinner /> : !query && <Kbd>/</Kbd>}
+        </div>
+        <span
+          className="no-drag shrink-0 text-sm tabular-nums text-fg-3"
+          aria-live="polite"
+          data-testid="result-count"
+        >
+          {model.keys.length} {model.keys.length === 1 ? "session" : "sessions"}
+        </span>
+      </header>
+      <Banner />
+
+      {model.keys.length === 0 ? (
+        <EmptyState model={model} />
+      ) : (
+        <>
+          <SessionList
+            items={model.items}
+            tokens={model.tokens}
+            activeKey={activeKey}
+            now={now}
+            listId={LIST_ID}
+            total={model.keys.length}
+            onActivate={onActivate}
+            onMenu={onMenu}
+            onPageSize={onPageSize}
+          />
+          {model.scoped && model.elsewhere > 0 && (
+            <button
+              type="button"
+              onClick={() => set({ scope: "all" })}
+              className="fade shrink-0 border-t border-line px-5 py-2 text-left text-sm text-fg-3 hover:text-fg-2"
+            >
+              {model.elsewhere} more {model.elsewhere === 1 ? "match" : "matches"} in all sessions
+            </button>
+          )}
+        </>
+      )}
+
+      <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line px-5 text-meta text-fg-4">
+        <span>
+          <Kbd>↵</Kbd> open
+        </span>
+        <span>
+          <Kbd>⌘K</Kbd> actions
+        </span>
+        <span className="ml-auto truncate">
+          Claude Code deletes transcripts after 30 days. Sessions archived in the editor panel still
+          show here.
+        </span>
+      </footer>
+    </section>
+  );
+}

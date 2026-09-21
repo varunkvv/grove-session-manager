@@ -1,0 +1,21 @@
+{
+  "name": "claude-code",
+  "publisher": "anthropic",
+  "displayName": "fake Claude Code (smoke test fixture)",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claude-vscode.primaryEditor.open",
+        "title": "fake open"
+      }
+    ]
+  }
+}

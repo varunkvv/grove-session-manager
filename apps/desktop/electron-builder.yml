@@ -1,0 +1,42 @@
+appId: io.github.varunkvv.grove
+productName: Grove
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+asar: true
+# nothing native, and the workspace symlinks are already bundled away by esbuild
+npmRebuild: false
+extraResources:
+  - from: ../../extension/dist
+    to: extension
+    filter:
+      - "*.vsix"
+      - manifest.json
+mac:
+  category: public.app-category.developer-tools
+  icon: resources/icon.png
+  target:
+    - target: dmg
+      arch: arm64
+    - target: dir
+      arch: arm64
+  # ad-hoc: an arm64 mac refuses to run a binary with no signature at all
+  identity: "-"
+  hardenedRuntime: false
+  notarize: false
+
+# the usual drag-to-install window
+dmg:
+  title: ${productName}
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  contents:
+    - x: 150
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications

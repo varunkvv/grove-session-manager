@@ -1,0 +1,10 @@
+<!-- layered repos gathered into one working set: what a combo is. legible down to 32px.
+     solid fills, not opacity: translucent layers would show each other through the overlap. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="228" fill="#1F1E1D" />
+  <g stroke="#1F1E1D" stroke-width="26" stroke-linejoin="round">
+    <path d="M512 208 786 360 512 512 238 360Z" fill="#575651" />
+    <path d="M512 384 786 536 512 688 238 536Z" fill="#95928A" />
+    <path d="M512 560 786 712 512 864 238 712Z" fill="#D97757" />
+  </g>
+</svg>

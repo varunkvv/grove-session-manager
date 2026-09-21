@@ -1,0 +1,10 @@
+{
+  "name": "grove-oracle",
+  "private": true,
+  "type": "module",
+  "description": "dev only. diffs our session index against the Agent SDK's listSessions(). not a workspace member on purpose: the SDK drags ~200MB of native optional deps.",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.278"
+  },
+  "license": "MIT"
+}

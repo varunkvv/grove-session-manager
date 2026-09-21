@@ -1,0 +1,40 @@
+{
+  "name": "grove-session-manager",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "grove": "node packages/core/scripts/grove.ts",
+    "oracle": "node tools/oracle/oracle.ts",
+    "ext:build": "pnpm --filter grove-companion build",
+    "ext:package": "pnpm --filter grove-companion package",
+    "ext:install": "pnpm --filter grove-companion install:vscode",
+    "ext:install:cursor": "pnpm --filter grove-companion install:cursor",
+    "app:dev": "pnpm --filter @grove/desktop dev",
+    "app:build": "pnpm --filter @grove/desktop build",
+    "app:e2e": "pnpm --filter @grove/desktop test:e2e",
+    "app:package": "pnpm --filter @grove/desktop package",
+    "app:packaged": "pnpm --filter @grove/desktop test:packaged"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "MIT",
+  "description": "Grove: multi-repo workspaces and a session finder for Claude Code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/varunkvv/grove-session-manager.git"
+  }
+}

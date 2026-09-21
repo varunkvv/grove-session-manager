@@ -1,0 +1,115 @@
+{
+  "name": "grove-companion",
+  "displayName": "Grove Companion",
+  "description": "Lands VS Code on the Claude Code session that Grove handed over, and keeps a combo's workspace in sync.",
+  "version": "0.1.0",
+  "publisher": "varunkvv",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace the extension still lands on a handed-over session, but it does not run git to check the combo's worktrees."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "grove.findSession",
+        "title": "Grove: Find Session"
+      },
+      {
+        "command": "grove.openCombo",
+        "title": "Grove: Open Combo"
+      },
+      {
+        "command": "grove.repairCombo",
+        "title": "Grove: Repair This Combo"
+      },
+      {
+        "command": "grove.toggleLongWork",
+        "title": "Grove: Toggle Background Long Work"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "grove.findSession",
+        "mac": "ctrl+alt+s",
+        "key": "ctrl+alt+s"
+      },
+      {
+        "command": "grove.openCombo",
+        "mac": "ctrl+alt+o",
+        "key": "ctrl+alt+o"
+      }
+    ],
+    "configuration": {
+      "title": "Grove",
+      "properties": {
+        "grove.root": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Folder that holds combos.json and the combo folders. Empty means ~/claude-ws."
+        },
+        "grove.claudeConfigDir": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Claude Code's config directory. Empty means $CLAUDE_CONFIG_DIR or ~/.claude."
+        },
+        "grove.gitPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Absolute path to git. Empty means auto-detect."
+        },
+        "grove.reconcileOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check the combo's worktrees against git when the window opens."
+        },
+        "grove.syncAdditionalDirectories": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the combo's references in permissions.additionalDirectories of .claude/settings.local.json."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "node esbuild.mjs",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies --skip-license -o dist/grove-companion.vsix",
+    "install:vscode": "'/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code' --install-extension dist/grove-companion.vsix --force",
+    "install:cursor": "'/Applications/Cursor.app/Contents/Resources/app/bin/code' --install-extension dist/grove-companion.vsix --force",
+    "smoke": "node esbuild.mjs && node test-smoke/run.mjs"
+  },
+  "devDependencies": {
+    "@grove/core": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/vscode": "~1.94.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/varunkvv/grove-session-manager.git"
+  }
+}
