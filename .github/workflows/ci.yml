@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # a newer push to a pull request makes the older run pointless. a push to main is a release.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    # macos, not linux: the tests drive real git worktrees and lean on macOS path behaviour
+    # (/var -> /private/var, .DS_Store), which is also the only platform the app ships for
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  e2e:
+    # playwright drives the real built app. informative, not a gate: a window-server hiccup on a
+    # shared runner should not hold a release back.
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ext:package
+      - run: pnpm app:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: apps/desktop/e2e/screenshots
+          if-no-files-found: ignore
+
+  release:
+    # every merge to main publishes a dmg. versions are <major>.<minor> from
+    # apps/desktop/package.json plus the run number, so each release is its own immutable tag
+    # and nothing is ever moved or overwritten.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # ad-hoc signing only. never go looking for a certificate on the runner.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: version
+        id: version
+        run: |
+          base=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
+          echo "version=${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: build the dmg
+        run: |
+          pnpm app:build
+          pnpm ext:package
+          pnpm --filter @grove/desktop exec electron-builder --config electron-builder.yml \
+            -c.extraMetadata.version=${{ steps.version.outputs.version }}
+
+      - name: publish
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" apps/desktop/dist/*.dmg \
+            --target "${{ github.sha }}" \
+            --title "Grove ${{ steps.version.outputs.version }}" \
+            --notes-file .github/release-notes.md \
+            --generate-notes
+
+      - name: keep the five newest releases
+        run: |
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+          while read -r tag; do gh release delete "$tag" --yes --cleanup-tag; done

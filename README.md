@@ -108,12 +108,17 @@ themselves with them.
 
 ## Install it
 
+Download the latest `.dmg` from [Releases](https://github.com/varunkvv/grove-session-manager/releases/latest), open it,
+and drag **Grove** onto Applications. Apple Silicon only. Every merge to `main` publishes one: the workflow in
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs the tests, builds the DMG on a clean macOS runner, and tags it
+`v<major>.<minor>.<run number>`. The five newest releases are kept.
+
+Or build it yourself:
+
 ```bash
 pnpm app:package
 open apps/desktop/dist
 ```
-
-Drag **Grove** onto Applications, then open it from Launchpad or Spotlight like any other app.
 
 It is ad-hoc signed, which is enough to run on the machine that built it. A DMG that travels through
 a browser, Slack or AirDrop is quarantined by macOS, and needs

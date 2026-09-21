@@ -5,8 +5,13 @@ directories:
   buildResources: resources
 files:
   - out/**
+  # source maps are for development: they add weight and carry the build machine's paths
+  - "!out/**/*.map"
   - package.json
 asar: true
+# chromium ships ~50 locales. the app has one language.
+electronLanguages:
+  - en
 # nothing native, and the workspace symlinks are already bundled away by esbuild
 npmRebuild: false
 extraResources:
