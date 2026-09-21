@@ -4,13 +4,17 @@ import {
   type Combo,
   createSessionIndex,
   type Disposable,
+  type LiveStatus,
   projectDirLabel,
   type SessionIndex,
   type SessionRecord,
   type SessionView,
+  textSnippet,
+  tokenize,
   watchProjects,
 } from "@grove/core";
-import type { IndexStatus, SessionKey, SessionRow } from "../../shared/ipc.ts";
+import { rowHaystack } from "../../shared/haystack.ts";
+import type { IndexStatus, SearchHit, SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { diffRows, PatchCoalescer } from "../patchCoalescer.ts";
 
@@ -44,6 +48,7 @@ function labelsByProjectDir(records: readonly SessionRecord[]): Map<string, stri
 function toRow(
   record: SessionRecord & { comboName?: string },
   labels: ReadonlyMap<string, string>,
+  live: ReadonlyMap<string, LiveStatus>,
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -72,6 +77,8 @@ function toRow(
   }
   if (record.entrypoint) row.entrypoint = record.entrypoint;
   if (record.usage) row.usage = record.usage;
+  const status = live.get(record.sessionId);
+  if (status) row.live = status;
   return row;
 }
 
@@ -86,6 +93,7 @@ export class SessionService {
   private readonly patches: PatchCoalescer<SessionRow>;
   private rows = new Map<SessionKey, SessionRow>();
   private combos: Combo[] = [];
+  private live: ReadonlyMap<string, LiveStatus> = new Map();
   private watcher: Disposable | null = null;
   private periodic: NodeJS.Timeout | null = null;
   private flushTimer: NodeJS.Timeout | null = null;
@@ -102,6 +110,7 @@ export class SessionService {
       maxParsed: opts.maxParsed,
       persist: "always",
       usage: true,
+      fullText: true,
     });
     this.patches = new PatchCoalescer<SessionRow>({
       intervalMs: PATCH_INTERVAL_MS,
@@ -193,6 +202,36 @@ export class SessionService {
     this.rebuild();
   }
 
+  /** hook-reported status, by session id. a session resumed in two places shows on both rows. */
+  setLive(live: ReadonlyMap<string, LiveStatus>): void {
+    this.live = new Map(live);
+    this.rebuild();
+  }
+
+  byId(sessionId: string): SessionRow[] {
+    return [...this.rows.values()].filter((r) => r.sessionId === sessionId);
+  }
+
+  /**
+   * rows whose conversation holds every word, that the renderer's instant filter over titles and
+   * prompts did not already find. a word may match the row's own fields or its text.
+   */
+  async search(query: string): Promise<SearchHit[]> {
+    const tokens = tokenize(query);
+    if (tokens.length === 0) return [];
+    const texts = await this.index.texts();
+    const hits: SearchHit[] = [];
+    for (const row of this.rows.values()) {
+      const hay = rowHaystack(row);
+      const missing = tokens.filter((t) => !hay.includes(t));
+      if (missing.length === 0) continue;
+      const doc = texts.get(row.key);
+      if (!doc || !missing.every((t) => doc.lower.includes(t))) continue;
+      hits.push({ key: row.key, snippet: textSnippet(doc, missing) ?? "" });
+    }
+    return hits;
+  }
+
   list(): SessionRow[] {
     return [...this.rows.values()];
   }
@@ -214,7 +253,7 @@ export class SessionService {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
-    const next = views.map((v) => toRow(v, labels));
+    const next = views.map((v) => toRow(v, labels, this.live));
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;
     this.rows = new Map(next.map((row) => [row.key, row]));

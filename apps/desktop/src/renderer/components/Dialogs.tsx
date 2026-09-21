@@ -2,7 +2,7 @@ import type { TeardownOutcome } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Field, Icon, inputClass, Modal, Mono, Spinner } from "./ui.tsx";
+import { Button, cx, Field, Icon, inputClass, Modal, Mono, Spinner, Switch } from "./ui.tsx";
 
 function baseName(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -398,6 +398,38 @@ export function SettingsDialog() {
             }
           />
         </Field>
+        {/* not a Field: that is a <label>, and a click on either line would flip the first switch */}
+        <div>
+          <span className="mb-1 block text-sm text-fg-2">Sessions that need you</span>
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Notify when a session needs permission or finishes a long turn
+              </span>
+              <Switch
+                checked={draft.notifications !== false}
+                onChange={(v) => setDraft({ ...draft, notifications: v })}
+                label="Notifications"
+                testId="setting-notifications"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Track sessions outside combos too
+              </span>
+              <Switch
+                checked={draft.trackAllSessions === true}
+                onChange={(v) => setDraft({ ...draft, trackAllSessions: v })}
+                label="Track sessions outside combos"
+                testId="setting-track-all"
+              />
+            </div>
+          </div>
+          <span className="mt-1 block text-meta text-fg-3">
+            Combos report this on their own. Outside combos it takes a few hooks in Claude Code's
+            own settings.json, which Grove otherwise never touches.
+          </span>
+        </div>
         {error && <p className="text-accent">{error}</p>}
       </div>
     </Modal>

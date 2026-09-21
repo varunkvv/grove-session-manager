@@ -94,6 +94,8 @@ export interface SessionOptions {
   title?: string;
   prompt?: string;
   branch?: string;
+  /** what Claude said back. only the full-text search reads this far into a transcript. */
+  reply?: string;
   /** how long ago the last message was. drives both the timestamps and the file's mtime. */
   ageMs?: number;
 }
@@ -139,7 +141,7 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
         role: "assistant",
         id: `msg_${o.sessionId.slice(0, 8)}`,
         model: "claude-opus-5",
-        content: [{ type: "text", text: "sure" }],
+        content: [{ type: "text", text: o.reply ?? "sure" }],
         usage: {
           input_tokens: 3,
           output_tokens: 1_200,

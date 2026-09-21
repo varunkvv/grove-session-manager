@@ -12,6 +12,11 @@ import { Pusher } from "../../src/main/push.ts";
 import { parseDraft } from "../../src/main/services/draft.ts";
 import { compareVersions, findBundledCompanion } from "../../src/main/services/editor.ts";
 import {
+  expireStatuses,
+  RUNNING_STALE_MS,
+  WAITING_EXPIRY_MS,
+} from "../../src/main/services/live.ts";
+import {
   claudeBinCandidates,
   isResumeScriptName,
   resumeScriptBody,
@@ -423,5 +428,20 @@ describe("the bundled companion extension", () => {
 
   it("a missing bundle is reported rather than guessed at", async () => {
     expect(await findBundledCompanion(["/nope", "/also/nope"])).toBeNull();
+  });
+});
+
+describe("live status", () => {
+  it("a quiet running session and a days-old waiting one age out, a fresh one stays", () => {
+    const now = 10 * WAITING_EXPIRY_MS;
+    const m = new Map([
+      ["gone", { state: "running" as const, at: 0, lastEventAt: now - RUNNING_STALE_MS - 1 }],
+      ["busy", { state: "running" as const, at: 0, lastEventAt: now - 1000 }],
+      ["old", { state: "waiting" as const, at: now - WAITING_EXPIRY_MS - 1, lastEventAt: 0 }],
+      ["new", { state: "permission" as const, at: now - 1000, lastEventAt: now - 1000 }],
+    ]);
+    expect(expireStatuses(m, now)).toBe(true);
+    expect([...m.keys()]).toEqual(["busy", "new"]);
+    expect(expireStatuses(m, now)).toBe(false);
   });
 });

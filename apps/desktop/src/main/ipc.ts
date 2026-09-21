@@ -4,6 +4,7 @@ import {
   buildResumeCommand,
   classifyPath,
   isValidSessionId,
+  needsYou,
   openInEditor,
   prepareFolderOpen,
   runDetached,
@@ -32,6 +33,7 @@ import type { Pusher } from "./push.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import type { EditorService } from "./services/editor.ts";
+import type { LiveService } from "./services/live.ts";
 import {
   claudeBinCandidates,
   isResumeScriptName,
@@ -48,6 +50,7 @@ export interface Deps {
   settings: () => Settings;
   setSettings: (s: Settings) => void;
   sessions: SessionService;
+  live: LiveService;
   combos: ComboService;
   editor: EditorService;
   pusher: Pusher;
@@ -194,6 +197,9 @@ function buildHandlers(deps: Deps): Handlers {
       });
       actions.push({ id: "terminal", label: "Resume in Terminal", enabled: true });
       actions.push({ id: "copy-command", label: "Copy resume command", enabled: true });
+      if (needsYou(row.live)) {
+        actions.push({ id: "mark-seen", label: "Mark as seen", enabled: true, secondary: true });
+      }
       actions.push({ id: "copy-id", label: "Copy session ID", enabled: true, secondary: true });
       actions.push({
         id: "reveal",
@@ -204,12 +210,31 @@ function buildHandlers(deps: Deps): Handlers {
       return actions;
     },
 
+    async searchSessions(query) {
+      if (typeof query !== "string") throw new AppError("bad-query", "Nothing to search for.");
+      return { query, hits: await sessions.search(query.slice(0, 500)) };
+    },
+
+    async markSeen(keys) {
+      if (!Array.isArray(keys)) return;
+      const ids = keys.flatMap((k) =>
+        typeof k === "string" ? [deps.sessions.get(k)?.sessionId] : [],
+      );
+      deps.live.markSeen(ids.filter((id): id is string => !!id));
+    },
+
     async runSessionAction(key, action) {
       const row = requireSession(deps, key);
+      // landing on a session is looking at it
+      if (action === "combo-land" || action === "folder-land") deps.live.markSeen([row.sessionId]);
       if (!isValidSessionId(row.sessionId)) {
         throw new AppError("bad-session-id", "That session has no usable ID.");
       }
       const folder = folderForSession(row);
+      if (action === "mark-seen") {
+        deps.live.markSeen([row.sessionId]);
+        return {};
+      }
       switch (action) {
         case "combo-land": {
           if (!row.comboName) throw new AppError("no-combo", "That session is not in a combo.");
@@ -447,7 +472,10 @@ function buildHandlers(deps: Deps): Handlers {
   return api;
 }
 
-export function registerIpc(deps: Deps): void {
+/** the handlers, for the main process's own use (a notification that lands on a session) */
+export type AppHandlers = Handlers;
+
+export function registerIpc(deps: Deps): Handlers {
   const handlers = buildHandlers(deps);
   const api = handlers as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
   for (const name of Object.keys(api) as Array<keyof Api>) {
@@ -470,4 +498,5 @@ export function registerIpc(deps: Deps): void {
       }
     });
   }
+  return handlers;
 }

@@ -43,6 +43,8 @@ interface State {
   selectedCombo: string | null;
   scope: Scope;
   query: string;
+  /** conversation matches for `query`, from the main process. stale ones are ignored. */
+  deep: { query: string; hits: Map<SessionKey, string> } | null;
   activeKey: SessionKey | null;
   menu: MenuState | null;
   dialog: DialogState;
@@ -70,6 +72,7 @@ export const useStore = create<State>((set) => ({
   selectedCombo: null,
   scope: "all",
   query: "",
+  deep: null,
   activeKey: null,
   menu: null,
   dialog: null,

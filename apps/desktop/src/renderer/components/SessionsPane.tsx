@@ -80,15 +80,43 @@ export function SessionsPane() {
   const selectedCombo = useStore((s) => s.selectedCombo);
   const combos = useStore((s) => s.combos);
   const query = useStore((s) => s.query);
+  const deepState = useStore((s) => s.deep);
   const activeKey = useStore((s) => s.activeKey);
   const now = useStore((s) => s.now);
   const index = useStore((s) => s.index);
   const set = useStore((s) => s.set);
   const setScope = useStore((s) => s.setScope);
 
+  // the instant filter covers titles and prompts. the conversation itself is searched in main,
+  // a moment later, and its hits join the list without moving what is already there.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return;
+    const timer = setTimeout(() => {
+      void window.grove
+        .searchSessions(q)
+        .then((res) => {
+          if (useStore.getState().query.trim() !== res.query) return;
+          set({
+            deep: { query: res.query, hits: new Map(res.hits.map((h) => [h.key, h.snippet])) },
+          });
+        })
+        .catch(() => {});
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [query, set]);
+  const deep = deepState && deepState.query === query.trim() ? deepState.hits : undefined;
+
   const model = useMemo(
-    () => buildList(sessions, { scope, combo: selectedCombo, query, now }),
-    [sessions, scope, selectedCombo, query, now],
+    () =>
+      buildList(sessions, {
+        scope,
+        combo: selectedCombo,
+        query,
+        now,
+        ...(deep ? { deep } : {}),
+      }),
+    [sessions, scope, selectedCombo, query, now, deep],
   );
 
   // keep the active row stable across live updates. a new query starts again from the top.
@@ -149,7 +177,7 @@ export function SessionsPane() {
             aria-label="Search sessions"
             spellCheck={false}
             autoComplete="off"
-            placeholder="Search sessions - title, prompt, combo, branch, #PR"
+            placeholder="Search sessions - anything said, files touched, combo, branch, #PR"
             value={query}
             onChange={(e) => set({ query: e.target.value })}
             className="h-full min-w-0 flex-1 bg-transparent px-2 text-body text-fg placeholder:text-fg-4"

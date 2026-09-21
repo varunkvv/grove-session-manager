@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ComboView, FolderView } from "../../shared/ipc.ts";
+import { needsYou } from "../logic/rows.ts";
 import { focusSearch, openCombo } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Button, cx, Icon, IconButton, Mono, Spinner, Switch } from "./ui.tsx";
@@ -236,6 +237,9 @@ function ComboMenu({ combo, onClose }: { combo: ComboView; onClose: () => void }
 function ComboRow({ combo, selected }: { combo: ComboView; selected: boolean }) {
   const selectCombo = useStore((s) => s.selectCombo);
   const label = useStore((s) => s.editor?.label ?? "editor");
+  const waiting = useStore(
+    (s) => s.sessions.filter((r) => r.comboName === combo.name && needsYou(r.live)).length,
+  );
   const [menu, setMenu] = useState(false);
   return (
     <li
@@ -267,6 +271,15 @@ function ComboRow({ combo, selected }: { combo: ComboView; selected: boolean }) 
       >
         <span className="flex w-full items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-medium text-fg">{combo.name}</span>
+          {waiting > 0 && (
+            <span
+              data-testid="combo-needs-you"
+              title={`${waiting} ${waiting === 1 ? "session needs" : "sessions need"} you`}
+              className="rounded-full bg-accent-soft px-1.5 text-meta font-medium text-accent tabular-nums"
+            >
+              {waiting}
+            </span>
+          )}
           <StateDot combo={combo} />
         </span>
         <MemberStrip combo={combo} />

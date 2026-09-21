@@ -1,0 +1,187 @@
+import { type FSWatcher, watch } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import {
+  drainStatusEvents,
+  isObject,
+  type LiveStatus,
+  needsYou,
+  readJsonGuarded,
+  reduceStatus,
+  statusEventsDir,
+  syncStatusHooks,
+  writeFileAtomic,
+} from "@grove/core";
+import { log } from "../log.ts";
+
+const POLL_MS = 10_000;
+const PERSIST_DEBOUNCE_MS = 1000;
+/** a session that went quiet this long while "running" has probably been closed without a goodbye */
+export const RUNNING_STALE_MS = 45 * 60_000;
+/** nobody is coming back to a "your turn" from last week */
+export const WAITING_EXPIRY_MS = 3 * 24 * 3_600_000;
+
+export interface LiveServiceOptions {
+  stateDir: string;
+  /** Claude Code's user settings file. only touched when tracking every session is switched on. */
+  claudeSettingsFile: string;
+  onChange: (statuses: ReadonlyMap<string, LiveStatus>) => void;
+  /** a session just started needing someone */
+  onNeedsYou: (sessionId: string, status: LiveStatus) => void;
+  now?: () => number;
+}
+
+/** drops what is too old to be true any more. pure, so it is testable without a clock. */
+export function expireStatuses(statuses: Map<string, LiveStatus>, now: number): boolean {
+  let changed = false;
+  for (const [id, s] of statuses) {
+    const stale =
+      s.state === "running"
+        ? now - s.lastEventAt > RUNNING_STALE_MS
+        : now - s.at > WAITING_EXPIRY_MS;
+    if (stale) {
+      statuses.delete(id);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * what each live session is doing, from the hook events Claude Code drops into `.grove/events/`.
+ * the events are the source, this map is only their sum, persisted so a restart keeps the inbox.
+ */
+export class LiveService {
+  private readonly opts: LiveServiceOptions;
+  private readonly eventsDir: string;
+  private readonly stateFile: string;
+  private statuses = new Map<string, LiveStatus>();
+  private watcher: FSWatcher | null = null;
+  private poll: NodeJS.Timeout | null = null;
+  private persistTimer: NodeJS.Timeout | null = null;
+  private draining: Promise<void> | null = null;
+  private again = false;
+
+  constructor(opts: LiveServiceOptions) {
+    this.opts = opts;
+    this.eventsDir = statusEventsDir(opts.stateDir);
+    this.stateFile = path.join(opts.stateDir, "live-status.json");
+  }
+
+  private now(): number {
+    return this.opts.now?.() ?? Date.now();
+  }
+
+  async start(): Promise<void> {
+    const read = await readJsonGuarded<Record<string, LiveStatus>>(this.stateFile);
+    if (read.status === "ok" && isObject(read.value)) {
+      for (const [id, s] of Object.entries(read.value)) {
+        if (isObject(s) && typeof s.state === "string" && typeof s.at === "number") {
+          this.statuses.set(id, s as LiveStatus);
+        }
+      }
+    }
+    expireStatuses(this.statuses, this.now());
+    await mkdir(this.eventsDir, { recursive: true }).catch(() => {});
+    // events that arrived while the app was closed: they update state but do not notify
+    await this.drain(false);
+    this.opts.onChange(this.statuses);
+    try {
+      this.watcher = watch(this.eventsDir, () => void this.drain(true));
+      this.watcher.on("error", (e) => log.warn("status watch:", e));
+    } catch (e) {
+      log.warn("status watch:", e);
+    }
+    // FSEvents can coalesce or drop. the poll also ages out stale states.
+    this.poll = setInterval(() => {
+      if (expireStatuses(this.statuses, this.now())) this.changed();
+      void this.drain(true);
+    }, POLL_MS);
+    this.poll.unref?.();
+  }
+
+  list(): ReadonlyMap<string, LiveStatus> {
+    return this.statuses;
+  }
+
+  markSeen(sessionIds: Iterable<string>): void {
+    let changed = false;
+    for (const id of sessionIds) {
+      const s = this.statuses.get(id);
+      if (s && needsYou(s)) {
+        this.statuses.set(id, { ...s, seen: true });
+        changed = true;
+      }
+    }
+    if (changed) this.changed();
+  }
+
+  /** hooks for every session on the machine, in Claude Code's own user settings. opt-in. */
+  async trackAllSessions(enabled: boolean): Promise<void> {
+    const r = await syncStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, enabled);
+    if (r.warning) throw new Error(r.warning.message);
+    if (r.status === "skipped-unexpected-shape") {
+      throw new Error(
+        `${this.opts.claudeSettingsFile} has an unexpected shape, so it was left alone.`,
+      );
+    }
+  }
+
+  private drain(notify: boolean): Promise<void> {
+    if (this.draining) {
+      this.again = true;
+      return this.draining;
+    }
+    this.draining = this.runDrain(notify).finally(() => {
+      this.draining = null;
+      if (this.again) {
+        this.again = false;
+        void this.drain(notify);
+      }
+    });
+    return this.draining;
+  }
+
+  private async runDrain(notify: boolean): Promise<void> {
+    const events = await drainStatusEvents(this.eventsDir);
+    if (events.length === 0) return;
+    const before = new Map(this.statuses);
+    for (const ev of events) {
+      const next = reduceStatus(this.statuses.get(ev.sessionId), ev);
+      if (next) this.statuses.set(ev.sessionId, next);
+      else this.statuses.delete(ev.sessionId);
+    }
+    expireStatuses(this.statuses, this.now());
+    this.changed();
+    if (!notify) return;
+    for (const [id, s] of this.statuses) {
+      const was = before.get(id);
+      const entered = needsYou(s) && (!needsYou(was) || was?.state !== s.state || was.at !== s.at);
+      if (entered) this.opts.onNeedsYou(id, s);
+    }
+  }
+
+  private changed(): void {
+    this.opts.onChange(this.statuses);
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void writeFileAtomic(this.stateFile, JSON.stringify(Object.fromEntries(this.statuses))).catch(
+        (e) => log.warn("status write:", e),
+      );
+    }, PERSIST_DEBOUNCE_MS);
+    this.persistTimer.unref?.();
+  }
+
+  dispose(): void {
+    this.watcher?.close();
+    if (this.poll) clearInterval(this.poll);
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+      void writeFileAtomic(this.stateFile, JSON.stringify(Object.fromEntries(this.statuses))).catch(
+        () => {},
+      );
+    }
+  }
+}

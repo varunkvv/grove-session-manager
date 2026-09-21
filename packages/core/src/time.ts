@@ -33,3 +33,14 @@ export function dayBucket(ms: number, now: number = Date.now()): DayBucket {
   if (ms >= weekStart - 7 * DAY) return "Last week";
   return "Older";
 }
+
+/** 45_000 -> "45s", 720_000 -> "12m", 5_400_000 -> "1h 30m" */
+export function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest ? `${h}h ${rest}m` : `${h}h`;
+}

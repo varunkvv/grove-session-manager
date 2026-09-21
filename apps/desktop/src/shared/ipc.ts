@@ -6,6 +6,7 @@ import type {
   FolderMode,
   FolderOutcome,
   FolderState,
+  LiveStatus,
   LongWorkMode,
   ModelUsage,
   TeardownOutcome,
@@ -41,6 +42,15 @@ export interface SessionRow {
   parsed: boolean;
   /** tokens per model, subagents included, biggest first. absent until the whole file is counted. */
   usage?: ModelUsage[];
+  /** what the session is doing right now, when its hooks report to us */
+  live?: LiveStatus;
+}
+
+/** a row the instant filter could not find, found in its conversation instead */
+export interface SearchHit {
+  key: SessionKey;
+  /** the part of the conversation that matched */
+  snippet: string;
 }
 
 export type FolderViewState = FolderState | "unknown";
@@ -116,6 +126,10 @@ export interface AppSettings {
   claudePath?: string;
   claudeConfigDir?: string;
   maxParsedSessions?: number;
+  /** status hooks in Claude Code's user settings, so sessions outside combos report too */
+  trackAllSessions?: boolean;
+  /** a macOS notification when a session starts needing you. on unless switched off. */
+  notifications?: boolean;
 }
 
 export interface IndexStatus {
@@ -150,7 +164,8 @@ export type SessionActionId =
   | "terminal"
   | "copy-command"
   | "copy-id"
-  | "reveal";
+  | "reveal"
+  | "mark-seen";
 
 export interface SessionAction {
   id: SessionActionId;
@@ -174,6 +189,10 @@ export interface Api {
   rescan(): Promise<Outcome>;
 
   sessionActions(key: SessionKey): Promise<SessionAction[]>;
+  /** the whole conversation, for rows the instant filter over titles and prompts missed */
+  searchSessions(query: string): Promise<{ query: string; hits: SearchHit[] }>;
+  /** takes sessions out of "needs you" until their next event */
+  markSeen(keys: SessionKey[]): Promise<void>;
   runSessionAction(
     key: SessionKey,
     action: SessionActionId,
@@ -222,6 +241,8 @@ export const INVOKE_CHANNELS = [
   "bootstrap",
   "rescan",
   "sessionActions",
+  "searchSessions",
+  "markSeen",
   "runSessionAction",
   "validateComboName",
   "validateDraft",

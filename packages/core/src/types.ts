@@ -174,3 +174,21 @@ export interface TeardownOutcome {
 export interface Disposable {
   dispose(): void;
 }
+
+/** what a live session is doing, from its hooks. "waiting" means its turn ended and it is your move. */
+export type LiveState = "running" | "permission" | "waiting" | "failed";
+
+export interface LiveStatus {
+  state: LiveState;
+  /** when it entered this state */
+  at: number;
+  /** the last event of any kind, subagents included. a running session with none for long is stale. */
+  lastEventAt: number;
+  /** when the current turn started, for "finished after 12m" */
+  turnStart?: number;
+  turnMs?: number;
+  /** the tool asking for permission, or the notification's text */
+  detail?: string;
+  /** someone already looked. a new event clears it. */
+  seen?: boolean;
+}

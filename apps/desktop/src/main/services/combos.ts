@@ -17,6 +17,7 @@ import {
   repairCombo,
   repairFolder,
   samePath,
+  syncComboStatusHooks,
   syncLongWorkPolicy,
   type TeardownOutcome,
   targetDirFor,
@@ -191,6 +192,13 @@ export class ComboService {
     return this.opts.queue.run("mutate", run);
   }
 
+  /** every combo reports session status, including ones created before that existed */
+  async syncStatusHooks(): Promise<void> {
+    for (const combo of this.list()) {
+      await syncComboStatusHooks(this.opts.appRoot, combo).catch(() => undefined);
+    }
+  }
+
   ensure(combo: Combo, context: OutcomeContext, repairStale = false): Promise<FolderOutcome[]> {
     // before it is queued, not when the lane gets round to it: otherwise a new combo reads
     // "Not created yet" for an instant, and anything waiting on "Creating" sees nothing to wait for
@@ -199,6 +207,7 @@ export class ComboService {
       await ensureRoot(combo);
       // there from the first session on, not only after the first "open"
       await syncLongWorkPolicy(combo);
+      await syncComboStatusHooks(this.opts.appRoot, combo).catch(() => undefined);
       try {
         const outcomes = await ensureWorktrees(combo, {
           gitPath: this.opts.gitPath,

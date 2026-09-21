@@ -7,6 +7,7 @@ import {
   repairCombo,
   samePath,
   syncAdditionalDirectories,
+  syncComboStatusHooks,
   syncLongWorkPolicy,
 } from "@grove/core";
 import type { Deps } from "./deps.ts";
@@ -67,6 +68,9 @@ export async function runStartup(deps: Deps): Promise<{ combo?: string }> {
   deps.setStatus({ combo: combo.name });
 
   await syncLongWorkPolicy(combo).catch((e) => deps.log(`long-work policy: ${String(e)}`));
+  await syncComboStatusHooks(deps.appRoot, combo).catch((e) =>
+    deps.log(`status hooks: ${String(e)}`),
+  );
   if (deps.settings.syncAdditionalDirectories) {
     const sync = await syncAdditionalDirectories(combo, deps.stateDir);
     deps.log(`additionalDirectories: ${sync.status}`);

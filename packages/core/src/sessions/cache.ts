@@ -12,7 +12,7 @@ export interface CacheEntry {
    * token counts, with their own key: they are worked out in a later, slower pass, and a re-parse
    * of the head and tail must not throw away the offsets that make the next count incremental.
    */
-  usage?: { key: string; files: SessionTallies };
+  usage?: { key: string; files: SessionTallies; textChars?: number };
 }
 
 export interface CacheFile {

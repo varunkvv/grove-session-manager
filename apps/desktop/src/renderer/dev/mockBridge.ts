@@ -62,6 +62,7 @@ const sessions: SessionRow[] = [
     comboRelation: "root",
     gitBranch: "prod-debug",
     firstPrompt: "walk the webhook delivery chain and find where the retry is lost",
+    live: { state: "permission", at: NOW - 3 * MIN, lastEventAt: NOW - 3 * MIN, detail: "Bash" },
     usage: [
       {
         model: "claude-sonnet-5",
@@ -259,6 +260,8 @@ const bridge: Bridge = {
       { id: "reveal", label: "Reveal transcript in Finder", enabled: true, secondary: true },
     ];
   },
+  searchSessions: async (query) => ({ query, hits: [] }),
+  markSeen: async () => {},
   runSessionAction: () => okv({ message: "Done (mock)" }),
   validateComboName: async (name) => ({
     slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),

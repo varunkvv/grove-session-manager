@@ -185,6 +185,21 @@ dialog::backdrop {
   background: var(--color-scrim);
 }
 
+/* a running session breathes. still under reduced motion. */
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.live-pulse {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse {
+    animation: none;
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

@@ -2,22 +2,34 @@ import { constants } from "node:fs";
 import { open, readdir } from "node:fs/promises";
 import path from "node:path";
 import { isObject } from "../fsx.ts";
+import { conversationText } from "../transcript/text.ts";
 import { emptyTally, UsageAccumulator, type UsageTally } from "../transcript/usage.ts";
 
 const READ_BYTES = 1 << 20;
 const NL = 0x0a;
+
+/** receives the searchable text of the lines a scan reads. reset() means the scan starts from 0. */
+export interface TextSink {
+  reset(): void;
+  push(text: string): void;
+}
 
 /**
  * token usage is the one thing the head + tail read cannot give us: it is spread over every
  * response in the file. so this reads the whole transcript once, then only what was appended.
  * a file that got shorter than the saved offset was rewritten, and is counted again from 0.
  */
-export async function scanUsage(file: string, prev?: UsageTally): Promise<UsageTally> {
+export async function scanUsage(
+  file: string,
+  prev?: UsageTally,
+  sink?: TextSink,
+): Promise<UsageTally> {
   const fh = await open(file, constants.O_RDONLY);
   try {
     const size = (await fh.stat()).size;
     const resume = prev && prev.offset <= size ? prev : undefined;
     const tally: UsageTally = resume ? structuredClone(resume) : emptyTally();
+    if (!resume) sink?.reset();
     const acc = new UsageAccumulator(tally);
     let offset = tally.offset;
     let carry: Buffer = Buffer.alloc(0);
@@ -35,7 +47,7 @@ export async function scanUsage(file: string, prev?: UsageTally): Promise<UsageT
         carry = Buffer.from(chunk);
         continue;
       }
-      foldLines(acc, chunk.subarray(0, lastNl).toString("utf8"));
+      foldLines(acc, chunk.subarray(0, lastNl).toString("utf8"), sink);
       // only whole lines count as read. a line still being written is picked up next time.
       offset += lastNl + 1;
       carry = Buffer.from(chunk.subarray(lastNl + 1));
@@ -46,13 +58,23 @@ export async function scanUsage(file: string, prev?: UsageTally): Promise<UsageT
   }
 }
 
-function foldLines(acc: UsageAccumulator, text: string): void {
+function foldLines(acc: UsageAccumulator, text: string, sink?: TextSink): void {
   for (const line of text.split("\n")) {
-    // most lines are prompts, tool results and attachments. skip them before paying for a parse.
-    if (line.charCodeAt(0) !== 0x7b || !line.includes('"usage"')) continue;
+    if (line.charCodeAt(0) !== 0x7b) continue;
+    // most of the bytes are tool results and attachments. skip them before paying for a parse.
+    // every assistant response carries usage. a person's turn is a user line that is not a tool result.
+    const usage = line.includes('"usage"');
+    const typed =
+      !usage && !!sink && line.includes('"type":"user"') && !line.includes('"toolUseResult":');
+    if (!usage && !typed) continue;
     try {
       const v: unknown = JSON.parse(line);
-      if (isObject(v)) acc.push(v);
+      if (!isObject(v)) continue;
+      if (usage) acc.push(v);
+      if (sink) {
+        const t = conversationText(v);
+        if (t) sink.push(t);
+      }
     } catch {
       // junk or a torn line. the rest of the file still counts.
     }
@@ -84,12 +106,14 @@ export async function subagentTranscripts(transcriptPath: string): Promise<strin
 /** per file under one session. the session's own transcript is keyed "". */
 export type SessionTallies = Record<string, UsageTally>;
 
+/** `sink` gets the session's own conversation. subagents are counted, but not searched. */
 export async function scanSessionUsage(
   transcriptPath: string,
   prev: SessionTallies = {},
+  sink?: TextSink,
 ): Promise<SessionTallies> {
   const out: SessionTallies = {};
-  const main = await scanUsage(transcriptPath, prev[""]).catch(() => undefined);
+  const main = await scanUsage(transcriptPath, prev[""], sink).catch(() => undefined);
   if (main) out[""] = main;
   const base = path.dirname(transcriptPath);
   for (const file of await subagentTranscripts(transcriptPath)) {

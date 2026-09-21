@@ -37,7 +37,7 @@ describe("design lint", () => {
     }
   });
 
-  it("the accent is for state that matters: drift, search highlights, the banner action, warnings", () => {
+  it("the accent is for state that matters: drift, search highlights, the banner action, warnings, a session waiting on you", () => {
     const uses = files.flatMap(([f, src]) =>
       (src.match(/(?:bg|text|border)-accent(?:-soft)?/g) ?? []).map(() => f),
     );
@@ -47,8 +47,13 @@ describe("design lint", () => {
       "components/ui.tsx",
       "components/ComboDialog.tsx",
       "components/Dialogs.tsx",
+      "components/SessionList.tsx",
     ]);
     for (const f of uses) expect(allowed.has(f), `${f} uses the accent`).toBe(true);
-    expect(files.find(([f]) => f === "components/SessionList.tsx")![1]).not.toMatch(/-accent/);
+    // a row takes the accent only when its session asks for someone, never for decoration
+    const list = files.find(([f]) => f === "components/SessionList.tsx")![1];
+    for (const line of list.split("\n").filter((l) => /-accent/.test(l))) {
+      expect(line, "accent on a session row outside the live badge").toMatch(/loud|NEEDS_YOU/);
+    }
   });
 });

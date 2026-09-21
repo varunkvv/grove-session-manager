@@ -104,6 +104,10 @@ test("create a combo with worktrees and a reference, then open it", async () => 
     readFileSync(path.join(root, ".claude", "settings.local.json"), "utf8"),
   );
   expect(settings.permissions.additionalDirectories).toEqual([logs]);
+  // every session in the combo reports whether it needs someone, into the app's events dir
+  expect(JSON.stringify(settings.hooks.PermissionRequest)).toContain(
+    path.join(fx.root, ".grove", "events"),
+  );
 });
 
 test("a second combo that wants the same branch is told, and the rest of it still builds", async () => {

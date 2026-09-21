@@ -1,10 +1,17 @@
-import { type DayBucket, dayBucket, modelLabel, snippetAround, tokenize } from "@grove/core/pure";
+import {
+  type DayBucket,
+  dayBucket,
+  type LiveStatus,
+  snippetAround,
+  tokenize,
+} from "@grove/core/pure";
+import { rowHaystack } from "../../shared/haystack.ts";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 
 export type Scope = "combo" | "all";
 
 export type ListItem =
-  | { type: "header"; id: string; label: DayBucket }
+  | { type: "header"; id: string; label: DayBucket | typeof NEEDS_YOU }
   | { type: "row"; id: SessionKey; row: SessionRow; secondary: string; secondaryIsMatch: boolean };
 
 export interface ListModel {
@@ -16,33 +23,19 @@ export interface ListModel {
   scoped: boolean;
 }
 
-const haystacks = new WeakMap<SessionRow, string>();
+export const NEEDS_YOU = "Needs you";
 
-function haystack(r: SessionRow): string {
-  let h = haystacks.get(r);
-  if (h === undefined) {
-    h = [
-      r.title,
-      r.firstPrompt,
-      r.lastPrompt,
-      r.comboName,
-      r.gitBranch,
-      r.cwdBase,
-      r.tag,
-      r.prNumber ? `#${r.prNumber} ${r.prRepo ?? ""}` : undefined,
-      r.sessionId,
-      ...(r.usage ?? []).map((u) => modelLabel(u.model)),
-    ]
-      .filter(Boolean)
-      .join("\n")
-      .toLowerCase();
-    haystacks.set(r, h);
-  }
-  return h;
+/** asking for permission, turn over, or stopped on an error - and nobody has looked yet */
+export function needsYou(live: LiveStatus | undefined): boolean {
+  return (
+    !!live &&
+    !live.seen &&
+    (live.state === "permission" || live.state === "waiting" || live.state === "failed")
+  );
 }
 
 function matches(r: SessionRow, tokens: readonly string[]): boolean {
-  const h = haystack(r);
+  const h = rowHaystack(r);
   return tokens.every((t) => h.includes(t));
 }
 
@@ -67,7 +60,14 @@ function secondaryLine(
 /** rows arrive newest first and stay that way: recency is the ranking, search only narrows */
 export function buildList(
   rows: readonly SessionRow[],
-  opts: { scope: Scope; combo: string | null; query: string; now: number },
+  opts: {
+    scope: Scope;
+    combo: string | null;
+    query: string;
+    now: number;
+    /** rows found in their conversation by the main process, with the part that matched */
+    deep?: ReadonlyMap<SessionKey, string>;
+  },
 ): ListModel {
   const tokens = tokenize(opts.query);
   const scoped = opts.scope === "combo" && opts.combo !== null;
@@ -76,18 +76,43 @@ export function buildList(
   let elsewhere = 0;
   let bucket: DayBucket | null = null;
 
+  const inScope: Array<{ r: SessionRow; deep?: string }> = [];
   for (const r of rows) {
-    if (tokens.length > 0 && !matches(r, tokens)) continue;
+    const deep = tokens.length > 0 && !matches(r, tokens) ? opts.deep?.get(r.key) : undefined;
+    if (tokens.length > 0 && deep === undefined && !matches(r, tokens)) continue;
     if (scoped && r.comboName !== opts.combo) {
       if (tokens.length > 0) elsewhere++;
       continue;
     }
+    inScope.push({ r, ...(deep !== undefined ? { deep } : {}) });
+  }
+
+  // with no query, sessions waiting on a person come first. a search is about finding, not triage.
+  const pinned = tokens.length === 0 ? inScope.filter(({ r }) => needsYou(r.live)) : [];
+  const rest = pinned.length ? inScope.filter(({ r }) => !needsYou(r.live)) : inScope;
+  if (pinned.length) {
+    pinned.sort((a, b) => (b.r.live?.at ?? 0) - (a.r.live?.at ?? 0));
+    items.push({ type: "header", id: "h:needs-you", label: NEEDS_YOU });
+    for (const { r } of pinned) {
+      const secondary = secondaryLine(r, tokens);
+      items.push({
+        type: "row",
+        id: r.key,
+        row: r,
+        secondary: secondary.text,
+        secondaryIsMatch: false,
+      });
+      keys.push(r.key);
+    }
+  }
+
+  for (const { r, deep } of rest) {
     const b = dayBucket(r.activityMs, opts.now);
     if (b !== bucket) {
       bucket = b;
       items.push({ type: "header", id: `h:${b}`, label: b });
     }
-    const secondary = secondaryLine(r, tokens);
+    const secondary = deep !== undefined ? { text: deep, isMatch: true } : secondaryLine(r, tokens);
     items.push({
       type: "row",
       id: r.key,

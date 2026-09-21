@@ -15,6 +15,10 @@ export interface Settings {
   claudePath?: string;
   claudeConfigDir?: string;
   maxParsedSessions?: number;
+  /** status hooks in Claude Code's user settings, so sessions outside combos report too. off by default. */
+  trackAllSessions?: boolean;
+  /** a notification when a session starts needing you. on unless false. */
+  notifications?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -39,6 +43,9 @@ function clean(raw: unknown): Settings {
   ] as const) {
     const v = raw[key];
     if (typeof v === "string" && v.trim()) s[key] = v.trim();
+  }
+  for (const key of ["trackAllSessions", "notifications"] as const) {
+    if (typeof raw[key] === "boolean") s[key] = raw[key];
   }
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {
     s.maxParsedSessions = Math.floor(raw.maxParsedSessions);

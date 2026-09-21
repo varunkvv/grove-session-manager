@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { isObject, mapLimit } from "../fsx.ts";
 import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
@@ -6,6 +7,7 @@ import { pickTitle } from "../transcript/title.ts";
 import { summarizeUsage } from "../transcript/usage.ts";
 import type { ParsedMeta, SessionRecord } from "../types.ts";
 import { type CacheEntry, cacheKey, loadCache, saveCache, sweepOldCaches } from "./cache.ts";
+import { TextStore } from "./fulltext.ts";
 import { type FileStat, scanProjects, sidecarTitlePath, statTranscript } from "./scan.ts";
 import { type SessionTallies, scanSessionUsage } from "./usage.ts";
 
@@ -20,6 +22,8 @@ export interface SessionIndexOptions {
   persist?: "always" | "if-cold" | "never";
   /** count tokens per model. reads every transcript in full once, so it is opt-in. */
   usage?: boolean;
+  /** keep the conversation text for search. rides on the usage pass, so it needs `usage`. */
+  fullText?: boolean;
 }
 
 export interface RefreshStats {
@@ -104,6 +108,8 @@ export class SessionIndex {
   private readonly concurrency: number;
   private readonly persist: "always" | "if-cold" | "never";
   private readonly usage: boolean;
+  private readonly text: TextStore | null;
+  private readonly inflight = new Map<string, Promise<SessionRecord | undefined>>();
   private cache = new Map<string, CacheEntry>();
   private records = new Map<string, SessionRecord>();
   private dirty = false;
@@ -116,6 +122,10 @@ export class SessionIndex {
     this.concurrency = opts.concurrency ?? 16;
     this.persist = opts.persist ?? "always";
     this.usage = opts.usage ?? false;
+    this.text =
+      this.usage && opts.fullText
+        ? new TextStore(opts.cacheDir ? path.join(opts.cacheDir, "text") : null)
+        : null;
   }
 
   /** cache only, no filesystem walk. lets a UI paint before the first refresh finishes. */
@@ -177,6 +187,7 @@ export class SessionIndex {
     if (pending.length) opts.onBatch?.(pending);
 
     if (this.usage) await this.countUsage(stats, opts);
+    if (this.text && !opts.signal?.aborted) void this.text.sweep(stats.map((s) => s.path));
 
     const cold = toParse.length >= COLD_THRESHOLD;
     if (this.persist === "always" || (this.persist === "if-cold" && cold)) await this.flush();
@@ -195,10 +206,7 @@ export class SessionIndex {
    * and nobody should wait on it to see their sessions. newest first, like the parse.
    */
   private async countUsage(stats: FileStat[], opts: RefreshOptions): Promise<void> {
-    const todo = stats.filter((s) => {
-      const entry = this.cache.get(s.path);
-      return entry && entry.usage?.key !== cacheKey(s);
-    });
+    const todo = stats.filter((s) => this.needsScan(s));
     let pending: SessionRecord[] = [];
     let lastEmit = Date.now();
     await mapLimit(todo, USAGE_CONCURRENCY, async (s) => {
@@ -215,17 +223,50 @@ export class SessionIndex {
     if (pending.length) opts.onBatch?.(pending);
   }
 
+  private needsScan(s: FileStat): boolean {
+    const entry = this.cache.get(s.path);
+    if (!this.usage || !entry) return false;
+    if (entry.usage?.key !== cacheKey(s)) return true;
+    // counted before search was kept: read once more to build the text
+    return this.text !== null && entry.usage.textChars === undefined;
+  }
+
   /**
    * subagent files are re-read when the session's own transcript changes, not on their own: the
    * watcher only sees top-level transcripts, and a subagent finishing always appends to its parent.
    */
   private async updateUsage(s: FileStat): Promise<SessionRecord | undefined> {
+    // one scan per file at a time: two at once would both append the same text
+    const running = this.inflight.get(s.path);
+    if (running) await running.catch(() => undefined);
+    const job = this.scanOne(s);
+    this.inflight.set(s.path, job);
+    try {
+      return await job;
+    } finally {
+      if (this.inflight.get(s.path) === job) this.inflight.delete(s.path);
+    }
+  }
+
+  private async scanOne(s: FileStat): Promise<SessionRecord | undefined> {
     const entry = this.cache.get(s.path);
     if (!entry) return undefined;
-    const files = await scanSessionUsage(s.path, entry.usage?.files);
+    let prev = entry.usage?.files;
+    let sink: ReturnType<TextStore["sink"]> | undefined;
+    if (this.text) {
+      // the stored text has to be exactly what the offset says was read, or it is rebuilt from 0
+      const have = await this.text.ensure(s.path);
+      if (prev?.[""] && entry.usage?.textChars !== have) {
+        const { "": _, ...subagents } = prev;
+        prev = subagents;
+      }
+      sink = this.text.sink(s.path);
+    }
+    const files = await scanSessionUsage(s.path, prev, sink);
     // the file may have been removed or re-parsed meanwhile. only land on the entry we started from.
     if (this.cache.get(s.path) !== entry) return undefined;
-    entry.usage = { key: cacheKey(s), files };
+    const textChars = sink && files[""] ? await sink.commit() : undefined;
+    entry.usage = { key: cacheKey(s), files, ...(textChars !== undefined ? { textChars } : {}) };
     this.dirty = true;
     const rec = toRecord(s, entry.meta, files);
     if (this.records.has(s.path)) this.records.set(s.path, rec);
@@ -254,13 +295,35 @@ export class SessionIndex {
     }
     let record = toRecord(s, meta, hit?.usage?.files);
     this.records.set(file, record);
-    if (this.usage && this.cache.get(file)?.usage?.key !== cacheKey(s)) {
+    if (this.needsScan(s)) {
       record = (await this.updateUsage(s)) ?? record;
     }
     return { changed: !before || displayKey(before) !== displayKey(record), record };
   }
 
+  /** every session's conversation text, loaded from the cache dir on first use */
+  async texts(): Promise<Map<string, { text: string; lower: string }>> {
+    const out = new Map<string, { text: string; lower: string }>();
+    if (!this.text) return out;
+    const text = this.text;
+    await mapLimit([...this.records.keys()], 16, async (p) => {
+      const have = await text.ensure(p);
+      const want = this.cache.get(p)?.usage?.textChars;
+      // the text dir was cleared under a transcript that has not changed since: read it again
+      if (want !== undefined && want !== have) {
+        const s = await statTranscript(p);
+        if (s) await this.updateUsage(s);
+      }
+    });
+    for (const p of this.records.keys()) {
+      const doc = this.text.get(p);
+      if (doc) out.set(p, doc);
+    }
+    return out;
+  }
+
   removeFile(file: string): boolean {
+    void this.text?.remove(file);
     const had = this.records.delete(file);
     if (this.cache.delete(file)) this.dirty = true;
     return had;

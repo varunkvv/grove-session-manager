@@ -54,6 +54,31 @@ running session's next long task. Flip it in the app (the switch in an open comb
 
 It is a default by instruction, not an enforcement: Claude still decides what counts as long.
 
+### Needs you
+
+Run a few sessions at once and the slow part is noticing that one of them stopped: it wants permission for a
+command, or it finished its turn twenty minutes ago in a window you are not looking at. Grove pins those sessions to
+the top of the list under **Needs you**, badges the combo and the dock icon, and sends a notification when a session
+asks for permission or finishes a turn that ran for over a minute. Clicking the notification lands you on the session.
+Running sessions show a quiet "Running".
+
+The transcript cannot tell "running a tool" from "waiting on a permission prompt", so this comes from Claude Code
+hooks. Every combo's `.claude/settings.local.json` gets a few async hooks (`UserPromptSubmit`, `PermissionRequest`,
+`PostToolUse`, `Notification`, `Stop`, `StopFailure`, `SessionEnd`) that drop the hook's input into
+`~/claude-ws/.grove/events/`. Claude Code watches its settings files, so sessions that are already running pick the
+hooks up too. Sessions outside combos report only if you switch on **Track sessions outside combos** in Settings, which
+adds the same hooks to Claude Code's own `settings.json`; switching it off takes them out again.
+
+Landing on a session, or **Mark as seen** in its action menu, takes it out of the list until its next event.
+
+### Search reaches the whole conversation
+
+Typing filters titles and prompts instantly. A moment later the app also looks through everything that was said in
+each session (what you typed, what Claude wrote back, and the files and commands its tools touched), and those
+matches join the list with the line that matched. Tool output and thinking are left out: they are most of the bytes
+and almost none of what people remember. The text is kept in `.grove/text/`, built by the same pass that counts
+tokens, and only the appended part of a transcript is read after the first time.
+
 ### Tokens per model
 
 Every row shows what the session spent, per model (the two biggest on the row, all of them in the action menu), subagents
@@ -68,7 +93,7 @@ compaction) that are never written to the transcript.
 ~/claude-ws/
   combos.json                   source of truth. hand-editable. unknown keys and formatting are preserved
   settings.json                 optional: editor, binary paths
-  .grove/             cache only - safe to delete
+  .grove/                       cache only - safe to delete. events/ is where session status hooks write
   <combo>/
     <combo>.code-workspace      generated. only `folders` is ours, the rest is preserved
     CLAUDE.md                   written once when the combo is created. yours after that
@@ -79,7 +104,8 @@ compaction) that are never written to the transcript.
     <repo>/                     working copies
 ```
 
-The app never writes inside `~/.claude`, never copies a transcript, never deletes a branch, and never runs
+The app never writes inside `~/.claude` (the one exception is the opt-in status hooks above, and only in
+`settings.json`), never copies a transcript, never deletes a branch, and never runs
 `git worktree remove --force` unless you confirm it for one specific folder.
 
 Drift is normal: people run `git worktree remove` and `rm -rf` behind the app's back, and Claude Code expires transcripts.

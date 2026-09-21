@@ -1,10 +1,16 @@
 import path from "node:path";
-import { loadSettings, type Settings } from "@grove/core";
+import {
+  formatDuration,
+  type LiveStatus,
+  loadSettings,
+  needsYou,
+  type Settings,
+} from "@grove/core";
 import type { BrowserWindow } from "electron";
 import * as electron from "electron";
 import type { MenuCommandId } from "../shared/ipc.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
-import { registerIpc } from "./ipc.ts";
+import { type AppHandlers, registerIpc } from "./ipc.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import { OpQueue } from "./opQueue.ts";
@@ -13,6 +19,7 @@ import { registerAppScheme, serveRenderer } from "./protocol.ts";
 import { Pusher } from "./push.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
+import { LiveService } from "./services/live.ts";
 import { SessionService } from "./services/sessions.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
@@ -71,6 +78,39 @@ async function start(): Promise<void> {
     emitStatus: (status) => pusher.send("sessions:index", status),
   });
 
+  let handlers: AppHandlers | null = null;
+  const live = new LiveService({
+    stateDir: appEnv.stateDir,
+    claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
+    onChange: (statuses) => {
+      sessions.setLive(statuses);
+      const count = [...statuses.values()].filter((s) => needsYou(s)).length;
+      electron.app.dock?.setBadge(count > 0 ? String(count) : "");
+    },
+    onNeedsYou: (sessionId, status) => {
+      if (settings.notifications === false || appEnv.customRoot) return;
+      if (win?.isFocused()) return;
+      const row = sessions.byId(sessionId)[0];
+      const body = notificationBody(status);
+      if (!row || !body || !electron.Notification.isSupported()) return;
+      const n = new electron.Notification({
+        title: row.title ?? "Claude session",
+        body,
+        silent: false,
+      });
+      n.on("click", () => {
+        // the folder may be gone by now. then the app is the next best place to land.
+        void handlers
+          ?.runSessionAction(row.key, row.comboName ? "combo-land" : "folder-land")
+          .catch(() => {
+            win?.show();
+            win?.focus();
+          });
+      });
+      n.show();
+    },
+  });
+
   const combos = new ComboService({
     appRoot: appEnv.appRoot,
     queue,
@@ -103,15 +143,24 @@ async function start(): Promise<void> {
   await combos.load();
   await sessions.loadCached(combos.list());
 
-  registerIpc({
+  handlers = registerIpc({
     env: appEnv,
     projectsDir,
     settings: () => settings,
     setSettings: (s) => {
+      const tracking = s.trackAllSessions === true;
+      if (tracking !== (settings.trackAllSessions === true)) {
+        void live
+          .trackAllSessions(tracking)
+          .catch((e) =>
+            pusher.send("toast", { level: "error", title: "Session status", body: String(e) }),
+          );
+      }
       settings = s;
       electron.nativeTheme.themeSource = s.appearance;
     },
     sessions,
+    live,
     combos,
     editor,
     pusher,
@@ -139,6 +188,10 @@ async function start(): Promise<void> {
     combos.watchFile();
     void combos.reconcileAll();
     void editor.status(true).then((status) => pusher.send("editor:status", status));
+    void live.start().catch((e) => log.warn("session status:", e));
+    // combos made before status tracking existed get their hooks without anyone opening them
+    void combos.syncStatusHooks();
+    if (settings.trackAllSessions) void live.trackAllSessions(true).catch((e) => log.warn(e));
   });
   win.on("focus", () => {
     sessions.refreshThrottled();
@@ -159,8 +212,21 @@ async function start(): Promise<void> {
   electron.app.on("window-all-closed", () => electron.app.quit());
   electron.app.on("before-quit", () => {
     combos.dispose();
+    live.dispose();
     void sessions.dispose();
   });
+}
+
+/** only what is worth interrupting someone for. a short turn they are probably watching is not. */
+function notificationBody(s: LiveStatus): string | null {
+  if (s.state === "permission")
+    return s.detail ? `Needs permission: ${s.detail}` : "Needs permission";
+  if (s.state === "failed") return "Stopped on an API error";
+  if (s.state === "waiting" && (s.turnMs ?? 0) >= 60_000) {
+    const after = `Finished after ${formatDuration(s.turnMs ?? 0)}`;
+    return s.detail ? `${after}: ${s.detail}` : after;
+  }
+  return null;
 }
 
 process.on("unhandledRejection", (reason) => log.error("unhandled rejection:", reason));

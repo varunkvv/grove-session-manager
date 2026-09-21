@@ -1,8 +1,8 @@
-import { formatRelativeTime, highlightRanges } from "@grove/core/pure";
+import { formatRelativeTime, highlightRanges, type LiveStatus } from "@grove/core/pure";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, type ReactNode, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
-import type { ListItem } from "../logic/rows.ts";
+import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
 import { cx, Icon, Mono } from "./ui.tsx";
 
@@ -27,6 +27,44 @@ function Highlighted({ text, tokens }: { text: string; tokens: readonly string[]
   }
   if (at < text.length) out.push(text.slice(at));
   return <>{out}</>;
+}
+
+/**
+ * what the session is doing now. only the states that ask something of a person take the accent;
+ * running is quiet, and a turn someone already looked at says nothing at all.
+ */
+function LiveBadge({ live }: { live: LiveStatus }) {
+  const label =
+    live.state === "permission"
+      ? "Needs permission"
+      : live.state === "failed"
+        ? "Stopped"
+        : live.state === "running"
+          ? "Running"
+          : live.seen
+            ? null
+            : "Your turn";
+  if (!label) return null;
+  const loud = live.state === "permission" || live.state === "failed";
+  return (
+    <span
+      data-testid="live-badge"
+      data-state={live.state}
+      title={live.detail}
+      className={cx(
+        "flex shrink-0 items-center gap-1.5 text-sm",
+        loud ? "text-accent" : live.state === "running" ? "text-fg-3" : "text-fg-2",
+      )}
+    >
+      <span
+        className={cx(
+          "size-1.5 rounded-full",
+          loud ? "bg-accent" : live.state === "running" ? "live-pulse bg-fg-3" : "bg-fg-2",
+        )}
+      />
+      {label}
+    </span>
+  );
 }
 
 interface RowProps {
@@ -70,6 +108,7 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
         >
           {untitled ? "Untitled session" : <Highlighted text={row.title ?? ""} tokens={p.tokens} />}
         </span>
+        {row.live && <LiveBadge live={row.live} />}
         <span
           className={cx(
             "shrink-0 text-sm tabular-nums",
@@ -208,7 +247,11 @@ export function SessionList({
               {item.type === "header" ? (
                 <div
                   role="presentation"
-                  className="flex h-full items-end px-5 pb-1.5 text-meta font-medium tracking-wide text-fg-3"
+                  data-testid={item.label === NEEDS_YOU ? "needs-you-header" : undefined}
+                  className={cx(
+                    "flex h-full items-end px-5 pb-1.5 text-meta font-medium tracking-wide",
+                    item.label === NEEDS_YOU ? "text-accent" : "text-fg-3",
+                  )}
                 >
                   {item.label}
                 </div>

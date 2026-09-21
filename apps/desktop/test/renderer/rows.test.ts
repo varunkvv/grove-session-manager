@@ -139,3 +139,57 @@ describe("token usage on a row", () => {
     expect(list.keys).toEqual(["x"]);
   });
 });
+
+describe("sessions that need you", () => {
+  const live = (
+    state: "running" | "permission" | "waiting" | "failed",
+    at: number,
+    seen = false,
+  ) => ({
+    state,
+    at,
+    lastEventAt: at,
+    ...(seen ? { seen } : {}),
+  });
+
+  it("with no query they come first, newest first, and leave their day", () => {
+    const list = buildList(
+      [
+        row("new", { title: "fresh", activityMs: NOW - H }),
+        row("perm", {
+          title: "asks",
+          activityMs: NOW - 2 * H,
+          live: live("permission", NOW - 60_000),
+        }),
+        row("run", { title: "busy", activityMs: NOW - 3 * H, live: live("running", NOW) }),
+        row("done", { title: "done", activityMs: NOW - 4 * H, live: live("waiting", NOW - 1000) }),
+        row("seen", { title: "looked", activityMs: NOW - 5 * H, live: live("waiting", NOW, true) }),
+      ],
+      { scope: "all", combo: null, query: "", now: NOW },
+    );
+    expect(list.keys).toEqual(["done", "perm", "new", "run", "seen"]);
+    expect(list.items[0]).toMatchObject({ type: "header", label: "Needs you" });
+  });
+
+  it("a search is about finding: no triage section, and conversation hits join in", () => {
+    const rs = [
+      row("perm", { title: "asks", live: live("permission", NOW) }),
+      row("deep", { title: "unrelated title" }),
+    ];
+    const plain = buildList(rs, { scope: "all", combo: null, query: "backoff", now: NOW });
+    expect(plain.keys).toEqual([]);
+    const deep = buildList(rs, {
+      scope: "all",
+      combo: null,
+      query: "backoff",
+      now: NOW,
+      deep: new Map([["deep", "…the backoff doubles on every 429…"]]),
+    });
+    expect(deep.keys).toEqual(["deep"]);
+    expect(deep.items.find((i) => i.type === "row")).toMatchObject({
+      secondary: "…the backoff doubles on every 429…",
+      secondaryIsMatch: true,
+    });
+    expect(deep.items.some((i) => i.type === "header" && i.label === "Needs you")).toBe(false);
+  });
+});

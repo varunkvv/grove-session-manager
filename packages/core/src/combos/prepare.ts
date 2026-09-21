@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { ensureWorktrees } from "../git/worktrees.ts";
 import { writeIntent } from "../intents.ts";
 import { getStateDir } from "../paths.ts";
+import { syncComboStatusHooks } from "../sessions/liveStatus.ts";
 import { type Combo, err, type FolderOutcome, ok, type Result, type Warning } from "../types.ts";
 import { ensureRoot } from "./claudeMd.ts";
 import { syncLongWorkPolicy } from "./longWork.ts";
@@ -50,6 +51,8 @@ export async function prepareComboOpen(
   // synced before the intent is written, so a session the extension resumes already has access
   const sync = await syncAdditionalDirectories(combo, getStateDir(appRoot));
   if (sync.warning) warnings.push(sync.warning);
+  const hooks = await syncComboStatusHooks(appRoot, combo);
+  if (hooks.warning) warnings.push(hooks.warning);
   const ws = await writeWorkspaceFile(combo);
   warnings.push(...ws.warnings);
 
