@@ -1,6 +1,6 @@
 import { COMBO_RESERVED_NAMES, comboDirSlug, validateBranchName } from "@grove/core/pure";
 import { useEffect, useMemo, useState } from "react";
-import type { ComboDraft, FolderDraft, PathInfoView } from "../../shared/ipc.ts";
+import type { ComboDraft, FolderDraft, FrequentFolder, PathInfoView } from "../../shared/ipc.ts";
 import { useStore } from "../state/store.ts";
 import {
   Button,
@@ -249,6 +249,39 @@ function BranchOption({
   );
 }
 
+/** one click per folder, for the repos that keep coming back. the picker is still there for the rest. */
+function FrequentStrip({
+  folders,
+  onAdd,
+}: {
+  folders: FrequentFolder[];
+  onAdd: (path: string) => void;
+}) {
+  if (folders.length === 0) return null;
+  // two clones called "api" read as parent/api, so the chips are never ambiguous
+  const dupes = new Set(folders.map((f) => f.name).filter((n, i, all) => all.indexOf(n) !== i));
+  const label = (f: FrequentFolder) =>
+    dupes.has(f.name) ? `${baseName(f.path.slice(0, -f.name.length - 1))}/${f.name}` : f.name;
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5" data-testid="frequent-folders">
+      <span className="mr-0.5 text-meta text-fg-3">Frequent</span>
+      {folders.map((f) => (
+        <button
+          key={f.path}
+          type="button"
+          title={f.path}
+          onClick={() => onAdd(f.path)}
+          data-testid="frequent-folder"
+          className="fade flex h-6 items-center gap-1 rounded-md border border-line-strong px-2 font-mono text-meta text-fg-2 hover:bg-raised hover:text-fg"
+        >
+          <Icon name="plus" size={10} className="text-fg-4" />
+          {label(f)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ComboDialog() {
   const dialog = useStore((s) => s.dialog);
   const combos = useStore((s) => s.combos);
@@ -265,6 +298,7 @@ export function ComboDialog() {
   const [nameProblem, setNameProblem] = useState<string>();
   const [problems, setProblems] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [frequent, setFrequent] = useState<FrequentFolder[]>([]);
 
   const slug = comboDirSlug(name);
   const root = original?.root ?? (env ? `${env.appRoot}/${slug || "…"}` : "");
@@ -288,6 +322,11 @@ export function ComboDialog() {
     }));
     setCards(initial);
     for (const c of initial) void inspect(c.path);
+    setFrequent([]);
+    void window.grove
+      .frequentFolders()
+      .then(setFrequent)
+      .catch(() => {});
   }, [open]);
 
   useEffect(() => {
@@ -305,7 +344,10 @@ export function ComboDialog() {
   }
 
   async function addFolders() {
-    const picked = await window.grove.pickDirectories();
+    addPaths(await window.grove.pickDirectories());
+  }
+
+  function addPaths(picked: string[]) {
     const fresh = picked.filter((p) => !cards.some((c) => c.path === p));
     if (fresh.length === 0) return;
     setCards((cs) => [
@@ -420,6 +462,10 @@ export function ComboDialog() {
               <Icon name="plus" size={12} /> Add folder
             </Button>
           </div>
+          <FrequentStrip
+            folders={frequent.filter((f) => !cards.some((c) => c.path === f.path))}
+            onAdd={(p) => addPaths([p])}
+          />
           {cards.length === 0 ? (
             <p className="rounded-md border border-dashed border-line-strong px-4 py-6 text-center text-fg-3">
               Add the repos this task needs. Each one is either a reference you read or a working

@@ -28,6 +28,10 @@ Folders in a combo are one of:
 | working copy | a `git worktree` inside the combo folder. detached at HEAD by default, so two combos can hold the same repo | you will edit here |
 | reference | your real clone, added as a second workspace root and to `permissions.additionalDirectories` | context to read |
 
+The combo dialog lists the folders you use most as one-click chips: the repos your sessions ran in (a session started
+in a subfolder counts toward its repo), and folders already in other combos, ranked by how often and how recently.
+The file picker is still there for anything else.
+
 A working copy starts clean. Your uncommitted changes, dev servers and editor state stay in the original clone.
 
 ### What a session in a combo is told

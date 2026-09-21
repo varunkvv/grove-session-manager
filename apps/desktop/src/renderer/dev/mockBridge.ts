@@ -270,6 +270,12 @@ const bridge: Bridge = {
   }),
   validateDraft: async () => ({ problems: [] }),
   pickDirectories: async () => ["/Users/you/src/api", "/Users/you/src/logs"],
+  frequentFolders: async () =>
+    ["api", "web", "queue", "infra", "docs"].map((name, i) => ({
+      path: `/Users/you/src/${name}`,
+      name,
+      lastUsedMs: NOW - i * H,
+    })),
   inspectPath: async (path) => ({
     path,
     exists: true,

@@ -33,6 +33,7 @@ import type { Pusher } from "./push.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import type { EditorService } from "./services/editor.ts";
+import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
 import {
   claudeBinCandidates,
@@ -315,6 +316,30 @@ function buildHandlers(deps: Deps): Handlers {
       if (result.canceled) return [];
       lastPickedDir = path.dirname(result.filePaths[0] ?? env.home);
       return result.filePaths;
+    },
+
+    async frequentFolders() {
+      const rows = sessions.list();
+      const lastByCombo = new Map<string, number>();
+      for (const r of rows) {
+        if (r.comboName) {
+          lastByCombo.set(r.comboName, Math.max(lastByCombo.get(r.comboName) ?? 0, r.activityMs));
+        }
+      }
+      const weekAgo = Date.now() - 7 * 24 * 3_600_000;
+      return frequentFolders({
+        sessions: rows,
+        comboFolders: combos
+          .list()
+          .flatMap((c) =>
+            c.folders.map((f) => ({ path: f.path, atMs: lastByCombo.get(c.name) ?? weekAgo })),
+          ),
+        home: env.home,
+        appRoot: env.appRoot,
+        claudeDir: path.dirname(deps.projectsDir),
+        // a test root lives in a temp dir, with its repos next to it. nobody else sets one.
+        ...(env.customRoot ? { scratch: [] } : {}),
+      });
     },
 
     async inspectPath(target): Promise<PathInfoView> {

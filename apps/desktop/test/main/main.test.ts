@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Combo, ComboFolder, FolderOutcome, FolderStatus } from "@grove/core";
@@ -11,6 +11,7 @@ import { diffRows, PatchCoalescer } from "../../src/main/patchCoalescer.ts";
 import { Pusher } from "../../src/main/push.ts";
 import { parseDraft } from "../../src/main/services/draft.ts";
 import { compareVersions, findBundledCompanion } from "../../src/main/services/editor.ts";
+import { frequentFolders, isNoise, rankFolders } from "../../src/main/services/frequentFolders.ts";
 import {
   expireStatuses,
   RUNNING_STALE_MS,
@@ -443,5 +444,59 @@ describe("live status", () => {
     expect(expireStatuses(m, now)).toBe(true);
     expect([...m.keys()]).toEqual(["busy", "new"]);
     expect(expireStatuses(m, now)).toBe(false);
+  });
+});
+
+describe("frequent folders", () => {
+  const DAY = 24 * 3_600_000;
+
+  it("recent and repeated beats old and repeated, and a combo folder counts extra", () => {
+    const now = 100 * DAY;
+    const ranked = rankFolders(
+      [
+        { path: "/r/old", atMs: now - 60 * DAY },
+        { path: "/r/old", atMs: now - 61 * DAY },
+        { path: "/r/old", atMs: now - 62 * DAY },
+        { path: "/r/fresh", atMs: now - DAY },
+        { path: "/r/fresh", atMs: now - 2 * DAY },
+        { path: "/r/once", atMs: now - DAY },
+        { path: "/r/combo", atMs: now - 3 * DAY, weight: 3 },
+      ],
+      now,
+    );
+    expect(ranked.map((r) => r.path)).toEqual(["/r/combo", "/r/fresh", "/r/once", "/r/old"]);
+  });
+
+  it("sessions count toward their repo, not the subfolder, and scratch space is left out", async () => {
+    const home = sandbox();
+    const repo = path.join(home, "src", "api");
+    mkdirSync(path.join(repo, ".git"), { recursive: true });
+    mkdirSync(path.join(repo, "services", "billing"), { recursive: true });
+    const plain = path.join(home, "notes");
+    mkdirSync(plain);
+    const appRoot = path.join(home, "claude-ws");
+    mkdirSync(path.join(appRoot, "combo", "api"), { recursive: true });
+    const now = Date.now();
+    const folders = await frequentFolders({
+      home,
+      appRoot,
+      claudeDir: path.join(home, ".claude"),
+      // the sandbox itself lives in a temp dir, so only the fake scratch dir counts as one
+      scratch: ["/private/tmp"],
+      now,
+      sessions: [
+        { cwd: path.join(repo, "services", "billing"), activityMs: now },
+        { cwd: repo, activityMs: now - 1000 },
+        { cwd: plain, activityMs: now - 5000 },
+        { cwd: path.join(appRoot, "combo", "api"), activityMs: now, comboName: "combo" },
+        { cwd: "/private/tmp/scratch", activityMs: now },
+        { cwd: home, activityMs: now },
+        { cwd: path.join(home, "gone"), activityMs: now },
+      ],
+      comboFolders: [],
+    });
+    expect(folders.map((f) => f.path)).toEqual([repo, plain]);
+    expect(folders[0]?.name).toBe("api");
+    expect(isNoise(path.join(appRoot, "x"), { home, appRoot, claudeDir: "/c" })).toBe(true);
   });
 });

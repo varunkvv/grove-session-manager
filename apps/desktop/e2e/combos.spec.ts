@@ -312,3 +312,43 @@ test("where long work runs is a switch, and flipping it rewrites what a running 
   await expect.poll(policy).toContain("to the `long-task`");
   expect(saved()).toBe("background");
 });
+
+test("folders people keep using are one click away in the combo dialog", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const api = makeRepo(fx, "api");
+  const web = makeRepo(fx, "web");
+  mkdirSync(path.join(api, "services", "billing"), { recursive: true });
+  // a session started in a subfolder still counts toward its repo
+  writeSession(fx, {
+    cwd: path.join(api, "services", "billing"),
+    sessionId: "aaaaaaaa-0000-4000-8000-00000000000a",
+    title: "billing",
+    ageMs: 60_000,
+  });
+  writeSession(fx, {
+    cwd: api,
+    sessionId: "aaaaaaaa-0000-4000-8000-00000000000b",
+    title: "api",
+    ageMs: 120_000,
+  });
+  writeSession(fx, {
+    cwd: web,
+    sessionId: "aaaaaaaa-0000-4000-8000-00000000000c",
+    title: "web",
+    ageMs: 3_600_000,
+  });
+
+  app = await launchApp(fx);
+  const { page } = app;
+  await waitFor(async () => (await page.getByTestId("session-row").count()) === 3);
+  await page.getByTestId("new-combo").click();
+  const chips = page.getByTestId("frequent-folder");
+  await expect(chips).toHaveText(["api", "web"]);
+
+  await chips.first().click();
+  await expect(page.getByTestId("folder-card")).toHaveCount(1);
+  await page.screenshot({ path: path.join(import.meta.dirname, "screenshots", "16-frequent.png") });
+  await expect(page.getByTestId("folder-card")).toContainText("api");
+  // an added folder leaves the strip
+  await expect(chips).toHaveText(["web"]);
+});

@@ -46,6 +46,13 @@ export interface SessionRow {
   live?: LiveStatus;
 }
 
+/** a folder people keep coming back to: repos their sessions ran in, and folders already in combos */
+export interface FrequentFolder {
+  path: string;
+  name: string;
+  lastUsedMs: number;
+}
+
 /** a row the instant filter could not find, found in its conversation instead */
 export interface SearchHit {
   key: SessionKey;
@@ -204,6 +211,8 @@ export interface Api {
   ): Promise<{ slug: string; root: string; problem?: string }>;
   validateDraft(draft: ComboDraft, self?: string): Promise<{ problems: string[] }>;
   pickDirectories(): Promise<string[]>;
+  /** most used first. one click adds one to a combo, no file picker. */
+  frequentFolders(): Promise<FrequentFolder[]>;
   inspectPath(path: string): Promise<PathInfoView>;
   createCombo(draft: ComboDraft): Promise<Outcome<{ name: string }>>;
   updateCombo(name: string, draft: ComboDraft): Promise<Outcome<{ name: string }>>;
@@ -247,6 +256,7 @@ export const INVOKE_CHANNELS = [
   "validateComboName",
   "validateDraft",
   "pickDirectories",
+  "frequentFolders",
   "inspectPath",
   "createCombo",
   "updateCombo",
