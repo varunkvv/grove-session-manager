@@ -22,8 +22,16 @@ function repo(dir: string): string {
   return dir;
 }
 
+/**
+ * the working tree only. git tidies its own directory in the background after a commit (a lock
+ * or temp file can be there one moment and gone the next), and none of that is our doing. that
+ * we never run git is asserted separately, with a git binary that does not exist.
+ */
 function listTree(dir: string): string[] {
-  return readdirSync(dir, { recursive: true }).map(String).sort();
+  return readdirSync(dir, { recursive: true })
+    .map(String)
+    .filter((f) => f !== ".git" && !f.startsWith(`.git${path.sep}`))
+    .sort();
 }
 
 describe("startup", () => {
