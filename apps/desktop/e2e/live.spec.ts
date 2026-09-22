@@ -1,5 +1,6 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { claudeProjectSlug } from "@grove/core";
 import { expect, test } from "@playwright/test";
 import { type Fixture, makeFixture, makePlainDir, writeSession } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
@@ -29,6 +30,74 @@ function hookEvent(sessionId: string, event: string, extra: Record<string, unkno
   );
   renameSync(`${file}.tmp`, `${file}.json`);
 }
+
+/** what a subagent leaves behind: its own transcript, and the meta its parent wrote when it started */
+function writeSubagent(
+  cwd: string,
+  sessionId: string,
+  id: string,
+  meta: Record<string, unknown>,
+  tool: string,
+) {
+  const dir = path.join(fx.projectsDir, claudeProjectSlug(cwd), sessionId, "subagents");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, `agent-${id}.meta.json`),
+    JSON.stringify({ spawnDepth: 1, requestShape: "foreground", ...meta }),
+  );
+  writeFileSync(
+    path.join(dir, `agent-${id}.jsonl`),
+    `${JSON.stringify({
+      type: "assistant",
+      agentId: `agent-${id}`,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "toolu_1", name: tool, input: { pattern: "needle" } }],
+      },
+    })}\n`,
+  );
+}
+
+test("a live session says what is running inside it", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const queue = makePlainDir(fx, "queue");
+  writeSession(fx, { cwd: queue, sessionId: SID.a, title: "Fanning out", ageMs: 10_000 });
+
+  app = await launchApp(fx);
+  const { page } = app;
+  const rows = page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 1);
+  await expect(rows.first().getByTestId("row-agents")).toHaveCount(0);
+
+  // only a live session is looked at, so it has to be running before its agents count
+  hookEvent(SID.a, "UserPromptSubmit", { prompt: "survey the repo" });
+  await expect(rows.first().getByTestId("live-badge")).toHaveAttribute("data-state", "running");
+
+  writeSubagent(
+    queue,
+    SID.a,
+    "f00d",
+    { agentType: "Explore", description: "Survey the repo" },
+    "Grep",
+  );
+  hookEvent(SID.a, "SubagentStart", { agent_id: "f00d", agent_type: "Explore" });
+
+  const chip = rows.first().getByTestId("row-agents");
+  await expect(chip).toContainText("1 agent");
+  await expect(chip).toContainText("Explore");
+  // the row has one line, so what each agent was asked and what it last picked up sit in the tooltip
+  await expect(chip).toHaveAttribute("title", /Explore: Survey the repo/);
+  await expect(chip).toHaveAttribute("title", /last tool: Grep/);
+  await page.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "17-agents.png"),
+  });
+
+  // the session's turn ending does not end its agents: a background one outlives it
+  hookEvent(SID.a, "Stop", { last_assistant_message: "kicked off the survey" });
+  await expect(rows.first().getByTestId("live-badge")).toHaveText("Your turn");
+  await expect(chip).toContainText("1 agent");
+});
 
 test("a session asking for permission comes first, and leaves once someone looked", async () => {
   fx = makeFixture({ withCompanion: true });
