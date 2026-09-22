@@ -20,6 +20,7 @@ export * from "./sessions/fulltext.ts";
 export * from "./sessions/indexer.ts";
 export * from "./sessions/liveStatus.ts";
 export * from "./sessions/membership.ts";
+export * from "./sessions/registry.ts";
 export * from "./sessions/scan.ts";
 export * from "./sessions/usage.ts";
 export * from "./sessions/watch.ts";

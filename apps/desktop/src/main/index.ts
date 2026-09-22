@@ -5,6 +5,7 @@ import {
   loadSettings,
   needsYou,
   type Settings,
+  sessionsRegistryDir,
 } from "@grove/core";
 import type { BrowserWindow } from "electron";
 import * as electron from "electron";
@@ -82,6 +83,7 @@ async function start(): Promise<void> {
   const live = new LiveService({
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
+    registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
     onChange: (statuses) => {
       sessions.setLive(statuses);
       const count = [...statuses.values()].filter((s) => needsYou(s)).length;

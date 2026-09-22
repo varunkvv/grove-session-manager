@@ -445,6 +445,23 @@ describe("live status", () => {
     expect([...m.keys()]).toEqual(["busy", "new"]);
     expect(expireStatuses(m, now)).toBe(false);
   });
+
+  it("a registry state has no shelf life: it lasts exactly as long as the process", () => {
+    const now = 10 * WAITING_EXPIRY_MS;
+    const m = new Map([
+      [
+        "live",
+        {
+          state: "running" as const,
+          at: 0,
+          lastEventAt: now - RUNNING_STALE_MS - 1,
+          source: "registry" as const,
+        },
+      ],
+    ]);
+    expect(expireStatuses(m, now)).toBe(false);
+    expect([...m.keys()]).toEqual(["live"]);
+  });
 });
 
 describe("frequent folders", () => {

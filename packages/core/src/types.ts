@@ -191,4 +191,6 @@ export interface LiveStatus {
   detail?: string;
   /** someone already looked. a new event clears it. */
   seen?: boolean;
+  /** the live session registry guessed this, no hook did. re-derived on every pass, never stored. */
+  source?: "registry";
 }

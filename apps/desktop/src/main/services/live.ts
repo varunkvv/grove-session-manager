@@ -1,12 +1,14 @@
-import { type FSWatcher, watch } from "node:fs";
+import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
+  applyRegistry,
   drainStatusEvents,
   isObject,
   type LiveStatus,
   needsYou,
   readJsonGuarded,
+  readRegistry,
   reduceStatus,
   statusEventsDir,
   syncStatusHooks,
@@ -16,6 +18,8 @@ import { log } from "../log.ts";
 
 const POLL_MS = 10_000;
 const PERSIST_DEBOUNCE_MS = 1000;
+/** the registry dir appears the first time a session starts. wait for it, never make it. */
+const REGISTRY_RETRY_MS = 30_000;
 /** a session that went quiet this long while "running" has probably been closed without a goodbye */
 export const RUNNING_STALE_MS = 45 * 60_000;
 /** nobody is coming back to a "your turn" from last week */
@@ -25,6 +29,8 @@ export interface LiveServiceOptions {
   stateDir: string;
   /** Claude Code's user settings file. only touched when tracking every session is switched on. */
   claudeSettingsFile: string;
+  /** `<claudeConfigDir>/sessions`, where every live process keeps a file. read-only. */
+  registryDir: string;
   onChange: (statuses: ReadonlyMap<string, LiveStatus>) => void;
   /** a session just started needing someone */
   onNeedsYou: (sessionId: string, status: LiveStatus) => void;
@@ -35,6 +41,8 @@ export interface LiveServiceOptions {
 export function expireStatuses(statuses: Map<string, LiveStatus>, now: number): boolean {
   let changed = false;
   for (const [id, s] of statuses) {
+    // a registry entry is a live process, not a guess with a shelf life. it goes when the pid does.
+    if (s.source === "registry") continue;
     const stale =
       s.state === "running"
         ? now - s.lastEventAt > RUNNING_STALE_MS
@@ -57,10 +65,13 @@ export class LiveService {
   private readonly stateFile: string;
   private statuses = new Map<string, LiveStatus>();
   private watcher: FSWatcher | null = null;
+  private registryWatcher: FSWatcher | null = null;
+  private registryRetry: NodeJS.Timeout | null = null;
   private poll: NodeJS.Timeout | null = null;
   private persistTimer: NodeJS.Timeout | null = null;
   private draining: Promise<void> | null = null;
   private again = false;
+  private disposed = false;
 
   constructor(opts: LiveServiceOptions) {
     this.opts = opts;
@@ -76,7 +87,8 @@ export class LiveService {
     const read = await readJsonGuarded<Record<string, LiveStatus>>(this.stateFile);
     if (read.status === "ok" && isObject(read.value)) {
       for (const [id, s] of Object.entries(read.value)) {
-        if (isObject(s) && typeof s.state === "string" && typeof s.at === "number") {
+        // a registry state is only true while the process is up. it is re-derived, never restored.
+        if (isObject(s) && typeof s.state === "string" && typeof s.at === "number" && !s.source) {
           this.statuses.set(id, s as LiveStatus);
         }
       }
@@ -85,6 +97,8 @@ export class LiveService {
     await mkdir(this.eventsDir, { recursive: true }).catch(() => {});
     // events that arrived while the app was closed: they update state but do not notify
     await this.drain(false);
+    // before the first paint, so a session that died while the app was closed never shows as running
+    await this.syncRegistry();
     this.opts.onChange(this.statuses);
     try {
       this.watcher = watch(this.eventsDir, () => void this.drain(true));
@@ -92,12 +106,41 @@ export class LiveService {
     } catch (e) {
       log.warn("status watch:", e);
     }
+    this.watchRegistry();
     // FSEvents can coalesce or drop. the poll also ages out stale states.
     this.poll = setInterval(() => {
       if (expireStatuses(this.statuses, this.now())) this.changed();
       void this.drain(true);
+      void this.syncRegistry();
     }, POLL_MS);
     this.poll.unref?.();
+  }
+
+  /** the live processes, folded in under the hook state. see applyRegistry for who wins. */
+  private async syncRegistry(): Promise<void> {
+    const entries = await readRegistry(this.opts.registryDir).catch(() => []);
+    if (applyRegistry(this.statuses, entries, this.now())) this.changed();
+  }
+
+  /** never creates the directory: nothing of ours goes inside Claude Code's config dir. */
+  private watchRegistry(): void {
+    if (this.disposed || this.registryWatcher) return;
+    this.registryRetry = null;
+    if (!existsSync(this.opts.registryDir)) {
+      this.registryRetry = setTimeout(() => this.watchRegistry(), REGISTRY_RETRY_MS);
+      this.registryRetry.unref?.();
+      return;
+    }
+    try {
+      this.registryWatcher = watch(this.opts.registryDir, () => void this.syncRegistry());
+      this.registryWatcher.on("error", (e) => {
+        log.warn("session registry watch:", e);
+        this.registryWatcher?.close();
+        this.registryWatcher = null;
+      });
+    } catch (e) {
+      log.warn("session registry watch:", e);
+    }
   }
 
   list(): ReadonlyMap<string, LiveStatus> {
@@ -161,27 +204,33 @@ export class LiveService {
     }
   }
 
+  /** only what a restart should believe. a registry state is re-read from the live processes. */
+  private persistable(): string {
+    return JSON.stringify(Object.fromEntries([...this.statuses].filter(([, s]) => !s.source)));
+  }
+
   private changed(): void {
     this.opts.onChange(this.statuses);
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
-      void writeFileAtomic(this.stateFile, JSON.stringify(Object.fromEntries(this.statuses))).catch(
-        (e) => log.warn("status write:", e),
+      void writeFileAtomic(this.stateFile, this.persistable()).catch((e) =>
+        log.warn("status write:", e),
       );
     }, PERSIST_DEBOUNCE_MS);
     this.persistTimer.unref?.();
   }
 
   dispose(): void {
+    this.disposed = true;
     this.watcher?.close();
+    this.registryWatcher?.close();
+    if (this.registryRetry) clearTimeout(this.registryRetry);
     if (this.poll) clearInterval(this.poll);
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
-      void writeFileAtomic(this.stateFile, JSON.stringify(Object.fromEntries(this.statuses))).catch(
-        () => {},
-      );
+      void writeFileAtomic(this.stateFile, this.persistable()).catch(() => {});
     }
   }
 }
