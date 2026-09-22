@@ -6,6 +6,8 @@ import { isTranscriptFile } from "./scan.ts";
 export interface WatchHandlers {
   /** a transcript (or its custom-title sidecar) was created, appended to, or deleted */
   onTranscript(file: string): void;
+  /** a subagent of that transcript's session wrote something. never a new session. */
+  onSubagents?(file: string): void;
   /** something we cannot attribute to one file happened. do a stat-only refresh. */
   onRescan(): void;
   onError?(error: unknown): void;
@@ -19,14 +21,19 @@ export interface WatchOptions {
 /** maps a path relative to the projects dir onto the transcript it concerns, if any */
 export function classifyWatchPath(
   rel: string,
-): { kind: "transcript"; rel: string } | { kind: "dir" } | null {
+): { kind: "transcript" | "subagent"; rel: string } | { kind: "dir" } | null {
   const parts = rel.split(path.sep).filter(Boolean);
   if (parts.length === 1) return { kind: "dir" };
   if (parts.length === 2 && isTranscriptFile(parts[1]!)) return { kind: "transcript", rel };
   if (parts.length === 3 && parts[2] === "custom-title.json") {
     return { kind: "transcript", rel: path.join(parts[0]!, `${parts[1]}.jsonl`) };
   }
-  // subagents, tool results, memory: constant churn under the same tree, never a session row
+  // a subagent file (workflows nest one level further) only ever says something about the session
+  // that owns it, so it maps back to that transcript and can never make or rename a row
+  if (parts.length > 3 && parts[2] === "subagents") {
+    return { kind: "subagent", rel: path.join(parts[0]!, `${parts[1]}.jsonl`) };
+  }
+  // tool results, memory: constant churn under the same tree, never a session row
   return null;
 }
 
@@ -59,20 +66,21 @@ export function watchProjects(
     }, firstDelay);
   };
 
-  const schedule = (file: string) => {
-    if (pending.has(file)) return;
+  /** throttled per key, so a session's transcript and its subagents never share a slot */
+  const schedule = (key: string, fire: () => void) => {
+    if (pending.has(key)) return;
     const now = Date.now();
-    const since = now - (lastFire.get(file) ?? 0);
+    const since = now - (lastFire.get(key) ?? 0);
     const delay = Math.max(firstDelay, minInterval - since);
     pending.set(
-      file,
+      key,
       setTimeout(() => {
-        pending.delete(file);
-        lastFire.set(file, Date.now());
+        pending.delete(key);
+        lastFire.set(key, Date.now());
         if (lastFire.size > 512) {
           for (const [p, t] of lastFire) if (Date.now() - t > minInterval * 4) lastFire.delete(p);
         }
-        handlers.onTranscript(file);
+        fire();
       }, delay),
     );
   };
@@ -90,7 +98,14 @@ export function watchProjects(
         const hit = classifyWatchPath(filename.toString());
         if (!hit) return;
         if (hit.kind === "dir") return scheduleRescan();
-        schedule(path.join(projectsDir, hit.rel));
+        const file = path.join(projectsDir, hit.rel);
+        if (hit.kind === "subagent") {
+          const onSubagents = handlers.onSubagents;
+          // these are appended constantly - without a listener they stay dropped, as before
+          if (onSubagents) schedule(`subagents\0${file}`, () => onSubagents(file));
+          return;
+        }
+        schedule(file, () => handlers.onTranscript(file));
       });
       watcher.on("error", (e) => {
         handlers.onError?.(e);

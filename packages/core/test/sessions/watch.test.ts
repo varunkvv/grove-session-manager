@@ -15,10 +15,27 @@ describe("classifyWatchPath", () => {
       rel: `-ws-prod/${SID.a}.jsonl`,
     });
     expect(classifyWatchPath("-ws-prod")).toEqual({ kind: "dir" });
-    expect(classifyWatchPath(`-ws-prod/${SID.a}/subagents/agent-1.jsonl`)).toBeNull();
     expect(classifyWatchPath(`-ws-prod/${SID.a}/tool-results/x.txt`)).toBeNull();
     expect(classifyWatchPath("-ws-prod/memory/MEMORY.md")).toBeNull();
     expect(classifyWatchPath(`-ws-prod/${SID.a}.orphaned-1-x.jsonl`)).toBeNull();
+  });
+
+  it("a subagent file points back at its session and never makes one of its own", () => {
+    const owner = `-ws-prod/${SID.a}.jsonl`;
+    expect(classifyWatchPath(`-ws-prod/${SID.a}/subagents/agent-1.jsonl`)).toEqual({
+      kind: "subagent",
+      rel: owner,
+    });
+    expect(classifyWatchPath(`-ws-prod/${SID.a}/subagents/agent-1.meta.json`)).toEqual({
+      kind: "subagent",
+      rel: owner,
+    });
+    // workflows nest one level further, and their journal comes back the same way
+    expect(classifyWatchPath(`-ws-prod/${SID.a}/subagents/workflows/wf_a1/agent-2.jsonl`)).toEqual({
+      kind: "subagent",
+      rel: owner,
+    });
+    expect(classifyWatchPath(`-ws-prod/${SID.a}/subagents`)).toBeNull();
   });
 });
 
@@ -52,6 +69,40 @@ describe("watchProjects", () => {
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen.length).toBeLessThanOrEqual(4);
     expect(new Set(seen)).toEqual(new Set([file]));
+    w.dispose();
+  });
+
+  it("subagent churn reaches its own handler, throttled, and never the transcript one", async () => {
+    const projects = makeSandbox("grove-watch-");
+    const transcripts: string[] = [];
+    const subagents: string[] = [];
+    const w = watchProjects(
+      projects,
+      {
+        onTranscript: (f) => transcripts.push(f),
+        onSubagents: (f) => subagents.push(f),
+        onRescan: () => {},
+      },
+      { firstDelayMs: 50, minIntervalMs: 200 },
+    );
+    await new Promise((r) => setTimeout(r, 150));
+
+    const file = writeTranscript(projects, "/Users/you/ws/fan-out", SID.a, [userEntry("go")]);
+    const dir = path.join(path.dirname(file), SID.a, "subagents");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "agent-1.meta.json"), '{"agentType":"Explore"}\n');
+    await new Promise((r) => setTimeout(r, 400));
+    // the transcript and its subagents are throttled apart, so neither starves the other
+    for (let i = 0; i < 5; i++) {
+      appendFileSync(path.join(dir, "agent-1.jsonl"), "{}\n");
+      appendFileSync(file, "{}\n");
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    expect(new Set(subagents)).toEqual(new Set([file]));
+    expect(subagents.length).toBeGreaterThanOrEqual(1);
+    expect(subagents.length).toBeLessThanOrEqual(4);
+    expect(transcripts.length).toBeGreaterThanOrEqual(1);
     w.dispose();
   });
 

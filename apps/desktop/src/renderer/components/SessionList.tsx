@@ -2,6 +2,7 @@ import { formatRelativeTime, highlightRanges, type LiveStatus } from "@grove/cor
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, type ReactNode, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
+import { agentsChip, agentsTooltip } from "../logic/agents.ts";
 import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
 import { cx, Icon, Mono } from "./ui.tsx";
@@ -130,6 +131,16 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           )}
         </span>
         <span className="flex shrink-0 items-baseline gap-2.5">
+          {/* quiet: agents fanning out is the session working, not the session asking for anything */}
+          {row.agents && row.agents.length > 0 && (
+            <span
+              data-testid="row-agents"
+              className="max-w-64 truncate text-fg-3"
+              title={agentsTooltip(row.agents)}
+            >
+              {agentsChip(row.agents, p.now)}
+            </span>
+          )}
           {row.usage && row.usage.length > 0 && (
             <Mono className="max-w-56 truncate text-fg-4" title={usageTooltip(row.usage)}>
               <span data-testid="row-usage">

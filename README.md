@@ -68,12 +68,27 @@ Running sessions show a quiet "Running".
 
 The transcript cannot tell "running a tool" from "waiting on a permission prompt", so this comes from Claude Code
 hooks. Every combo's `.claude/settings.local.json` gets a few async hooks (`UserPromptSubmit`, `PermissionRequest`,
-`PostToolUse`, `Notification`, `Stop`, `StopFailure`, `SessionEnd`) that drop the hook's input into
-`~/claude-ws/.grove/events/`. Claude Code watches its settings files, so sessions that are already running pick the
-hooks up too. Sessions outside combos report only if you switch on **Track sessions outside combos** in Settings, which
-adds the same hooks to Claude Code's own `settings.json`; switching it off takes them out again.
+`PostToolUse`, `Notification`, `Stop`, `StopFailure`, `SessionEnd`, `SubagentStart`, `SubagentStop`) that drop the
+hook's input into `~/claude-ws/.grove/events/`. Claude Code watches its settings files, so sessions that are already
+running pick the hooks up too. Sessions outside combos report only if you switch on **Track sessions outside combos**
+in Settings, which adds the same hooks to Claude Code's own `settings.json`; switching it off takes them out again.
+
+Hooks only cover the sessions that have them. Every live Claude Code process also keeps a file in
+`~/.claude/sessions/<pid>.json`, which the app reads (never writes) to fill in sessions no hook covers and to retire a
+"Running" whose process is gone. Anything a hook said wins: a permission prompt is something only a hook can see.
 
 Landing on a session, or **Mark as seen** in its action menu, takes it out of the list until its next event.
+
+### What is running inside a session
+
+A session grinding away alone and a session with five agents fanned out look the same from the outside. Live rows show
+their subagents - how many, and for the running ones what kind and how long they have been at it. The detail is in the
+row's tooltip: what each agent was asked to do, and the last tool it picked up.
+
+It comes from `~/.claude/projects/<slug>/<sessionId>/subagents/`, where each agent writes its own transcript next to an
+`agent-<id>.meta.json` holding the label its parent gave it. Nothing there records when an agent ended, so the exact
+times come from the `SubagentStart` / `SubagentStop` hooks, and an agent that started before the app was watching falls
+back to a guess: quiet for two minutes counts as finished. Only live sessions are scanned.
 
 ### Search reaches the whole conversation
 

@@ -6,6 +6,7 @@ import {
   drainStatusEvents,
   EVENT_MAX_BYTES,
   needsYou,
+  reduceAgentRuns,
   reduceStatus,
   type StatusEvent,
   statusHookCommand,
@@ -57,6 +58,55 @@ describe("session status from hook events", () => {
       { event: "PostToolUse", at: 5 },
     ]);
     expect(woke.s).toMatchObject({ state: "running", turnStart: 5 });
+  });
+
+  it("a subagent starting or stopping never moves the session's own state", () => {
+    const { s, trail } = run([
+      { event: "UserPromptSubmit", at: 1_000 },
+      { event: "SubagentStart", at: 2_000, agentId: "agent-1", agentType: "Explore" },
+      { event: "Stop", at: 3_000, message: "kicked off the survey" },
+      // the agent outlives the turn, and its closing words are its own, not the session's
+      {
+        event: "SubagentStop",
+        at: 60_000,
+        agentId: "agent-1",
+        agentType: "Explore",
+        message: "found 12 call sites",
+      },
+    ]);
+    expect(trail).toEqual(["running", "running", "waiting", "waiting"]);
+    expect(s).toMatchObject({
+      state: "waiting",
+      detail: "kicked off the survey",
+      lastEventAt: 60_000,
+    });
+  });
+
+  it("the agent lifecycle is kept beside the session, and goes with it", () => {
+    const ev = (event: string, at: number, extra: Partial<StatusEvent> = {}): StatusEvent => ({
+      sessionId: SID,
+      event,
+      at,
+      ...extra,
+    });
+    let runs = reduceAgentRuns(undefined, ev("SubagentStart", 10, { agentId: "a1" }));
+    runs = reduceAgentRuns(
+      runs,
+      ev("SubagentStart", 20, { agentId: "a2", agentType: "long-task" }),
+    );
+    // every tool call inside an agent carries its id too, and says nothing about its lifecycle
+    runs = reduceAgentRuns(runs, ev("PostToolUse", 25, { agentId: "a1", toolName: "Read" }));
+    runs = reduceAgentRuns(runs, ev("SubagentStop", 30, { agentId: "a1" }));
+    expect(runs).toEqual({
+      a1: { startedAt: 10, stoppedAt: 30 },
+      a2: { startedAt: 20, agentType: "long-task" },
+    });
+    // a stop with no start is all we know about an agent that began before the app was watching
+    expect(reduceAgentRuns(undefined, ev("SubagentStop", 5, { agentId: "a9" }))).toEqual({
+      a9: { stoppedAt: 5 },
+    });
+    expect(reduceAgentRuns(runs, ev("SessionEnd", 40))).toBeUndefined();
+    expect(reduceAgentRuns(runs, ev("Stop", 40))).toBe(runs);
   });
 
   it("an API error, the end of a session, and seen", () => {

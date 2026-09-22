@@ -9,9 +9,12 @@ import type {
   LiveStatus,
   LongWorkMode,
   ModelUsage,
+  SessionAgent,
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
+
+export type { SessionAgent };
 
 export type Outcome<T = void> =
   | { ok: true; value: T }
@@ -44,6 +47,8 @@ export interface SessionRow {
   usage?: ModelUsage[];
   /** what the session is doing right now, when its hooks report to us */
   live?: LiveStatus;
+  /** its subagents, running ones first. only live sessions are scanned for these. */
+  agents?: SessionAgent[];
 }
 
 /** a folder people keep coming back to: repos their sessions ran in, and folders already in combos */

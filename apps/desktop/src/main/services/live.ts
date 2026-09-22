@@ -2,6 +2,7 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
+  type AgentRun,
   applyRegistry,
   drainStatusEvents,
   isObject,
@@ -9,6 +10,7 @@ import {
   needsYou,
   readJsonGuarded,
   readRegistry,
+  reduceAgentRuns,
   reduceStatus,
   statusEventsDir,
   syncStatusHooks,
@@ -31,7 +33,10 @@ export interface LiveServiceOptions {
   claudeSettingsFile: string;
   /** `<claudeConfigDir>/sessions`, where every live process keeps a file. read-only. */
   registryDir: string;
-  onChange: (statuses: ReadonlyMap<string, LiveStatus>) => void;
+  onChange: (
+    statuses: ReadonlyMap<string, LiveStatus>,
+    agentRuns: ReadonlyMap<string, Readonly<Record<string, AgentRun>>>,
+  ) => void;
   /** a session just started needing someone */
   onNeedsYou: (sessionId: string, status: LiveStatus) => void;
   now?: () => number;
@@ -64,6 +69,8 @@ export class LiveService {
   private readonly eventsDir: string;
   private readonly stateFile: string;
   private statuses = new Map<string, LiveStatus>();
+  /** by session id: what the subagent hooks said about each of its agents. never persisted. */
+  private runs = new Map<string, Record<string, AgentRun>>();
   private watcher: FSWatcher | null = null;
   private registryWatcher: FSWatcher | null = null;
   private registryRetry: NodeJS.Timeout | null = null;
@@ -99,7 +106,7 @@ export class LiveService {
     await this.drain(false);
     // before the first paint, so a session that died while the app was closed never shows as running
     await this.syncRegistry();
-    this.opts.onChange(this.statuses);
+    this.opts.onChange(this.statuses, this.runs);
     try {
       this.watcher = watch(this.eventsDir, () => void this.drain(true));
       this.watcher.on("error", (e) => log.warn("status watch:", e));
@@ -145,6 +152,11 @@ export class LiveService {
 
   list(): ReadonlyMap<string, LiveStatus> {
     return this.statuses;
+  }
+
+  /** the subagent starts and stops the hooks reported, by session id */
+  agentRuns(): ReadonlyMap<string, Readonly<Record<string, AgentRun>>> {
+    return this.runs;
   }
 
   markSeen(sessionIds: Iterable<string>): void {
@@ -193,6 +205,9 @@ export class LiveService {
       const next = reduceStatus(this.statuses.get(ev.sessionId), ev);
       if (next) this.statuses.set(ev.sessionId, next);
       else this.statuses.delete(ev.sessionId);
+      const runs = reduceAgentRuns(this.runs.get(ev.sessionId), ev);
+      if (runs) this.runs.set(ev.sessionId, runs);
+      else this.runs.delete(ev.sessionId);
     }
     expireStatuses(this.statuses, this.now());
     this.changed();
@@ -210,7 +225,7 @@ export class LiveService {
   }
 
   private changed(): void {
-    this.opts.onChange(this.statuses);
+    this.opts.onChange(this.statuses, this.runs);
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;

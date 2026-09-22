@@ -4,7 +4,7 @@ import { settingsLocalPath } from "../combos/settingsSync.ts";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "../fsx.ts";
 import { getStateDir } from "../paths.ts";
 import { squash } from "../transcript/title.ts";
-import type { Combo, LiveState, LiveStatus, Warning } from "../types.ts";
+import type { AgentRun, Combo, LiveState, LiveStatus, Warning } from "../types.ts";
 
 /**
  * which sessions need a person right now. a transcript cannot say it: "running a tool" and
@@ -19,6 +19,9 @@ export const STATUS_HOOK_EVENTS = [
   "Stop",
   "StopFailure",
   "SessionEnd",
+  // the only exact times a subagent's life has. nothing on disk records when one ended.
+  "SubagentStart",
+  "SubagentStop",
 ] as const;
 
 const MARKER = "# grove-status";
@@ -141,6 +144,7 @@ export interface StatusEvent {
   toolName?: string;
   /** set when a subagent raised the event, not the session itself */
   agentId?: string;
+  agentType?: string;
 }
 
 /**
@@ -155,6 +159,7 @@ export function parseTruncatedEvent(text: string): Record<string, string> {
     "tool_name",
     "notification_type",
     "agent_id",
+    "agent_type",
   ]) {
     const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,200})"`).exec(text);
     if (m?.[1]) out[key] = m[1];
@@ -174,10 +179,12 @@ export function parseStatusEvent(payload: unknown, at: number): StatusEvent | nu
   const message = str(payload.message) ?? str(payload.last_assistant_message);
   const toolName = str(payload.tool_name);
   const agentId = str(payload.agent_id);
+  const agentType = str(payload.agent_type);
   if (notificationType) ev.notificationType = notificationType;
   if (message) ev.message = message;
   if (toolName) ev.toolName = toolName;
   if (agentId) ev.agentId = agentId;
+  if (agentType) ev.agentType = agentType;
   return ev;
 }
 
@@ -242,9 +249,46 @@ export function reduceStatus(
       return next(undefined, ev, "failed", ev.message ? { detail: ev.message } : {});
     case "SessionEnd":
       return undefined;
+    // a subagent starting or finishing is not the session starting or finishing. SubagentStop even
+    // carries the agent's closing message, which must never read as the session's own.
+    case "SubagentStart":
+    case "SubagentStop":
+      return touched;
     default:
       return touched;
   }
+}
+
+/** a session keeps this many agent ids. a long one spawns plenty; the newest are what anyone reads. */
+const MAX_AGENT_RUNS = 64;
+
+/**
+ * the subagent lifecycle, kept beside the session's own state rather than inside it - reduceStatus
+ * treats these events as heartbeats on purpose. undefined means the session is gone.
+ *
+ * every agent id here is taken on trust: Claude Code runs internal agents for /btw and prompt
+ * suggestions that raise the same events, and only a meta file on disk tells them apart.
+ */
+export function reduceAgentRuns(
+  prev: Readonly<Record<string, AgentRun>> | undefined,
+  ev: StatusEvent,
+): Record<string, AgentRun> | undefined {
+  if (ev.event === "SessionEnd") return undefined;
+  if (!ev.agentId) return prev;
+  if (ev.event !== "SubagentStart" && ev.event !== "SubagentStop") return prev;
+  const run: AgentRun = { ...prev?.[ev.agentId] };
+  if (ev.event === "SubagentStart") run.startedAt = ev.at;
+  else run.stoppedAt = ev.at;
+  if (ev.agentType) run.agentType = ev.agentType;
+  const out: Record<string, AgentRun> = { ...prev, [ev.agentId]: run };
+  const ids = Object.keys(out);
+  if (ids.length > MAX_AGENT_RUNS) {
+    const at = (id: string) => out[id]?.startedAt ?? out[id]?.stoppedAt ?? 0;
+    for (const id of ids.sort((a, b) => at(a) - at(b)).slice(0, ids.length - MAX_AGENT_RUNS)) {
+      delete out[id];
+    }
+  }
+  return out;
 }
 
 /**

@@ -1,14 +1,18 @@
 import path from "node:path";
 import {
+  type AgentRun,
+  type AgentSnapshot,
   assignCombos,
   type Combo,
   createSessionIndex,
   type Disposable,
+  EMPTY_AGENT_SNAPSHOT,
   type LiveStatus,
   projectDirLabel,
   type SessionIndex,
   type SessionRecord,
   type SessionView,
+  scanSessionAgents,
   textSnippet,
   tokenize,
   watchProjects,
@@ -49,6 +53,7 @@ function toRow(
   record: SessionRecord & { comboName?: string },
   labels: ReadonlyMap<string, string>,
   live: ReadonlyMap<string, LiveStatus>,
+  agents: ReadonlyMap<SessionKey, AgentSnapshot>,
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -79,6 +84,8 @@ function toRow(
   if (record.usage) row.usage = record.usage;
   const status = live.get(record.sessionId);
   if (status) row.live = status;
+  const found = agents.get(record.path);
+  if (found && found.agents.length > 0) row.agents = found.agents;
   return row;
 }
 
@@ -94,6 +101,10 @@ export class SessionService {
   private rows = new Map<SessionKey, SessionRow>();
   private combos: Combo[] = [];
   private live: ReadonlyMap<string, LiveStatus> = new Map();
+  private runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map();
+  /** the subagents of the live sessions only, by transcript path */
+  private agents = new Map<SessionKey, AgentSnapshot>();
+  private scanning = new Set<SessionKey>();
   private watcher: Disposable | null = null;
   private periodic: NodeJS.Timeout | null = null;
   private flushTimer: NodeJS.Timeout | null = null;
@@ -134,6 +145,7 @@ export class SessionService {
   start(): void {
     this.watcher = watchProjects(this.opts.projectsDir, {
       onTranscript: (file) => void this.refreshFile(file),
+      onSubagents: (file) => void this.refreshAgents(file),
       onRescan: () => void this.refresh(),
       onError: (e) => log.warn("session watch:", e),
     });
@@ -169,6 +181,10 @@ export class SessionService {
     try {
       const stats = await this.index.refresh({ onBatch: () => this.rebuild() });
       this.rebuild();
+      // fs.watch coalesces and drops, so the periodic pass and window focus re-read them too
+      for (const row of this.rows.values()) {
+        if (this.live.has(row.sessionId)) void this.refreshAgents(row.key);
+      }
       this.opts.emitStatus({
         phase: this.index.health() === "degraded" ? "degraded" : "idle",
         done: stats.files - stats.unparsed,
@@ -203,9 +219,61 @@ export class SessionService {
   }
 
   /** hook-reported status, by session id. a session resumed in two places shows on both rows. */
-  setLive(live: ReadonlyMap<string, LiveStatus>): void {
+  setLive(
+    live: ReadonlyMap<string, LiveStatus>,
+    runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map(),
+  ): void {
+    const wasRuns = this.runs;
     this.live = new Map(live);
+    this.runs = new Map(runs);
     this.rebuild();
+    for (const row of this.rows.values()) {
+      if (!this.live.has(row.sessionId)) {
+        // a session that is no longer live has nothing running inside it
+        if (this.agents.delete(row.key)) this.rebuild();
+        continue;
+      }
+      // a first look, or a subagent hook moved. the watcher covers everything else.
+      const moved = this.runs.get(row.sessionId) !== wasRuns.get(row.sessionId);
+      if (moved || !this.agents.has(row.key)) void this.refreshAgents(row.key);
+    }
+  }
+
+  /**
+   * the subagents of one live session. only live sessions are scanned - every session on the
+   * machine would mean opening a `subagents/` dir per row on every startup, for rows nobody is
+   * watching. the watcher, the live status and the periodic rescan all land here.
+   */
+  private async refreshAgents(key: SessionKey): Promise<void> {
+    if (this.disposed || this.scanning.has(key)) return;
+    const row = this.rows.get(key);
+    if (!row) return;
+    const status = this.live.get(row.sessionId);
+    if (!status) {
+      if (this.agents.delete(key)) this.rebuild();
+      return;
+    }
+    this.scanning.add(key);
+    try {
+      const prev = this.agents.get(key) ?? EMPTY_AGENT_SNAPSHOT;
+      const runs = this.runs.get(row.sessionId);
+      const snapshot = await scanSessionAgents(key, {
+        sessionLive: true,
+        prev,
+        ...(runs ? { runs } : {}),
+      });
+      if (this.disposed) return;
+      if (snapshot.agents.length === 0 && prev.agents.length === 0) {
+        this.agents.set(key, snapshot);
+        return;
+      }
+      this.agents.set(key, snapshot);
+      this.rebuild();
+    } catch (e) {
+      log.warn("subagent scan of", key, e);
+    } finally {
+      this.scanning.delete(key);
+    }
   }
 
   byId(sessionId: string): SessionRow[] {
@@ -253,7 +321,7 @@ export class SessionService {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
-    const next = views.map((v) => toRow(v, labels, this.live));
+    const next = views.map((v) => toRow(v, labels, this.live, this.agents));
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;
     this.rows = new Map(next.map((row) => [row.key, row]));

@@ -178,6 +178,37 @@ export interface Disposable {
 /** what a live session is doing, from its hooks. "waiting" means its turn ended and it is your move. */
 export type LiveState = "running" | "permission" | "waiting" | "failed";
 
+/** exact times for one subagent, from the SubagentStart / SubagentStop hooks */
+export interface AgentRun {
+  agentType?: string;
+  startedAt?: number;
+  stoppedAt?: number;
+}
+
+/**
+ * one subagent of a session, as far as anything on disk can say. there is no progress signal in
+ * Claude Code - no percentage, no step count - so this is what it did last and when.
+ */
+export interface SessionAgent {
+  /** the `<id>` of `subagents/agent-<id>.jsonl` */
+  id: string;
+  agentType: string;
+  /** the label the parent gave it when it spawned it. the best single thing to show. */
+  description?: string;
+  /** "foreground" | "background". a background agent outlives the turn that started it. */
+  requestShape?: string;
+  spawnDepth?: number;
+  startedAt: number;
+  /** the agent transcript's mtime */
+  lastActivityAt: number;
+  lastTool?: string;
+  lastToolAt?: number;
+  state: "running" | "done";
+  /** one line from a cheap model reading the agent's own transcript */
+  summary?: string;
+  summaryAt?: number;
+}
+
 export interface LiveStatus {
   state: LiveState;
   /** when it entered this state */

@@ -57,3 +57,33 @@ export async function readHeadTail(
     await fh.close();
   }
 }
+
+export interface Tail {
+  /** complete lines from the end. "" when no line boundary falls inside the window. */
+  text: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/**
+ * the end of a file, whole lines only. same cut-before-decode discipline as readHeadTail, for
+ * files nobody needs the start of: a subagent transcript says what it is doing now.
+ */
+export async function readTail(file: string, maxBytes: number): Promise<Tail> {
+  const fh = await open(file, constants.O_RDONLY);
+  try {
+    const st = await fh.stat();
+    const size = st.size;
+    const want = Math.min(maxBytes, size);
+    const start = size - want;
+    const buf = Buffer.alloc(want);
+    const { bytesRead } = await fh.read(buf, 0, want, start);
+    const view = buf.subarray(0, bytesRead);
+    // a window that opens mid-line: drop to the first boundary. one 40KB tool result can fill it.
+    const from = start > 0 ? view.indexOf(NL) + 1 : 0;
+    const text = start === 0 || from > 0 ? view.subarray(from).toString("utf8") : "";
+    return { text, size, mtimeMs: st.mtimeMs };
+  } finally {
+    await fh.close();
+  }
+}
