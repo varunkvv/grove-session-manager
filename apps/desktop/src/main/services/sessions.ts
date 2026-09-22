@@ -33,6 +33,8 @@ export interface SessionServiceOptions {
   maxParsed?: number;
   emitPatch: (patch: { upserts: SessionRow[]; removes: SessionKey[]; replace: boolean }) => void;
   emitStatus: (status: IndexStatus) => void;
+  /** a fresh look at one live session's subagents, for whoever wants to say more about them */
+  onAgents?: (key: SessionKey, snapshot: AgentSnapshot) => void;
 }
 
 function basename(p: string | undefined): string | undefined {
@@ -263,17 +265,27 @@ export class SessionService {
         ...(runs ? { runs } : {}),
       });
       if (this.disposed) return;
-      if (snapshot.agents.length === 0 && prev.agents.length === 0) {
-        this.agents.set(key, snapshot);
-        return;
-      }
+      const wasEmpty = snapshot.agents.length === 0 && prev.agents.length === 0;
       this.agents.set(key, snapshot);
-      this.rebuild();
+      this.opts.onAgents?.(key, snapshot);
+      if (!wasEmpty) this.rebuild();
     } catch (e) {
       log.warn("subagent scan of", key, e);
     } finally {
       this.scanning.delete(key);
     }
+  }
+
+  /** one agent's summary. dropped when the agent finished while the model was still thinking. */
+  applySummary(key: SessionKey, agentId: string, summary: string, at: number): void {
+    const snapshot = this.agents.get(key);
+    const agent = snapshot?.agents.find((a) => a.id === agentId);
+    if (!snapshot || !agent || agent.state !== "running") return;
+    this.agents.set(key, {
+      ...snapshot,
+      agents: snapshot.agents.map((a) => (a.id === agentId ? { ...a, summary, summaryAt: at } : a)),
+    });
+    this.rebuild();
   }
 
   byId(sessionId: string): SessionRow[] {

@@ -18,9 +18,11 @@ import { OpQueue } from "./opQueue.ts";
 import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer } from "./protocol.ts";
 import { Pusher } from "./push.ts";
+import { AgentSummaries } from "./services/agentSummaries.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
+import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { SessionService } from "./services/sessions.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
@@ -70,6 +72,7 @@ async function start(): Promise<void> {
     path.join(packageDir, "..", "..", "extension", "dist"),
   ]);
 
+  let summaries: AgentSummaries | null = null;
   const sessions = new SessionService({
     projectsDir,
     cacheDir: appEnv.stateDir,
@@ -77,6 +80,15 @@ async function start(): Promise<void> {
     emitPatch: (patch) =>
       pusher.send("sessions:patch", { rev: pusher.nextRev("sessions"), ...patch }),
     emitStatus: (status) => pusher.send("sessions:index", status),
+    onAgents: (key, snapshot) => summaries?.note(key, snapshot),
+  });
+  summaries = new AgentSummaries({
+    stateDir: appEnv.stateDir,
+    claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
+    // a test root never spends anyone's Claude auth
+    enabled: () => settings.agentSummaries !== false && !appEnv.customRoot,
+    visible: () => !!win && win.isVisible() && !win.isMinimized(),
+    onSummary: (key, id, summary, at) => sessions.applySummary(key, id, summary, at),
   });
 
   let handlers: AppHandlers | null = null;
@@ -199,6 +211,11 @@ async function start(): Promise<void> {
     sessions.refreshThrottled();
     combos.reconcileOnFocus();
   });
+  // nothing is summarised while the window is hidden, so coming back has to ask for it
+  const wake = () => summaries?.wake();
+  win.on("show", wake);
+  win.on("restore", wake);
+  win.on("focus", wake);
   // the page follows the media query on its own. this is only the frame behind it.
   electron.nativeTheme.on("updated", () => {
     win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors));
@@ -215,6 +232,7 @@ async function start(): Promise<void> {
   electron.app.on("before-quit", () => {
     combos.dispose();
     live.dispose();
+    summaries?.dispose();
     void sessions.dispose();
   });
 }

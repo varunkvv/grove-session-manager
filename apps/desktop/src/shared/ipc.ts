@@ -142,6 +142,8 @@ export interface AppSettings {
   trackAllSessions?: boolean;
   /** a macOS notification when a session starts needing you. on unless switched off. */
   notifications?: boolean;
+  /** one line per running subagent, written by a cheap model. on unless switched off. */
+  agentSummaries?: boolean;
 }
 
 export interface IndexStatus {

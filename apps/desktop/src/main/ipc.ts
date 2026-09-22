@@ -36,9 +36,9 @@ import type { EditorService } from "./services/editor.ts";
 import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
 import {
-  claudeBinCandidates,
   isResumeScriptName,
   RESUME_SCRIPT_MAX_AGE_MS,
+  resolveClaudeBin,
   resumeScriptBody,
   resumeScriptPath,
 } from "./services/resumeScript.ts";
@@ -129,21 +129,8 @@ async function sweepResumeScripts(stateDir: string): Promise<void> {
   }
 }
 
-async function isFile(p: string): Promise<boolean> {
-  try {
-    return (await stat(p)).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** Terminal runs a .command file without the person's shell setup, so an absolute path matters */
-async function resolveClaudeBin(deps: Deps): Promise<string> {
-  const configured = deps.env.claudeBinOverride ?? deps.settings().claudePath;
-  for (const candidate of claudeBinCandidates(deps.env.home, configured)) {
-    if (await isFile(candidate)) return candidate;
-  }
-  return "claude";
+function claudeBin(deps: Deps): Promise<string> {
+  return resolveClaudeBin(deps.env.home, deps.env.claudeBinOverride ?? deps.settings().claudePath);
 }
 
 function buildHandlers(deps: Deps): Handlers {
@@ -267,7 +254,7 @@ function buildHandlers(deps: Deps): Handlers {
             resumeScriptBody({
               sessionId: row.sessionId,
               cwd: (await isDirectory(folder)) ? folder : undefined,
-              claudeBin: await resolveClaudeBin(deps),
+              claudeBin: await claudeBin(deps),
             }),
           );
           await chmod(file, 0o755);
@@ -279,7 +266,7 @@ function buildHandlers(deps: Deps): Handlers {
         case "copy-command": {
           const cwd = (await isDirectory(folder)) ? folder : undefined;
           electron.clipboard.writeText(
-            buildResumeCommand(row.sessionId, cwd, await resolveClaudeBin(deps)),
+            buildResumeCommand(row.sessionId, cwd, await claudeBin(deps)),
           );
           return { message: "Resume command copied" };
         }

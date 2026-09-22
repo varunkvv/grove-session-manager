@@ -1,4 +1,5 @@
 // the .command file Terminal runs for "Resume in Terminal". pure: the caller does the fs work.
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { isValidSessionId, shellQuote } from "@grove/core/pure";
 
@@ -25,6 +26,21 @@ export function claudeBinCandidates(home: string, configured?: string): string[]
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
   ];
+}
+
+/**
+ * the first candidate that is a file, else a bare `claude` and the PATH's luck. Terminal runs a
+ * .command file without the person's shell setup, and a GUI app has no shell env at all.
+ */
+export async function resolveClaudeBin(home: string, configured?: string): Promise<string> {
+  for (const candidate of claudeBinCandidates(home, configured)) {
+    try {
+      if ((await stat(candidate)).isFile()) return candidate;
+    } catch {
+      // not there
+    }
+  }
+  return "claude";
 }
 
 /**

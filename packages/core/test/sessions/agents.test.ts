@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_IDLE_DONE_MS,
+  agentDigest,
   lastToolFromTail,
   parseAgentMeta,
   scanSessionAgents,
@@ -161,7 +162,31 @@ describe("a session's subagents", () => {
     const agent = second.agents.find((a) => a.id === ID.workflow);
     expect(agent).toMatchObject({ summary: "running the test suite", summaryAt: NOW });
     expect(agent?.lastTool).toBe("Bash");
-    expect(second.reads[ID.workflow]).toBe(first.reads[ID.workflow]);
+    expect(second.reads[ID.workflow]).toEqual(first.reads[ID.workflow]);
+    // the file is where the summariser reads from, and a workflow agent's is not next to the rest
+    expect(second.reads[ID.workflow]?.file).toContain(`workflows${path.sep}wf_`);
+  });
+
+  it("the digest is what it called and what it last said, and nothing else", () => {
+    const tail = [
+      '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"long ramble"}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/queue/retry.ts","limit":80}}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"400 lines of file"}]}}',
+      '{"type":"attachment","attachment":{"type":"pad","text":"noise"}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"pnpm  test\\n  retry"}}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"the backoff never resets"}]}}',
+    ].join("\n");
+    expect(agentDigest(tail)).toBe(
+      ["Read: src/queue/retry.ts", "Bash: pnpm test retry", "said: the backoff never resets"].join(
+        "\n",
+      ),
+    );
+    // the end is what matters: an over-long digest loses its oldest lines
+    expect(agentDigest(tail, 40)).toBe("said: the backoff never resets");
+    expect(agentDigest("")).toBe("");
+    expect(agentDigest('{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}')).toBe(
+      "",
+    );
   });
 
   it("a session with no subagents directory is not an error", async () => {

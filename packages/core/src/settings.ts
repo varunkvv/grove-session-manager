@@ -19,6 +19,8 @@ export interface Settings {
   trackAllSessions?: boolean;
   /** a notification when a session starts needing you. on unless false. */
   notifications?: boolean;
+  /** one haiku-written line per running subagent. spends the person's own Claude auth. on unless false. */
+  agentSummaries?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -44,7 +46,7 @@ function clean(raw: unknown): Settings {
     const v = raw[key];
     if (typeof v === "string" && v.trim()) s[key] = v.trim();
   }
-  for (const key of ["trackAllSessions", "notifications"] as const) {
+  for (const key of ["trackAllSessions", "notifications", "agentSummaries"] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
   }
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {

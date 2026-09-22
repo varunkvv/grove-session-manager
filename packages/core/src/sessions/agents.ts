@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { isObject, mapLimit, readJsonGuarded } from "../fsx.ts";
 import { readTail } from "../transcript/reader.ts";
+import { squash } from "../transcript/title.ts";
 import type { AgentRun, SessionAgent } from "../types.ts";
 
 /** enough of an agent's transcript to say what it is doing. it is also what the summariser reads. */
@@ -72,10 +73,76 @@ export function lastToolFromTail(text: string): { name: string; at?: number } | 
   return null;
 }
 
+/** the keys a tool's input says the most in, most specific first */
+const INPUT_HINTS = [
+  "file_path",
+  "notebook_path",
+  "command",
+  "pattern",
+  "url",
+  "query",
+  "description",
+  "prompt",
+  "path",
+] as const;
+
+function hint(input: unknown): string {
+  if (!isObject(input)) return "";
+  for (const key of INPUT_HINTS) {
+    const v = input[key];
+    if (typeof v === "string" && v) return squash(v, 120);
+  }
+  return "";
+}
+
+/**
+ * the tail of an agent's transcript as a handful of lines: the tools it called and what it last
+ * said. this is what goes to the summariser - raw json would be most of the bytes and none of the
+ * meaning, and it is worth reading on its own when no summary comes back.
+ */
+export function agentDigest(tail: string, maxChars = 2000): string {
+  const lines: string[] = [];
+  for (const line of tail.split("\n")) {
+    if (line.charCodeAt(0) !== 0x7b) continue;
+    if (!line.includes('"tool_use"') && !line.includes('"text"')) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isObject(entry) || entry.type !== "assistant" || !isObject(entry.message)) continue;
+    const content = entry.message.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (!isObject(block)) continue;
+      if (block.type === "tool_use" && typeof block.name === "string") {
+        const arg = hint(block.input);
+        lines.push(arg ? `${block.name}: ${arg}` : block.name);
+      } else if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+        lines.push(`said: ${squash(block.text, 300)}`);
+      }
+    }
+  }
+  // the end is what matters, so an over-long digest loses its oldest lines
+  let out = lines.join("\n");
+  while (out.length > maxChars && lines.length > 1) {
+    lines.shift();
+    out = lines.join("\n");
+  }
+  return out.slice(-maxChars);
+}
+
+export interface AgentRead {
+  /** the agent's own transcript. workflow agents nest, so this is not derivable from the id. */
+  file: string;
+  /** its mtime and size when the tail was last read. an unchanged file is not read again. */
+  mark: string;
+}
+
 export interface AgentSnapshot {
   agents: SessionAgent[];
-  /** agent id -> the jsonl mtime and size its tail was read at, so an idle file is read once */
-  reads: Record<string, string>;
+  reads: Record<string, AgentRead>;
 }
 
 export interface AgentScanOptions {
@@ -148,7 +215,7 @@ export async function scanSessionAgents(
     if (meta.spawnDepth !== undefined) agent.spawnDepth = meta.spawnDepth;
 
     const mark = info ? `${info.mtimeMs}:${info.size}` : "";
-    const unchanged = !!mark && opts.prev?.reads[id] === mark;
+    const unchanged = !!mark && opts.prev?.reads[id]?.mark === mark;
     if (unchanged && was?.lastTool) {
       agent.lastTool = was.lastTool;
       if (was.lastToolAt !== undefined) agent.lastToolAt = was.lastToolAt;
@@ -169,15 +236,15 @@ export async function scanSessionAgents(
     const finished =
       run?.stoppedAt !== undefined || !sessionLive || now - lastActivityAt > AGENT_IDLE_DONE_MS;
     if (finished) agent.state = "done";
-    return { agent, mark };
+    return { agent, mark, file };
   });
 
   const agents: SessionAgent[] = [];
-  const reads: Record<string, string> = {};
+  const reads: Record<string, AgentRead> = {};
   for (const hit of scanned) {
     if (!hit) continue;
     agents.push(hit.agent);
-    if (hit.mark) reads[hit.agent.id] = hit.mark;
+    if (hit.mark) reads[hit.agent.id] = { file: hit.file, mark: hit.mark };
   }
   // running first, newest first inside each group: the ones still going are what anyone looks at
   agents.sort(

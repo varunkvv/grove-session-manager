@@ -430,6 +430,24 @@ export function SettingsDialog() {
             own settings.json, which Grove otherwise never touches.
           </span>
         </div>
+        <div>
+          <span className="mb-1 block text-sm text-fg-2">Agents</span>
+          <div className="flex items-center gap-2 pt-1">
+            <span className="min-w-0 flex-1 text-sm text-fg-2">
+              Summarise what each running agent is doing
+            </span>
+            <Switch
+              checked={draft.agentSummaries !== false}
+              onChange={(v) => setDraft({ ...draft, agentSummaries: v })}
+              label="Agent summaries"
+              testId="setting-agent-summaries"
+            />
+          </div>
+          <span className="mt-1 block text-meta text-fg-3">
+            Reads the agent's own transcript with Claude Haiku, every 30s while the window is open.
+            It spends your Claude subscription, and never interrupts the session doing the work.
+          </span>
+        </div>
         {error && <p className="text-accent">{error}</p>}
       </div>
     </Modal>

@@ -90,6 +90,12 @@ It comes from `~/.claude/projects/<slug>/<sessionId>/subagents/`, where each age
 times come from the `SubagentStart` / `SubagentStop` hooks, and an agent that started before the app was watching falls
 back to a guess: quiet for two minutes counts as finished. Only live sessions are scanned.
 
+The tooltip also carries one line per running agent saying what it is actually doing, written by Claude Haiku reading
+the tail of that agent's own transcript - the session doing the work is never interrupted and never asked, because
+asking it would cost a whole turn on its full context. It runs every 30 seconds per agent, only while the window is
+open, only when the transcript has moved since the last one, two at a time. It spends your own Claude auth, so
+**Summarise what each running agent is doing** in Settings switches it off.
+
 ### Search reaches the whole conversation
 
 Typing filters titles and prompts instantly. A moment later the app also looks through everything that was said in
@@ -125,7 +131,9 @@ compaction) that are never written to the transcript.
 
 The app never writes inside `~/.claude` (the one exception is the opt-in status hooks above, and only in
 `settings.json`), never copies a transcript, never deletes a branch, and never runs
-`git worktree remove --force` unless you confirm it for one specific folder.
+`git worktree remove --force` unless you confirm it for one specific folder. The `claude -p` the agent summariser
+spawns is Claude Code keeping its own house: it holds a `sessions/<pid>.json` while it runs and removes it on the way
+out, and writes no transcript at all.
 
 Drift is normal: people run `git worktree remove` and `rm -rf` behind the app's back, and Claude Code expires transcripts.
 Folder states are `ok`, `reference`, `absent`, `stale`, `foreign` (left alone) and `missing-origin`.
