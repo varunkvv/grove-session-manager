@@ -198,6 +198,10 @@ export interface SessionAgent {
   /** "foreground" | "background". a background agent outlives the turn that started it. */
   requestShape?: string;
   spawnDepth?: number;
+  /** the Agent call that started it, in the session's transcript or in another agent's */
+  toolUseId?: string;
+  /** the workflow run it ran in: its directory under `subagents/workflows/` */
+  workflow?: string;
   startedAt: number;
   /** the agent transcript's mtime */
   lastActivityAt: number;

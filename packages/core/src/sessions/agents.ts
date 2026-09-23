@@ -4,6 +4,7 @@ import { isObject, mapLimit, readJsonGuarded } from "../fsx.ts";
 import { readTail } from "../transcript/reader.ts";
 import { squash } from "../transcript/title.ts";
 import type { AgentRun, SessionAgent } from "../types.ts";
+import { inputHint } from "./timeline.ts";
 
 /** enough of an agent's transcript to say what it is doing. it is also what the summariser reads. */
 export const AGENT_TAIL_BYTES = 16_384;
@@ -27,6 +28,7 @@ export interface AgentMeta {
   description?: string;
   requestShape?: string;
   spawnDepth?: number;
+  toolUseId?: string;
 }
 
 /**
@@ -39,8 +41,10 @@ export function parseAgentMeta(value: unknown): AgentMeta | null {
   const meta: AgentMeta = { agentType: str(value.agentType) ?? "agent" };
   const description = str(value.description);
   const requestShape = str(value.requestShape);
+  const toolUseId = str(value.toolUseId);
   if (description) meta.description = description;
   if (requestShape) meta.requestShape = requestShape;
+  if (toolUseId) meta.toolUseId = toolUseId;
   if (typeof value.spawnDepth === "number" && Number.isFinite(value.spawnDepth)) {
     meta.spawnDepth = value.spawnDepth;
   }
@@ -73,28 +77,6 @@ export function lastToolFromTail(text: string): { name: string; at?: number } | 
   return null;
 }
 
-/** the keys a tool's input says the most in, most specific first */
-const INPUT_HINTS = [
-  "file_path",
-  "notebook_path",
-  "command",
-  "pattern",
-  "url",
-  "query",
-  "description",
-  "prompt",
-  "path",
-] as const;
-
-function hint(input: unknown): string {
-  if (!isObject(input)) return "";
-  for (const key of INPUT_HINTS) {
-    const v = input[key];
-    if (typeof v === "string" && v) return squash(v, 120);
-  }
-  return "";
-}
-
 /**
  * the tail of an agent's transcript as a handful of lines: the tools it called and what it last
  * said. this is what goes to the summariser - raw json would be most of the bytes and none of the
@@ -117,7 +99,7 @@ export function agentDigest(tail: string, maxChars = 2000): string {
     for (const block of content) {
       if (!isObject(block)) continue;
       if (block.type === "tool_use" && typeof block.name === "string") {
-        const arg = hint(block.input);
+        const arg = inputHint(block.input);
         lines.push(arg ? `${block.name}: ${arg}` : block.name);
       } else if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
         lines.push(`said: ${squash(block.text, 300)}`);
@@ -213,6 +195,10 @@ export async function scanSessionAgents(
     if (meta.description) agent.description = meta.description;
     if (meta.requestShape) agent.requestShape = meta.requestShape;
     if (meta.spawnDepth !== undefined) agent.spawnDepth = meta.spawnDepth;
+    if (meta.toolUseId) agent.toolUseId = meta.toolUseId;
+    // workflows/<run>/agent-<id>.jsonl
+    const parts = rel.split(path.sep);
+    if (parts.length === 3 && parts[0] === "workflows") agent.workflow = parts[1];
 
     const mark = info ? `${info.mtimeMs}:${info.size}` : "";
     const unchanged = !!mark && opts.prev?.reads[id]?.mark === mark;

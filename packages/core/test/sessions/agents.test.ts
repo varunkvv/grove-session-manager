@@ -67,6 +67,8 @@ describe("a session's subagents", () => {
       description: "Survey the queue service",
       spawnDepth: 1,
       requestShape: "foreground",
+      // what an Agent step in another transcript links to
+      toolUseId: "toolu_01",
     });
     // a workflow agent's meta has no description at all
     expect(parseAgentMeta({ agentType: "workflow-subagent", spawnDepth: 1 })).toEqual({
@@ -110,7 +112,13 @@ describe("a session's subagents", () => {
     expect(agents.find((a) => a.id === ID.workflow)).toMatchObject({
       agentType: "workflow-subagent",
       state: "running",
+      // the run's directory, which is how its workflow gets a name
+      workflow: "wf_ax1b2c3d4-999",
     });
+    expect(agents.find((a) => a.id === ID.explore)?.toolUseId).toBe(
+      "toolu_01AAAAAAAAAAAAAAAAAAAAAA",
+    );
+    expect(agents.find((a) => a.id === ID.explore)?.workflow).toBeUndefined();
     expect(agents.find((a) => a.id === ID.workflow)?.description).toBeUndefined();
     // journal.jsonl sits beside the workflow agent and is not one
     expect(agents.some((a) => a.id.includes("journal"))).toBe(false);

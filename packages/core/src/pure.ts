@@ -3,6 +3,7 @@ export * from "./combos/folders.ts";
 export * from "./git/branch.ts";
 export * from "./sessions/resume.ts";
 export * from "./sessions/search.ts";
+export * from "./sessions/timeline.ts";
 export * from "./slug.ts";
 export * from "./time.ts";
 export { pickTitle, squash } from "./transcript/title.ts";
