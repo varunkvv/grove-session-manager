@@ -47,6 +47,15 @@ export async function runAction(key: SessionKey, action: SessionActionId): Promi
   focusSearch(false);
 }
 
+/** the decision goes to ~/claude-ws/archived.json, which can refuse - so this reports. */
+export async function archiveSessions(keys: SessionKey[], archived: boolean): Promise<void> {
+  if (keys.length === 0) return;
+  report(
+    archived ? "Could not archive" : "Could not unarchive",
+    await api().archiveSessions(keys, archived),
+  );
+}
+
 export async function openMenu(key: SessionKey): Promise<void> {
   const actions = await api().sessionActions(key);
   const first = Math.max(

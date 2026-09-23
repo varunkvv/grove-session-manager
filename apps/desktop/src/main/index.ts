@@ -19,6 +19,7 @@ import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer } from "./protocol.ts";
 import { Pusher } from "./push.ts";
 import { AgentSummaries } from "./services/agentSummaries.ts";
+import { ArchiveService } from "./services/archive.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
@@ -81,6 +82,10 @@ async function start(): Promise<void> {
       pusher.send("sessions:patch", { rev: pusher.nextRev("sessions"), ...patch }),
     emitStatus: (status) => pusher.send("sessions:index", status),
     onAgents: (key, snapshot) => summaries?.note(key, snapshot),
+  });
+  const archive = new ArchiveService({
+    appRoot: appEnv.appRoot,
+    onChange: (ids) => sessions.setArchived(ids),
   });
   summaries = new AgentSummaries({
     stateDir: appEnv.stateDir,
@@ -155,6 +160,7 @@ async function start(): Promise<void> {
   denyAllPermissions();
 
   await combos.load();
+  await archive.load();
   await sessions.loadCached(combos.list());
 
   handlers = registerIpc({
@@ -176,6 +182,7 @@ async function start(): Promise<void> {
     sessions,
     live,
     combos,
+    archive,
     editor,
     pusher,
     window: () => win,

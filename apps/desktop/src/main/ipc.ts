@@ -30,6 +30,7 @@ import { AppError, toOutcomeError } from "./errors.ts";
 import { log } from "./log.ts";
 import { isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
+import type { ArchiveService } from "./services/archive.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import type { EditorService } from "./services/editor.ts";
@@ -53,6 +54,7 @@ export interface Deps {
   sessions: SessionService;
   live: LiveService;
   combos: ComboService;
+  archive: ArchiveService;
   editor: EditorService;
   pusher: Pusher;
   window: () => BrowserWindow | null;
@@ -69,6 +71,7 @@ type Handlers = {
 
 const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "rescan",
+  "archiveSessions",
   "runSessionAction",
   "createCombo",
   "updateCombo",
@@ -129,6 +132,15 @@ async function sweepResumeScripts(stateDir: string): Promise<void> {
   }
 }
 
+/** rows are keyed by transcript path, the archive by session id: one conversation, wherever it sits */
+function archiveByKey(deps: Deps, keys: SessionKey[], archived: boolean): Promise<void> {
+  const ids = keys.flatMap((k) => (typeof k === "string" ? [deps.sessions.get(k)?.sessionId] : []));
+  return deps.archive.set(
+    ids.filter((id): id is string => !!id),
+    archived,
+  );
+}
+
 function claudeBin(deps: Deps): Promise<string> {
   return resolveClaudeBin(deps.env.home, deps.env.claudeBinOverride ?? deps.settings().claudePath);
 }
@@ -158,7 +170,12 @@ function buildHandlers(deps: Deps): Handlers {
     },
 
     async rescan() {
-      await Promise.all([sessions.refresh(), combos.load(true).then(() => combos.reconcileAll())]);
+      await Promise.all([
+        sessions.refresh(),
+        // hand-editable, so a refresh is how an edit made outside the app lands
+        deps.archive.load(),
+        combos.load(true).then(() => combos.reconcileAll()),
+      ]);
     },
 
     async sessionActions(key) {
@@ -199,6 +216,23 @@ function buildHandlers(deps: Deps): Handlers {
           secondary: true,
         });
       }
+      actions.push(
+        row.archived
+          ? {
+              id: "unarchive",
+              label: "Unarchive",
+              keys: "\u2318\u21e7A",
+              enabled: true,
+              secondary: true,
+            }
+          : {
+              id: "archive",
+              label: "Archive",
+              keys: "\u2318\u21e7A",
+              enabled: true,
+              secondary: true,
+            },
+      );
       actions.push({ id: "copy-id", label: "Copy session ID", enabled: true, secondary: true });
       actions.push({
         id: "reveal",
@@ -222,6 +256,13 @@ function buildHandlers(deps: Deps): Handlers {
       deps.live.markSeen(ids.filter((id): id is string => !!id));
     },
 
+    async archiveSessions(keys, archived) {
+      if (!Array.isArray(keys) || typeof archived !== "boolean") {
+        throw new AppError("invalid", "Nothing to archive.");
+      }
+      await archiveByKey(deps, keys, archived);
+    },
+
     async runSessionAction(key, action) {
       const row = requireSession(deps, key);
       // landing on a session is looking at it
@@ -232,6 +273,10 @@ function buildHandlers(deps: Deps): Handlers {
       const folder = folderForSession(row);
       if (action === "mark-seen") {
         deps.live.markSeen([row.sessionId]);
+        return {};
+      }
+      if (action === "archive" || action === "unarchive") {
+        await archiveByKey(deps, [key], action === "archive");
         return {};
       }
       switch (action) {

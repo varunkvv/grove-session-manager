@@ -16,6 +16,7 @@ export * from "./intents.ts";
 export * from "./paths.ts";
 export * from "./pure.ts";
 export * from "./sessions/agents.ts";
+export * from "./sessions/archive.ts";
 export * from "./sessions/cache.ts";
 export * from "./sessions/fulltext.ts";
 export * from "./sessions/indexer.ts";

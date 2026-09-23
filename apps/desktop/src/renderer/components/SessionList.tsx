@@ -131,6 +131,12 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           )}
         </span>
         <span className="flex shrink-0 items-baseline gap-2.5">
+          {/* an archived row only shows under `is:archived` or in "Needs you" - say which it is */}
+          {row.archived && (
+            <span data-testid="row-archived" className="shrink-0 text-fg-4">
+              Archived
+            </span>
+          )}
           {/* quiet: agents fanning out is the session working, not the session asking for anything */}
           {row.agents && row.agents.length > 0 && (
             <span

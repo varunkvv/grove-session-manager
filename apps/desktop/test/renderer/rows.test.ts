@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildList, needsYouKeys, nextActiveKey } from "../../src/renderer/logic/rows.ts";
+import {
+  buildList,
+  needsYouKeys,
+  nextActiveKey,
+  splitQuery,
+} from "../../src/renderer/logic/rows.ts";
 import { usageChip, usageTooltip } from "../../src/renderer/logic/usage.ts";
 import type { SessionRow } from "../../src/shared/ipc.ts";
 
@@ -209,5 +214,66 @@ describe("sessions that need you", () => {
       secondaryIsMatch: true,
     });
     expect(deep.items.some((i) => i.type === "header" && i.label === "Needs you")).toBe(false);
+  });
+});
+
+describe("archived sessions", () => {
+  const live = (state: "permission" | "waiting", at: number) => ({ state, at, lastEventAt: at });
+  const rs: SessionRow[] = [
+    row("plain", { title: "Rate limiter backoff", activityMs: NOW - H }),
+    row("old", { title: "Old backoff experiment", archived: true, activityMs: NOW - 2 * H }),
+    row("noise", { title: "Nightly cron noise", archived: true, activityMs: NOW - 3 * H }),
+  ];
+  const list = (query: string, extra: SessionRow[] = []) =>
+    buildList([...rs, ...extra], { scope: "all", combo: null, query, now: NOW });
+
+  it("is out of the list and out of search, and says how many it left out", () => {
+    expect(list("").keys).toEqual(["plain"]);
+    expect(list("").archivedHidden).toBe(2);
+    // the count is about what this query would have matched, not the whole archive
+    expect(list("backoff").keys).toEqual(["plain"]);
+    expect(list("backoff").archivedHidden).toBe(1);
+    expect(list("cron").keys).toEqual([]);
+    expect(list("cron").archivedHidden).toBe(1);
+  });
+
+  it("`is:archived` shows the archive instead, and narrows it like any other search", () => {
+    expect(list("is:archived").keys).toEqual(["old", "noise"]);
+    expect(list("is:archived").archivedOnly).toBe(true);
+    expect(list("is:archived").archivedHidden).toBe(0);
+    expect(list("is:archived backoff").keys).toEqual(["old"]);
+    expect(list("backoff is:archived").keys).toEqual(["old"]);
+    expect(list("IS:ARCHIVED").keys).toEqual(["old", "noise"]);
+  });
+
+  it("an archived session that needs you is still in the inbox - archiving is not muting", () => {
+    const asking = row("asking", {
+      title: "Archived but asking",
+      archived: true,
+      activityMs: NOW - 4 * H,
+      live: live("permission", NOW),
+    });
+    const m = buildList([...rs, asking], { scope: "all", combo: null, query: "", now: NOW });
+    expect(m.items[0]).toMatchObject({ type: "header", label: "Needs you" });
+    expect(m.keys).toEqual(["asking", "plain"]);
+    // and it is not double-counted as hidden
+    expect(m.archivedHidden).toBe(2);
+    expect(needsYouKeys(m)).toEqual(["asking"]);
+  });
+
+  it("the mode is split out of the query, so the conversation search looks for the same words", () => {
+    expect(splitQuery("is:archived rate limiter")).toEqual({
+      text: "rate limiter",
+      tokens: ["rate", "limiter"],
+      archivedOnly: true,
+    });
+    expect(splitQuery("is:archived")).toMatchObject({ text: "", tokens: [] });
+    expect(splitQuery("rate limiter")).toMatchObject({
+      text: "rate limiter",
+      archivedOnly: false,
+    });
+    // only on its own. quoted, or glued to something else, it is an ordinary search
+    expect(splitQuery('"is:archived"')).toMatchObject({ archivedOnly: false });
+    expect(splitQuery("is:archivedx")).toMatchObject({ archivedOnly: false });
   });
 });

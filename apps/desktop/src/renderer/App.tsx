@@ -11,6 +11,7 @@ import { needsYouKeys } from "./logic/rows.ts";
 import {
   activate,
   activateDefault,
+  archiveSessions,
   focusSearch,
   openCombo,
   openMenu,
@@ -56,6 +57,11 @@ function perform(intent: Intent): void {
     case "mark-all-seen": {
       const seen = needsYouKeys(listRef.current);
       if (seen.length > 0) void window.grove.markSeen(seen);
+      break;
+    }
+    case "toggle-archive": {
+      const row = s.sessions.find((r) => r.key === s.activeKey);
+      if (row) void archiveSessions([row.key], !row.archived);
       break;
     }
     case "focus-search":

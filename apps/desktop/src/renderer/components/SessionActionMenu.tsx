@@ -14,6 +14,8 @@ const ICONS = {
   "copy-id": "copy",
   reveal: "reveal",
   "mark-seen": "check",
+  archive: "archive",
+  unarchive: "archive",
 } as const;
 
 const USAGE_COLUMNS = ["in", "out", "cache read", "cache write"] as const;

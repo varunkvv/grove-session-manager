@@ -107,6 +107,22 @@ matches join the list with the line that matched. Tool output and thinking are l
 and almost none of what people remember. The text is kept in `.grove/text/`, built by the same pass that counts
 tokens, and only the appended part of a transcript is read after the first time.
 
+### Archive
+
+A session you are done with but do not want deleted: **Archive** in its action menu, or `⌘⇧A`. It leaves the list and
+the search, and `is:archived` in the search box brings the archive back - on its own, or next to any other words.
+
+Nothing is hidden without saying so. When a search would have matched archived sessions, the line under the list says
+how many, beside the count of matches outside the current combo. Clicking it shows them.
+
+An archived session that needs you still appears under **Needs you**, still badges the dock and still sends its
+notification. Archiving is about noise, not muting: a permission prompt nobody sees is worse than a row nobody wanted.
+
+The decision lives in `~/claude-ws/archived.json`, keyed by session id rather than by transcript path - a path moves
+when Claude Code relocates a transcript, and one conversation can sit in more than one project dir. It is a decision
+and not a cache, so it sits beside `combos.json`, is hand-editable, and entries the app does not understand are left
+alone when it writes. This is Grove's own archive. The Claude Code panel has one too, and the two are unrelated.
+
 ### Tokens per model
 
 Every row shows what the session spent, per model (the two biggest on the row, all of them in the action menu), subagents
@@ -129,6 +145,7 @@ Every shortcut carries a modifier.
 | `⌘K` | the active row's actions |
 | `⌘D` | mark the active row as seen |
 | `⌘⇧D` | mark everything under **Needs you** as seen |
+| `⌘⇧A` | archive the active session, or bring it back |
 | `⌘⇧C` | copy its resume command |
 | `⌘F` / `/` | search |
 | `Esc` | close what is open, then clear the query |
@@ -142,6 +159,7 @@ The action menu shows the key next to the action that does the same thing.
 ```
 ~/claude-ws/
   combos.json                   source of truth. hand-editable. unknown keys and formatting are preserved
+  archived.json                 sessions you put away, by session id. hand-editable, same treatment
   settings.json                 optional: editor, binary paths
   .grove/                       cache only - safe to delete. events/ is where session status hooks write
   <combo>/
@@ -216,7 +234,8 @@ to one.
 ## Things people will report as bugs
 
 - **a session disappeared** - Claude Code deletes transcripts after 30 days (`cleanupPeriodDays`). the VS Code panel also
-  archives sessions after 14 days idle (`claudeCode.archiveInactiveSessions`). archived ones still show here
+  archives sessions after 14 days idle (`claudeCode.archiveInactiveSessions`). those still show here - only the ones
+  you archived yourself are hidden, and `is:archived` brings them back
 - **"2d ago" does not match the file's date** - rows sort by the last message, not the file's mtime. Claude Code appends
   title records to old transcripts long after the conversation ended
 - **the app does not open from a download** - it is ad-hoc signed. `xattr -dr com.apple.quarantine "Grove.app"`

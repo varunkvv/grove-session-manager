@@ -49,6 +49,8 @@ export interface SessionRow {
   live?: LiveStatus;
   /** its subagents, running ones first. only live sessions are scanned for these. */
   agents?: SessionAgent[];
+  /** put away on purpose: out of the list and out of search unless it is asking for someone */
+  archived?: boolean;
 }
 
 /** a folder people keep coming back to: repos their sessions ran in, and folders already in combos */
@@ -179,7 +181,9 @@ export type SessionActionId =
   | "copy-command"
   | "copy-id"
   | "reveal"
-  | "mark-seen";
+  | "mark-seen"
+  | "archive"
+  | "unarchive";
 
 export interface SessionAction {
   id: SessionActionId;
@@ -209,6 +213,8 @@ export interface Api {
   searchSessions(query: string): Promise<{ query: string; hits: SearchHit[] }>;
   /** takes sessions out of "needs you" until their next event */
   markSeen(keys: SessionKey[]): Promise<void>;
+  /** puts sessions away, or brings them back. writes the decision to ~/claude-ws/archived.json. */
+  archiveSessions(keys: SessionKey[], archived: boolean): Promise<Outcome>;
   runSessionAction(
     key: SessionKey,
     action: SessionActionId,
@@ -261,6 +267,7 @@ export const INVOKE_CHANNELS = [
   "sessionActions",
   "searchSessions",
   "markSeen",
+  "archiveSessions",
   "runSessionAction",
   "validateComboName",
   "validateDraft",

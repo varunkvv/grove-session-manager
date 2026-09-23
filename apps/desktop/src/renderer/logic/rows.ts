@@ -21,9 +21,35 @@ export interface ListModel {
   /** matches outside the current scope. a scoped search must never silently hide a result. */
   elsewhere: number;
   scoped: boolean;
+  /** archived rows this list left out. same rule: never silently hide one. */
+  archivedHidden: number;
+  /** `is:archived` was typed, so the archive is what is on screen */
+  archivedOnly: boolean;
 }
 
 export const NEEDS_YOU = "Needs you";
+
+/** typed into the search box to see the archive instead of hiding it. a mode, not a word. */
+export const ARCHIVED_FILTER = "is:archived";
+const ARCHIVED_RE = String.raw`(^|\s)is:archived(?=\s|$)`;
+
+export interface ParsedQuery {
+  /** what is actually searched for: the query with the mode words taken out */
+  text: string;
+  tokens: string[];
+  archivedOnly: boolean;
+}
+
+/**
+ * one place that splits a query into a mode and words, so the instant filter and the conversation
+ * search in the main process are never looking for different things. a quoted "is:archived" is a
+ * literal search, because the mode has to sit on its own.
+ */
+export function splitQuery(query: string): ParsedQuery {
+  const archivedOnly = new RegExp(ARCHIVED_RE, "i").test(query);
+  const text = archivedOnly ? query.replace(new RegExp(ARCHIVED_RE, "gi"), "$1").trim() : query;
+  return { text, tokens: tokenize(text), archivedOnly };
+}
 
 /** asking for permission, turn over, or stopped on an error - and nobody has looked yet */
 export function needsYou(live: LiveStatus | undefined): boolean {
@@ -69,11 +95,12 @@ export function buildList(
     deep?: ReadonlyMap<SessionKey, string>;
   },
 ): ListModel {
-  const tokens = tokenize(opts.query);
+  const { tokens, archivedOnly } = splitQuery(opts.query);
   const scoped = opts.scope === "combo" && opts.combo !== null;
   const items: ListItem[] = [];
   const keys: SessionKey[] = [];
   let elsewhere = 0;
+  let archivedHidden = 0;
   let bucket: DayBucket | null = null;
 
   const inScope: Array<{ r: SessionRow; deep?: string }> = [];
@@ -82,6 +109,14 @@ export function buildList(
     if (tokens.length > 0 && deep === undefined && !matches(r, tokens)) continue;
     if (scoped && r.comboName !== opts.combo) {
       if (tokens.length > 0) elsewhere++;
+      continue;
+    }
+    // archiving hides a session unless it is asking for someone. a permission prompt nobody sees
+    // is worse than a row they did not want, and a hidden one is always counted, never dropped.
+    if (archivedOnly) {
+      if (!r.archived) continue;
+    } else if (r.archived && !needsYou(r.live)) {
+      archivedHidden++;
       continue;
     }
     inScope.push({ r, ...(deep !== undefined ? { deep } : {}) });
@@ -122,7 +157,7 @@ export function buildList(
     });
     keys.push(r.key);
   }
-  return { items, keys, tokens, elsewhere, scoped };
+  return { items, keys, tokens, elsewhere, scoped, archivedHidden, archivedOnly };
 }
 
 /**

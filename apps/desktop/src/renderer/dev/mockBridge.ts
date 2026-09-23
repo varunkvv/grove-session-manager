@@ -256,12 +256,14 @@ const bridge: Bridge = {
       },
       { id: "terminal", label: "Resume in Terminal", enabled: true },
       { id: "copy-command", label: "Copy resume command", enabled: true },
+      { id: "archive", label: "Archive", keys: "\u2318\u21e7A", enabled: true, secondary: true },
       { id: "copy-id", label: "Copy session ID", enabled: true, secondary: true },
       { id: "reveal", label: "Reveal transcript in Finder", enabled: true, secondary: true },
     ];
   },
   searchSessions: async (query) => ({ query, hits: [] }),
   markSeen: async () => {},
+  archiveSessions: () => okv(undefined),
   runSessionAction: () => okv({ message: "Done (mock)" }),
   validateComboName: async (name) => ({
     slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),

@@ -18,7 +18,8 @@ type IconName =
   | "reveal"
   | "settings"
   | "warning"
-  | "check";
+  | "check"
+  | "archive";
 
 const PATHS: Record<IconName, ReactNode> = {
   branch: (
@@ -77,6 +78,12 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   warning: <path d="M8 2.25 14.25 13H1.75L8 2.25ZM8 6.5v3M8 11.25v.01" />,
   check: <path d="m3.5 8.5 3 3 6-7" />,
+  archive: (
+    <>
+      <rect x="1.75" y="2.75" width="12.5" height="3.5" rx="1" />
+      <path d="M3.25 6.25v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6M6.5 9h3" />
+    </>
+  ),
 };
 
 export function Icon({

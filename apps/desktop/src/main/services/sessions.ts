@@ -56,6 +56,7 @@ function toRow(
   labels: ReadonlyMap<string, string>,
   live: ReadonlyMap<string, LiveStatus>,
   agents: ReadonlyMap<SessionKey, AgentSnapshot>,
+  archived: ReadonlySet<string>,
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -84,6 +85,8 @@ function toRow(
   }
   if (record.entrypoint) row.entrypoint = record.entrypoint;
   if (record.usage) row.usage = record.usage;
+  // by session id, so the same conversation reads as archived wherever its transcript ended up
+  if (archived.has(record.sessionId)) row.archived = true;
   const status = live.get(record.sessionId);
   if (status) row.live = status;
   const found = agents.get(record.path);
@@ -103,6 +106,7 @@ export class SessionService {
   private rows = new Map<SessionKey, SessionRow>();
   private combos: Combo[] = [];
   private live: ReadonlyMap<string, LiveStatus> = new Map();
+  private archived: ReadonlySet<string> = new Set();
   private runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map();
   /** the subagents of the live sessions only, by transcript path */
   private agents = new Map<SessionKey, AgentSnapshot>();
@@ -212,6 +216,12 @@ export class SessionService {
     } catch (e) {
       log.warn("session refresh of", file, e);
     }
+  }
+
+  /** somebody archived or un-archived something, or hand-edited archived.json */
+  setArchived(ids: ReadonlySet<string>): void {
+    this.archived = new Set(ids);
+    this.rebuild();
   }
 
   /** combos changed: the same sessions, possibly in a different combo */
@@ -333,7 +343,7 @@ export class SessionService {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
-    const next = views.map((v) => toRow(v, labels, this.live, this.agents));
+    const next = views.map((v) => toRow(v, labels, this.live, this.agents, this.archived));
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;
     this.rows = new Map(next.map((row) => [row.key, row]));

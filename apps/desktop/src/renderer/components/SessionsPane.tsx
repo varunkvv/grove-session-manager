@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { SessionKey } from "../../shared/ipc.ts";
-import { buildList, type ListModel, nextActiveKey } from "../logic/rows.ts";
+import {
+  ARCHIVED_FILTER,
+  buildList,
+  type ListModel,
+  nextActiveKey,
+  splitQuery,
+} from "../logic/rows.ts";
 import { activate, focusSearch, openCombo, openMenu } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Banner } from "./Chrome.tsx";
@@ -11,9 +17,58 @@ const LIST_ID = "session-listbox";
 
 /** the list the keyboard handler in App works against. kept outside React so a keypress never waits for a render. */
 export const listRef: { current: ListModel; pageSize: number } = {
-  current: { items: [], keys: [], tokens: [], elsewhere: 0, scoped: false },
+  current: {
+    items: [],
+    keys: [],
+    tokens: [],
+    elsewhere: 0,
+    scoped: false,
+    archivedHidden: 0,
+    archivedOnly: false,
+  },
   pageSize: 8,
 };
+
+/** adds `is:archived` to whatever is in the box, so the hidden rows join what is already on screen */
+function showArchived(): void {
+  const { query, set } = useStore.getState();
+  if (!splitQuery(query).archivedOnly) set({ query: `${query.trim()} ${ARCHIVED_FILTER}`.trim() });
+  focusSearch(false);
+}
+
+/**
+ * the one line that says what this list is leaving out. a result is never silently hidden: not by
+ * the combo scope, and not by the archive.
+ */
+function HiddenMatches({ model }: { model: ListModel }) {
+  const set = useStore((s) => s.set);
+  const elsewhere = model.scoped && model.elsewhere > 0;
+  if (!elsewhere && model.archivedHidden === 0) return null;
+  return (
+    <div className="fade flex shrink-0 items-center gap-4 border-t border-line px-5 py-2 text-sm text-fg-3">
+      {elsewhere && (
+        <button
+          type="button"
+          data-testid="search-all"
+          onClick={() => set({ scope: "all" })}
+          className="fade text-left hover:text-fg-2"
+        >
+          {model.elsewhere} more {model.elsewhere === 1 ? "match" : "matches"} in all sessions
+        </button>
+      )}
+      {model.archivedHidden > 0 && (
+        <button
+          type="button"
+          data-testid="show-archived"
+          onClick={showArchived}
+          className="fade text-left hover:text-fg-2"
+        >
+          {model.archivedHidden} archived
+        </button>
+      )}
+    </div>
+  );
+}
 
 function EmptyState({ model }: { model: ListModel }) {
   const { query, selectedCombo, sessions, env, editor, index, set } = useStore();
@@ -31,6 +86,21 @@ function EmptyState({ model }: { model: ListModel }) {
             </Button>
           </>
         )}
+        {model.archivedHidden > 0 && (
+          <Button className="mt-4" onClick={showArchived} data-testid="show-archived">
+            Search {model.archivedHidden} archived{" "}
+            {model.archivedHidden === 1 ? "session" : "sessions"}
+          </Button>
+        )}
+      </Empty>
+    );
+  }
+  if (model.archivedHidden > 0) {
+    return (
+      <Empty title="Everything here is archived">
+        <Button className="mt-4" onClick={showArchived} data-testid="show-archived">
+          Show {model.archivedHidden} archived {model.archivedHidden === 1 ? "session" : "sessions"}
+        </Button>
       </Empty>
     );
   }
@@ -90,13 +160,15 @@ export function SessionsPane() {
   // the instant filter covers titles and prompts. the conversation itself is searched in main,
   // a moment later, and its hits join the list without moving what is already there.
   useEffect(() => {
-    const q = query.trim();
+    // `is:archived` is a mode, not a word: sending it to main would match nothing and the
+    // conversation search would quietly stop working for as long as it sat in the box
+    const q = splitQuery(query).text;
     if (!q) return;
     const timer = setTimeout(() => {
       void window.grove
         .searchSessions(q)
         .then((res) => {
-          if (useStore.getState().query.trim() !== res.query) return;
+          if (splitQuery(useStore.getState().query).text !== res.query) return;
           set({
             deep: { query: res.query, hits: new Map(res.hits.map((h) => [h.key, h.snippet])) },
           });
@@ -105,7 +177,7 @@ export function SessionsPane() {
     }, 180);
     return () => clearTimeout(timer);
   }, [query, set]);
-  const deep = deepState && deepState.query === query.trim() ? deepState.hits : undefined;
+  const deep = deepState && deepState.query === splitQuery(query).text ? deepState.hits : undefined;
 
   const model = useMemo(
     () =>
@@ -209,15 +281,7 @@ export function SessionsPane() {
             onMenu={onMenu}
             onPageSize={onPageSize}
           />
-          {model.scoped && model.elsewhere > 0 && (
-            <button
-              type="button"
-              onClick={() => set({ scope: "all" })}
-              className="fade shrink-0 border-t border-line px-5 py-2 text-left text-sm text-fg-3 hover:text-fg-2"
-            >
-              {model.elsewhere} more {model.elsewhere === 1 ? "match" : "matches"} in all sessions
-            </button>
-          )}
+          <HiddenMatches model={model} />
         </>
       )}
 
@@ -229,8 +293,8 @@ export function SessionsPane() {
           <Kbd>⌘K</Kbd> actions
         </span>
         <span className="ml-auto truncate">
-          Claude Code deletes transcripts after 30 days. Sessions archived in the editor panel still
-          show here.
+          Claude Code deletes transcripts after 30 days. Sessions the editor panel archived still
+          show here, unless you archive them.
         </span>
       </footer>
     </section>

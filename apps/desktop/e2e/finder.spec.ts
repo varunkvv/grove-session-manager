@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import {
@@ -166,6 +166,73 @@ test("a new session appears on its own, and a deleted one leaves quietly", async
 
   rmSync(file);
   await waitFor(async () => (await page.getByTestId("session-row").count()) === 1, 15_000);
+});
+
+test("archiving takes a session out of the list without ever hiding a match", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const queue = makePlainDir(fx, "queue");
+  writeSession(fx, {
+    cwd: queue,
+    sessionId: SID.a,
+    title: "Rate limiter logic with backoff",
+    ageMs: 20_000,
+  });
+  writeSession(fx, { cwd: queue, sessionId: SID.b, title: "Onboarding copy", ageMs: 60_000 });
+  writeSession(fx, { cwd: queue, sessionId: SID.c, title: "Helm chart bump", ageMs: 120_000 });
+
+  // a decision record people edit by hand: an entry we did not write, and four-space indentation
+  const archived = path.join(fx.root, "archived.json");
+  writeFileSync(
+    archived,
+    `{\n    "99999999-0000-4000-8000-000000000099": { "at": 1, "why": "typed this myself" }\n}\n`,
+  );
+  const readArchived = () => JSON.parse(readFileSync(archived, "utf8"));
+
+  app = await launchApp(fx);
+  const { page } = app;
+  const rows = page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 3);
+  // the footer names the other archive, so two archives on one screen are not confused
+  await expect(page.locator('section[aria-label="Sessions"] footer')).toContainText(
+    "unless you archive them",
+  );
+
+  // the top row is active on load, so the shortcut needs nothing else
+  await page.keyboard.press("Meta+Shift+a");
+  await waitFor(async () => (await rows.count()) === 2);
+  await expect(rows.first()).toContainText("Onboarding copy");
+
+  // the hand-written entry survived, and so did the file's own indentation
+  expect(readArchived()["99999999-0000-4000-8000-000000000099"]).toEqual({
+    at: 1,
+    why: "typed this myself",
+  });
+  expect(readArchived()[SID.a]).toMatchObject({ at: expect.any(Number) });
+  expect(readFileSync(archived, "utf8")).toContain('\n    "');
+
+  // a search that would have matched it says so rather than coming up empty in silence
+  await page.getByTestId("search").fill("backoff");
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByTestId("show-archived")).toContainText("1 archived");
+  await page.getByTestId("show-archived").click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Rate limiter logic with backoff");
+  await expect(rows.first().getByTestId("row-archived")).toBeVisible();
+  await expect(page.getByTestId("search")).toHaveValue("backoff is:archived");
+  await page.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "18-archived.png"),
+  });
+
+  // and back again, from the menu this time
+  await rows.first().click({ button: "right" });
+  await expect(page.getByTestId("action-unarchive")).toContainText("\u2318\u21e7A");
+  await page.getByTestId("action-unarchive").click();
+  await expect(rows).toHaveCount(0);
+  expect(readArchived()[SID.a]).toBeUndefined();
+  expect(readArchived()["99999999-0000-4000-8000-000000000099"]).toBeDefined();
+
+  await page.getByTestId("search").fill("");
+  await waitFor(async () => (await rows.count()) === 3);
 });
 
 test("the companion banner offers to install the extension", async () => {
