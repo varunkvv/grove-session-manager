@@ -8,15 +8,26 @@ import {
   needsYou,
   reduceAgentRuns,
   reduceStatus,
+  STATUS_HOOK_EVENTS,
   type StatusEvent,
   statusHookCommand,
   syncStatusHooks,
+  watchStatusHooks,
   withStatusHooks,
 } from "../../src/sessions/liveStatus.ts";
 import type { LiveStatus } from "../../src/types.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
 const SID = "aaaaaaaa-0000-4000-8000-000000000001";
+
+/** a real fs.watch is behind these: poll rather than guess at a delay */
+async function until(check: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 
 function run(events: Array<Partial<StatusEvent> & { event: string; at: number }>) {
   let s: LiveStatus | undefined;
@@ -160,6 +171,56 @@ describe("session status from hook events", () => {
     );
     expect((await syncStatusHooks(fresh, path.join(dir, "events"), false)).status).toBe("written");
     expect(JSON.parse(readFileSync(fresh, "utf8"))).toEqual({ model: "x" });
+  });
+
+  it("a session that puts the old hooks back is repaired, and repairing does not loop", async () => {
+    const dir = path.join(makeSandbox("grove-hooks-"), ".claude");
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "settings.local.json");
+    const events = path.join(dir, "events");
+    expect((await syncStatusHooks(file, events, true)).status).toBe("created");
+
+    const seen: string[] = [];
+    const watcher = watchStatusHooks(file, events, {
+      debounceMs: 30,
+      onSync: (status) => seen.push(status),
+    });
+    expect(watcher).not.toBeNull();
+    try {
+      // fs.watch on a directory goes through FSEvents on macOS, and the stream starts on another
+      // thread: a write can land before the watch is live. touch the file with its own bytes until
+      // one comes back, so what follows is testing the repair and not the startup window.
+      const asWritten = readFileSync(file, "utf8");
+      for (let i = 0; i < 50 && seen.length === 0; i++) {
+        writeFileSync(file, asWritten);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      // an already-correct file is never rewritten, whichever touch got through
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((status) => status === "unchanged")).toBe(true);
+      seen.length = 0;
+
+      // what a session started before the upgrade writes back: the settings it loaded at startup,
+      // without the two subagent events. not an atomic write - this is somebody else's write.
+      const old = withStatusHooks({}, statusHookCommand(events));
+      delete old.SubagentStart;
+      delete old.SubagentStop;
+      writeFileSync(file, JSON.stringify({ hooks: old }, null, 2));
+
+      const hooks = () => Object.keys(JSON.parse(readFileSync(file, "utf8")).hooks);
+      await until(() => hooks().length === STATUS_HOOK_EVENTS.length);
+      expect(hooks()).toEqual(expect.arrayContaining(["SubagentStart", "SubagentStop"]));
+
+      // our own repair comes back through the same watcher. it has to settle there: every write
+      // renames a new file in, so a stable inode is proof that nothing wrote again.
+      const settled = statSync(file).ino;
+      await new Promise((r) => setTimeout(r, 300));
+      expect(statSync(file).ino).toBe(settled);
+      expect(seen.filter((s) => s === "written")).toEqual(["written"]);
+      expect(seen.at(-1)).toBe("unchanged");
+    } finally {
+      watcher?.dispose();
+    }
   });
 
   it("the hook command drops its stdin into the events dir, even with a quote in the path", async () => {

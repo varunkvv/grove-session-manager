@@ -5,6 +5,7 @@ import {
   type ComboFolder,
   comboDirSlug,
   combosFilePath,
+  type Disposable,
   ensureRoot,
   ensureWorktrees,
   type FolderOutcome,
@@ -26,6 +27,7 @@ import {
   validateComboName,
   validateComboRoot,
   validateFolders,
+  watchComboStatusHooks,
   workspaceFilePath,
 } from "@grove/core";
 import type { ComboView, ToastMessage } from "../../shared/ipc.ts";
@@ -69,6 +71,8 @@ export class ComboService {
   /** keyed by combo root, which never changes for the life of a combo */
   private runtimes = new Map<string, ComboRuntime>();
   private watcher: FSWatcher | null = null;
+  /** one per combo root, on its `.claude` dir. see watchStatusHooks below. */
+  private hookWatchers = new Map<string, Disposable>();
   private debounce: NodeJS.Timeout | null = null;
   private selfWriteUntil = 0;
 
@@ -131,6 +135,8 @@ export class ComboService {
 
   private async reloadFromDisk(): Promise<void> {
     await this.load(true);
+    // a combo added by hand reports its sessions without anyone opening it first
+    void this.syncStatusHooks();
     void this.reconcileAll();
   }
 
@@ -197,6 +203,29 @@ export class ComboService {
     for (const combo of this.list()) {
       await syncComboStatusHooks(this.opts.appRoot, combo).catch(() => undefined);
     }
+    this.watchStatusHooks();
+  }
+
+  /**
+   * a session already running when the hook set changed writes the settings it loaded at startup
+   * back over ours, dropping the events we added, and says nothing. so the file is watched rather
+   * than synced once. idempotent: call it whenever the combo list may have moved.
+   */
+  private watchStatusHooks(): void {
+    for (const [root, w] of this.hookWatchers) {
+      if (!this.combos.some((c) => c.root === root)) {
+        w.dispose();
+        this.hookWatchers.delete(root);
+      }
+    }
+    for (const combo of this.combos) {
+      if (this.hookWatchers.has(combo.root)) continue;
+      // null while the combo has no `.claude` dir yet. the next sync picks it up.
+      const w = watchComboStatusHooks(this.opts.appRoot, combo, {
+        onError: (e) => log.warn("status hook watch:", e),
+      });
+      if (w) this.hookWatchers.set(combo.root, w);
+    }
   }
 
   ensure(combo: Combo, context: OutcomeContext, repairStale = false): Promise<FolderOutcome[]> {
@@ -208,6 +237,7 @@ export class ComboService {
       // there from the first session on, not only after the first "open"
       await syncLongWorkPolicy(combo);
       await syncComboStatusHooks(this.opts.appRoot, combo).catch(() => undefined);
+      this.watchStatusHooks();
       try {
         const outcomes = await ensureWorktrees(combo, {
           gitPath: this.opts.gitPath,
@@ -458,6 +488,8 @@ export class ComboService {
 
   dispose(): void {
     this.watcher?.close();
+    for (const w of this.hookWatchers.values()) w.dispose();
+    this.hookWatchers.clear();
     if (this.debounce) clearTimeout(this.debounce);
   }
 }

@@ -70,8 +70,11 @@ The transcript cannot tell "running a tool" from "waiting on a permission prompt
 hooks. Every combo's `.claude/settings.local.json` gets a few async hooks (`UserPromptSubmit`, `PermissionRequest`,
 `PostToolUse`, `Notification`, `Stop`, `StopFailure`, `SessionEnd`, `SubagentStart`, `SubagentStop`) that drop the
 hook's input into `~/claude-ws/.grove/events/`. Claude Code watches its settings files, so sessions that are already
-running pick the hooks up too. Sessions outside combos report only if you switch on **Track sessions outside combos**
-in Settings, which adds the same hooks to Claude Code's own `settings.json`; switching it off takes them out again.
+running pick the hooks up too - and later write the copy they loaded at startup back over them, which silently drops
+whatever was added since. So the app watches each combo's settings file and puts its own entries back when that happens.
+Only the entries carrying its marker are touched. Sessions outside combos report only if you switch on **Track sessions
+outside combos** in Settings, which adds the same hooks to Claude Code's own `settings.json`; switching it off takes
+them out again.
 
 Hooks only cover the sessions that have them. Every live Claude Code process also keeps a file in
 `~/.claude/sessions/<pid>.json`, which the app reads (never writes) to fill in sessions no hook covers and to retire a

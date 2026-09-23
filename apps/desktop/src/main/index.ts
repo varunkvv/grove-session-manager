@@ -210,6 +210,8 @@ async function start(): Promise<void> {
   win.on("focus", () => {
     sessions.refreshThrottled();
     combos.reconcileOnFocus();
+    // catches a settings file a session put back while the app was closed. the watch has the rest.
+    void combos.syncStatusHooks();
   });
   // nothing is summarised while the window is hidden, so coming back has to ask for it
   const wake = () => summaries?.wake();

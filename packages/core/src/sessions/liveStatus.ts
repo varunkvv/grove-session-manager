@@ -1,10 +1,11 @@
+import { type FSWatcher, watch } from "node:fs";
 import { readdir, readFile, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { settingsLocalPath } from "../combos/settingsSync.ts";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "../fsx.ts";
 import { getStateDir } from "../paths.ts";
 import { squash } from "../transcript/title.ts";
-import type { AgentRun, Combo, LiveState, LiveStatus, Warning } from "../types.ts";
+import type { AgentRun, Combo, Disposable, LiveState, LiveStatus, Warning } from "../types.ts";
 
 /**
  * which sessions need a person right now. a transcript cannot say it: "running a tool" and
@@ -133,6 +134,72 @@ export function syncComboStatusHooks(
   combo: Combo,
 ): Promise<{ status: HookSyncStatus; warning?: Warning }> {
   return syncStatusHooks(settingsLocalPath(combo), statusEventsDir(getStateDir(appRoot)), true);
+}
+
+/** the repair is not urgent, and a settings file is often written in a burst */
+const HOOK_RESYNC_DEBOUNCE_MS = 1000;
+
+export interface HookWatchOptions {
+  debounceMs?: number;
+  /** every re-sync that completed. the app logs it; the tests count it. */
+  onSync?: (status: HookSyncStatus) => void;
+  onError?: (error: unknown) => void;
+}
+
+/**
+ * re-syncs our hooks when someone else rewrites the settings file. a Claude Code session that was
+ * already running when the hook set changed writes the copy it loaded at startup back over ours,
+ * which silently drops the events we added, and nothing announces it - syncing once at app start
+ * is not enough.
+ *
+ * this cannot ping-pong. our own write comes back through the same watcher, syncStatusHooks finds
+ * the file already matching and returns `unchanged` without writing, so it stops there. the other
+ * side writes on its own triggers, never on a file change, so it does not answer back either.
+ *
+ * null when the directory is not there yet - call again once it is.
+ */
+export function watchStatusHooks(
+  settingsFile: string,
+  eventsDir: string,
+  opts: HookWatchOptions = {},
+): Disposable | null {
+  const dir = path.dirname(settingsFile);
+  const name = path.basename(settingsFile);
+  const delay = opts.debounceMs ?? HOOK_RESYNC_DEBOUNCE_MS;
+  let timer: NodeJS.Timeout | null = null;
+  let watcher: FSWatcher;
+  try {
+    watcher = watch(dir, { persistent: false }, (_event, filename) => {
+      // an atomic write renames a `.tmp` sibling in, so the directory reports other names too
+      if (filename?.toString() !== name) return;
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void syncStatusHooks(settingsFile, eventsDir, true)
+          .then((r) => opts.onSync?.(r.status))
+          .catch((e) => opts.onError?.(e));
+      }, delay);
+    });
+  } catch (e) {
+    opts.onError?.(e);
+    return null;
+  }
+  watcher.on("error", (e) => opts.onError?.(e));
+  return {
+    dispose() {
+      watcher.close();
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+/** the combo's own settings file, watched. see watchStatusHooks for why this is not a one-off sync. */
+export function watchComboStatusHooks(
+  appRoot: string,
+  combo: Combo,
+  opts: HookWatchOptions = {},
+): Disposable | null {
+  return watchStatusHooks(settingsLocalPath(combo), statusEventsDir(getStateDir(appRoot)), opts);
 }
 
 export interface StatusEvent {
