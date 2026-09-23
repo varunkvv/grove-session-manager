@@ -1,5 +1,8 @@
 // a session that sent five agents out, as their own transcripts: two finished, one that died on an
 // api error, two still running. what the inspector screenshots are taken of.
+import { appendFileSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { claudeProjectSlug } from "@grove/core";
 import { type Fixture, writeAgent, writeSession } from "./fixture.ts";
 
 const MIN = 60_000;
@@ -12,6 +15,23 @@ export const FANOUT = {
   replay: "a1d0000000000004",
   plan: "a1d0000000000005",
 };
+
+/** what the survey agent came back with: markdown, a table, a link, and html that must stay text */
+export const SURVEY_RESULT = `The job runs 14 queries, and two of them changed on Tuesday: the rollup now scans a 30 day window, and a new join pulls in \`events\` without an index on \`account_id\`.
+
+| query | file | change |
+| --- | --- | --- |
+| nightly rollup | \`src/jobs/rollup.ts\` | window widened from 7 to 30 days |
+| events join | \`src/jobs/events.sql\` | new join on \`account_id\`, no index |
+
+The rollup change is slower but bounded: it reads a month instead of a week, once a night, and
+finishes in four minutes either way. The join is what pins the CPU from 02:00 until the job ends.
+
+- the join is a sequential scan over 41M rows
+- an index on \`events(account_id)\` built concurrently avoids the lock
+- see the [planner docs](https://www.postgresql.org/docs/current/using-explain.html)
+
+<img src="https://example.com/x.png" onerror="alert(1)"><script>window.pwned = true</script>`;
 
 export function writeFanOut(fx: Fixture, cwd: string): string {
   const sessionId = FANOUT.session;
@@ -65,11 +85,27 @@ export function writeFanOut(fx: Fixture, cwd: string): string {
         result: "select * from events join ...",
         at: 60,
       },
+      {
+        tool: "Bash",
+        input: {
+          command: "psql -c 'explain select * from events join accounts using (account_id)'",
+        },
+        result:
+          'Exit code 2\npsql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: No such file or directory',
+        at: 75,
+        took: 1,
+        error: true,
+      },
+      { say: "No local database. Reading the plan from the replica instead.", at: 78 },
+      {
+        tool: "Bash",
+        input: { command: "psql $REPLICA_URL -c 'explain select * from events join accounts'" },
+        result: "Seq Scan on events  (cost=0.00..918273.00 rows=41000000)",
+        at: 80,
+        took: 3,
+      },
     ],
-    result: {
-      text: "The job runs 14 queries, and two of them changed on Tuesday: the rollup now scans a 30 day window, and a new join pulls in `events` without an index on `account_id`.",
-      at: 151,
-    },
+    result: { text: SURVEY_RESULT, at: 151 },
   });
   writeAgent(fx, {
     cwd,
@@ -199,5 +235,201 @@ export function writeFanOut(fx: Fixture, cwd: string): string {
       },
     ],
   });
+  return transcript;
+}
+
+export const DERIVE = {
+  session: "eeeeeeee-0000-4000-8000-00000000000e",
+  parent: "a2e0000000000001",
+  writers: "a2e0000000000002",
+  platform: "a2e0000000000003",
+  run: "wf_a2e00000-001",
+  implement: "a2e0000000000004",
+  review: "a2e0000000000005",
+};
+
+/**
+ * a session whose long-task agent sent two agents of its own, then ran a workflow of two more.
+ * what a nested agent and a workflow look like, which nothing on a real machine had yet.
+ */
+export function writeDerive(fx: Fixture, cwd: string): string {
+  const sessionId = DERIVE.session;
+  const transcript = writeSession(fx, {
+    cwd,
+    sessionId,
+    title: "Derive BDS table names instead of accepting them",
+    prompt: "derive big_query_table_name on create instead of taking it from the request",
+    ageMs: 2 * 3_600_000,
+  });
+  const HOUR = 3_600_000;
+  const MIN = 60_000;
+  writeAgent(fx, {
+    cwd,
+    sessionId,
+    id: DERIVE.parent,
+    agentType: "long-task",
+    description: "Derive BDS table names on create",
+    model: "claude-opus-5",
+    prompt: "Make the serializer derive big_query_table_name on create and keep it on update.",
+    startedAgoMs: 3 * HOUR,
+    steps: [
+      {
+        tool: "Read",
+        input: { file_path: `${cwd}/kirby/serializers/bds.py` },
+        result: "class BdsSerializer: ...",
+        at: 20,
+      },
+      {
+        tool: "Agent",
+        input: {
+          description: "Find every writer of big_query_table_name",
+          prompt: "Find every writer.",
+          subagent_type: "Explore",
+        },
+        result: "Only the ORM path writes it.",
+        at: 60,
+        took: 180,
+      },
+      {
+        tool: "Agent",
+        input: {
+          description: "Check what platform sends to the route",
+          prompt: "Check platform.",
+          subagent_type: "Explore",
+        },
+        result: "platform strips it before forwarding.",
+        at: 70,
+        took: 400,
+      },
+      {
+        tool: "Edit",
+        input: { file_path: `${cwd}/kirby/serializers/bds.py`, old_string: "a", new_string: "b" },
+        result: "The file has been updated.",
+        at: 500,
+      },
+    ],
+    result: {
+      text: "The serializer derives the name on create and keeps it on update, with two new tests.",
+      at: 620,
+    },
+  });
+  const child = (id: string, n: number, description: string, text: string, at: number) =>
+    writeAgent(fx, {
+      cwd,
+      sessionId,
+      id,
+      agentType: "Explore",
+      description,
+      spawnDepth: 2,
+      toolUseId: `toolu_${DERIVE.parent}_${n}`,
+      prompt: description,
+      startedAgoMs: 3 * HOUR - at * 1000,
+      steps: [
+        {
+          tool: "Grep",
+          input: { pattern: "big_query_table_name", path: cwd },
+          result: "kirby/models.py:12",
+          at: 5,
+        },
+      ],
+      result: { text, at: 150 },
+    });
+  child(
+    DERIVE.writers,
+    1,
+    "Find every writer of big_query_table_name",
+    "Only kirby's own ORM path writes it.",
+    62,
+  );
+  child(
+    DERIVE.platform,
+    2,
+    "Check what platform sends to the route",
+    "platform strips the name before forwarding, so nothing depends on it.",
+    72,
+  );
+
+  const wf = (id: string, prompt: string, text: string, startedAgoMs: number) =>
+    writeAgent(fx, {
+      cwd,
+      sessionId,
+      id,
+      agentType: "workflow-subagent",
+      workflow: DERIVE.run,
+      prompt,
+      startedAgoMs,
+      steps: [
+        {
+          tool: "Read",
+          input: { file_path: `${cwd}/kirby/serializers/bds.py` },
+          result: "...",
+          at: 10,
+        },
+      ],
+      result: { text, at: 300 },
+    });
+  wf(
+    DERIVE.implement,
+    "You are implementing an approved plan in the kirby repo.",
+    "Working tree left uncommitted as instructed, 198 tests passing.",
+    2 * HOUR + 40 * MIN,
+  );
+  wf(
+    DERIVE.review,
+    "Review the diff against the plan and list anything that contradicts it.",
+    "One contradiction: the patch test should keep the literal name.",
+    2 * HOUR + 30 * MIN,
+  );
+  const runDir = path.join(
+    fx.projectsDir,
+    claudeProjectSlug(cwd),
+    sessionId,
+    "subagents",
+    "workflows",
+    DERIVE.run,
+  );
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(
+    path.join(runDir, "journal.jsonl"),
+    `${[
+      { type: "started", key: "implement", agentId: DERIVE.implement },
+      {
+        type: "result",
+        key: "implement",
+        agentId: DERIVE.implement,
+        result: "Working tree left uncommitted as instructed, 198 tests passing.",
+      },
+      { type: "started", key: "review", agentId: DERIVE.review },
+      {
+        type: "result",
+        key: "review",
+        agentId: DERIVE.review,
+        result: "One contradiction: the patch test should keep the literal name.",
+      },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n")}\n`,
+  );
+  // what the session's own Workflow call got back: the only place the workflow's name is kept
+  appendFileSync(
+    transcript,
+    `${JSON.stringify({
+      type: "user",
+      sessionId,
+      timestamp: new Date(Date.now() - 2 * HOUR - 45 * MIN).toISOString(),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "toolu_wf", content: "launched" }],
+      },
+      toolUseResult: {
+        runId: DERIVE.run,
+        workflowName: "cdit-1249-derive-bds-table-name",
+        status: "async_launched",
+      },
+    })}\n`,
+  );
+  // the session went quiet two hours ago: its file says so too, or it sorts as brand new
+  const quiet = new Date(Date.now() - 2 * HOUR);
+  utimesSync(transcript, quiet, quiet);
   return transcript;
 }

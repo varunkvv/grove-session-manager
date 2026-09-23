@@ -1,6 +1,7 @@
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -12,7 +13,14 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { firstSentence, scanSessionAgents, timelineCacheDir } from "@grove/core";
+import {
+  firstSentence,
+  readAgentTimeline,
+  resultText,
+  scanSessionAgents,
+  timelineCacheDir,
+  timelineView,
+} from "@grove/core";
 import { describe, expect, it } from "vitest";
 import { AgentInspector } from "../../src/main/services/agentInspector.ts";
 
@@ -148,5 +156,117 @@ describe("what a session's agents did", () => {
       agents: {},
       workflows: {},
     });
+  });
+});
+
+describe("one agent, step by step", () => {
+  it("sends every line of the timeline and nothing a line does not need", async () => {
+    const dir = sandbox();
+    const { key, snapshot, inspector } = await open(dir, EXPLORE.session);
+    const detail = await inspector.detail(key, EXPLORE.agent);
+    const file = snapshot.reads[EXPLORE.agent]?.file ?? "";
+    const view = timelineView(await readAgentTimeline(file));
+    expect(detail?.steps).toHaveLength(view.steps.length);
+    expect(detail?.toolCount).toBe(view.toolCount);
+    expect(detail?.result).toBe(view.result);
+    expect(detail?.prompt).toBe(view.prompt);
+    // numbered by where they sit in the fold, which only ever grows
+    const ns = detail?.steps.map((s) => s.n) ?? [];
+    expect(ns).toEqual([...ns].sort((a, b) => a - b));
+    expect(ns[0]).toBe(0);
+    for (const step of detail?.steps ?? []) {
+      expect(step).not.toHaveProperty("input");
+      expect(step).not.toHaveProperty("use");
+      expect(step).not.toHaveProperty("ref");
+      expect(step).not.toHaveProperty("result");
+    }
+    // the 4MB agent on the machine this came from sends ~50KB. this one is small.
+    expect(JSON.stringify(detail).length).toBeLessThan(JSON.stringify(view).length);
+  });
+
+  it("opens a step by reading its result back from the transcript", async () => {
+    const dir = sandbox();
+    const { key, snapshot, inspector } = await open(dir, EXPLORE.session);
+    const detail = await inspector.detail(key, EXPLORE.agent);
+    const bash = detail?.steps.find((s) => s.kind === "tool" && s.name === "Bash");
+    expect(bash?.kind).toBe("tool");
+    if (bash?.kind !== "tool") return;
+    const opened = await inspector.step(key, EXPLORE.agent, bash.id);
+    const file = snapshot.reads[EXPLORE.agent]?.file ?? "";
+    const line = readFileSync(file, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .flatMap((e) => (Array.isArray(e.message?.content) ? e.message.content : []))
+      .find(
+        (b: { type?: string; tool_use_id?: string }) =>
+          b.type === "tool_result" && b.tool_use_id === bash.id,
+      );
+    expect(opened?.result).toBe(resultText(line.content));
+    expect(JSON.parse(opened?.input ?? "{}")).toHaveProperty("command");
+    // nothing that is not a step of this agent opens
+    expect(await inspector.step(key, EXPLORE.agent, "toolu_nope")).toBeNull();
+    expect(await inspector.step(key, "a-nobody", bash.id)).toBeNull();
+    expect(await inspector.detail(key, "a-nobody")).toBeNull();
+    expect(inspector.agentFile(key, "a-nobody")).toBeNull();
+    expect(inspector.agentFile(key, EXPLORE.agent)).toBe(file);
+  });
+
+  it("a workflow agent's result is what its journal recorded", async () => {
+    const dir = sandbox();
+    const { key, inspector } = await open(dir, WORKFLOW.session);
+    const detail = await inspector.detail(key, WORKFLOW.agent);
+    expect(detail?.result).toMatch(/^ran agent step/);
+  });
+
+  it("an Agent call links to the agent it started, at any depth", async () => {
+    // nothing on the machine the fixtures came from has a nested agent, so this one is made up
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-nested-")));
+    const sid = "eeeeeeee-0000-4000-8000-000000000001";
+    const key = path.join(dir, `${sid}.jsonl`);
+    const sub = path.join(dir, sid, "subagents");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(key, "{}\n");
+    const line = (o: object) =>
+      `${JSON.stringify({ timestamp: "2026-09-23T10:00:00.000Z", ...o })}\n`;
+    writeFileSync(
+      path.join(sub, "agent-aparent.jsonl"),
+      line({ type: "user", message: { role: "user", content: "fan out" } }) +
+        line({
+          type: "assistant",
+          message: {
+            id: "m1",
+            model: "claude-sonnet-5",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_child",
+                name: "Agent",
+                input: { description: "look" },
+              },
+            ],
+          },
+        }),
+    );
+    writeFileSync(
+      path.join(sub, "agent-aparent.meta.json"),
+      JSON.stringify({ agentType: "long-task", toolUseId: "toolu_top", spawnDepth: 1 }),
+    );
+    writeFileSync(
+      path.join(sub, "agent-achild.jsonl"),
+      line({ type: "user", message: { role: "user", content: "look" } }),
+    );
+    writeFileSync(
+      path.join(sub, "agent-achild.meta.json"),
+      JSON.stringify({ agentType: "Explore", toolUseId: "toolu_child", spawnDepth: 2 }),
+    );
+    const snapshot = await scanSessionAgents(key, { sessionLive: false });
+    const inspector = new AgentInspector({
+      stateDir: path.join(dir, "state"),
+      snapshot: () => snapshot,
+    });
+    const detail = await inspector.detail(key, "aparent");
+    expect(detail?.steps).toMatchObject([{ kind: "tool", name: "Agent", agentId: "achild" }]);
+    expect((await inspector.inspect(key)).agents.achild?.parentId).toBe("aparent");
   });
 });

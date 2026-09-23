@@ -60,6 +60,8 @@ await open("agents");
 await page.keyboard.press("ArrowDown");
 await page.keyboard.press("Meta+i");
 await shot("10-inspector");
+await page.getByTestId("agent-row").first().click();
+await shot("11-agent-detail");
 
 await browser.close();
 await server.close();

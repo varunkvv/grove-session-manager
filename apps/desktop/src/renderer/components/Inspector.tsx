@@ -15,8 +15,9 @@ import {
   paneLayout,
   sessionAgentSummary,
 } from "../logic/inspector.ts";
-import { closeInspector } from "../state/actions.ts";
+import { closeAgent, closeInspector, openAgent, paneFocus } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
+import { AgentDetailView } from "./AgentDetail.tsx";
 import { SessionsPane } from "./SessionsPane.tsx";
 import { cx, Icon, IconButton } from "./ui.tsx";
 
@@ -105,6 +106,12 @@ function InspectorBody() {
     return () => clearInterval(t);
   }, [running]);
   const clock = running ? Math.max(now, tick) : now;
+  // an agent's detail belongs to its session. moving to another row shows that row's list.
+  const detail = useStore((s) => s.inspector?.detail ?? null);
+  const set = useStore((s) => s.set);
+  useEffect(() => {
+    if (detail && detail.key !== activeKey) set({ inspector: { agent: null, detail: null } });
+  }, [detail, activeKey, set]);
 
   return (
     <>
@@ -148,15 +155,35 @@ function SessionAgents({
 }) {
   const agents = row.agents ?? [];
   const inspectorAgent = useStore((s) => s.inspector?.agent ?? null);
+  const detail = useStore((s) => s.inspector?.detail ?? null);
+  const wantedStep = useStore((s) => s.inspector?.step);
   const set = useStore((s) => s.set);
   const [hovered, setHovered] = useState<string | null>(null);
   const items = useMemo(() => agentList(agents, inspection), [agents, inspection]);
   const picture = useMemo(() => fanOut(agents, inspection, now), [agents, inspection, now]);
   const ids = useMemo(() => items.flatMap((i) => (i.type === "agent" ? [i.id] : [])), [items]);
   const active = inspectorAgent && ids.includes(inspectorAgent) ? inspectorAgent : null;
-  const pick = (id: string) => set({ inspector: { agent: id } });
+  // the arrows move the keyboard's row. a click, Enter or a bar opens the agent.
+  const move = (id: string) => set({ inspector: { agent: id, detail: null } });
+  const open = (id: string) => openAgent(row.key, id);
 
   if (agents.length === 0) return <Quiet>No agents in this session.</Quiet>;
+
+  if (detail && detail.key === row.key) {
+    return (
+      <AgentDetailView
+        key={detail.id}
+        sessionKey={row.key}
+        agentId={detail.id}
+        agent={agents.find((a) => a.id === detail.id)}
+        count={agents.length}
+        now={now}
+        {...(wantedStep !== undefined ? { step: wantedStep } : {})}
+        onBack={closeAgent}
+        onOpen={open}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -164,7 +191,7 @@ function SessionAgents({
         <p className="text-sm text-fg-3" data-testid="inspector-summary">
           {sessionAgentSummary(agents, inspection, now)}
         </p>
-        <FanOutView picture={picture} lit={hovered ?? active} onHover={setHovered} onPick={pick} />
+        <FanOutView picture={picture} lit={hovered ?? active} onHover={setHovered} onPick={open} />
       </div>
       <AgentListView
         items={items}
@@ -174,7 +201,8 @@ function SessionAgents({
         active={active}
         lit={hovered}
         onHover={setHovered}
-        onPick={pick}
+        onMove={move}
+        onOpen={open}
       />
     </div>
   );
@@ -268,7 +296,8 @@ function AgentListView({
   active,
   lit,
   onHover,
-  onPick,
+  onMove,
+  onOpen,
 }: {
   items: AgentListItem[];
   ids: string[];
@@ -277,15 +306,25 @@ function AgentListView({
   active: string | null;
   lit: string | null;
   onHover: (id: string | null) => void;
-  onPick: (id: string) => void;
+  onMove: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!active) return;
     document.getElementById(`agent-${active}`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
+  // back from an agent, with the keyboard still in the pane
+  useEffect(() => {
+    if (paneFocus.pending) {
+      paneFocus.pending = false;
+      ref.current?.focus();
+    }
+  }, []);
   return (
     <div
+      ref={ref}
       role="listbox"
       tabIndex={0}
       aria-label="Agents"
@@ -295,19 +334,20 @@ function AgentListView({
       className="min-h-0 flex-1 overflow-y-auto border-t border-line pt-2 pb-3 outline-none"
       onFocus={() => {
         setFocused(true);
-        if (!active && ids[0]) onPick(ids[0]);
+        if (!active && ids[0]) onMove(ids[0]);
       }}
       onBlur={() => setFocused(false)}
       onKeyDown={(e) => {
         const at = active ? ids.indexOf(active) : -1;
         const go = (i: number) => {
           const id = ids[Math.max(0, Math.min(ids.length - 1, i))];
-          if (id) onPick(id);
+          if (id) onMove(id);
         };
         if (e.key === "ArrowDown") go(at + 1);
         else if (e.key === "ArrowUp") go(at - 1);
         else if (e.key === "Home") go(0);
         else if (e.key === "End") go(ids.length - 1);
+        else if ((e.key === "Enter" || e.key === "ArrowRight") && active) onOpen(active);
         else return;
         e.preventDefault();
         e.stopPropagation();
@@ -333,7 +373,7 @@ function AgentListView({
             focused={focused}
             lit={item.id === lit}
             onHover={onHover}
-            onPick={onPick}
+            onPick={onOpen}
           />
         ),
       )}

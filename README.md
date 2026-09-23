@@ -116,6 +116,18 @@ The numbers come from each agent's own transcript, read when you look - never fo
 Code itself reports for an agent: the context its last response ran with, not a sum over every response. A finished
 agent's reading is kept in `.grove/`, keyed by its file's size and time, so the next look is one file read.
 
+Click an agent (or `↵` on it) for everything it did, in place of the list. Its result comes first - it is the answer
+to "what did it do" - then what it was asked, then every step: one quiet line per tool call with what it was about and
+how far into the agent's life it came, and the agent's own words between them, where it explains itself. A failed step
+says how (`exit 1`, `rejected`) in the pane's one colour. Runs of the same tool fold into one line (`Read ×6`), and
+thinking stays hidden behind **show thinking**. A step opens in place to its whole input and what came back, read
+from the transcript at that moment - the pane never holds a tool's output until you ask for it. An `Agent` step goes
+to the agent it started. `Esc` or `←` goes back to the list.
+
+What an agent wrote is not trusted: a result quotes web pages and files. It is rendered as markdown without any HTML
+(a `<script>` in a result shows as text), images show their description, and only `http(s)` links open - in your
+browser, never in the app.
+
 ### Search reaches the whole conversation
 
 Typing filters titles and prompts instantly. A moment later the app also looks through everything that was said in

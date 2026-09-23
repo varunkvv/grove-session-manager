@@ -49,6 +49,7 @@ describe("design lint", () => {
       "components/Dialogs.tsx",
       "components/SessionList.tsx",
       "components/Inspector.tsx",
+      "components/AgentDetail.tsx",
     ]);
     for (const f of uses) expect(allowed.has(f), `${f} uses the accent`).toBe(true);
     // a row takes the accent only when its session asks for someone, never for decoration
@@ -57,7 +58,8 @@ describe("design lint", () => {
       expect(line, "accent on a session row outside the live badge").toMatch(/loud|NEEDS_YOU/);
     }
     // the inspector's only colour is an agent or a step that ended in an error
-    for (const [f, src] of files.filter(([f]) => f === "components/Inspector.tsx")) {
+    const inspector = new Set(["components/Inspector.tsx", "components/AgentDetail.tsx"]);
+    for (const [f, src] of files.filter(([f]) => inspector.has(f))) {
       for (const line of src.split("\n").filter((l) => /-accent/.test(l))) {
         expect(line, `accent in ${f} for something other than an error`).toMatch(/error/);
       }

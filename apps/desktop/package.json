@@ -19,8 +19,8 @@
     "test:packaged": "playwright test e2e/packaged.spec.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
     "@grove/core": "workspace:*",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-virtual": "^3.14.13",
     "@types/node": "catalog:",
@@ -32,6 +32,8 @@
     "esbuild": "catalog:",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.3",
     "typescript": "catalog:",
     "vite": "catalog:",

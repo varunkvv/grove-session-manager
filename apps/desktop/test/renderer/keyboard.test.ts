@@ -97,6 +97,12 @@ describe("keyboard model", () => {
     });
     // out of it first, then closed, and only then is the query cleared
     expect(interpret(open, key("Escape"))).toEqual({ type: "inspector-close" });
+    // an agent's detail goes back to the list before anything else, wherever the keyboard is
+    for (const inInspector of [true, false]) {
+      expect(interpret({ ...open, inInspector, inspectorDetail: true }, key("Escape"))).toEqual({
+        type: "inspector-back",
+      });
+    }
     expect(interpret(ctx({ query: "x" }), key("Escape"))).toEqual({ type: "clear-query" });
   });
 
@@ -105,6 +111,8 @@ describe("keyboard model", () => {
     expect(interpret(ctx(), key("Tab"))).toBeNull();
     const inside = ctx({ inspector: true, inInspector: true, inSearch: false });
     expect(interpret(inside, key("Tab", { shift: true }))).toEqual({ type: "inspector-leave" });
+    // a second Tab keeps the keyboard where it is, rather than walking off into the footer
+    expect(interpret(inside, key("Tab"))).toEqual({ type: "none" });
     expect(interpret(inside, key("ArrowDown"))).toBeNull();
     expect(interpret(inside, key("Enter"))).toBeNull();
     // shortcuts still work from in there

@@ -19,6 +19,8 @@ export type Intent =
   | { type: "inspector-enter" }
   | { type: "inspector-leave" }
   | { type: "inspector-close" }
+  | { type: "inspector-back" }
+  | { type: "none" }
   | { type: "new-combo" }
   | { type: "open-combo" }
   | { type: "edit-combo" }
@@ -39,6 +41,8 @@ export interface KeyContext {
   inspector?: boolean;
   /** DOM focus is inside it. it moves through its own list with the arrows. */
   inInspector?: boolean;
+  /** it shows one agent's detail rather than the list of them */
+  inspectorDetail?: boolean;
 }
 
 export interface KeyInput {
@@ -59,7 +63,9 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (e.composing) return null;
   if (e.key === "Escape") {
     if (ctx.overlay) return { type: "close-overlay" };
-    // one step at a time: out of the inspector, then close it, then the query
+    // one step at a time: back from an agent to the list, out of the inspector, then close it,
+    // then the query
+    if (ctx.inspectorDetail) return { type: "inspector-back" };
     if (ctx.inInspector) return { type: "inspector-leave" };
     if (ctx.inspector) return { type: "inspector-close" };
     if (ctx.query) return { type: "clear-query" };
@@ -69,6 +75,8 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (e.key === "Tab" && !e.meta && !e.alt && !e.ctrl) {
     if (ctx.inspector && !ctx.inInspector && !e.shift) return { type: "inspector-enter" };
     if (ctx.inInspector && e.shift) return { type: "inspector-leave" };
+    // already in there: the browser's own Tab would walk off into the footer
+    if (ctx.inInspector) return { type: "none" };
     return null;
   }
 

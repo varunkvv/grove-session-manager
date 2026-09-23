@@ -8,6 +8,7 @@ import {
   loadCachedTimeline,
   mapLimit,
   readAgentTimeline,
+  readToolDetail,
   readWorkflowJournal,
   readWorkflowRuns,
   type SessionAgent,
@@ -20,7 +21,14 @@ import {
   type WorkflowRun,
   workflowResultText,
 } from "@grove/core";
-import type { AgentStats, SessionInspection, SessionKey } from "../../shared/ipc.ts";
+import type {
+  AgentDetail,
+  AgentStats,
+  DetailStep,
+  SessionInspection,
+  SessionKey,
+  StepDetail,
+} from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 
 /** folded timelines kept in memory. the 4MB agent folds to ~270KB, so this stays well under 20MB. */
@@ -154,6 +162,69 @@ export class AgentInspector {
   }
 
   /**
+   * one agent of one session, and the file it writes to. the file always comes from the scan:
+   * nothing the renderer sends is ever used as a path.
+   */
+  private find(key: SessionKey, agentId: string) {
+    if (typeof key !== "string" || typeof agentId !== "string") return null;
+    const snapshot = this.opts.snapshot(key);
+    const agent = snapshot?.agents.find((a) => a.id === agentId);
+    const file = snapshot?.reads[agentId]?.file;
+    return snapshot && agent && file ? { snapshot, agent, file } : null;
+  }
+
+  /** the transcript an agent writes to, for Reveal in Finder */
+  agentFile(key: SessionKey, agentId: string): string | null {
+    return this.find(key, agentId)?.file ?? null;
+  }
+
+  /**
+   * one agent, step by step, as the detail view draws it: every line of the timeline without the
+   * previews and offsets a step carries in main. the 4MB agent comes to ~50KB this way.
+   */
+  async detail(key: SessionKey, agentId: string): Promise<AgentDetail | null> {
+    const found = this.find(key, agentId);
+    if (!found) return null;
+    const { snapshot, agent, file } = found;
+    const state = await this.timeline(file, agent.state === "done");
+    if (!state) return null;
+    const view = timelineView(state);
+    // an Agent call's id is the toolUseId in the meta of the agent it started
+    const started = new Map(
+      snapshot.agents.flatMap((a) => (a.toolUseId ? [[a.toolUseId, a.id] as const] : [])),
+    );
+    const journal = agent.workflow
+      ? (await readWorkflowJournal(path.dirname(file))).get(agent.id)
+      : undefined;
+    const result = (agent.workflow ? workflowResultText(journal) : undefined) ?? view.result;
+    const detail: AgentDetail = {
+      key,
+      id: agent.id,
+      tokens: view.tokens,
+      toolCount: view.toolCount,
+      steps: detailSteps(state.steps, view.steps, started),
+    };
+    if (view.prompt !== undefined) detail.prompt = view.prompt;
+    if (result) detail.result = result;
+    if (view.model) detail.model = view.model;
+    if (view.startedAt !== undefined) detail.startedAt = view.startedAt;
+    if (view.lastAt !== undefined) detail.lastAt = view.lastAt;
+    if (view.error) detail.error = view.error;
+    if (view.interrupted) detail.interrupted = true;
+    return detail;
+  }
+
+  /** one step opened. the only place a whole tool result is read. */
+  async step(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null> {
+    const found = this.find(key, agentId);
+    if (!found || typeof stepId !== "string") return null;
+    const state = await this.timeline(found.file, found.agent.state === "done");
+    const step = state?.steps.find((s) => s.kind === "tool" && s.id === stepId);
+    if (step?.kind !== "tool") return null;
+    return readToolDetail(found.file, step);
+  }
+
+  /**
    * the names come from the session's own transcript, which can be 100MB. it is read again only
    * when a run is still unnamed and the transcript has moved since the last look.
    */
@@ -167,6 +238,46 @@ export class AgentInspector {
     this.runs.set(key, { mark, runs });
     return runs;
   }
+}
+
+/**
+ * the view's steps, numbered by where they sit in the fold. the view only ever leaves out the
+ * final message's text, so a step keeps its number while the agent writes more.
+ */
+function detailSteps(
+  all: readonly TimelineState["steps"][number][],
+  shown: readonly TimelineState["steps"][number][],
+  started: ReadonlyMap<string, string>,
+): DetailStep[] {
+  const index = new Map(all.map((s, i) => [s, i]));
+  return shown.map((s): DetailStep => {
+    const n = index.get(s) ?? -1;
+    if (s.kind !== "tool") {
+      return s.kind === "message"
+        ? {
+            kind: "message",
+            n,
+            text: s.text,
+            at: s.at,
+            ...(s.interrupted ? { interrupted: true } : {}),
+          }
+        : { kind: s.kind, n, text: s.text, at: s.at };
+    }
+    const step: DetailStep = {
+      kind: "tool",
+      n,
+      id: s.id,
+      name: s.name,
+      target: s.target,
+      at: s.at,
+    };
+    if (s.durationMs !== undefined) step.durationMs = s.durationMs;
+    if (s.failure) step.failure = s.failure;
+    if (s.server) step.server = true;
+    const child = started.get(s.id);
+    if (child) step.agentId = child;
+    return step;
+  });
 }
 
 function statsOf(

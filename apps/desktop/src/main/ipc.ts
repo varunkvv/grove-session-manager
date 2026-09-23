@@ -28,7 +28,7 @@ import type {
 import type { AppEnv } from "./env.ts";
 import { AppError, toOutcomeError } from "./errors.ts";
 import { log } from "./log.ts";
-import { isTrustedUrl } from "./origin.ts";
+import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { AgentInspector } from "./services/agentInspector.ts";
 import type { ArchiveService } from "./services/archive.ts";
@@ -90,6 +90,7 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "updateSettings",
   "reveal",
   "copyText",
+  "openExternal",
 ]);
 
 function toAppSettings(s: Settings): AppSettings {
@@ -251,6 +252,22 @@ function buildHandlers(deps: Deps): Handlers {
     async inspectSession(key) {
       if (typeof key !== "string" || !sessions.get(key)) return null;
       return deps.inspector.inspect(key);
+    },
+
+    async agentDetail(key, agentId) {
+      if (typeof key !== "string" || !sessions.get(key)) return null;
+      return deps.inspector.detail(key, agentId);
+    },
+
+    async agentStep(key, agentId, stepId) {
+      if (typeof key !== "string" || !sessions.get(key)) return null;
+      return deps.inspector.step(key, agentId, stepId);
+    },
+
+    async openExternal(url) {
+      const safe = externalUrl(url);
+      if (!safe) throw new AppError("bad-link", "Only web links open from here.");
+      await electron.shell.openExternal(safe);
     },
 
     async searchSessions(query) {
@@ -529,6 +546,13 @@ function buildHandlers(deps: Deps): Handlers {
     async reveal(target) {
       if (target.kind === "session") {
         electron.shell.showItemInFolder(requireSession(deps, target.key).key);
+        return;
+      }
+      if (target.kind === "agent") {
+        requireSession(deps, target.key);
+        const file = deps.inspector.agentFile(target.key, target.agentId);
+        if (!file) throw new AppError("no-agent", "That agent's transcript is gone.");
+        electron.shell.showItemInFolder(file);
         return;
       }
       const combo = combos.find(target.name);

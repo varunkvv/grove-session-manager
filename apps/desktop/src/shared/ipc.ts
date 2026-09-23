@@ -88,6 +88,58 @@ export interface SessionInspection {
   workflows: Record<string, { name?: string; summary?: string }>;
 }
 
+/**
+ * one step of an agent's timeline, as the inspector draws it: what a line needs and nothing more.
+ * a tool's full input and result stay on disk until someone opens the step.
+ */
+export type DetailStep =
+  | {
+      kind: "tool";
+      /** where it sits in the fold. stable while the agent keeps writing: steps are only added. */
+      n: number;
+      /** the tool_use id: what opening the step asks for */
+      id: string;
+      name: string;
+      target: string;
+      at: number;
+      /** absent while the tool is still running */
+      durationMs?: number;
+      /** "exit 1", "rejected", "error" - only on a failed step */
+      failure?: string;
+      /** the advisor: it runs on the api side and has nothing to open */
+      server?: boolean;
+      /** the agent an Agent call started, when its transcript is here */
+      agentId?: string;
+    }
+  | { kind: "text" | "thinking"; n: number; text: string; at: number }
+  | { kind: "message"; n: number; text: string; at: number; interrupted?: boolean };
+
+/** everything the detail view shows of one agent, built in main from its folded transcript */
+export interface AgentDetail {
+  key: SessionKey;
+  id: string;
+  prompt?: string;
+  /** every text block of its final message, or a workflow journal's result. markdown, untrusted. */
+  result?: string;
+  model?: string;
+  tokens: number;
+  toolCount: number;
+  startedAt?: number;
+  lastAt?: number;
+  error?: string;
+  interrupted?: boolean;
+  steps: DetailStep[];
+}
+
+/** one tool call opened: the whole input, and the whole result up to a cap */
+export interface StepDetail {
+  input: string;
+  result?: string;
+  isError?: boolean;
+  /** cut at the cap */
+  truncated: boolean;
+}
+
 /** a folder people keep coming back to: repos their sessions ran in, and folders already in combos */
 export interface FrequentFolder {
   path: string;
@@ -249,6 +301,12 @@ export interface Api {
   searchSessions(query: string): Promise<{ query: string; hits: SearchHit[] }>;
   /** what each of a session's agents did, from their own transcripts. null for an unknown row. */
   inspectSession(key: SessionKey): Promise<SessionInspection | null>;
+  /** one agent, step by step. null when the session or the agent is not known. */
+  agentDetail(key: SessionKey, agentId: string): Promise<AgentDetail | null>;
+  /** one step opened: read back from the two transcript lines it points at */
+  agentStep(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null>;
+  /** a link in an agent's output. only http(s), and only ever in the browser. */
+  openExternal(url: string): Promise<Outcome>;
   /** takes sessions out of "needs you" until their next event */
   markSeen(keys: SessionKey[]): Promise<void>;
   /** puts sessions away, or brings them back. writes the decision to ~/claude-ws/archived.json. */
@@ -292,6 +350,7 @@ export interface Api {
   reveal(
     target:
       | { kind: "session"; key: SessionKey }
+      | { kind: "agent"; key: SessionKey; agentId: string }
       | { kind: "combo"; name: string }
       | { kind: "folder"; name: string; folderPath: string },
   ): Promise<Outcome>;
@@ -305,6 +364,9 @@ export const INVOKE_CHANNELS = [
   "sessionActions",
   "searchSessions",
   "inspectSession",
+  "agentDetail",
+  "agentStep",
+  "openExternal",
   "markSeen",
   "archiveSessions",
   "runSessionAction",

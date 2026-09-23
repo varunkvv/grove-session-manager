@@ -37,6 +37,10 @@ export interface Toast extends ToastMessage {
 export interface InspectorState {
   /** the agent the pane's keyboard is on */
   agent: string | null;
+  /** the agent whose detail is showing in place of the list, and the session it belongs to */
+  detail: { key: SessionKey; id: string } | null;
+  /** a step to bring into view when the detail opens: where a search hit landed */
+  step?: number;
 }
 
 interface State {

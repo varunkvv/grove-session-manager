@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { resolveAssetPath } from "../../src/main/assets.ts";
 import { resolveAppEnv, userDataDirFor } from "../../src/main/env.ts";
 import { OpQueue } from "../../src/main/opQueue.ts";
-import { isTrustedUrl } from "../../src/main/origin.ts";
+import { externalUrl, isTrustedUrl } from "../../src/main/origin.ts";
 import { diffRows, PatchCoalescer } from "../../src/main/patchCoalescer.ts";
 import { Pusher } from "../../src/main/push.ts";
 import { parseDraft } from "../../src/main/services/draft.ts";
@@ -184,6 +184,29 @@ describe("what the renderer is allowed to be", () => {
     expect(isTrustedUrl(undefined)).toBe(false);
     expect(isTrustedUrl("http://localhost:5183/", "http://localhost:5183")).toBe(true);
     expect(isTrustedUrl("http://localhost:9999/", "http://localhost:5183")).toBe(false);
+  });
+
+  it("a link in an agent's output leaves only for the web, and only as what it parses to", () => {
+    expect(externalUrl("https://www.postgresql.org/docs/")).toBe(
+      "https://www.postgresql.org/docs/",
+    );
+    expect(externalUrl("http://example.com/a b")).toBe("http://example.com/a%20b");
+    for (const bad of [
+      "javascript:alert(1)",
+      "file:///etc/passwd",
+      "vscode://anthropic.claude-code/open?session=x",
+      "app://renderer/index.html",
+      "data:text/html,<script>alert(1)</script>",
+      "https://user:pass@example.com/",
+      "//example.com",
+      "not a url",
+      "",
+      42,
+      undefined,
+      `https://example.com/${"a".repeat(5000)}`,
+    ]) {
+      expect(externalUrl(bad), String(bad).slice(0, 40)).toBeNull();
+    }
   });
 
   it("the asset server stays inside the renderer directory", () => {

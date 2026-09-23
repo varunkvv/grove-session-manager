@@ -43,7 +43,7 @@ export function openInspector(key?: SessionKey): void {
   const s = state();
   s.set({
     ...(key ? { activeKey: key } : {}),
-    inspector: s.inspector ?? { agent: null },
+    inspector: s.inspector ?? { agent: null, detail: null },
   });
 }
 
@@ -52,6 +52,38 @@ export function focusInspector(): boolean {
   const list = document.querySelector<HTMLElement>("[data-inspector-list]");
   list?.focus();
   return !!list;
+}
+
+/**
+ * a view that replaces another inside the pane takes the keyboard on its first render, when the
+ * one it replaced had it. set just before the swap, read once by whatever mounts next.
+ */
+export const paneFocus: { pending: boolean } = { pending: false };
+
+const focusInPane = () =>
+  !!document.activeElement?.closest?.('[data-testid="inspector"]') &&
+  document.activeElement !== document.body;
+
+/** one agent's detail in place of the list. `step` brings that step into view. */
+export function openAgent(key: SessionKey, id: string, step?: number): void {
+  const s = state();
+  paneFocus.pending = focusInPane();
+  s.set({
+    inspector: {
+      agent: id,
+      detail: { key, id },
+      ...(step !== undefined ? { step } : {}),
+    },
+  });
+}
+
+/** back from an agent to the list, with the row it came from still the one the keyboard is on */
+export function closeAgent(): void {
+  const s = state();
+  const detail = s.inspector?.detail;
+  if (!detail) return;
+  paneFocus.pending = focusInPane();
+  s.set({ inspector: { agent: detail.id, detail: null } });
 }
 
 export function closeInspector(): void {

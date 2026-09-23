@@ -34,3 +34,21 @@ export function isTrustedUrl(url: string | undefined | null, devServerUrl?: stri
     return false;
   }
 }
+
+/**
+ * a link out of the app, from text nobody here wrote: an agent's result, a web page it read. only
+ * http(s) leaves, and only as the parsed url - never `file:`, a custom scheme, or anything with
+ * credentials in it, which is how a link dresses up as somewhere it is not.
+ */
+export function externalUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > 4096) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (u.username || u.password || !u.hostname) return null;
+  return u.href;
+}

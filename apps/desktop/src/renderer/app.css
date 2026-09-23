@@ -227,3 +227,138 @@ dialog::backdrop {
     transition: none;
   }
 }
+
+/*
+ * markdown an agent wrote, in the pane's own typography: no boxes, hairlines where a structure
+ * needs one, mono only for code. headings stay near body size - it is someone's report, not a page.
+ */
+.md {
+  color: var(--color-fg-2);
+  /* not `anywhere`: that shrinks a table cell's minimum and breaks a path mid-word */
+  overflow-wrap: break-word;
+  user-select: text;
+  cursor: text;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p,
+.md ul,
+.md ol,
+.md pre,
+.md table,
+.md blockquote {
+  margin: 0 0 8px;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 14px 0 4px;
+  color: var(--color-fg);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 20px;
+}
+.md h1 {
+  font-size: 15px;
+  line-height: 22px;
+}
+.md strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+.md ul,
+.md ol {
+  padding-left: 18px;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li + li {
+  margin-top: 2px;
+}
+.md li::marker {
+  color: var(--color-fg-4);
+}
+.md a {
+  color: var(--color-fg);
+  text-decoration: underline;
+  text-decoration-color: var(--color-line-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.md a:hover {
+  text-decoration-color: var(--color-fg-3);
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-fg);
+}
+.md pre {
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--color-line-strong);
+  overflow-x: auto;
+  line-height: 17px;
+}
+.md pre code {
+  color: var(--color-fg-2);
+}
+.md blockquote {
+  padding-left: 12px;
+  border-left: 1px solid var(--color-line-strong);
+  color: var(--color-fg-3);
+}
+.md hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--color-line);
+}
+.md table {
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 18px;
+  display: block;
+  overflow-x: auto;
+}
+.md th,
+.md td {
+  padding: 3px 12px 3px 0;
+  border-bottom: 1px solid var(--color-line);
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  color: var(--color-fg);
+  font-weight: 500;
+}
+.md .md-alt {
+  color: var(--color-fg-3);
+}
+.md .md-alt::before {
+  content: "[";
+}
+.md .md-alt::after {
+  content: "]";
+}
+
+/*
+ * a long block, folded. prose ends on an ellipsis at a whole line. the clamp cannot count the lines
+ * of a table or a code block, so the height caps those.
+ */
+.fold {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--fold-lines);
+  max-height: calc(var(--fold-lines) * 20px);
+  overflow: hidden;
+}

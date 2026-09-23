@@ -13,6 +13,7 @@ import {
   activate,
   activateDefault,
   archiveSessions,
+  closeAgent,
   closeInspector,
   focusInspector,
   focusSearch,
@@ -80,6 +81,11 @@ function perform(intent: Intent): void {
       break;
     case "inspector-close":
       closeInspector();
+      break;
+    case "inspector-back":
+      closeAgent();
+      break;
+    case "none":
       break;
     case "focus-search":
     case "type-through":
@@ -185,6 +191,7 @@ export function App() {
           pageSize: listRef.pageSize,
           inspector: s.inspector !== null,
           inInspector,
+          inspectorDetail: !!s.inspector?.detail && s.inspector.detail.key === s.activeKey,
         },
         {
           key: e.key,

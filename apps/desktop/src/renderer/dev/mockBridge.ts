@@ -2,6 +2,7 @@
 // visual work. never part of a production build - main.tsx only imports it when import.meta.env.DEV
 // is true.
 import type {
+  AgentDetail,
   AgentStats,
   Bootstrap,
   Bridge,
@@ -10,6 +11,7 @@ import type {
   SessionAgent,
   SessionInspection,
   SessionRow,
+  StepDetail,
 } from "../../shared/ipc.ts";
 
 const NOW = Date.now();
@@ -383,6 +385,284 @@ const nestedWorkflow: SessionAgent[] = [
 
 const inspectionsByKey = new Map<string, SessionInspection>();
 
+// what each agent did, step by step. a few written out by hand so the look can be judged on
+// something real-shaped, the rest generated - one of them 300 steps long.
+type MockStep = AgentDetail["steps"][number];
+const detailsById = new Map<string, AgentDetail>();
+const bodies = new Map<string, StepDetail>();
+
+const FILES = [
+  "src/jobs/nightly.ts",
+  "src/jobs/rollup.ts",
+  "src/db/pool.ts",
+  "src/db/queries/events.sql",
+  "packages/core/src/sessions/agents.ts",
+  "packages/core/src/sessions/liveStatus.ts",
+  "apps/desktop/src/main/services/sessions.ts",
+  "apps/desktop/src/renderer/components/SessionList.tsx",
+  "migrations/0191_events.sql",
+  "README.md",
+];
+
+function steps(
+  start: number,
+  spec: Array<
+    | { say: string; at: number }
+    | { think: string; at: number }
+    | {
+        tool: string;
+        target: string;
+        at: number;
+        took?: number;
+        failure?: string;
+        agentId?: string;
+        input?: string;
+        result?: string;
+      }
+  >,
+  agentId: string,
+): MockStep[] {
+  return spec.map((x, n): MockStep => {
+    if ("say" in x) return { kind: "text", n, text: x.say, at: start + x.at * 1000 };
+    if ("think" in x) return { kind: "thinking", n, text: x.think, at: start + x.at * 1000 };
+    const id = `toolu_${agentId}_${n}`;
+    bodies.set(id, {
+      input: x.input ?? JSON.stringify({ target: x.target }, null, 2),
+      result: x.result ?? `(output of ${x.tool} ${x.target})`,
+      ...(x.failure ? { isError: true } : {}),
+      truncated: false,
+    });
+    return {
+      kind: "tool",
+      n,
+      id,
+      name: x.tool,
+      target: x.target,
+      at: start + x.at * 1000,
+      ...(x.took === -1 ? {} : { durationMs: (x.took ?? 1) * 1000 }),
+      ...(x.failure ? { failure: x.failure } : {}),
+      ...(x.agentId ? { agentId: x.agentId } : {}),
+    };
+  });
+}
+
+/** a long agent's life: reads, searches, edits and test runs, in the rhythm real ones have */
+function generated(agentId: string, start: number, count: number, spanS: number): MockStep[] {
+  const spec: Parameters<typeof steps>[1] = [];
+  for (let i = 0; i < count; i++) {
+    const at = Math.round((i / count) * spanS);
+    const file = FILES[(i * 7) % FILES.length] ?? "README.md";
+    const phase = i % 23;
+    if (phase === 0)
+      spec.push({ say: `Looking at ${file} next, since the scan starts there.`, at });
+    else if (phase < 6) spec.push({ tool: "Read", target: file, at });
+    else if (phase < 8)
+      spec.push({ tool: "Grep", target: `"agents" in ${file.split("/")[0]}`, at });
+    else if (phase < 13) spec.push({ tool: "Edit", target: file, at });
+    else if (phase === 13)
+      spec.push({
+        tool: "Bash",
+        target: "pnpm test",
+        at,
+        took: 6,
+        ...(i % 3 === 0
+          ? {
+              failure: "exit 1",
+              result: "Exit code 1\n FAIL  test/sessions.test.ts > agents on every session",
+            }
+          : {}),
+      });
+    else if (phase < 20)
+      spec.push({ tool: "Read", target: FILES[(i * 3) % FILES.length] ?? "", at });
+    else spec.push({ tool: "Bash", target: "pnpm typecheck && pnpm lint", at, took: 9 });
+  }
+  return steps(start, spec, agentId);
+}
+
+const REPORT = `Found it. **Two of the 14 queries changed on Tuesday**, and one of them is the spike.
+
+| query | file | change |
+| --- | --- | --- |
+| nightly rollup | \`src/jobs/rollup.ts\` | window widened from 7 to 30 days |
+| events join | \`src/db/queries/events.sql\` | new join on \`account_id\`, no index |
+
+The join is the expensive one: \`EXPLAIN\` shows a sequential scan over 41M rows.
+
+\`\`\`sql
+create index concurrently events_account_id on events (account_id);
+\`\`\`
+
+- the rollup change is slower but bounded
+- the join is what pins the CPU from 02:00
+- see the [planner docs](https://www.postgresql.org/docs/current/using-explain.html)
+
+<script>alert("this stays text")</script>`;
+
+function mockDetail(a: SessionAgent): AgentDetail {
+  const st = stats[a.id];
+  const start = st?.startedAt ?? a.startedAt;
+  const base = {
+    key: "",
+    id: a.id,
+    tokens: st?.tokens ?? 0,
+    toolCount: st?.toolCount ?? 0,
+    startedAt: start,
+    ...(st?.lastAt !== undefined ? { lastAt: st.lastAt } : {}),
+    ...(st?.model ? { model: st.model } : {}),
+    ...(st?.error ? { error: st.error } : {}),
+  };
+  const prompt = `${a.description ?? st?.asked ?? "Do the thing."}\n\nWork in the repo as it is, report what you found with file paths, and do not change anything outside \`src/\`. If the answer needs a migration, say so rather than writing one.`;
+  switch (a.id) {
+    case "a01":
+      return {
+        ...base,
+        prompt,
+        result: REPORT,
+        steps: steps(
+          start,
+          [
+            { say: "Starting from the job's entry point.", at: 2 },
+            { tool: "Read", target: "src/jobs/nightly.ts", at: 4 },
+            { tool: "Grep", target: '"db.query" in src/jobs', at: 9 },
+            { tool: "Read", target: "src/jobs/rollup.ts", at: 14 },
+            { tool: "Read", target: "src/db/pool.ts", at: 16 },
+            { tool: "Read", target: "src/db/queries/events.sql", at: 18 },
+            { tool: "Read", target: "src/db/queries/accounts.sql", at: 19 },
+            {
+              tool: "Bash",
+              target: "git log --since=7.days --oneline -- src/jobs src/db",
+              at: 30,
+              took: 2,
+              result: "9f04c16 widen the rollup window\n32a5aa2 add the events join",
+            },
+            {
+              say: "Two commits touch the job. The second adds a join I have not seen yet.",
+              at: 33,
+            },
+            {
+              tool: "Bash",
+              target: "psql -c 'explain select * from events join accounts using (account_id)'",
+              at: 60,
+              took: 4,
+              failure: "exit 2",
+              result:
+                'Exit code 2\npsql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: No such file or directory',
+            },
+            { tool: "Bash", target: "psql $REPLICA_URL -c 'explain ...'", at: 80, took: 3 },
+            {
+              tool: "WebFetch",
+              target: "www.postgresql.org/docs/current/using-explain.html",
+              at: 110,
+              took: 5,
+            },
+          ],
+          a.id,
+        ),
+      };
+    case "a03":
+      return {
+        ...base,
+        prompt,
+        steps: steps(
+          start,
+          [
+            {
+              tool: "WebFetch",
+              target: "www.postgresql.org/docs/current/pgstatstatements.html",
+              at: 5,
+              took: 4,
+            },
+          ],
+          a.id,
+        ),
+      };
+    case "a04":
+      return {
+        ...base,
+        prompt,
+        steps: [
+          ...steps(
+            start,
+            [
+              {
+                think:
+                  "The replay has to start from the same data, so a schema-only dump first, then the batch.",
+                at: 3,
+              },
+              {
+                tool: "Bash",
+                target: "pg_dump --schema-only prod > /tmp/schema.sql",
+                at: 10,
+                took: 20,
+              },
+              {
+                tool: "Bash",
+                target: "psql replica -f replay.sql",
+                at: 300,
+                took: 40,
+                failure: "exit 1",
+                result:
+                  'Exit code 1\nERROR:  relation "events_tmp" does not exist\nLINE 1: insert into events_tmp select * from events where ...',
+              },
+              { say: "The replay needs the temp table the job creates first. Adding it.", at: 345 },
+              { tool: "Edit", target: "replay.sql", at: 350 },
+              { tool: "Bash", target: "psql replica -f replay.sql", at: 400, took: 60 },
+            ],
+            a.id,
+          ),
+          ...generated(a.id, start + 460_000, 58, 20 * 60 - 470).map((x) => ({ ...x, n: x.n + 6 })),
+        ].map((x, i, all) =>
+          // the last call is still going
+          i === all.length - 1 && x.kind === "tool" ? { ...x, durationMs: undefined } : x,
+        ) as MockStep[],
+      };
+    case "c01":
+      return {
+        ...base,
+        prompt,
+        result:
+          "The serializer derives the name on create and keeps it on update, with two new tests. Both writers are covered.",
+        steps: steps(
+          start,
+          [
+            { tool: "Read", target: "kirby/serializers/bds.py", at: 20 },
+            {
+              tool: "Agent",
+              target: "Find every writer of big_query_table_name",
+              at: 120,
+              took: 180,
+              agentId: "c02",
+            },
+            {
+              tool: "Agent",
+              target: "Check what platform sends to the route",
+              at: 180,
+              took: 420,
+              agentId: "c03",
+            },
+            { tool: "Edit", target: "kirby/serializers/bds.py", at: 700 },
+            { tool: "Bash", target: "pytest kirby/tests/test_bds.py -q", at: 760, took: 30 },
+          ],
+          a.id,
+        ),
+      };
+    default: {
+      const long = a.id === "b03";
+      return {
+        ...base,
+        prompt,
+        ...(st?.outcome ? { result: st.outcome } : {}),
+        steps: generated(
+          a.id,
+          start,
+          long ? 300 : Math.max(3, st?.toolCount ?? 8),
+          long ? 42 * 60 : 150,
+        ),
+      };
+    }
+  }
+}
+
 const f = (
   dirName: string,
   mode: FolderView["mode"],
@@ -535,6 +815,16 @@ const bridge: Bridge = {
   },
   searchSessions: async (query) => ({ query, hits: [] }),
   inspectSession: async (key) => inspectionsByKey.get(key) ?? { key, agents: {}, workflows: {} },
+  agentDetail: async (key, agentId) => {
+    const row = sessions.find((r) => r.key === key);
+    const a = row?.agents?.find((x) => x.id === agentId);
+    if (!a) return null;
+    const held = detailsById.get(agentId) ?? mockDetail(a);
+    detailsById.set(agentId, held);
+    return { ...held, key };
+  },
+  agentStep: async (_key, _agentId, stepId) => bodies.get(stepId) ?? null,
+  openExternal: () => okv(undefined),
   markSeen: async () => {},
   archiveSessions: () => okv(undefined),
   runSessionAction: () => okv({ message: "Done (mock)" }),
