@@ -283,7 +283,11 @@ export function writeAgent(fx: Fixture, a: AgentSpec): string {
         requestShape: "foreground",
         requestNonInteractive: true,
       };
-  writeFileSync(path.join(dir, `agent-${a.id}.meta.json`), JSON.stringify(meta));
+  const metaFile = path.join(dir, `agent-${a.id}.meta.json`);
+  writeFileSync(metaFile, JSON.stringify(meta));
+  // written when the agent started: its birthtime is the start when no hook saw it (APFS pulls
+  // the birthtime back to an earlier mtime)
+  utimesSync(metaFile, new Date(t0), new Date(t0));
   const file = path.join(dir, `agent-${a.id}.jsonl`);
   writeFileSync(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   // the file was last written when its last line was, unless it is still being written

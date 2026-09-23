@@ -1,4 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { isObject, mapLimit, readJsonGuarded } from "../fsx.ts";
 import { readTail } from "../transcript/reader.ts";
@@ -115,6 +116,44 @@ export function agentDigest(tail: string, maxChars = 2000): string {
   return out.slice(-maxChars);
 }
 
+/** where the prompt is looked for. a prompt that does not end inside it has no first line to give. */
+const PROMPT_HEAD_BYTES = 32_768;
+
+/**
+ * the first line of what an agent was asked, from the head of its transcript: the first entry is
+ * the prompt. only read for an agent with no label, and never again once it is known.
+ */
+export async function readAgentAsked(file: string): Promise<string | undefined> {
+  let text: string;
+  const fh = await open(file, constants.O_RDONLY).catch(() => null);
+  if (!fh) return undefined;
+  try {
+    const buf = Buffer.alloc(PROMPT_HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, PROMPT_HEAD_BYTES, 0);
+    const nl = buf.subarray(0, bytesRead).indexOf(0x0a);
+    if (nl < 0) return undefined;
+    text = buf.toString("utf8", 0, nl);
+  } finally {
+    await fh.close();
+  }
+  let entry: unknown;
+  try {
+    entry = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isObject(entry) || entry.type !== "user" || !isObject(entry.message)) return undefined;
+  const content = entry.message.content;
+  const prompt =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((b) => (isObject(b) && typeof b.text === "string" ? b.text : "")).join("\n")
+        : "";
+  const first = prompt.split("\n").find((l) => l.trim() && !l.trim().startsWith("<"));
+  return first ? squash(first.replace(/^#+\s*/, ""), 120) : undefined;
+}
+
 export interface AgentRead {
   /** the agent's own transcript. workflow agents nest, so this is not derivable from the id. */
   file: string;
@@ -212,6 +251,11 @@ export async function scanSessionAgents(
         agent.lastTool = tool.name;
         if (tool.at !== undefined) agent.lastToolAt = tool.at;
       }
+    }
+    // nobody labelled it: the start of its prompt stands in. a prompt never changes once written.
+    if (!meta.description) {
+      const asked = was?.asked ?? (info ? await readAgentAsked(file) : undefined);
+      if (asked) agent.asked = asked;
     }
     // the summariser owns these. a rescan must not throw away what it already paid for.
     if (was?.summary) {

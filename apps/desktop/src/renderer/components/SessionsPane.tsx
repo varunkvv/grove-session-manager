@@ -71,8 +71,21 @@ function HiddenMatches({ model }: { model: ListModel }) {
 }
 
 function EmptyState({ model }: { model: ListModel }) {
-  const { query, selectedCombo, sessions, env, editor, index, set } = useStore();
+  const { query, selectedCombo, sessions, env, editor, index, set, scope } = useStore();
   const label = editor?.label ?? "the editor";
+  if (scope === "agents") {
+    const q = splitQuery(query).text.trim();
+    return (
+      <Empty title={q ? `No agents match "${q}"` : "No agents yet"}>
+        {!q && <p>Sessions that send agents out show them here, running ones first.</p>}
+        {model.archivedHidden > 0 && (
+          <Button className="mt-4" onClick={showArchived} data-testid="show-archived">
+            Show {model.archivedHidden} in archived sessions
+          </Button>
+        )}
+      </Empty>
+    );
+  }
   if (query.trim()) {
     return (
       <Empty title={`No sessions match "${query.trim()}"`}>
@@ -210,29 +223,44 @@ export function SessionsPane() {
   const onInspect = useCallback((key: SessionKey) => openInspector(key), []);
 
   const scanning = index.phase === "scanning" || index.phase === "cache";
+  const anyAgents = useMemo(() => sessions.some((r) => (r.agents?.length ?? 0) > 0), [sessions]);
+  const noun = scope === "agents" ? "agent" : "session";
 
   return (
     <section
       className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-canvas"
       aria-label="Sessions"
     >
-      <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-line px-4">
-        {combos.length > 0 && (
+      {/* a container: with the inspector open beside it, the search field keeps its room */}
+      <header className="drag @container flex h-[52px] shrink-0 items-center gap-3 border-b border-line px-4">
+        {(combos.length > 0 || anyAgents) && (
           <Segmented
             label="Scope"
-            value={scope === "combo" && selectedCombo ? "combo" : "all"}
+            value={
+              scope === "agents" ? "agents" : scope === "combo" && selectedCombo ? "combo" : "all"
+            }
             onChange={(v) => {
               setScope(v);
               focusSearch(false);
             }}
             options={[
+              ...(combos.length > 0
+                ? [
+                    {
+                      value: "combo" as const,
+                      label: selectedCombo ?? "Combo",
+                      disabled: !selectedCombo,
+                      testId: "scope-combo",
+                    },
+                  ]
+                : []),
               {
-                value: "combo",
-                label: selectedCombo ?? "Combo",
-                disabled: !selectedCombo,
-                testId: "scope-combo",
+                value: "all" as const,
+                label: "All sessions",
+                short: "Sessions",
+                testId: "scope-all",
               },
-              { value: "all", label: "All sessions", testId: "scope-all" },
+              { value: "agents" as const, label: "Agents", testId: "scope-agents" },
             ]}
           />
         )}
@@ -247,10 +275,14 @@ export function SessionsPane() {
             aria-controls={LIST_ID}
             aria-autocomplete="list"
             aria-activedescendant={activeKey ? optionId(activeKey) : undefined}
-            aria-label="Search sessions"
+            aria-label={scope === "agents" ? "Search agents" : "Search sessions"}
             spellCheck={false}
             autoComplete="off"
-            placeholder="Search sessions - anything said, files touched, combo, branch, #PR"
+            placeholder={
+              scope === "agents"
+                ? "Search agents - what they were for, what they found, the session"
+                : "Search sessions - anything said, files touched, combo, branch, #PR"
+            }
             value={query}
             onChange={(e) => set({ query: e.target.value })}
             className="h-full min-w-0 flex-1 bg-transparent px-2 text-body text-fg placeholder:text-fg-4"
@@ -258,11 +290,11 @@ export function SessionsPane() {
           {scanning ? <Spinner /> : !query && <Kbd>/</Kbd>}
         </div>
         <span
-          className="no-drag shrink-0 text-sm tabular-nums text-fg-3"
+          className="no-drag shrink-0 text-sm tabular-nums text-fg-3 @max-xl:hidden"
           aria-live="polite"
           data-testid="result-count"
         >
-          {model.keys.length} {model.keys.length === 1 ? "session" : "sessions"}
+          {model.keys.length} {model.keys.length === 1 ? noun : `${noun}s`}
         </span>
       </header>
       <Banner />

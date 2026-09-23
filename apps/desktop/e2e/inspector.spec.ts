@@ -283,3 +283,68 @@ test("a running agent's steps arrive as it writes them, and scrolling up pauses 
   ).toBeInViewport();
   await expect(pane.getByTestId("jump-live")).toHaveCount(0);
 });
+
+test("the Agents scope lists every agent, running first, and selecting one opens it", async () => {
+  const { cwd } = setup();
+  writeDerive(fx, cwd);
+  app = await launchApp(fx);
+  const { page } = app;
+  const rows = page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 3);
+  hookEvent(fx, FANOUT.session, "UserPromptSubmit", { prompt: "go" });
+  await expect(
+    rows.filter({ hasText: "Database CPU spike" }).getByTestId("live-badge"),
+  ).toHaveAttribute("data-state", "running");
+
+  await page.keyboard.press("Meta+3");
+  await expect(page.getByTestId("scope-agents")).toHaveAttribute("aria-checked", "true");
+  const agents = page.getByTestId("agent-list-row");
+  await expect(agents).toHaveCount(10);
+  // the two still running come first, the newest of them on top
+  await expect(agents.nth(0)).toHaveAttribute("data-state", "running");
+  await expect(agents.nth(0)).toContainText("Plan the index change");
+  await expect(agents.nth(1)).toContainText("Reproduce the spike against a replica");
+  await expect(agents.nth(2)).toHaveAttribute("data-state", "done");
+  // each says which session it ran in
+  await expect(agents.nth(0)).toContainText("Database CPU spike during the nightly job");
+  // a workflow's agent has no label: the scan reads the start of its prompt instead
+  await expect(
+    agents.filter({ hasText: "You are implementing an approved plan in the kirby repo." }),
+  ).toHaveCount(1);
+
+  // selecting an agent opens the inspector on it, and it follows the selection
+  const pane = page.getByTestId("inspector");
+  await expect(pane.getByTestId("agent-title")).toHaveText("Plan the index change");
+  await expect(pane.getByTestId("inspector-title")).toHaveText(
+    "Database CPU spike during the nightly job",
+  );
+  await page.keyboard.press("ArrowDown");
+  await expect(pane.getByTestId("agent-title")).toHaveText("Reproduce the spike against a replica");
+  await shot(page, "22-agents-scope");
+
+  // Enter takes the keyboard into it
+  await page.keyboard.press("Enter");
+  await expect(pane.getByTestId("agent-steps")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByTestId("search")).toBeFocused();
+
+  // the search narrows agents by what they were for, and by their session
+  await page.keyboard.type("writer");
+  await expect(agents).toHaveCount(1);
+  await expect(agents.first()).toContainText("Find every writer of big_query_table_name");
+  await expect(pane.getByTestId("agent-title")).toHaveText(
+    "Find every writer of big_query_table_name",
+  );
+  await expect(pane.getByTestId("inspector-title")).toHaveText(
+    "Derive BDS table names instead of accepting them",
+  );
+
+  // and cmd-2 is back to sessions, where rows are sessions again. Escape closes the pane first,
+  // then clears the query
+  await page.keyboard.press("Meta+2");
+  await expect(page.getByTestId("agent-list-row")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(rows).toHaveCount(3);
+});

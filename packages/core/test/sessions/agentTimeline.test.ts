@@ -432,6 +432,10 @@ describe("words for a step", () => {
     expect(toolTarget("Write", { file_path: "/etc/hosts" }, cwd, home)).toBe("/etc/hosts");
     expect(toolTarget("Bash", { command: `cd ${cwd} && pnpm test` }, cwd, home)).toBe("pnpm test");
     expect(toolTarget("Bash", { command: 'cd "/a b" && ls\n-la' }, cwd, home)).toBe("ls -la");
+    // paths inside a command say as little as a file target does
+    expect(toolTarget("Bash", { command: `ls -la ${cwd}/src ${home}/.claude` }, cwd, home)).toBe(
+      "ls -la src ~/.claude",
+    );
     expect(toolTarget("Grep", { pattern: "needsYou", path: `${cwd}/apps` }, cwd, home)).toBe(
       '"needsYou" in apps',
     );

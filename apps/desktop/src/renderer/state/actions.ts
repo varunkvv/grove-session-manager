@@ -1,4 +1,5 @@
 import type { SessionActionId, SessionKey } from "../../shared/ipc.ts";
+import { agentIdOf, sessionKeyOf } from "../logic/rows.ts";
 import { useStore } from "./store.ts";
 
 const api = () => window.grove;
@@ -64,10 +65,21 @@ const focusInPane = () =>
   !!document.activeElement?.closest?.('[data-testid="inspector"]') &&
   document.activeElement !== document.body;
 
-/** one agent's detail in place of the list. `step` brings that step into view. */
-export function openAgent(key: SessionKey, id: string, step?: number): void {
+/**
+ * one agent's detail in place of the list. `step` brings that step into view. the keyboard goes
+ * with it when it was in the pane already, or when asked to.
+ */
+export function openAgent(
+  key: SessionKey,
+  id: string,
+  opts: { step?: number; focus?: boolean } = {},
+): void {
   const s = state();
-  paneFocus.pending = focusInPane();
+  const step = opts.step;
+  const showing = s.inspector?.detail?.key === key && s.inspector.detail.id === id;
+  paneFocus.pending = opts.focus || focusInPane();
+  // already on screen, nothing mounts to take the keyboard
+  if (showing && opts.focus) focusInspector();
   s.set({
     inspector: {
       agent: id,
@@ -114,13 +126,15 @@ export async function archiveSessions(keys: SessionKey[], archived: boolean): Pr
   );
 }
 
+/** the actions of the row's session. an agent's row offers its session's. */
 export async function openMenu(key: SessionKey): Promise<void> {
-  const actions = await api().sessionActions(key);
+  const session = sessionKeyOf(key);
+  const actions = await api().sessionActions(session);
   const first = Math.max(
     0,
     actions.findIndex((a) => a.enabled),
   );
-  state().set({ activeKey: key, menu: { key, actions, index: first } });
+  state().set({ activeKey: key, menu: { key: session, actions, index: first } });
 }
 
 /**
@@ -128,6 +142,13 @@ export async function openMenu(key: SessionKey): Promise<void> {
  * lands on it. anything else gets the offer list, because there is more than one sensible way in.
  */
 export async function activate(key: SessionKey): Promise<void> {
+  // an agent's row opens that agent, keyboard and all
+  const agent = agentIdOf(key);
+  if (agent) {
+    state().set({ activeKey: key });
+    openAgent(sessionKeyOf(key), agent, { focus: true });
+    return;
+  }
   const row = state().sessions.find((r) => r.key === key);
   if (!row) return;
   state().set({ activeKey: key });

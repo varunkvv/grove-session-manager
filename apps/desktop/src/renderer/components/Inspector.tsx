@@ -15,6 +15,7 @@ import {
   paneLayout,
   sessionAgentSummary,
 } from "../logic/inspector.ts";
+import { agentIdOf, sessionKeyOf } from "../logic/rows.ts";
 import { closeAgent, closeInspector, openAgent, paneFocus } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { AgentDetailView } from "./AgentDetail.tsx";
@@ -61,6 +62,15 @@ function useInspection(row: SessionRow | undefined): SessionInspection | null {
 export function Workspace() {
   const open = useStore((s) => s.inspector !== null);
   const ref = useRef<HTMLDivElement>(null);
+  // in the Agents scope a row is an agent, and selecting one opens the inspector on it
+  const activeKey = useStore((s) => s.activeKey);
+  useEffect(() => {
+    const id = activeKey ? agentIdOf(activeKey) : null;
+    if (!activeKey || !id) return;
+    const detail = useStore.getState().inspector?.detail;
+    const session = sessionKeyOf(activeKey);
+    if (detail?.key !== session || detail.id !== id) openAgent(session, id);
+  }, [activeKey]);
   const [layout, setLayout] = useState<PaneLayout>({ mode: "side", width: 440 });
   useLayoutEffect(() => {
     const el = ref.current;
@@ -93,8 +103,9 @@ export function Workspace() {
 }
 
 function InspectorBody() {
-  const activeKey = useStore((s) => s.activeKey);
-  const row = useStore((s) => s.sessions.find((r) => r.key === s.activeKey));
+  // the session on screen: the active row's, or the session of the active agent
+  const activeKey = useStore((s) => (s.activeKey ? sessionKeyOf(s.activeKey) : null));
+  const row = useStore((s) => s.sessions.find((r) => r.key === activeKey));
   const now = useStore((s) => s.now);
   const inspection = useInspection(row);
   // a second hand while anything is running, so the bars and the elapsed times move

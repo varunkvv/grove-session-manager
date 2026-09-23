@@ -424,6 +424,7 @@ export type MenuCommandId =
   | "focus-search"
   | "scope-combo"
   | "scope-all"
+  | "scope-agents"
   | "inspect"
   | "settings";
 

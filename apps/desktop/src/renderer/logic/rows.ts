@@ -2,17 +2,41 @@ import {
   type DayBucket,
   dayBucket,
   type LiveStatus,
+  type SessionAgent,
   snippetAround,
   tokenize,
 } from "@grove/core/pure";
 import { rowHaystack } from "../../shared/haystack.ts";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 
-export type Scope = "combo" | "all";
+export type Scope = "combo" | "all" | "agents";
 
 export type ListItem =
-  | { type: "header"; id: string; label: DayBucket | typeof NEEDS_YOU }
-  | { type: "row"; id: SessionKey; row: SessionRow; secondary: string; secondaryIsMatch: boolean };
+  | { type: "header"; id: string; label: DayBucket | typeof NEEDS_YOU | typeof RUNNING }
+  | { type: "row"; id: SessionKey; row: SessionRow; secondary: string; secondaryIsMatch: boolean }
+  | { type: "agent"; id: string; row: SessionRow; agent: SessionAgent };
+
+/**
+ * an agent's row in the Agents scope. the list, the keyboard and the active row all work on keys,
+ * so an agent gets one of its own: its session's key and its id, split by a NUL no path can hold.
+ */
+const AGENT_KEY = "\0agent:";
+
+export function agentKey(session: SessionKey, agentId: string): string {
+  return `${session}${AGENT_KEY}${agentId}`;
+}
+
+/** the session a key belongs to: itself, or the session of the agent it names */
+export function sessionKeyOf(key: string): SessionKey {
+  const at = key.indexOf(AGENT_KEY);
+  return at < 0 ? key : key.slice(0, at);
+}
+
+/** the agent a key names, or null for a session's key */
+export function agentIdOf(key: string): string | null {
+  const at = key.indexOf(AGENT_KEY);
+  return at < 0 ? null : key.slice(at + AGENT_KEY.length);
+}
 
 export interface ListModel {
   items: ListItem[];
@@ -28,6 +52,7 @@ export interface ListModel {
 }
 
 export const NEEDS_YOU = "Needs you";
+export const RUNNING = "Running";
 
 /** typed into the search box to see the archive instead of hiding it. a mode, not a word. */
 export const ARCHIVED_FILTER = "is:archived";
@@ -95,6 +120,7 @@ export function buildList(
     deep?: ReadonlyMap<SessionKey, string>;
   },
 ): ListModel {
+  if (opts.scope === "agents") return buildAgentList(rows, opts);
   const { tokens, archivedOnly } = splitQuery(opts.query);
   const scoped = opts.scope === "combo" && opts.combo !== null;
   const items: ListItem[] = [];
@@ -158,6 +184,66 @@ export function buildList(
     keys.push(r.key);
   }
   return { items, keys, tokens, elsewhere, scoped, archivedHidden, archivedOnly };
+}
+
+function agentMatches(a: SessionAgent, r: SessionRow, tokens: readonly string[]): boolean {
+  const hay = [a.description, a.asked, a.agentType, a.summary, r.title, r.comboName, r.cwdBase]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  return tokens.every((t) => hay.includes(t));
+}
+
+/**
+ * every agent on the machine, in one list: the running ones first, then by the day they last did
+ * something, like sessions. across every session - an agent is found by what it did, not by
+ * where it ran. the archive's rule holds here too: its agents are hidden, and counted.
+ */
+export function buildAgentList(
+  rows: readonly SessionRow[],
+  opts: { query: string; now: number },
+): ListModel {
+  const { tokens, archivedOnly } = splitQuery(opts.query);
+  const found: Array<{ r: SessionRow; a: SessionAgent }> = [];
+  let archivedHidden = 0;
+  for (const r of rows) {
+    for (const a of r.agents ?? []) {
+      if (tokens.length > 0 && !agentMatches(a, r, tokens)) continue;
+      if (archivedOnly) {
+        if (!r.archived) continue;
+      } else if (r.archived) {
+        archivedHidden++;
+        continue;
+      }
+      found.push({ r, a });
+    }
+  }
+  const running = found.filter(({ a }) => a.state === "running");
+  const done = found.filter(({ a }) => a.state !== "running");
+  running.sort((x, y) => y.a.startedAt - x.a.startedAt);
+  done.sort((x, y) => y.a.lastActivityAt - x.a.lastActivityAt);
+
+  const items: ListItem[] = [];
+  const keys: SessionKey[] = [];
+  const push = ({ r, a }: { r: SessionRow; a: SessionAgent }) => {
+    const id = agentKey(r.key, a.id);
+    items.push({ type: "agent", id, row: r, agent: a });
+    keys.push(id);
+  };
+  if (running.length > 0) {
+    items.push({ type: "header", id: "h:running", label: RUNNING });
+    running.forEach(push);
+  }
+  let bucket: DayBucket | null = null;
+  for (const hit of done) {
+    const b = dayBucket(hit.a.lastActivityAt, opts.now);
+    if (b !== bucket) {
+      bucket = b;
+      items.push({ type: "header", id: `h:${b}`, label: b });
+    }
+    push(hit);
+  }
+  return { items, keys, tokens, elsewhere: 0, scoped: false, archivedHidden, archivedOnly };
 }
 
 /**

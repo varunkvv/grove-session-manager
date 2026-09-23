@@ -167,7 +167,16 @@ export function agentList(
 
 /** what a row is called: what its parent said it was for, else what it was asked */
 export function agentTitle(agent: SessionAgent, stats: AgentStats | undefined): string {
-  return agent.description ?? stats?.asked ?? agent.agentType;
+  return agent.description ?? stats?.asked ?? agentName(agent);
+}
+
+/** an agent's name from the scan alone: its label, the start of its prompt, or its kind */
+export function agentName(agent: SessionAgent): string {
+  return (
+    agent.description ??
+    agent.asked ??
+    (agent.agentType === "workflow-subagent" ? "Workflow step" : agent.agentType)
+  );
 }
 
 /** `Explore · 26 tools · 71k tokens`. a workflow's agents all share one type, so they say their model. */

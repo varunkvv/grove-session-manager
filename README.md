@@ -129,6 +129,11 @@ its transcript appended since the last look is read, at most four times a second
 and the list follows the newest one. Scroll up and it stays where you put it, with **Jump to live** to get back. What
 it is doing now stays pinned under its name.
 
+**Agents** (`⌘3`, beside a combo's sessions and all of them) is every agent on the machine in one list: the ones still
+running first, then by the day they last did something, each with the session it ran in under its name. Selecting one
+opens the inspector on it, so `↑` `↓` walk through what every agent did without opening a single session. A workflow's
+agents carry no label of their own, so they go by the first line of what they were asked.
+
 What an agent wrote is not trusted: a result quotes web pages and files. It is rendered as markdown without any HTML
 (a `<script>` in a result shows as text), images show their description, and only `http(s)` links open - in your
 browser, never in the app.
@@ -175,7 +180,7 @@ Every shortcut carries a modifier.
 | `↵` / `⌘↵` | open the active session (the offer list, or the first offer without showing it) |
 | `↑` `↓` `PgUp` `PgDn` `⌘↑` `⌘↓` | move the active row |
 | `⌥↑` `⌥↓` | step through combos |
-| `⌘1` `⌘2` | this combo's sessions / all sessions |
+| `⌘1` `⌘2` `⌘3` | this combo's sessions / all sessions / every agent |
 | `⌘K` | the active row's actions |
 | `⌘I` | what the active session's agents did. `Tab` moves into it, `Esc` steps back out |
 | `⌘D` | mark the active row as seen |

@@ -3,7 +3,7 @@
 import { squash } from "../transcript/title.ts";
 
 /** bumped when the folded shape changes, so a cached timeline from an older build is not trusted */
-export const TIMELINE_VERSION = 1;
+export const TIMELINE_VERSION = 2;
 
 /** what a step keeps of a tool's result. the whole of it is read again when someone opens the step. */
 export const RESULT_PREVIEW = 300;
@@ -183,10 +183,13 @@ export function toolTarget(name: string, input: unknown, cwd?: string, home?: st
       return path(str(input.file_path) ?? str(input.notebook_path));
     case "Bash": {
       // a leading `cd somewhere &&` says nothing the row does not already
-      const command = (str(input.command) ?? "").replace(
+      let command = (str(input.command) ?? "").replace(
         /^\s*cd\s+("[^"]*"|'[^']*'|\S+)\s*&&\s*/,
         "",
       );
+      // the agent's own folder and the home directory are most of the length of a command
+      if (cwd) command = command.split(`${cwd}/`).join("");
+      if (home) command = command.split(`${home}/`).join("~/");
       return squash(command, 200);
     }
     case "Grep":

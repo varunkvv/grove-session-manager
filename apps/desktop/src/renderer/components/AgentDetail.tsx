@@ -683,7 +683,13 @@ function ToolItem({
       <Line
         id={`step-${item.id}`}
         name={toolLabel(s.name)}
-        target={s.target || <span className="text-fg-4">{s.server ? "server tool" : ""}</span>}
+        target={
+          FILE_TOOLS.has(s.name) && s.target.includes("/") ? (
+            <PathTarget path={s.target} />
+          ) : (
+            s.target || <span className="text-fg-4">{s.server ? "server tool" : ""}</span>
+          )
+        }
         offset={offsetLabel(s.at, start)}
         failure={s.failure}
         live={live}
@@ -695,6 +701,19 @@ function ToolItem({
       />
       {open && <StepBody sessionKey={sessionKey} agentId={agentId} stepId={s.id} onCopy={onCopy} />}
     </div>
+  );
+}
+
+const FILE_TOOLS = new Set(["Read", "Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+/** a path that runs out of room loses its folders, never its file name */
+function PathTarget({ path }: { path: string }) {
+  const cut = path.lastIndexOf("/") + 1;
+  return (
+    <span className="flex min-w-0" title={path}>
+      <span className="truncate text-fg-3">{path.slice(0, cut)}</span>
+      <span className="shrink-0">{path.slice(cut)}</span>
+    </span>
   );
 }
 

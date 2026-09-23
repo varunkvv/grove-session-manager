@@ -230,7 +230,8 @@ export function Segmented<T extends string>({
   label,
 }: {
   value: T;
-  options: Array<{ value: T; label: string; disabled?: boolean; testId?: string }>;
+  /** `short` is what a header too narrow for `label` shows. it needs an @container around it. */
+  options: Array<{ value: T; label: string; short?: string; disabled?: boolean; testId?: string }>;
   onChange: (v: T) => void;
   label: string;
 }) {
@@ -254,7 +255,14 @@ export function Segmented<T extends string>({
             o.value === value ? "bg-active text-fg" : "text-fg-3 hover:text-fg-2",
           )}
         >
-          {o.label}
+          {o.short ? (
+            <>
+              <span className="@max-xl:hidden">{o.label}</span>
+              <span className="hidden @max-xl:inline">{o.short}</span>
+            </>
+          ) : (
+            o.label
+          )}
         </button>
       ))}
     </div>

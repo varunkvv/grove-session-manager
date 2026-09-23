@@ -195,6 +195,8 @@ export interface SessionAgent {
   agentType: string;
   /** the label the parent gave it when it spawned it. the best single thing to show. */
   description?: string;
+  /** the start of what it was asked, for an agent nobody labelled - a workflow's are not */
+  asked?: string;
   /** "foreground" | "background". a background agent outlives the turn that started it. */
   requestShape?: string;
   spawnDepth?: number;

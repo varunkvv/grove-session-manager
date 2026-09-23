@@ -86,6 +86,7 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     if (k === "f") return { type: "focus-search" };
     if (k === "1") return { type: "scope", scope: "combo" };
     if (k === "2") return { type: "scope", scope: "all" };
+    if (k === "3") return { type: "scope", scope: "agents" };
     if (k === "n") return { type: "new-combo" };
     if (k === "o") return { type: "open-combo" };
     if (k === "e") return { type: "edit-combo" };

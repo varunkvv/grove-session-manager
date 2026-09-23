@@ -72,6 +72,7 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     submenu: [
       command("This Combo's Sessions", "CmdOrCtrl+1", "scope-combo"),
       command("All Sessions", "CmdOrCtrl+2", "scope-all"),
+      command("Agents", "CmdOrCtrl+3", "scope-agents"),
       separator,
       // a toggle needs exactly one owner. the page takes the key already, and a press both the
       // page and the menu acted on would open the pane and close it again.

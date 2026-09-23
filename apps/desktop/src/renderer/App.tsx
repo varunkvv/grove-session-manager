@@ -8,7 +8,7 @@ import { Rail } from "./components/Rail.tsx";
 import { SessionActionMenu } from "./components/SessionActionMenu.tsx";
 import { listRef } from "./components/SessionsPane.tsx";
 import { type Intent, interpret } from "./logic/keyboard.ts";
-import { needsYouKeys } from "./logic/rows.ts";
+import { agentIdOf, needsYouKeys, sessionKeyOf } from "./logic/rows.ts";
 import {
   activate,
   activateDefault,
@@ -17,6 +17,7 @@ import {
   closeInspector,
   focusInspector,
   focusSearch,
+  openAgent,
   openCombo,
   openInspector,
   openMenu,
@@ -30,6 +31,8 @@ function perform(intent: Intent): void {
   const s = useStore.getState();
   const keys = listRef.current.keys;
   const at = s.activeKey ? keys.indexOf(s.activeKey) : -1;
+  // in the Agents scope the active row is an agent. what acts on a session acts on its session.
+  const session = s.activeKey ? sessionKeyOf(s.activeKey) : null;
   switch (intent.type) {
     case "move":
       if (keys.length)
@@ -44,20 +47,20 @@ function perform(intent: Intent): void {
       if (s.activeKey) void activate(s.activeKey);
       break;
     case "activate-default":
-      if (s.activeKey) void activateDefault(s.activeKey);
+      if (session) void activateDefault(session);
       break;
     case "menu":
       if (s.activeKey) void openMenu(s.activeKey);
       break;
     case "copy-resume":
-      if (s.activeKey)
+      if (session)
         void window.grove
-          .runSessionAction(s.activeKey, "copy-command")
+          .runSessionAction(session, "copy-command")
           .then(() => s.toast({ level: "info", title: "Resume command copied" }));
       break;
     // both are no-ops on a row that is not asking for anything, and neither moves the selection
     case "mark-seen":
-      if (s.activeKey) void window.grove.markSeen([s.activeKey]);
+      if (session) void window.grove.markSeen([session]);
       break;
     case "mark-all-seen": {
       const seen = needsYouKeys(listRef.current);
@@ -65,14 +68,17 @@ function perform(intent: Intent): void {
       break;
     }
     case "toggle-archive": {
-      const row = s.sessions.find((r) => r.key === s.activeKey);
+      const row = s.sessions.find((r) => r.key === session);
       if (row) void archiveSessions([row.key], !row.archived);
       break;
     }
-    case "inspect":
+    case "inspect": {
       if (s.inspector) closeInspector();
-      else openInspector();
+      else if (session && s.activeKey && agentIdOf(s.activeKey)) {
+        openAgent(session, agentIdOf(s.activeKey) ?? "");
+      } else openInspector();
       break;
+    }
     case "inspector-enter":
       focusInspector();
       break;
@@ -143,6 +149,7 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "focus-search": { type: "focus-search" },
   "scope-combo": { type: "scope", scope: "combo" },
   "scope-all": { type: "scope", scope: "all" },
+  "scope-agents": { type: "scope", scope: "agents" },
   inspect: { type: "inspect" },
   settings: { type: "settings" },
 };
@@ -191,7 +198,10 @@ export function App() {
           pageSize: listRef.pageSize,
           inspector: s.inspector !== null,
           inInspector,
-          inspectorDetail: !!s.inspector?.detail && s.inspector.detail.key === s.activeKey,
+          inspectorDetail:
+            !!s.inspector?.detail &&
+            !!s.activeKey &&
+            s.inspector.detail.key === sessionKeyOf(s.activeKey),
         },
         {
           key: e.key,

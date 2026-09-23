@@ -1,8 +1,13 @@
+import type { SessionAgent } from "@grove/core/pure";
 import { describe, expect, it } from "vitest";
 import {
+  agentIdOf,
+  agentKey,
   buildList,
   needsYouKeys,
   nextActiveKey,
+  RUNNING,
+  sessionKeyOf,
   splitQuery,
 } from "../../src/renderer/logic/rows.ts";
 import { usageChip, usageTooltip } from "../../src/renderer/logic/usage.ts";
@@ -275,5 +280,83 @@ describe("archived sessions", () => {
     // only on its own. quoted, or glued to something else, it is an ordinary search
     expect(splitQuery('"is:archived"')).toMatchObject({ archivedOnly: false });
     expect(splitQuery("is:archivedx")).toMatchObject({ archivedOnly: false });
+  });
+});
+
+describe("the Agents scope", () => {
+  const agent = (id: string, over: Partial<SessionAgent> = {}): SessionAgent => ({
+    id,
+    agentType: "Explore",
+    startedAt: NOW - 2 * H,
+    lastActivityAt: NOW - H,
+    state: "done",
+    ...over,
+  });
+  const withAgents: SessionRow[] = [
+    row("/p/a.jsonl", {
+      title: "Postgres CPU spike",
+      agents: [
+        agent("a1", { description: "Survey the queries", lastActivityAt: NOW - H }),
+        agent("a2", {
+          description: "Replay on a replica",
+          state: "running",
+          startedAt: NOW - 600_000,
+        }),
+      ],
+    }),
+    row("/p/b.jsonl", {
+      title: "Webhook retries",
+      agents: [
+        agent("b1", {
+          description: "Trace the delivery chain",
+          state: "running",
+          startedAt: NOW - 60_000,
+        }),
+        agent("b2", {
+          agentType: "workflow-subagent",
+          asked: "Review the diff",
+          lastActivityAt: NOW - 30 * H,
+        }),
+      ],
+    }),
+    row("/p/c.jsonl", { title: "No agents here" }),
+    row("/p/d.jsonl", {
+      title: "Put away",
+      archived: true,
+      agents: [agent("d1", { description: "Old" })],
+    }),
+  ];
+
+  it("lists every agent, running first and newest started first, then by day", () => {
+    const m = buildList(withAgents, { scope: "agents", combo: null, query: "", now: NOW });
+    expect(
+      m.items.map((i) =>
+        i.type === "header" ? `[${i.label}]` : i.type === "agent" ? i.agent.id : "?",
+      ),
+    ).toEqual([`[${RUNNING}]`, "b1", "a2", "[Today]", "a1", "[Yesterday]", "b2"]);
+    // the archive's rule holds: its agents are hidden, and counted
+    expect(m.archivedHidden).toBe(1);
+    expect(m.keys).toHaveLength(4);
+  });
+
+  it("an agent's key names its session and itself, and no path can be mistaken for one", () => {
+    const key = agentKey("/p/a.jsonl", "a1");
+    expect(sessionKeyOf(key)).toBe("/p/a.jsonl");
+    expect(agentIdOf(key)).toBe("a1");
+    expect(sessionKeyOf("/p/a.jsonl")).toBe("/p/a.jsonl");
+    expect(agentIdOf("/p/a.jsonl")).toBeNull();
+    const m = buildList(withAgents, { scope: "agents", combo: null, query: "", now: NOW });
+    expect(m.keys[0]).toBe(agentKey("/p/b.jsonl", "b1"));
+  });
+
+  it("a search finds agents by what they were for, what they were asked, and their session", () => {
+    const find = (query: string) =>
+      buildList(withAgents, { scope: "agents", combo: null, query, now: NOW }).items.flatMap((i) =>
+        i.type === "agent" ? [i.agent.id] : [],
+      );
+    expect(find("replica")).toEqual(["a2"]);
+    expect(find("webhook")).toEqual(["b1", "b2"]);
+    expect(find("review diff")).toEqual(["b2"]);
+    expect(find("old is:archived")).toEqual(["d1"]);
   });
 });

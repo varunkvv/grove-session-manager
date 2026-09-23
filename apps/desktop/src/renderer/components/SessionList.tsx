@@ -1,8 +1,14 @@
-import { formatRelativeTime, highlightRanges, type LiveStatus } from "@grove/core/pure";
+import {
+  formatDuration,
+  formatRelativeTime,
+  highlightRanges,
+  type LiveStatus,
+} from "@grove/core/pure";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, type ReactNode, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
+import { agentName } from "../logic/inspector.ts";
 import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
 import { cx, Icon, Mono } from "./ui.tsx";
@@ -196,6 +202,77 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
   );
 });
 
+/**
+ * an agent in the Agents scope, in a session row's typography: what it was for and how long ago
+ * (or, running, for how long), then the session it ran in and what kind of agent it is.
+ */
+const AgentRowView = memo(function AgentRowView(p: {
+  item: Extract<ListItem, { type: "agent" }>;
+  tokens: readonly string[];
+  active: boolean;
+  now: number;
+  index: number;
+  total: number;
+  onActivate: (key: SessionKey, el: HTMLElement) => void;
+  onMenu: (key: SessionKey, el: HTMLElement) => void;
+}) {
+  const { agent: a, row } = p.item;
+  const running = a.state === "running";
+  return (
+    <div
+      id={optionId(p.item.id)}
+      role="option"
+      aria-selected={p.active}
+      aria-posinset={p.index + 1}
+      aria-setsize={p.total}
+      data-testid="agent-list-row"
+      data-state={a.state}
+      data-active={p.active || undefined}
+      onClick={(e) => p.onActivate(p.item.id, e.currentTarget)}
+      onKeyDown={() => {}}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        p.onMenu(p.item.id, e.currentTarget);
+      }}
+      className={cx(
+        "fade mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
+        p.active ? "bg-active" : "hover:bg-raised",
+      )}
+    >
+      <div className="flex items-baseline gap-3">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">
+          <Highlighted text={agentName(a)} tokens={p.tokens} />
+        </span>
+        {running ? (
+          <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
+            <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
+            {formatDuration(p.now - a.startedAt)}
+          </span>
+        ) : (
+          <span
+            className="shrink-0 text-sm tabular-nums text-fg-3"
+            title={new Date(a.lastActivityAt).toLocaleString()}
+          >
+            {formatRelativeTime(a.lastActivityAt, p.now)}
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-3 text-sm text-fg-3">
+        <span className="min-w-0 flex-1 truncate">
+          <Highlighted text={row.title ?? "Untitled session"} tokens={p.tokens} />
+        </span>
+        <span className="shrink-0 text-fg-4">
+          <Highlighted
+            text={a.agentType === "workflow-subagent" ? "workflow" : a.agentType}
+            tokens={p.tokens}
+          />
+          {!running && ` · ${formatDuration(a.lastActivityAt - a.startedAt)}`}
+        </span>
+      </div>
+    </div>
+  );
+});
+
 export function SessionList({
   items,
   tokens,
@@ -231,7 +308,7 @@ export function SessionList({
   // off-screen options are not in the DOM, so scroll first and let aria-activedescendant follow
   useEffect(() => {
     if (!activeKey) return;
-    const index = items.findIndex((it) => it.type === "row" && it.id === activeKey);
+    const index = items.findIndex((it) => it.type !== "header" && it.id === activeKey);
     if (index >= 0) virtualizer.scrollToIndex(index <= 1 ? 0 : index, { align: "auto" });
   }, [activeKey, items, virtualizer]);
 
@@ -247,7 +324,7 @@ export function SessionList({
 
   let rowIndex = -1;
   const positions = new Map<string, number>();
-  for (const it of items) if (it.type === "row") positions.set(it.id, ++rowIndex);
+  for (const it of items) if (it.type !== "header") positions.set(it.id, ++rowIndex);
 
   return (
     <div
@@ -286,6 +363,21 @@ export function SessionList({
                   )}
                 >
                   {item.label}
+                </div>
+              ) : item.type === "agent" ? (
+                <div className="flex h-full items-center">
+                  <div className="min-w-0 flex-1">
+                    <AgentRowView
+                      item={item}
+                      tokens={tokens}
+                      active={item.id === activeKey}
+                      now={now}
+                      index={positions.get(item.id) ?? 0}
+                      total={total}
+                      onActivate={onActivate}
+                      onMenu={onMenu}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="flex h-full items-center">

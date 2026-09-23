@@ -1,4 +1,12 @@
-import { cpSync, utimesSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -6,9 +14,11 @@ import {
   agentDigest,
   lastToolFromTail,
   parseAgentMeta,
+  readAgentAsked,
   scanSessionAgents,
   subagentsDir,
 } from "../../src/sessions/agents.ts";
+import { squash } from "../../src/transcript/title.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
 // a real `<sessionId>/subagents/` tree with every string replaced (scratch of redact-fixture.ts):
@@ -203,5 +213,45 @@ describe("a session's subagents", () => {
       agents: [],
       reads: {},
     });
+  });
+});
+
+describe("an agent nobody labelled", () => {
+  const timeline = path.join(import.meta.dirname, "../fixtures/timeline");
+
+  it("is called by the first line of what it was asked, read once from the head of its file", async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-asked-")));
+    cpSync(timeline, dir, { recursive: true });
+    const session = path.join(dir, "89950000-0000-4000-8000-000000000001.jsonl");
+    const snapshot = await scanSessionAgents(session, { sessionLive: false });
+    const wf = snapshot.agents.find((a) => a.workflow);
+    const file = snapshot.reads[wf?.id ?? ""]?.file ?? "";
+    const first = JSON.parse(readFileSync(file, "utf8").split("\n")[0] ?? "{}");
+    const line = String(first.message.content)
+      .split("\n")
+      .find((l: string) => l.trim());
+    expect(wf?.asked).toBe(squash(line ?? "", 120));
+    expect(await readAgentAsked(file)).toBe(wf?.asked);
+
+    // a labelled agent needs no prompt read, and the next scan keeps what the first one found
+    const labelled = await scanSessionAgents(
+      path.join(dir, "9dda0000-0000-4000-8000-000000000001.jsonl"),
+      { sessionLive: false },
+    );
+    expect(labelled.agents[0]?.asked).toBeUndefined();
+    writeFileSync(file, "");
+    const again = await scanSessionAgents(session, { sessionLive: false, prev: snapshot });
+    expect(again.agents.find((a) => a.workflow)?.asked).toBe(wf?.asked);
+  });
+
+  it("a head with no whole first line, or no prompt in it, gives nothing", async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-asked-")));
+    const torn = path.join(dir, "torn.jsonl");
+    writeFileSync(torn, `{"type":"user","message":{"content":"${"x".repeat(40_000)}"}}\n`);
+    expect(await readAgentAsked(torn)).toBeUndefined();
+    const tool = path.join(dir, "tool.jsonl");
+    writeFileSync(tool, `${JSON.stringify({ type: "assistant", message: { content: [] } })}\n`);
+    expect(await readAgentAsked(tool)).toBeUndefined();
+    expect(await readAgentAsked(path.join(dir, "missing.jsonl"))).toBeUndefined();
   });
 });

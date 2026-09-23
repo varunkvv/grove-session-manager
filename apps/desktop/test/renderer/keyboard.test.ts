@@ -89,6 +89,10 @@ describe("keyboard model", () => {
     expect(interpret(ctx(), key("Enter", { composing: true }))).toBeNull();
   });
 
+  it("cmd-3 is the Agents scope, beside the combo's sessions and all of them", () => {
+    expect(interpret(ctx(), key("3", { meta: true }))).toEqual({ type: "scope", scope: "agents" });
+  });
+
   it("cmd-I opens and closes the inspector, and Escape leaves it one step at a time", () => {
     expect(interpret(ctx(), key("i", { meta: true }))).toEqual({ type: "inspect" });
     const open = ctx({ inspector: true, query: "x" });

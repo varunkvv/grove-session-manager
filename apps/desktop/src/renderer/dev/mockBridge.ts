@@ -354,6 +354,7 @@ const nestedWorkflow: SessionAgent[] = [
     {
       agentType: "workflow-subagent",
       workflow: "wf_a0f818e7-167",
+      asked: "You are implementing an approved plan in the kirby repo.",
       startedAgo: 4 * H + 10 * MIN,
       endedAgo: 3 * H + 40 * MIN,
     },
@@ -370,6 +371,7 @@ const nestedWorkflow: SessionAgent[] = [
     {
       agentType: "workflow-subagent",
       workflow: "wf_a0f818e7-167",
+      asked: "Review the diff against the plan and list anything that contradicts it.",
       startedAgo: 3 * H + 38 * MIN,
       endedAgo: 3 * H + 21 * MIN,
     },
