@@ -1,6 +1,7 @@
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { paneLayout } from "../src/renderer/logic/inspector.ts";
 import { agentFile, appendCalls, FANOUT, writeDerive, writeFanOut } from "./helpers/agents.ts";
 import {
   type Fixture,
@@ -120,7 +121,19 @@ test("the chip and the action menu open it too, and a narrow window gets it over
   await rows.first().getByTestId("row-agents").click();
   await expect(pane).toBeVisible();
   await expect(page.getByTestId("session-menu")).toHaveCount(0);
-  await expect(pane).toHaveAttribute("data-layout", "side");
+
+  // beside the list when there is room. a CI runner's display can be narrower than the window asks
+  // for, and then the overlay is the right answer - so the layout is held to the rule at the width
+  // the window really got. paneLayout's thresholds have their own unit tests
+  await app.app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.setSize(1400, 900);
+  });
+  await expect
+    .poll(async () => {
+      const available = await pane.evaluate((el) => el.parentElement?.clientWidth ?? 0);
+      return (await pane.getAttribute("data-layout")) === paneLayout(available).mode;
+    })
+    .toBe(true);
 
   // too narrow for both side by side: it covers the list from the right instead of crushing it
   await app.app.evaluate(({ BrowserWindow }) => {
