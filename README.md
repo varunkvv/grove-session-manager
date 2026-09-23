@@ -74,7 +74,8 @@ running pick the hooks up too - and later write the copy they loaded at startup 
 whatever was added since. So the app watches each combo's settings file and puts its own entries back when that happens.
 Only the entries carrying its marker are touched. Sessions outside combos report only if you switch on **Track sessions
 outside combos** in Settings, which adds the same hooks to Claude Code's own `settings.json`; switching it off takes
-them out again.
+them out again. While it is on, that file is watched and repaired the same way - a session running outside any combo
+can put its old copy back just like one inside - and both are checked again whenever the window comes forward.
 
 Hooks only cover the sessions that have them. Every live Claude Code process also keeps a file in
 `~/.claude/sessions/<pid>.json`, which the app reads (never writes) to fill in sessions no hook covers and to retire a

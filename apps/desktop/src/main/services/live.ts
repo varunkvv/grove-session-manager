@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   type AgentRun,
   applyRegistry,
+  type Disposable,
   drainStatusEvents,
   isObject,
   type LiveStatus,
@@ -14,6 +15,7 @@ import {
   reduceStatus,
   statusEventsDir,
   syncStatusHooks,
+  watchStatusHooks,
   writeFileAtomic,
 } from "@grove/core";
 import { log } from "../log.ts";
@@ -42,6 +44,8 @@ export interface LiveServiceOptions {
   /** a session just started needing someone */
   onNeedsYou: (sessionId: string, status: LiveStatus) => void;
   now?: () => number;
+  /** the user settings watch's debounce. only a test passes anything else. */
+  hookDebounceMs?: number;
 }
 
 /** drops what is too old to be true any more. pure, so it is testable without a clock. */
@@ -83,6 +87,9 @@ export class LiveService {
   private draining: Promise<void> | null = null;
   private again = false;
   private disposed = false;
+  /** whether our hooks belong in Claude Code's own settings.json: the setting, as last applied */
+  private tracking = false;
+  private userHooks: Disposable | null = null;
 
   constructor(opts: LiveServiceOptions) {
     this.opts = opts;
@@ -179,8 +186,18 @@ export class LiveService {
     if (changed) this.changed();
   }
 
-  /** hooks for every session on the machine, in Claude Code's own user settings. opt-in. */
+  /**
+   * hooks for every session on the machine, in Claude Code's own user settings. opt-in. while it
+   * is on the file is watched: a session running outside any combo writes the settings it loaded
+   * at startup back over ours, exactly as a combo's session does. only our marked entries are
+   * ever touched - it is the one file under ~/.claude this app writes.
+   */
   async trackAllSessions(enabled: boolean): Promise<void> {
+    this.tracking = enabled;
+    if (!enabled) {
+      this.userHooks?.dispose();
+      this.userHooks = null;
+    }
     const r = await syncStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, enabled);
     if (r.warning) throw new Error(r.warning.message);
     if (r.status === "skipped-unexpected-shape") {
@@ -188,6 +205,25 @@ export class LiveService {
         `${this.opts.claudeSettingsFile} has an unexpected shape, so it was left alone.`,
       );
     }
+    this.watchUserHooks();
+  }
+
+  /** window focus: catches a revert the watch missed, or one made while the app was closed */
+  async syncUserHooks(): Promise<void> {
+    if (!this.tracking || this.disposed) return;
+    await syncStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, true).catch((e) =>
+      log.warn("user status hooks:", e),
+    );
+    this.watchUserHooks();
+  }
+
+  /** idempotent. null until the config dir exists - the next sync tries again, nothing retries. */
+  private watchUserHooks(): void {
+    if (!this.tracking || this.disposed || this.userHooks) return;
+    this.userHooks = watchStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, {
+      ...(this.opts.hookDebounceMs !== undefined ? { debounceMs: this.opts.hookDebounceMs } : {}),
+      onError: (e) => log.warn("user status hook watch:", e),
+    });
   }
 
   private drain(notify: boolean): Promise<void> {
@@ -246,6 +282,8 @@ export class LiveService {
 
   dispose(): void {
     this.disposed = true;
+    this.userHooks?.dispose();
+    this.userHooks = null;
     this.watcher?.close();
     this.registryWatcher?.close();
     if (this.registryRetry) clearTimeout(this.registryRetry);
