@@ -12,7 +12,13 @@ export interface CacheEntry {
    * token counts, with their own key: they are worked out in a later, slower pass, and a re-parse
    * of the head and tail must not throw away the offsets that make the next count incremental.
    */
-  usage?: { key: string; files: SessionTallies; textChars?: number };
+  usage?: {
+    key: string;
+    files: SessionTallies;
+    textChars?: number;
+    /** per subagent tally key: the chars of its text kept, for the same check textChars is */
+    agentText?: Record<string, number>;
+  };
 }
 
 export interface CacheFile {

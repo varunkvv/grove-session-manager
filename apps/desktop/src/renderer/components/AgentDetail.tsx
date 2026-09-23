@@ -52,10 +52,12 @@ function remember<V>(map: Map<string, V>, key: string, value: V, max = 24): void
 function useFollowedAgent(
   key: SessionKey,
   id: string,
-): { detail: AgentDetail | null; missing: boolean } {
+  find: string | undefined,
+): { detail: AgentDetail | null; missing: boolean; found: number | undefined } {
   const cacheKey = `${key}\0${id}`;
   const [detail, setDetail] = useState<AgentDetail | null>(details.get(cacheKey) ?? null);
   const [missing, setMissing] = useState(false);
+  const [found, setFound] = useState<number | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     let gen = -1;
@@ -78,13 +80,14 @@ function useFollowedAgent(
       });
     });
     void window.grove
-      .followAgent(key, id)
+      .followAgent(key, id, find)
       .then((res) => {
         if (cancelled) return;
         setMissing(!res);
         if (!res) return;
         gen = res.gen;
         show(res.detail);
+        setFound(res.found);
       })
       .catch(() => {});
     return () => {
@@ -92,8 +95,8 @@ function useFollowedAgent(
       off();
       void window.grove.followAgent(key, null).catch(() => {});
     };
-  }, [key, id, cacheKey]);
-  return { detail, missing };
+  }, [key, id, cacheKey, find]);
+  return { detail, missing, found };
 }
 
 /** what an agent is called: what its parent said it was for, else what it was asked */
@@ -109,7 +112,8 @@ export function AgentDetailView({
   agent,
   count,
   now,
-  step: wanted,
+  step,
+  find,
   onBack,
   onOpen,
 }: {
@@ -121,20 +125,25 @@ export function AgentDetailView({
   now: number;
   /** a step to bring into view once it is there */
   step?: number;
+  /** the search that led here. main says which step matched it. */
+  find?: string;
   onBack: () => void;
   onOpen: (agentId: string) => void;
 }) {
   const running = agent?.state === "running";
-  const { detail, missing } = useFollowedAgent(sessionKey, agentId);
+  const { detail, missing, found } = useFollowedAgent(sessionKey, agentId, find);
+  const wanted = step ?? found;
   const toast = useStore((s) => s.toast);
   const [thinking, setThinking] = useState(false);
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const [cursor, setCursor] = useState<string | null>(null);
+  // where a search landed: marked like an active row, so the eye finds what matched
+  const [landedOn, setLandedOn] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
   // at the end of a running agent, the steps follow what it writes. scrolling up stops that.
-  const [live, setLive] = useState(wanted === undefined);
+  const [live, setLive] = useState(step === undefined && !find);
   // a hairline under the pinned head, once there is something scrolled beneath it
   const [under, setUnder] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -184,6 +193,7 @@ export function AgentDetailView({
     landed.current = wanted;
     const id = items[at]?.id ?? null;
     setCursor(id);
+    setLandedOn(id);
     virtualizer.scrollToIndex(at, { align: "center" });
   }, [wanted, detail, items, openRuns, virtualizer]);
 
@@ -275,7 +285,15 @@ export function AgentDetailView({
         return <p className="px-5 py-1 text-sm text-fg-3">{item.text}</p>;
       case "prose":
         return (
-          <div className="px-5 py-1.5" data-testid="agent-prose" data-kind={item.step.kind}>
+          <div
+            className={cx(
+              "py-1.5",
+              landedOn === item.id ? "mx-2 rounded-md bg-raised px-3" : "px-5",
+            )}
+            data-testid="agent-prose"
+            data-kind={item.step.kind}
+            data-landed={landedOn === item.id || undefined}
+          >
             <Folded
               lines={8}
               open={unfolded.has(item.id)}
@@ -326,7 +344,7 @@ export function AgentDetailView({
             start={detail?.startedAt}
             live={running && item.step.durationMs === undefined}
             open={expanded.has(item.id)}
-            cursor={cursor === item.id}
+            cursor={cursor === item.id || landedOn === item.id}
             focused={focused}
             onClick={() => {
               setCursor(item.id);

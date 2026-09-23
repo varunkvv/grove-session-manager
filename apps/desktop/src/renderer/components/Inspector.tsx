@@ -16,7 +16,7 @@ import {
   sessionAgentSummary,
 } from "../logic/inspector.ts";
 import { agentIdOf, sessionKeyOf } from "../logic/rows.ts";
-import { closeAgent, closeInspector, openAgent, paneFocus } from "../state/actions.ts";
+import { agentHit, closeAgent, closeInspector, openAgent, paneFocus } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { AgentDetailView } from "./AgentDetail.tsx";
 import { SessionsPane } from "./SessionsPane.tsx";
@@ -64,13 +64,28 @@ export function Workspace() {
   const ref = useRef<HTMLDivElement>(null);
   // in the Agents scope a row is an agent, and selecting one opens the inspector on it
   const activeKey = useStore((s) => s.activeKey);
+  // a search that found a session through one of its agents: with the pane open, it shows that
+  // agent at what matched
+  const deep = useStore((s) => s.deep);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new search answer is what moves it
   useEffect(() => {
-    const id = activeKey ? agentIdOf(activeKey) : null;
-    if (!activeKey || !id) return;
-    const detail = useStore.getState().inspector?.detail;
+    if (!activeKey) return;
+    const id = agentIdOf(activeKey);
     const session = sessionKeyOf(activeKey);
-    if (detail?.key !== session || detail.id !== id) openAgent(session, id);
-  }, [activeKey]);
+    const detail = useStore.getState().inspector?.detail;
+    if (id) {
+      const hit = agentHit(session);
+      if (detail?.key !== session || detail.id !== id) {
+        openAgent(session, id, hit && hit.agent === id ? { find: hit.find } : {});
+      }
+      return;
+    }
+    const hit = agentHit(session);
+    if (!hit || !useStore.getState().inspector) return;
+    if (detail?.key !== session || detail.id !== hit.agent) {
+      openAgent(session, hit.agent, { find: hit.find });
+    }
+  }, [activeKey, deep]);
   const [layout, setLayout] = useState<PaneLayout>({ mode: "side", width: 440 });
   useLayoutEffect(() => {
     const el = ref.current;
@@ -168,6 +183,7 @@ function SessionAgents({
   const inspectorAgent = useStore((s) => s.inspector?.agent ?? null);
   const detail = useStore((s) => s.inspector?.detail ?? null);
   const wantedStep = useStore((s) => s.inspector?.step);
+  const find = useStore((s) => s.inspector?.find);
   const set = useStore((s) => s.set);
   const [hovered, setHovered] = useState<string | null>(null);
   const items = useMemo(() => agentList(agents, inspection), [agents, inspection]);
@@ -190,6 +206,7 @@ function SessionAgents({
         count={agents.length}
         now={now}
         {...(wantedStep !== undefined ? { step: wantedStep } : {})}
+        {...(find ? { find } : {})}
         onBack={closeAgent}
         onOpen={open}
       />

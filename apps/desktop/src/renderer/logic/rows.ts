@@ -7,14 +7,29 @@ import {
   tokenize,
 } from "@grove/core/pure";
 import { rowHaystack } from "../../shared/haystack.ts";
-import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
+import type { SearchHit, SessionKey, SessionRow } from "../../shared/ipc.ts";
 
 export type Scope = "combo" | "all" | "agents";
 
 export type ListItem =
   | { type: "header"; id: string; label: DayBucket | typeof NEEDS_YOU | typeof RUNNING }
-  | { type: "row"; id: SessionKey; row: SessionRow; secondary: string; secondaryIsMatch: boolean }
-  | { type: "agent"; id: string; row: SessionRow; agent: SessionAgent };
+  | {
+      type: "row";
+      id: SessionKey;
+      row: SessionRow;
+      secondary: string;
+      secondaryIsMatch: boolean;
+      /** the second line is what this agent said: the search found the session through it */
+      agent?: string;
+    }
+  | {
+      type: "agent";
+      id: string;
+      row: SessionRow;
+      agent: SessionAgent;
+      /** what it said that matched, when its labels did not */
+      match?: string;
+    };
 
 /**
  * an agent's row in the Agents scope. the list, the keyboard and the active row all work on keys,
@@ -117,7 +132,7 @@ export function buildList(
     query: string;
     now: number;
     /** rows found in their conversation by the main process, with the part that matched */
-    deep?: ReadonlyMap<SessionKey, string>;
+    deep?: ReadonlyMap<SessionKey, SearchHit>;
   },
 ): ListModel {
   if (opts.scope === "agents") return buildAgentList(rows, opts);
@@ -129,7 +144,7 @@ export function buildList(
   let archivedHidden = 0;
   let bucket: DayBucket | null = null;
 
-  const inScope: Array<{ r: SessionRow; deep?: string }> = [];
+  const inScope: Array<{ r: SessionRow; deep?: SearchHit }> = [];
   for (const r of rows) {
     const deep = tokens.length > 0 && !matches(r, tokens) ? opts.deep?.get(r.key) : undefined;
     if (tokens.length > 0 && deep === undefined && !matches(r, tokens)) continue;
@@ -173,13 +188,15 @@ export function buildList(
       bucket = b;
       items.push({ type: "header", id: `h:${b}`, label: b });
     }
-    const secondary = deep !== undefined ? { text: deep, isMatch: true } : secondaryLine(r, tokens);
+    const secondary =
+      deep !== undefined ? { text: deep.snippet, isMatch: true } : secondaryLine(r, tokens);
     items.push({
       type: "row",
       id: r.key,
       row: r,
       secondary: secondary.text,
       secondaryIsMatch: secondary.isMatch,
+      ...(deep?.agent ? { agent: deep.agent } : {}),
     });
     keys.push(r.key);
   }
@@ -201,21 +218,25 @@ function agentMatches(a: SessionAgent, r: SessionRow, tokens: readonly string[])
  */
 export function buildAgentList(
   rows: readonly SessionRow[],
-  opts: { query: string; now: number },
+  opts: { query: string; now: number; deep?: ReadonlyMap<SessionKey, SearchHit> },
 ): ListModel {
   const { tokens, archivedOnly } = splitQuery(opts.query);
-  const found: Array<{ r: SessionRow; a: SessionAgent }> = [];
+  const found: Array<{ r: SessionRow; a: SessionAgent; match?: string }> = [];
   let archivedHidden = 0;
   for (const r of rows) {
+    // what the agents said, from the search in main: an agent is found by what it found
+    const said = new Map((opts.deep?.get(r.key)?.agents ?? []).map((h) => [h.id, h.snippet]));
     for (const a of r.agents ?? []) {
-      if (tokens.length > 0 && !agentMatches(a, r, tokens)) continue;
+      const labelled = tokens.length === 0 || agentMatches(a, r, tokens);
+      const match = labelled ? undefined : said.get(a.id);
+      if (!labelled && match === undefined) continue;
       if (archivedOnly) {
         if (!r.archived) continue;
       } else if (r.archived) {
         archivedHidden++;
         continue;
       }
-      found.push({ r, a });
+      found.push({ r, a, ...(match !== undefined ? { match } : {}) });
     }
   }
   const running = found.filter(({ a }) => a.state === "running");
@@ -225,9 +246,9 @@ export function buildAgentList(
 
   const items: ListItem[] = [];
   const keys: SessionKey[] = [];
-  const push = ({ r, a }: { r: SessionRow; a: SessionAgent }) => {
+  const push = ({ r, a, match }: { r: SessionRow; a: SessionAgent; match?: string }) => {
     const id = agentKey(r.key, a.id);
-    items.push({ type: "agent", id, row: r, agent: a });
+    items.push({ type: "agent", id, row: r, agent: a, ...(match !== undefined ? { match } : {}) });
     keys.push(id);
   };
   if (running.length > 0) {

@@ -104,14 +104,25 @@ export class TextStore {
   }
 }
 
-/** the part of a long text around the first token found, for the second line of a row */
+/** at most this much comes before the match: a row cuts at its end, and the match must show */
+const LEAD = 24;
+
+/**
+ * the part of a long text around the first token found, for the second line of a row. it starts
+ * where the match's own line does when that is near, else a few words before it.
+ */
 export function textSnippet(doc: Doc, tokens: readonly string[], radius = 60): string | undefined {
   // a few characters change length when lowercased. then offsets do not line up, so cut the lowercase.
   const source = doc.lower.length === doc.text.length ? doc.text : doc.lower;
   for (const t of tokens) {
     const i = doc.lower.indexOf(t);
     if (i < 0) continue;
-    const start = Math.max(0, i - radius);
+    const line = doc.lower.lastIndexOf("\n", i - 1) + 1;
+    let start = i - line <= radius ? line : i - LEAD;
+    if (start > line) {
+      const space = source.indexOf(" ", start);
+      if (space >= 0 && space < i) start = space + 1;
+    }
     const end = Math.min(source.length, i + t.length + radius);
     const body = source.slice(start, end).replace(/\s+/g, " ").trim();
     return `${start > 0 ? "…" : ""}${body}${end < source.length ? "…" : ""}`;

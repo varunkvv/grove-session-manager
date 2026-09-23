@@ -6,6 +6,7 @@ import type {
   EnvInfo,
   IndexStatus,
   PushEvents,
+  SearchHit,
   SessionAction,
   SessionKey,
   SessionRow,
@@ -39,8 +40,10 @@ export interface InspectorState {
   agent: string | null;
   /** the agent whose detail is showing in place of the list, and the session it belongs to */
   detail: { key: SessionKey; id: string } | null;
-  /** a step to bring into view when the detail opens: where a search hit landed */
+  /** a step to bring into view when the detail opens */
   step?: number;
+  /** the search that led here: the detail lands on the step that matched it */
+  find?: string;
 }
 
 interface State {
@@ -57,7 +60,7 @@ interface State {
   scope: Scope;
   query: string;
   /** conversation matches for `query`, from the main process. stale ones are ignored. */
-  deep: { query: string; hits: Map<SessionKey, string> } | null;
+  deep: { query: string; hits: Map<SessionKey, SearchHit> } | null;
   activeKey: SessionKey | null;
   menu: MenuState | null;
   dialog: DialogState;

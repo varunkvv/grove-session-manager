@@ -211,7 +211,7 @@ describe("sessions that need you", () => {
       combo: null,
       query: "backoff",
       now: NOW,
-      deep: new Map([["deep", "…the backoff doubles on every 429…"]]),
+      deep: new Map([["deep", { key: "deep", snippet: "…the backoff doubles on every 429…" }]]),
     });
     expect(deep.keys).toEqual(["deep"]);
     expect(deep.items.find((i) => i.type === "row")).toMatchObject({
@@ -358,5 +358,56 @@ describe("the Agents scope", () => {
     expect(find("webhook")).toEqual(["b1", "b2"]);
     expect(find("review diff")).toEqual(["b2"]);
     expect(find("old is:archived")).toEqual(["d1"]);
+  });
+});
+
+describe("what agents found", () => {
+  const agent = (id: string, description: string): SessionAgent => ({
+    id,
+    agentType: "Explore",
+    description,
+    startedAt: NOW - 2 * H,
+    lastActivityAt: NOW - H,
+    state: "done",
+  });
+  const rs = [
+    row("/p/s.jsonl", {
+      title: "Webhook retries",
+      agents: [agent("x1", "Trace the delivery chain"), agent("x2", "Read the queue")],
+    }),
+  ];
+  const hit = {
+    key: "/p/s.jsonl",
+    snippet: "in Explore: …the retry is dropped when the lease expires…",
+    agent: "x1",
+    agents: [{ id: "x1", snippet: "…the retry is dropped when the lease expires…" }],
+  };
+
+  it("a session found through one of its agents says which, and remembers it for the inspector", () => {
+    const m = buildList(rs, {
+      scope: "all",
+      combo: null,
+      query: "lease",
+      now: NOW,
+      deep: new Map([[hit.key, hit]]),
+    });
+    expect(m.items.find((i) => i.type === "row")).toMatchObject({
+      secondary: "in Explore: …the retry is dropped when the lease expires…",
+      secondaryIsMatch: true,
+      agent: "x1",
+    });
+  });
+
+  it("in the Agents scope, the agent that said it is found, with what it said", () => {
+    const m = buildList(rs, {
+      scope: "agents",
+      combo: null,
+      query: "lease",
+      now: NOW,
+      deep: new Map([[hit.key, hit]]),
+    });
+    expect(m.items.flatMap((i) => (i.type === "agent" ? [[i.agent.id, i.match]] : []))).toEqual([
+      ["x1", "…the retry is dropped when the lease expires…"],
+    ]);
   });
 });

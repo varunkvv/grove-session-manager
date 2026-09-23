@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { claudeProjectSlug, type LiveStatus } from "@grove/core";
@@ -99,5 +106,96 @@ describe("agents on every session", () => {
     service.setLive(new Map(), new Map(), new Set([SID]));
     await settle(service, () => states(service).a2 === "running");
     expect(states(service).a2).toBe("running");
+  });
+});
+
+describe("search reaches what agents said", () => {
+  it("finds a session by its agent's words, says which agent, and never by tool output", async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-agent-search-")));
+    const projectsDir = path.join(dir, "projects");
+    const cwd = "/work/queue";
+    const project = path.join(projectsDir, claudeProjectSlug(cwd));
+    const sub = path.join(project, SID, "subagents");
+    mkdirSync(sub, { recursive: true });
+    const at = new Date(Date.now() - 3_600_000).toISOString();
+    const line = (o: object) => `${JSON.stringify({ cwd, sessionId: SID, timestamp: at, ...o })}\n`;
+    writeFileSync(
+      path.join(project, `${SID}.jsonl`),
+      line({ type: "user", message: { role: "user", content: "why do retries vanish" } }) +
+        `${JSON.stringify({ type: "ai-title", aiTitle: "Retries vanish", sessionId: SID })}\n`,
+    );
+    writeFileSync(
+      path.join(sub, "agent-a9.meta.json"),
+      JSON.stringify({ agentType: "Explore", description: "Trace the lease", spawnDepth: 1 }),
+    );
+    writeFileSync(
+      path.join(sub, "agent-a9.jsonl"),
+      line({ type: "user", isSidechain: true, message: { role: "user", content: "Trace it." } }) +
+        line({
+          type: "assistant",
+          isSidechain: true,
+          message: {
+            id: "m1",
+            model: "claude-sonnet-5",
+            usage: { output_tokens: 3 },
+            content: [{ type: "text", text: "The lease is renewed only on success." }],
+          },
+        }) +
+        line({
+          type: "user",
+          isSidechain: true,
+          message: {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "t", content: "SECRET_TOOL_BODY" }],
+          },
+        }),
+    );
+    const service = new SessionService({
+      projectsDir,
+      cacheDir: path.join(dir, "state"),
+      emitPatch: () => {},
+      emitStatus: () => {},
+    });
+    services.push(service);
+    await service.loadCached([]);
+    await service.refresh();
+
+    const hits = await service.search("renewed success");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ agent: "a9", agents: [{ id: "a9" }] });
+    expect(hits[0]?.snippet).toMatch(/^in Explore: .*renewed only on success/);
+    expect(await service.search("secret_tool_body")).toEqual([]);
+    // what the session itself said is still a plain hit
+    expect(await service.search("vanish retries")).toEqual([]);
+    expect((await service.search("why vanish"))[0]?.agent).toBeUndefined();
+  });
+});
+
+describe("an agent still writing after its session went quiet", () => {
+  it("is searchable, and counted, as of what it wrote last", async () => {
+    const service = machine();
+    await service.loadCached([]);
+    await service.refresh();
+    expect(await service.search("quarantined")).toEqual([]);
+    const agent = service.list()[0]?.key.replace(/\.jsonl$/, "/subagents/agent-a2.jsonl") ?? "";
+    appendFileSync(
+      agent,
+      `${JSON.stringify({
+        type: "assistant",
+        isSidechain: true,
+        timestamp: new Date().toISOString(),
+        message: {
+          id: "m9",
+          model: "claude-sonnet-5",
+          usage: { output_tokens: 7 },
+          content: [{ type: "text", text: "The job was quarantined at 02:00." }],
+        },
+      })}\n`,
+    );
+    // the session's own transcript never moved. the agent scan sees the agent did.
+    await service.refresh();
+    await settle(service, () => false);
+    const hits = await service.search("quarantined");
+    expect(hits.map((h) => h.agent)).toEqual(["a2"]);
   });
 });

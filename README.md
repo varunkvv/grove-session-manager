@@ -146,6 +146,12 @@ matches join the list with the line that matched. Tool output and thinking are l
 and almost none of what people remember. The text is kept in `.grove/text/`, built by the same pass that counts
 tokens, and only the appended part of a transcript is read after the first time.
 
+It reaches what a session's agents said too: what each was asked, what it wrote, the files and commands it used, and
+what it came back with - never the output of its tools, which is other people's file contents and would drown every
+query. A session found that way says so on its second line (`in Explore: …what it said…`); clicking that line, or
+`⌘I`, opens the inspector on that agent at the step that matched. In **Agents** the agent itself is the match. An
+agent still writing after its session went quiet is read again as it writes, from where it stopped.
+
 ### Archive
 
 A session you are done with but do not want deleted: **Archive** in its action menu, or `⌘⇧A`. It leaves the list and

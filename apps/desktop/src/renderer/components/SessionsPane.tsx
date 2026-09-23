@@ -7,7 +7,15 @@ import {
   nextActiveKey,
   splitQuery,
 } from "../logic/rows.ts";
-import { activate, focusSearch, openCombo, openInspector, openMenu } from "../state/actions.ts";
+import {
+  activate,
+  agentHit,
+  focusSearch,
+  openAgent,
+  openCombo,
+  openInspector,
+  openMenu,
+} from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Banner } from "./Chrome.tsx";
 import { optionId, SessionList } from "./SessionList.tsx";
@@ -183,7 +191,7 @@ export function SessionsPane() {
         .then((res) => {
           if (splitQuery(useStore.getState().query).text !== res.query) return;
           set({
-            deep: { query: res.query, hits: new Map(res.hits.map((h) => [h.key, h.snippet])) },
+            deep: { query: res.query, hits: new Map(res.hits.map((h) => [h.key, h])) },
           });
         })
         .catch(() => {});
@@ -220,7 +228,14 @@ export function SessionsPane() {
   }, []);
   const onActivate = useCallback((key: SessionKey) => void activate(key), []);
   const onMenu = useCallback((key: SessionKey) => void openMenu(key), []);
-  const onInspect = useCallback((key: SessionKey) => openInspector(key), []);
+  const onInspect = useCallback(
+    (key: SessionKey, agent?: string) => {
+      if (!agent) return openInspector(key);
+      set({ activeKey: key });
+      openAgent(key, agent, { find: agentHit(key)?.find ?? "" });
+    },
+    [set],
+  );
 
   const scanning = index.phase === "scanning" || index.phase === "cache";
   const anyAgents = useMemo(() => sessions.some((r) => (r.agents?.length ?? 0) > 0), [sessions]);

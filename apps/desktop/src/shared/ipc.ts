@@ -164,8 +164,12 @@ export interface FrequentFolder {
 /** a row the instant filter could not find, found in its conversation instead */
 export interface SearchHit {
   key: SessionKey;
-  /** the part of the conversation that matched */
+  /** the part of the conversation that matched. `in Explore: …` when an agent's words did. */
   snippet: string;
+  /** the match is in this agent's transcript, not in the session's own */
+  agent?: string;
+  /** every agent of the session whose own words hold the whole query, with the part that did */
+  agents?: Array<{ id: string; snippet: string }>;
 }
 
 export type FolderViewState = FolderState | "unknown";
@@ -322,7 +326,9 @@ export interface Api {
   followAgent(
     key: SessionKey,
     agentId: string | null,
-  ): Promise<{ gen: number; detail: AgentDetail } | null>;
+    /** a search that led here: `found` is the fold index of the step that matched it best */
+    find?: string,
+  ): Promise<{ gen: number; detail: AgentDetail; found?: number } | null>;
   /** one step opened: read back from the two transcript lines it points at */
   agentStep(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */

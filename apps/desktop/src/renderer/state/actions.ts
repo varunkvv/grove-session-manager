@@ -1,5 +1,5 @@
 import type { SessionActionId, SessionKey } from "../../shared/ipc.ts";
-import { agentIdOf, sessionKeyOf } from "../logic/rows.ts";
+import { agentIdOf, sessionKeyOf, splitQuery } from "../logic/rows.ts";
 import { useStore } from "./store.ts";
 
 const api = () => window.grove;
@@ -72,10 +72,11 @@ const focusInPane = () =>
 export function openAgent(
   key: SessionKey,
   id: string,
-  opts: { step?: number; focus?: boolean } = {},
+  opts: { step?: number; focus?: boolean; find?: string } = {},
 ): void {
   const s = state();
   const step = opts.step;
+  const find = opts.find;
   const showing = s.inspector?.detail?.key === key && s.inspector.detail.id === id;
   paneFocus.pending = opts.focus || focusInPane();
   // already on screen, nothing mounts to take the keyboard
@@ -85,8 +86,20 @@ export function openAgent(
       agent: id,
       detail: { key, id },
       ...(step !== undefined ? { step } : {}),
+      ...(find ? { find } : {}),
     },
   });
+}
+
+/**
+ * the agent a search found this session through, when the query on screen is the one it answered.
+ * the inspector opens on that agent, at the step that matched.
+ */
+export function agentHit(key: SessionKey): { agent: string; find: string } | null {
+  const s = state();
+  const text = splitQuery(s.query).text;
+  const hit = s.deep && s.deep.query === text ? s.deep.hits.get(key) : undefined;
+  return hit?.agent ? { agent: hit.agent, find: text } : null;
 }
 
 /** back from an agent to the list, with the row it came from still the one the keyboard is on */

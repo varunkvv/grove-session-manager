@@ -9,7 +9,12 @@ import type { ParsedMeta, SessionRecord } from "../types.ts";
 import { type CacheEntry, cacheKey, loadCache, saveCache, sweepOldCaches } from "./cache.ts";
 import { TextStore } from "./fulltext.ts";
 import { type FileStat, scanProjects, sidecarTitlePath, statTranscript } from "./scan.ts";
-import { type SessionTallies, scanSessionUsage } from "./usage.ts";
+import {
+  agentIdOfTally,
+  type SessionTallies,
+  scanSessionUsage,
+  subagentTranscripts,
+} from "./usage.ts";
 
 export interface SessionIndexOptions {
   projectsDir: string;
@@ -187,7 +192,16 @@ export class SessionIndex {
     if (pending.length) opts.onBatch?.(pending);
 
     if (this.usage) await this.countUsage(stats, opts);
-    if (this.text && !opts.signal?.aborted) void this.text.sweep(stats.map((s) => s.path));
+    if (this.text && !opts.signal?.aborted) {
+      // an agent's text lives as long as its session's
+      const keep = stats.flatMap((s) => [
+        s.path,
+        ...Object.keys(this.cache.get(s.path)?.usage?.agentText ?? {}).map((rel) =>
+          path.join(path.dirname(s.path), rel),
+        ),
+      ]);
+      void this.text.sweep(keep);
+    }
 
     const cold = toParse.length >= COLD_THRESHOLD;
     if (this.persist === "always" || (this.persist === "if-cold" && cold)) await this.flush();
@@ -228,7 +242,12 @@ export class SessionIndex {
     if (!this.usage || !entry) return false;
     if (entry.usage?.key !== cacheKey(s)) return true;
     // counted before search was kept: read once more to build the text
-    return this.text !== null && entry.usage.textChars === undefined;
+    if (this.text === null) return false;
+    if (entry.usage.textChars === undefined) return true;
+    // and before agents were searched: once more for a session that has any
+    return (
+      entry.usage.agentText === undefined && Object.keys(entry.usage.files).some((k) => k !== "")
+    );
   }
 
   /**
@@ -253,20 +272,43 @@ export class SessionIndex {
     if (!entry) return undefined;
     let prev = entry.usage?.files;
     let sink: ReturnType<TextStore["sink"]> | undefined;
+    const agentSinks = new Map<string, ReturnType<TextStore["sink"]>>();
+    const base = path.dirname(s.path);
     if (this.text) {
+      const text = this.text;
       // the stored text has to be exactly what the offset says was read, or it is rebuilt from 0
-      const have = await this.text.ensure(s.path);
+      const have = await text.ensure(s.path);
       if (prev?.[""] && entry.usage?.textChars !== have) {
         const { "": _, ...subagents } = prev;
         prev = subagents;
       }
-      sink = this.text.sink(s.path);
+      sink = text.sink(s.path);
+      // the same for each agent's text, which has a file of its own
+      for (const file of await subagentTranscripts(s.path)) {
+        const rel = path.relative(base, file);
+        if (!agentIdOfTally(rel)) continue;
+        const kept = await text.ensure(file);
+        if (prev?.[rel] && entry.usage?.agentText?.[rel] !== kept) {
+          const { [rel]: _, ...rest } = prev;
+          prev = rest;
+        }
+        agentSinks.set(rel, text.sink(file));
+      }
     }
-    const files = await scanSessionUsage(s.path, prev, sink);
+    const files = await scanSessionUsage(s.path, prev, sink, (rel) => agentSinks.get(rel));
     // the file may have been removed or re-parsed meanwhile. only land on the entry we started from.
     if (this.cache.get(s.path) !== entry) return undefined;
     const textChars = sink && files[""] ? await sink.commit() : undefined;
-    entry.usage = { key: cacheKey(s), files, ...(textChars !== undefined ? { textChars } : {}) };
+    const agentText: Record<string, number> = {};
+    for (const [rel, agentSink] of agentSinks) {
+      if (files[rel]) agentText[rel] = await agentSink.commit();
+    }
+    entry.usage = {
+      key: cacheKey(s),
+      files,
+      ...(textChars !== undefined ? { textChars } : {}),
+      ...(sink ? { agentText } : {}),
+    };
     this.dirty = true;
     const rec = toRecord(s, entry.meta, files);
     if (this.records.has(s.path)) this.records.set(s.path, rec);
@@ -299,6 +341,43 @@ export class SessionIndex {
       record = (await this.updateUsage(s)) ?? record;
     }
     return { changed: !before || displayKey(before) !== displayKey(record), record };
+  }
+
+  /**
+   * reads what a session's agents appended, when its own transcript has not moved: a background
+   * agent keeps writing after its session goes quiet. only what was appended is read.
+   */
+  async refreshUsage(file: string): Promise<SessionRecord | undefined> {
+    if (!this.usage || !this.cache.get(file)?.usage) return undefined;
+    const s = await statTranscript(file);
+    return s ? this.updateUsage(s) : undefined;
+  }
+
+  /**
+   * what each agent of one session said, by agent id, loaded on first use. kept beside the
+   * session's own text, one doc per agent transcript, by the same pass that counts its tokens.
+   */
+  async agentTexts(transcript: string): Promise<Map<string, { text: string; lower: string }>> {
+    const out = new Map<string, { text: string; lower: string }>();
+    const text = this.text;
+    const usage = this.cache.get(transcript)?.usage;
+    if (!text || !usage?.agentText) return out;
+    const base = path.dirname(transcript);
+    // the text dir was cleared under transcripts that have not changed since: read them again
+    let stale = false;
+    for (const [rel, chars] of Object.entries(usage.agentText)) {
+      if ((await text.ensure(path.join(base, rel))) !== chars) stale = true;
+    }
+    if (stale) {
+      const s = await statTranscript(transcript);
+      if (s) await this.updateUsage(s);
+    }
+    for (const rel of Object.keys(this.cache.get(transcript)?.usage?.agentText ?? {})) {
+      const id = agentIdOfTally(rel);
+      const doc = id ? text.get(path.join(base, rel)) : undefined;
+      if (id && doc) out.set(id, doc);
+    }
+    return out;
   }
 
   /** every session's conversation text, loaded from the cache dir on first use */

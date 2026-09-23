@@ -254,9 +254,13 @@ function buildHandlers(deps: Deps): Handlers {
       return deps.inspector.inspect(key);
     },
 
-    async followAgent(key, agentId) {
+    async followAgent(key, agentId, find) {
       if (agentId !== null && (typeof key !== "string" || !sessions.get(key))) return null;
-      return deps.inspector.follow(key, agentId);
+      return deps.inspector.follow(
+        key,
+        agentId,
+        typeof find === "string" ? find.slice(0, 500) : "",
+      );
     },
 
     async agentStep(key, agentId, stepId) {

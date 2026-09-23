@@ -17,6 +17,7 @@ import {
   type TimelineState,
   timelineCacheDir,
   timelineView,
+  tokenize,
   toolLabel,
   type WorkflowRun,
   workflowResultText,
@@ -252,7 +253,8 @@ export class AgentInspector {
   async follow(
     key: SessionKey,
     agentId: string | null,
-  ): Promise<{ gen: number; detail: AgentDetail } | null> {
+    find = "",
+  ): Promise<{ gen: number; detail: AgentDetail; found?: number } | null> {
     this.unfollow();
     const gen = ++this.gen;
     if (typeof agentId !== "string") return null;
@@ -277,7 +279,8 @@ export class AgentInspector {
     };
     f.timer.unref?.();
     this.following = f;
-    return { gen, detail };
+    const landed = find ? findStep(state, tokenize(find)) : undefined;
+    return { gen, detail, ...(landed !== undefined ? { found: landed } : {}) };
   }
 
   private unfollow(): void {
@@ -345,6 +348,27 @@ export class AgentInspector {
     this.runs.set(key, { mark, runs });
     return runs;
   }
+}
+
+/**
+ * where a search landed inside an agent: the first step holding the most of its words. the prompt
+ * and the result are on screen when the detail opens, so a match only there lands nowhere.
+ */
+export function findStep(state: TimelineState, tokens: readonly string[]): number | undefined {
+  if (tokens.length === 0) return undefined;
+  const result = new Set(finalTexts(state));
+  let best: number | undefined;
+  let most = 0;
+  state.steps.forEach((s, n) => {
+    if (result.has(n) || s.kind === "thinking") return;
+    const hay = (s.kind === "tool" ? `${s.name}\n${s.target}\n${s.input}` : s.text).toLowerCase();
+    const count = tokens.filter((t) => hay.includes(t)).length;
+    if (count > most) {
+      most = count;
+      best = n;
+    }
+  });
+  return best;
 }
 
 /** the steps the view lifts out as the result: the text of a final message that calls no tool */

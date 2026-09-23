@@ -320,6 +320,15 @@ export class SessionService {
   /** true when the rows need rebuilding. a session with no agents keeps no snapshot. */
   private store(key: SessionKey, snapshot: AgentSnapshot | null): boolean {
     if (!snapshot || this.disposed) return false;
+    const was = this.agents.get(key);
+    // an agent wrote while its session sat still: its tokens and its words are read from where
+    // they stopped. the session's own transcript moving covers the rest.
+    if (was && Object.entries(snapshot.reads).some(([id, r]) => was.reads[id]?.mark !== r.mark)) {
+      void this.index
+        .refreshUsage(key)
+        .then((rec) => rec && this.rebuild())
+        .catch((e) => log.warn("agent usage of", key, e));
+    }
     if (snapshot.agents.length === 0) {
       if (!this.agents.delete(key)) return false;
       this.opts.onAgents?.(key, snapshot);
@@ -353,7 +362,8 @@ export class SessionService {
 
   /**
    * rows whose conversation holds every word, that the renderer's instant filter over titles and
-   * prompts did not already find. a word may match the row's own fields or its text.
+   * prompts did not already find. a word may match the row's own fields or its text - or what one
+   * of its agents said, which is how a session is found by what its agents found.
    */
   async search(query: string): Promise<SearchHit[]> {
     const tokens = tokenize(query);
@@ -364,9 +374,30 @@ export class SessionService {
       const hay = rowHaystack(row);
       const missing = tokens.filter((t) => !hay.includes(t));
       if (missing.length === 0) continue;
+      const agents: Array<{ id: string; snippet: string }> = [];
+      if (row.agents?.length) {
+        const docs = await this.index.agentTexts(row.key);
+        for (const a of row.agents) {
+          const doc = docs.get(a.id);
+          if (doc && missing.every((t) => doc.lower.includes(t))) {
+            agents.push({ id: a.id, snippet: textSnippet(doc, missing) ?? "" });
+          }
+        }
+      }
       const doc = texts.get(row.key);
-      if (!doc || !missing.every((t) => doc.lower.includes(t))) continue;
-      hits.push({ key: row.key, snippet: textSnippet(doc, missing) ?? "" });
+      if (doc && missing.every((t) => doc.lower.includes(t))) {
+        hits.push({
+          key: row.key,
+          snippet: textSnippet(doc, missing) ?? "",
+          ...(agents.length ? { agents } : {}),
+        });
+        continue;
+      }
+      const first = agents[0];
+      const agent = first && row.agents?.find((a) => a.id === first.id);
+      if (!first || !agent) continue;
+      const kind = agent.agentType === "workflow-subagent" ? "workflow" : agent.agentType;
+      hits.push({ key: row.key, snippet: `in ${kind}: ${first.snippet}`, agent: first.id, agents });
     }
     return hits;
   }

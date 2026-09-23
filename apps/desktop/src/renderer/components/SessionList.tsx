@@ -84,7 +84,9 @@ interface RowProps {
   total: number;
   onActivate: (key: SessionKey, el: HTMLElement) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
-  onInspect: (key: SessionKey) => void;
+  onInspect: (key: SessionKey, agent?: string) => void;
+  /** the search found this session through one of its agents */
+  agentHit?: string;
 }
 
 const SessionRowView = memo(function SessionRowView(p: RowProps) {
@@ -130,7 +132,21 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
       </div>
       <div className="flex items-baseline gap-3 text-sm text-fg-3">
         <span className="min-w-0 flex-1 truncate">
-          {p.secondary ? (
+          {p.secondary && p.agentHit ? (
+            // what an agent said: it opens that agent, at what matched
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="row-agent-hit"
+              className="fade max-w-full truncate text-left hover:text-fg-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                p.onInspect(row.key, p.agentHit);
+              }}
+            >
+              <Highlighted text={p.secondary} tokens={p.tokens} />
+            </button>
+          ) : p.secondary ? (
             <Highlighted text={p.secondary} tokens={p.tokens} />
           ) : untitled ? (
             row.projectLabel
@@ -258,8 +274,9 @@ const AgentRowView = memo(function AgentRowView(p: {
         )}
       </div>
       <div className="flex items-baseline gap-3 text-sm text-fg-3">
-        <span className="min-w-0 flex-1 truncate">
-          <Highlighted text={row.title ?? "Untitled session"} tokens={p.tokens} />
+        <span className="min-w-0 flex-1 truncate" data-testid="agent-list-second">
+          {/* found by what it said: that is the line worth reading. its session is in the pane. */}
+          <Highlighted text={p.item.match ?? row.title ?? "Untitled session"} tokens={p.tokens} />
         </span>
         <span className="shrink-0 text-fg-4">
           <Highlighted
@@ -293,7 +310,7 @@ export function SessionList({
   total: number;
   onActivate: (key: SessionKey, el: HTMLElement) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
-  onInspect: (key: SessionKey) => void;
+  onInspect: (key: SessionKey, agent?: string) => void;
   onPageSize: (rows: number) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -393,6 +410,7 @@ export function SessionList({
                       onActivate={onActivate}
                       onMenu={onMenu}
                       onInspect={onInspect}
+                      {...(item.agent ? { agentHit: item.agent } : {})}
                     />
                   </div>
                 </div>

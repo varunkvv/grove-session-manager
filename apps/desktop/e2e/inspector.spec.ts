@@ -348,3 +348,39 @@ test("the Agents scope lists every agent, running first, and selecting one opens
   await page.keyboard.press("Escape");
   await expect(rows).toHaveCount(3);
 });
+
+test("search reaches what agents said, and opens the agent at the step that said it", async () => {
+  setup();
+  app = await launchApp(fx);
+  const { page } = app;
+  const rows = page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 2);
+
+  // only the survey agent said this, between two of its steps
+  await page.keyboard.type("local database");
+  const hit = rows.filter({ hasText: "Database CPU spike" });
+  // what it said, from the start of its line, so the words that matched show
+  await expect(hit.getByTestId("row-agent-hit")).toContainText(
+    /^in Explore: …No local database\. Reading the plan from the replica instead\./,
+  );
+  await expect(rows).toHaveCount(1);
+
+  await hit.getByTestId("row-agent-hit").click();
+  const pane = page.getByTestId("inspector");
+  await expect(pane.getByTestId("agent-title")).toHaveText("Survey the nightly job's queries");
+  const landed = pane.getByTestId("agent-prose").filter({ hasText: "No local database" });
+  await expect(landed).toBeInViewport();
+  await expect(landed).toHaveAttribute("data-landed", "true");
+  await shot(page, "23-agent-search");
+
+  // a tool's output is other people's file contents: it is never what a session is found by
+  await page.getByTestId("search").fill("918273");
+  await expect(page.getByTestId("list-empty")).toBeVisible();
+
+  // the Agents scope finds the agent itself, and says what it said
+  await page.keyboard.press("Meta+3");
+  await page.getByTestId("search").fill("local database");
+  const agents = page.getByTestId("agent-list-row");
+  await expect(agents).toHaveCount(1);
+  await expect(agents.first().getByTestId("agent-list-second")).toContainText("No local database");
+});

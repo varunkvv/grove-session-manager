@@ -12,6 +12,7 @@ import { agentIdOf, needsYouKeys, sessionKeyOf } from "./logic/rows.ts";
 import {
   activate,
   activateDefault,
+  agentHit,
   archiveSessions,
   closeAgent,
   closeInspector,
@@ -73,10 +74,12 @@ function perform(intent: Intent): void {
       break;
     }
     case "inspect": {
+      const hit = session ? agentHit(session) : null;
       if (s.inspector) closeInspector();
       else if (session && s.activeKey && agentIdOf(s.activeKey)) {
         openAgent(session, agentIdOf(s.activeKey) ?? "");
-      } else openInspector();
+      } else if (session && hit) openAgent(session, hit.agent, { find: hit.find });
+      else openInspector();
       break;
     }
     case "inspector-enter":

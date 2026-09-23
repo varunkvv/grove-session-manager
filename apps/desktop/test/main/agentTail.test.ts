@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { scanSessionAgents } from "@grove/core";
+import { readAgentTimeline, scanSessionAgents } from "@grove/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   agentPrompt,
@@ -11,7 +11,7 @@ import {
   jsonl,
   text,
 } from "../../../../packages/core/test/helpers/agentTranscript.ts";
-import { AgentInspector, firstChange } from "../../src/main/services/agentInspector.ts";
+import { AgentInspector, findStep, firstChange } from "../../src/main/services/agentInspector.ts";
 import type { AgentSteps } from "../../src/shared/ipc.ts";
 
 const ID = "atail";
@@ -64,6 +64,24 @@ describe("tailing the agent on screen", () => {
     // a text that stopped being the result changes what shows without changing the step
     expect(firstChange([a, b], [a, b], [1])).toBe(1);
     expect(firstChange([], [a], [])).toBe(0);
+  });
+
+  it("a search lands on the step that holds the most of it, never on the result", async () => {
+    const { file } = await running();
+    appendFileSync(
+      file,
+      jsonl([
+        agentSays(ID, "m2", text("Checking the lease renewal next."), 3),
+        agentSays(ID, "m3", call("t2", "Grep", { pattern: "lease", path: "/work/api" }), 4),
+        agentResult(ID, "t2", "x", 5),
+        agentSays(ID, "m4", text("The lease is renewed only on success."), 6),
+      ]),
+    );
+    const state = await readAgentTimeline(file);
+    // "lease renewal" is all there in the prose, only half in the Grep. the final words are the result.
+    expect(findStep(state, ["lease", "renewal"])).toBe(1);
+    expect(findStep(state, ["success"])).toBeUndefined();
+    expect(findStep(state, [])).toBeUndefined();
   });
 
   it("sends what the agent appends, from the first step it changed", async () => {
