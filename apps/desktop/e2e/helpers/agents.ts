@@ -433,3 +433,69 @@ export function writeDerive(fx: Fixture, cwd: string): string {
   utimesSync(transcript, quiet, quiet);
   return transcript;
 }
+
+/** where an agent of the fan-out writes its transcript */
+export function agentFile(fx: Fixture, cwd: string, sessionId: string, id: string): string {
+  return path.join(
+    fx.projectsDir,
+    claudeProjectSlug(cwd),
+    sessionId,
+    "subagents",
+    `agent-${id}.jsonl`,
+  );
+}
+
+/** what a running agent writes next: calls and what they returned, the way Claude Code appends them */
+export function appendCalls(
+  file: string,
+  o: { agentId: string; sessionId: string; cwd: string; from: number; count: number },
+): void {
+  const lines: object[] = [];
+  const base = (at: number) => ({
+    isSidechain: true,
+    agentId: o.agentId,
+    timestamp: new Date(at).toISOString(),
+    userType: "external",
+    entrypoint: "claude-vscode",
+    cwd: o.cwd,
+    sessionId: o.sessionId,
+    version: "2.1.278",
+  });
+  const now = Date.now();
+  // a different tool each time, the way a busy agent goes: a run of one tool folds into a line
+  const call = (i: number) => {
+    const file = `${o.cwd}/src/tail/file-${i}.ts`;
+    if (i % 3 === 0) return { name: "Read", input: { file_path: file } };
+    if (i % 3 === 1) return { name: "Grep", input: { pattern: "export", path: file } };
+    return { name: "Bash", input: { command: `wc -l src/tail/file-${i}.ts` } };
+  };
+  for (let i = o.from; i < o.from + o.count; i++) {
+    const id = `toolu_tail_${i}`;
+    const at = now - (o.from + o.count - i) * 1000;
+    lines.push({
+      type: "assistant",
+      message: {
+        model: "claude-opus-5",
+        id: `msg_tail_${i}`,
+        role: "assistant",
+        content: [{ type: "tool_use", id, ...call(i) }],
+        usage: {
+          input_tokens: 2,
+          output_tokens: 80,
+          cache_read_input_tokens: 30_000 + i * 900,
+          cache_creation_input_tokens: 400,
+        },
+      },
+      ...base(at),
+    });
+    lines.push({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ tool_use_id: id, type: "tool_result", content: `// file ${i}` }],
+      },
+      ...base(at + 300),
+    });
+  }
+  appendFileSync(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+}

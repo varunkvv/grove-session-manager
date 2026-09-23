@@ -782,6 +782,50 @@ if (variant === "agents") {
 
 const okv = <T>(value: T) => Promise.resolve({ ok: true as const, value });
 
+// push events, so a running agent can be watched writing in the browser too
+const listeners = new Map<string, Set<(payload: unknown) => void>>();
+const emit = (channel: string, payload: unknown) => {
+  for (const l of listeners.get(channel) ?? []) l(payload);
+};
+let followGen = 0;
+let tail: ReturnType<typeof setInterval> | null = null;
+
+/** a running agent keeps writing: a step every couple of seconds, like a busy one does */
+function follow(key: string, a: SessionAgent, gen: number): void {
+  if (tail) clearInterval(tail);
+  tail = null;
+  if (a.state !== "running") return;
+  tail = setInterval(() => {
+    const held = detailsById.get(a.id);
+    if (!held) return;
+    const n = held.steps.length;
+    const last = held.steps[n - 1];
+    // the call that was still going comes back, and the next one starts
+    const settled =
+      last?.kind === "tool" && last.durationMs === undefined ? [{ ...last, durationMs: 1800 }] : [];
+    const file = FILES[n % FILES.length] ?? "README.md";
+    const next: MockStep = {
+      kind: "tool",
+      n,
+      id: `toolu_${a.id}_${n}`,
+      name: n % 5 === 0 ? "Bash" : "Read",
+      target: n % 5 === 0 ? "psql replica -f replay.sql" : file,
+      at: Date.now(),
+    };
+    bodies.set(next.id, {
+      input: JSON.stringify({ file_path: file }, null, 2),
+      result: "…",
+      truncated: false,
+    });
+    const from = settled.length ? n - 1 : n;
+    const steps = [...held.steps.slice(0, from), ...settled, next];
+    const updated = { ...held, steps, toolCount: held.toolCount + 1, tokens: held.tokens + 1400 };
+    detailsById.set(a.id, updated);
+    const { key: _k, id: _i, steps: _s, prompt: _p, ...head } = updated;
+    emit("agent:steps", { key, id: a.id, gen, from, steps: steps.slice(from), head });
+  }, 2000);
+}
+
 const bridge: Bridge = {
   bootstrap: async () => boot,
   rescan: () => okv(undefined),
@@ -815,13 +859,17 @@ const bridge: Bridge = {
   },
   searchSessions: async (query) => ({ query, hits: [] }),
   inspectSession: async (key) => inspectionsByKey.get(key) ?? { key, agents: {}, workflows: {} },
-  agentDetail: async (key, agentId) => {
-    const row = sessions.find((r) => r.key === key);
-    const a = row?.agents?.find((x) => x.id === agentId);
+  followAgent: async (key, agentId) => {
+    const gen = ++followGen;
+    if (tail) clearInterval(tail);
+    tail = null;
+    if (agentId === null) return null;
+    const a = sessions.find((r) => r.key === key)?.agents?.find((x) => x.id === agentId);
     if (!a) return null;
     const held = detailsById.get(agentId) ?? mockDetail(a);
     detailsById.set(agentId, held);
-    return { ...held, key };
+    follow(key, a, gen);
+    return { gen, detail: { ...held, key } };
   },
   agentStep: async (_key, _agentId, stepId) => bodies.get(stepId) ?? null,
   openExternal: () => okv(undefined),
@@ -870,7 +918,12 @@ const bridge: Bridge = {
   reveal: () => okv(undefined),
   copyText: () => okv(undefined),
   reportCspViolation: async () => {},
-  on: () => () => {},
+  on: (channel, listener) => {
+    const set = listeners.get(channel) ?? new Set();
+    set.add(listener as (payload: unknown) => void);
+    listeners.set(channel, set);
+    return () => set.delete(listener as (payload: unknown) => void);
+  },
 };
 
 window.grove = bridge;

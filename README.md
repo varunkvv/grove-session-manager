@@ -124,6 +124,11 @@ thinking stays hidden behind **show thinking**. A step opens in place to its who
 from the transcript at that moment - the pane never holds a tool's output until you ask for it. An `Agent` step goes
 to the agent it started. `Esc` or `←` goes back to the list.
 
+An agent that is still running keeps writing while you look. Its steps arrive as it writes them - only the part of
+its transcript appended since the last look is read, at most four times a second, and only for the agent on screen -
+and the list follows the newest one. Scroll up and it stays where you put it, with **Jump to live** to get back. What
+it is doing now stays pinned under its name.
+
 What an agent wrote is not trusted: a result quotes web pages and files. It is rendered as markdown without any HTML
 (a `<script>` in a result shows as text), images show their description, and only `http(s)` links open - in your
 browser, never in the app.

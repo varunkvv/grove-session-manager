@@ -24,6 +24,7 @@ import {
 import type {
   AgentDetail,
   AgentStats,
+  AgentSteps,
   DetailStep,
   SessionInspection,
   SessionKey,
@@ -33,11 +34,30 @@ import { log } from "../log.ts";
 
 /** folded timelines kept in memory. the 4MB agent folds to ~270KB, so this stays well under 20MB. */
 const MEMORY = 48;
+/** how often the agent on screen is looked at. also the cap on pushes: four a second. */
+export const TAIL_MS = 250;
 
 export interface AgentInspectorOptions {
   stateDir: string;
   /** the scan of one session's agents, with the file each one writes to */
   snapshot: (key: SessionKey) => AgentSnapshot | undefined;
+  /** what the agent on screen wrote since the last push */
+  onSteps?: (steps: AgentSteps) => void;
+  tailMs?: number;
+}
+
+interface Follow {
+  key: SessionKey;
+  id: string;
+  file: string;
+  gen: number;
+  /** the steps array last sent. unchanged steps are the same objects in the next fold. */
+  sent: TimelineState["steps"];
+  /** fold indexes the view left out as the result when it was sent */
+  drop: readonly number[];
+  mark: string;
+  timer: NodeJS.Timeout;
+  busy: boolean;
 }
 
 /**
@@ -54,6 +74,9 @@ export class AgentInspector {
   private readonly folding = new Map<string, Promise<TimelineState | null>>();
   /** workflow names by session. a run's name never changes once it is known. */
   private readonly runs = new Map<SessionKey, { mark: string; runs: Map<string, WorkflowRun> }>();
+  /** the one agent on screen. there is one pane, so there is one of these. */
+  private following: Follow | null = null;
+  private gen = 0;
 
   constructor(opts: AgentInspectorOptions) {
     this.opts = opts;
@@ -185,9 +208,16 @@ export class AgentInspector {
   async detail(key: SessionKey, agentId: string): Promise<AgentDetail | null> {
     const found = this.find(key, agentId);
     if (!found) return null;
+    const state = await this.timeline(found.file, found.agent.state === "done");
+    return state ? this.build(key, found, state) : null;
+  }
+
+  private async build(
+    key: SessionKey,
+    found: NonNullable<ReturnType<AgentInspector["find"]>>,
+    state: TimelineState,
+  ): Promise<AgentDetail> {
     const { snapshot, agent, file } = found;
-    const state = await this.timeline(file, agent.state === "done");
-    if (!state) return null;
     const view = timelineView(state);
     // an Agent call's id is the toolUseId in the meta of the agent it started
     const started = new Map(
@@ -214,6 +244,83 @@ export class AgentInspector {
     return detail;
   }
 
+  /**
+   * the agent on screen: everything so far, then only what it appends, pushed as it lands. the
+   * file is looked at every TAIL_MS and read from where the last read stopped, so a 4MB agent
+   * that wrote one line costs one line. any call replaces the one before.
+   */
+  async follow(
+    key: SessionKey,
+    agentId: string | null,
+  ): Promise<{ gen: number; detail: AgentDetail } | null> {
+    this.unfollow();
+    const gen = ++this.gen;
+    if (typeof agentId !== "string") return null;
+    const found = this.find(key, agentId);
+    if (!found) return null;
+    const state = await this.timeline(found.file, found.agent.state === "done");
+    const info = await stat(found.file).catch(() => null);
+    // another follow started while this one was reading
+    if (!state || !info || gen !== this.gen) return null;
+    const detail = await this.build(key, found, state);
+    if (gen !== this.gen) return null;
+    const f: Follow = {
+      key,
+      id: agentId,
+      file: found.file,
+      gen,
+      sent: state.steps,
+      drop: finalTexts(state),
+      mark: fileMark(info),
+      timer: setInterval(() => void this.tick(f), this.opts.tailMs ?? TAIL_MS),
+      busy: false,
+    };
+    f.timer.unref?.();
+    this.following = f;
+    return { gen, detail };
+  }
+
+  private unfollow(): void {
+    if (this.following) clearInterval(this.following.timer);
+    this.following = null;
+  }
+
+  private async tick(f: Follow): Promise<void> {
+    if (this.following !== f || f.busy) return;
+    f.busy = true;
+    try {
+      const info = await stat(f.file).catch(() => null);
+      if (!info || fileMark(info) === f.mark) return;
+      const found = this.find(f.key, f.id);
+      if (!found) return;
+      const state = await this.timeline(f.file, false);
+      if (!state || this.following !== f) return;
+      f.mark = fileMark(info);
+      const drop = finalTexts(state);
+      const from = firstChange(f.sent, state.steps, [...f.drop, ...drop]);
+      const { key: _k, id: _i, steps, prompt: _p, ...head } = await this.build(f.key, found, state);
+      if (this.following !== f) return;
+      f.sent = state.steps;
+      f.drop = drop;
+      this.opts.onSteps?.({
+        key: f.key,
+        id: f.id,
+        gen: f.gen,
+        from,
+        steps: steps.filter((s) => s.n >= from),
+        head,
+      });
+    } catch (e) {
+      log.warn("agent tail of", f.file, e);
+    } finally {
+      f.busy = false;
+    }
+  }
+
+  dispose(): void {
+    this.unfollow();
+  }
+
   /** one step opened. the only place a whole tool result is read. */
   async step(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null> {
     const found = this.find(key, agentId);
@@ -238,6 +345,28 @@ export class AgentInspector {
     this.runs.set(key, { mark, runs });
     return runs;
   }
+}
+
+/** the steps the view lifts out as the result: the text of a final message that calls no tool */
+function finalTexts(state: TimelineState): number[] {
+  const last = state.last;
+  return last && !last.tool && !last.error ? last.texts : [];
+}
+
+/**
+ * the first fold index a push has to send again. steps are replaced, never changed in place, so
+ * the first one that is not the same object is where the news starts - and a text that moved in
+ * or out of the result changes what the view shows without changing the step.
+ */
+export function firstChange(
+  sent: readonly unknown[],
+  next: readonly unknown[],
+  moved: readonly number[],
+): number {
+  let i = 0;
+  const n = Math.min(sent.length, next.length);
+  while (i < n && sent[i] === next[i]) i++;
+  return Math.min(i, ...moved);
 }
 
 /**

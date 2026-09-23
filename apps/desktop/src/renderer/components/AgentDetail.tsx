@@ -31,6 +31,8 @@ import { cx, Icon } from "./ui.tsx";
 const details = new Map<string, AgentDetail>();
 const steps = new Map<string, StepDetail>();
 const LINE = 20;
+/** an agent that died on an error: the only colour the detail has */
+const errorLine = "mt-1 line-clamp-2 text-sm text-accent";
 
 function remember<V>(map: Map<string, V>, key: string, value: V, max = 24): void {
   map.delete(key);
@@ -43,34 +45,55 @@ function remember<V>(map: Map<string, V>, key: string, value: V, max = 24): void
 }
 
 /**
- * one agent, read in main and sent over as lines, never raw json. asked again when the scan says
- * the agent's transcript moved.
+ * the agent on screen, read in main and sent over as lines, never raw json. while it is here,
+ * whatever it writes arrives as it lands: every step from the first one that changed, at most
+ * four times a second.
  */
-function useAgentDetail(
+function useFollowedAgent(
   key: SessionKey,
   id: string,
-  moved: string,
 ): { detail: AgentDetail | null; missing: boolean } {
   const cacheKey = `${key}\0${id}`;
-  const [, bump] = useState(0);
+  const [detail, setDetail] = useState<AgentDetail | null>(details.get(cacheKey) ?? null);
   const [missing, setMissing] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `moved` is what makes a fresh read worth asking for
   useEffect(() => {
     let cancelled = false;
+    let gen = -1;
+    let current = details.get(cacheKey) ?? null;
+    const show = (next: AgentDetail) => {
+      current = next;
+      remember(details, cacheKey, next);
+      setDetail(next);
+    };
+    const off = window.grove.on("agent:steps", (p) => {
+      if (cancelled || p.gen !== gen || p.key !== key || p.id !== id || !current) return;
+      // the head comes whole: a field it no longer has (a result that turned back into a step)
+      // must not survive from the last one
+      show({
+        key,
+        id,
+        ...(current.prompt !== undefined ? { prompt: current.prompt } : {}),
+        ...p.head,
+        steps: [...current.steps.filter((s) => s.n < p.from), ...p.steps],
+      });
+    });
     void window.grove
-      .agentDetail(key, id)
-      .then((value) => {
+      .followAgent(key, id)
+      .then((res) => {
         if (cancelled) return;
-        if (value) remember(details, cacheKey, value);
-        setMissing(!value);
-        bump((n) => n + 1);
+        setMissing(!res);
+        if (!res) return;
+        gen = res.gen;
+        show(res.detail);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
+      off();
+      void window.grove.followAgent(key, null).catch(() => {});
     };
-  }, [key, id, cacheKey, moved]);
-  return { detail: details.get(cacheKey) ?? null, missing };
+  }, [key, id, cacheKey]);
+  return { detail, missing };
 }
 
 /** what an agent is called: what its parent said it was for, else what it was asked */
@@ -102,11 +125,7 @@ export function AgentDetailView({
   onOpen: (agentId: string) => void;
 }) {
   const running = agent?.state === "running";
-  const { detail, missing } = useAgentDetail(
-    sessionKey,
-    agentId,
-    agent ? `${agent.state}:${agent.lastActivityAt}` : "",
-  );
+  const { detail, missing } = useFollowedAgent(sessionKey, agentId);
   const toast = useStore((s) => s.toast);
   const [thinking, setThinking] = useState(false);
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(new Set());
@@ -114,6 +133,10 @@ export function AgentDetailView({
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const [cursor, setCursor] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  // at the end of a running agent, the steps follow what it writes. scrolling up stops that.
+  const [live, setLive] = useState(wanted === undefined);
+  // a hairline under the pinned head, once there is something scrolled beneath it
+  const [under, setUnder] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
   const items = useMemo(
@@ -139,6 +162,13 @@ export function AgentDetailView({
       scroller.current?.focus();
     }
   }, []);
+
+  const following = running && live && !!detail;
+  useEffect(() => {
+    if (following && items.length > 0) {
+      virtualizer.scrollToIndex(items.length - 1, { align: "end" });
+    }
+  }, [following, items, virtualizer]);
 
   // a search hit lands on its step: open the run it is folded into, then bring it into view
   const landed = useRef<number | undefined>(undefined);
@@ -187,32 +217,7 @@ export function AgentDetailView({
       case "head":
         return (
           <div className="px-5 pt-1 pb-3" data-testid="agent-head">
-            <h3 className="text-title font-medium text-fg" data-testid="agent-title">
-              {titleOf(agent, detail)}
-            </h3>
-            {detail && (
-              <p className="mt-0.5 text-sm text-fg-3" data-testid="agent-meta">
-                {detailMeta(agent, detail, now)}
-              </p>
-            )}
-            {running && (agent?.summary || agent?.lastTool) && (
-              <p
-                className="mt-1 flex items-center gap-1.5 text-sm text-fg-2"
-                data-testid="agent-now"
-              >
-                <span className="live-pulse size-1.5 shrink-0 rounded-full bg-fg-3" />
-                <span className="truncate">{agent.summary ?? agent.lastTool}</span>
-              </p>
-            )}
-            {detail?.error && (
-              <p className="mt-1 text-sm text-accent" data-testid="agent-error" data-error>
-                {detail.error}
-              </p>
-            )}
-            {detail?.interrupted && !running && (
-              <p className="mt-1 text-sm text-fg-3">Interrupted</p>
-            )}
-            <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               {detail?.result && (
                 <Action onClick={() => copy(detail.result, "Result")} testId="copy-result">
                   Copy result
@@ -333,8 +338,15 @@ export function AgentDetailView({
     }
   };
 
+  const lastTool = detail?.steps.findLast((st) => st.kind === "tool");
+  const doing =
+    agent?.summary ??
+    (lastTool?.kind === "tool" ? `${toolLabel(lastTool.name)} ${lastTool.target}`.trim() : null) ??
+    agent?.lastTool ??
+    "Starting";
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="agent-detail">
+    <div className="relative flex min-h-0 flex-1 flex-col" data-testid="agent-detail">
       <div className="flex h-10 shrink-0 items-center px-3">
         <button
           type="button"
@@ -346,6 +358,38 @@ export function AgentDetailView({
           {count} {count === 1 ? "agent" : "agents"}
         </button>
       </div>
+      {/* who it is and what it is doing stay in sight, wherever the steps are scrolled to */}
+      <div
+        className={cx(
+          "fade shrink-0 border-b px-5 pb-2",
+          under ? "border-line" : "border-transparent",
+        )}
+      >
+        <h3
+          className="truncate text-title font-medium text-fg"
+          data-testid="agent-title"
+          title={titleOf(agent, detail)}
+        >
+          {titleOf(agent, detail)}
+        </h3>
+        {detail && (
+          <p className="mt-0.5 truncate text-sm text-fg-3" data-testid="agent-meta">
+            {detailMeta(agent, detail, now)}
+          </p>
+        )}
+        {running && (
+          <p className="mt-1 flex items-center gap-2 text-sm text-fg-2" data-testid="agent-now">
+            <span className="live-pulse size-1.5 shrink-0 rounded-full bg-fg-3" />
+            <span className="min-w-0 flex-1 truncate">{doing}</span>
+          </p>
+        )}
+        {detail?.error && (
+          <p className={errorLine} data-testid="agent-error" data-error title={detail.error}>
+            {detail.error}
+          </p>
+        )}
+        {detail?.interrupted && !running && <p className="mt-1 text-sm text-fg-3">Interrupted</p>}
+      </div>
       <div
         ref={scroller}
         role="listbox"
@@ -355,6 +399,12 @@ export function AgentDetailView({
         data-inspector-list
         data-testid="agent-steps"
         className="min-h-0 flex-1 overflow-y-auto pb-6 outline-none"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          if (atEnd !== live) setLive(atEnd);
+          if (el.scrollTop > 0 !== under) setUnder(el.scrollTop > 0);
+        }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
@@ -412,6 +462,16 @@ export function AgentDetailView({
           </div>
         )}
       </div>
+      {running && !live && detail && (
+        <button
+          type="button"
+          data-testid="jump-live"
+          onClick={() => setLive(true)}
+          className="fade absolute bottom-3 left-1/2 flex h-7 -translate-x-1/2 items-center rounded-full border border-line-strong bg-canvas px-3 text-sm text-fg-2 hover:text-fg"
+        >
+          Jump to live ↓
+        </button>
+      )}
     </div>
   );
 }
@@ -419,7 +479,7 @@ export function AgentDetailView({
 function estimate(item: DetailItem | undefined): number {
   switch (item?.type) {
     case "head":
-      return 110;
+      return 30;
     case "label":
       return 30;
     case "result":

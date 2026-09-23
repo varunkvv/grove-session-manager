@@ -87,6 +87,7 @@ async function start(): Promise<void> {
   const inspector = new AgentInspector({
     stateDir: appEnv.stateDir,
     snapshot: (key) => sessions.agentSnapshot(key),
+    onSteps: (steps) => pusher.send("agent:steps", steps),
   });
   const archive = new ArchiveService({
     appRoot: appEnv.appRoot,
@@ -247,6 +248,7 @@ async function start(): Promise<void> {
   electron.app.on("before-quit", () => {
     combos.dispose();
     live.dispose();
+    inspector.dispose();
     summaries?.dispose();
     void sessions.dispose();
   });

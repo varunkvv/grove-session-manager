@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { FANOUT, writeDerive, writeFanOut } from "./helpers/agents.ts";
+import { agentFile, appendCalls, FANOUT, writeDerive, writeFanOut } from "./helpers/agents.ts";
 import {
   type Fixture,
   hookEvent,
@@ -238,4 +238,48 @@ test("a workflow's agents sit under its name, and an agent's own agents are a cl
   await pane.getByTestId("agent-back").click();
   await expect(pane.getByTestId("agent-list")).toBeVisible();
   await expect(rows.filter({ hasText: "Derive BDS" })).toHaveAttribute("data-active", "true");
+});
+
+test("a running agent's steps arrive as it writes them, and scrolling up pauses the tail", async () => {
+  const { cwd } = setup();
+  app = await launchApp(fx);
+  const { page } = app;
+  const rows = page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 2);
+  // live, so the agents still writing count as running
+  hookEvent(fx, FANOUT.session, "UserPromptSubmit", { prompt: "go" });
+  const row = rows.filter({ hasText: "Database CPU spike" });
+  await expect(row.getByTestId("live-badge")).toHaveAttribute("data-state", "running");
+  await row.getByTestId("row-agents").click();
+  const pane = page.getByTestId("inspector");
+  await pane.getByTestId("agent-row").filter({ hasText: "Reproduce the spike" }).click();
+  await expect(pane.getByTestId("agent-now")).toBeVisible();
+  await expect(pane.getByTestId("agent-meta")).toContainText("4 tools");
+
+  // it writes: the new steps arrive without anyone asking, and the tail stays in view
+  const file = agentFile(fx, cwd, FANOUT.session, FANOUT.replay);
+  appendCalls(file, { agentId: FANOUT.replay, sessionId: FANOUT.session, cwd, from: 0, count: 30 });
+  await expect(pane.getByTestId("agent-meta")).toContainText("34 tools");
+  const steps = pane.getByTestId("agent-steps");
+  await expect(
+    steps.getByTestId("step").filter({ hasText: "src/tail/file-29.ts" }),
+  ).toBeInViewport();
+  await expect(pane.getByTestId("jump-live")).toHaveCount(0);
+
+  // scrolled up, it stays where it was put and says how to get back
+  await steps.hover();
+  await page.mouse.wheel(0, -2000);
+  await expect(pane.getByTestId("jump-live")).toBeVisible();
+  appendCalls(file, { agentId: FANOUT.replay, sessionId: FANOUT.session, cwd, from: 30, count: 2 });
+  await expect(pane.getByTestId("agent-meta")).toContainText("36 tools");
+  await expect(
+    steps.getByTestId("step").filter({ hasText: "src/tail/file-31.ts" }),
+  ).not.toBeInViewport();
+  await shot(page, "21-agent-live");
+
+  await pane.getByTestId("jump-live").click();
+  await expect(
+    steps.getByTestId("step").filter({ hasText: "src/tail/file-31.ts" }),
+  ).toBeInViewport();
+  await expect(pane.getByTestId("jump-live")).toHaveCount(0);
 });

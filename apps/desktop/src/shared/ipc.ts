@@ -131,6 +131,20 @@ export interface AgentDetail {
   steps: DetailStep[];
 }
 
+/**
+ * what changed in the agent on screen since the last push. every step at or past fold index `from`
+ * is replaced by `steps`; the rest of the detail comes whole, less the prompt, which never moves.
+ */
+export interface AgentSteps {
+  key: SessionKey;
+  id: string;
+  /** which follow this belongs to. a push from an earlier one is dropped. */
+  gen: number;
+  from: number;
+  steps: DetailStep[];
+  head: Omit<AgentDetail, "key" | "id" | "steps" | "prompt">;
+}
+
 /** one tool call opened: the whole input, and the whole result up to a cap */
 export interface StepDetail {
   input: string;
@@ -301,8 +315,14 @@ export interface Api {
   searchSessions(query: string): Promise<{ query: string; hits: SearchHit[] }>;
   /** what each of a session's agents did, from their own transcripts. null for an unknown row. */
   inspectSession(key: SessionKey): Promise<SessionInspection | null>;
-  /** one agent, step by step. null when the session or the agent is not known. */
-  agentDetail(key: SessionKey, agentId: string): Promise<AgentDetail | null>;
+  /**
+   * the agent on screen, and everything it did so far. from here until the next call, what it
+   * writes arrives as `agent:steps`. null stops that.
+   */
+  followAgent(
+    key: SessionKey,
+    agentId: string | null,
+  ): Promise<{ gen: number; detail: AgentDetail } | null>;
   /** one step opened: read back from the two transcript lines it points at */
   agentStep(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
@@ -364,8 +384,8 @@ export const INVOKE_CHANNELS = [
   "sessionActions",
   "searchSessions",
   "inspectSession",
-  "agentDetail",
   "agentStep",
+  "followAgent",
   "openExternal",
   "markSeen",
   "archiveSessions",
@@ -434,6 +454,7 @@ export interface PushEvents {
   "editor:status": EditorStatus;
   "menu:command": { id: MenuCommandId };
   toast: ToastMessage;
+  "agent:steps": AgentSteps;
 }
 
 export const PUSH_CHANNELS = [
@@ -444,6 +465,7 @@ export const PUSH_CHANNELS = [
   "editor:status",
   "menu:command",
   "toast",
+  "agent:steps",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 export interface Bridge extends Api {
