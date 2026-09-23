@@ -36,6 +36,8 @@ export interface LiveServiceOptions {
   onChange: (
     statuses: ReadonlyMap<string, LiveStatus>,
     agentRuns: ReadonlyMap<string, Readonly<Record<string, AgentRun>>>,
+    /** sessions whose process is up, busy or idle. never a state of its own - see applyRegistry. */
+    alive: ReadonlySet<string>,
   ) => void;
   /** a session just started needing someone */
   onNeedsYou: (sessionId: string, status: LiveStatus) => void;
@@ -71,6 +73,8 @@ export class LiveService {
   private statuses = new Map<string, LiveStatus>();
   /** by session id: what the subagent hooks said about each of its agents. never persisted. */
   private runs = new Map<string, Record<string, AgentRun>>();
+  /** session ids with a live process, from the last registry read */
+  private alive = new Set<string>();
   private watcher: FSWatcher | null = null;
   private registryWatcher: FSWatcher | null = null;
   private registryRetry: NodeJS.Timeout | null = null;
@@ -106,7 +110,7 @@ export class LiveService {
     await this.drain(false);
     // before the first paint, so a session that died while the app was closed never shows as running
     await this.syncRegistry();
-    this.opts.onChange(this.statuses, this.runs);
+    this.opts.onChange(this.statuses, this.runs, this.alive);
     try {
       this.watcher = watch(this.eventsDir, () => void this.drain(true));
       this.watcher.on("error", (e) => log.warn("status watch:", e));
@@ -126,7 +130,11 @@ export class LiveService {
   /** the live processes, folded in under the hook state. see applyRegistry for who wins. */
   private async syncRegistry(): Promise<void> {
     const entries = await readRegistry(this.opts.registryDir).catch(() => []);
-    if (applyRegistry(this.statuses, entries, this.now())) this.changed();
+    // an idle process changes no status, but a background agent of its can still be working
+    const alive = new Set(entries.map((e) => e.sessionId));
+    const moved = alive.size !== this.alive.size || [...alive].some((id) => !this.alive.has(id));
+    this.alive = alive;
+    if (applyRegistry(this.statuses, entries, this.now()) || moved) this.changed();
   }
 
   /** never creates the directory: nothing of ours goes inside Claude Code's config dir. */
@@ -225,7 +233,7 @@ export class LiveService {
   }
 
   private changed(): void {
-    this.opts.onChange(this.statuses, this.runs);
+    this.opts.onChange(this.statuses, this.runs, this.alive);
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;

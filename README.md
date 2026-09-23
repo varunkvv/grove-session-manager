@@ -84,14 +84,16 @@ Landing on a session, or **Mark as seen** in its action menu, takes it out of th
 
 ### What is running inside a session
 
-A session grinding away alone and a session with five agents fanned out look the same from the outside. Live rows show
+A session grinding away alone and a session with five agents fanned out look the same from the outside. Rows show
 their subagents - how many, and for the running ones what kind and how long they have been at it. The detail is in the
 row's tooltip: what each agent was asked to do, and the last tool it picked up.
 
 It comes from `~/.claude/projects/<slug>/<sessionId>/subagents/`, where each agent writes its own transcript next to an
 `agent-<id>.meta.json` holding the label its parent gave it. Nothing there records when an agent ended, so the exact
 times come from the `SubagentStart` / `SubagentStop` hooks, and an agent that started before the app was watching falls
-back to a guess: quiet for two minutes counts as finished. Only live sessions are scanned.
+back to a guess: quiet for two minutes counts as finished, and nothing of a session whose process is gone is still
+running. Every session is scanned, not only the live ones - what the agents of last Tuesday's session did is worth
+a look, and reading the whole machine's takes a few milliseconds.
 
 The tooltip also carries one line per running agent saying what it is actually doing, written by Claude Haiku reading
 the tail of that agent's own transcript - the session doing the work is never interrupted and never asked, because

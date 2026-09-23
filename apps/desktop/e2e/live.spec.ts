@@ -70,7 +70,7 @@ test("a live session says what is running inside it", async () => {
   await waitFor(async () => (await rows.count()) === 1);
   await expect(rows.first().getByTestId("row-agents")).toHaveCount(0);
 
-  // only a live session is looked at, so it has to be running before its agents count
+  // an agent of a session nobody is running is finished whatever its file says, so go live first
   hookEvent(SID.a, "UserPromptSubmit", { prompt: "survey the repo" });
   await expect(rows.first().getByTestId("live-badge")).toHaveAttribute("data-state", "running");
 
@@ -97,6 +97,26 @@ test("a live session says what is running inside it", async () => {
   hookEvent(SID.a, "Stop", { last_assistant_message: "kicked off the survey" });
   await expect(rows.first().getByTestId("live-badge")).toHaveText("Your turn");
   await expect(chip).toContainText("1 agent");
+});
+
+test("a session nobody is running still says how many agents it had", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const queue = makePlainDir(fx, "queue");
+  writeSession(fx, {
+    cwd: queue,
+    sessionId: SID.a,
+    title: "Fanned out last week",
+    ageMs: 5 * 24 * 3_600_000,
+  });
+  writeSubagent(queue, SID.a, "f00d", { agentType: "Explore", description: "Survey" }, "Grep");
+  writeSubagent(queue, SID.a, "beef", { agentType: "Plan", description: "Plan it" }, "Read");
+
+  app = await launchApp(fx);
+  const rows = app.page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 1);
+  // no hook, no process: nothing of it is running, however recently its files were written
+  await expect(rows.first().getByTestId("row-agents")).toHaveText("2 agents");
+  await expect(rows.first().getByTestId("live-badge")).toHaveCount(0);
 });
 
 test("a session asking for permission comes first, and leaves once someone looked", async () => {

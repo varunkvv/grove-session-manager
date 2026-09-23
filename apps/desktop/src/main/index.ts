@@ -101,8 +101,8 @@ async function start(): Promise<void> {
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
     registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
-    onChange: (statuses, agentRuns) => {
-      sessions.setLive(statuses, agentRuns);
+    onChange: (statuses, agentRuns, alive) => {
+      sessions.setLive(statuses, agentRuns, alive);
       const count = [...statuses.values()].filter((s) => needsYou(s)).length;
       electron.app.dock?.setBadge(count > 0 ? String(count) : "");
     },

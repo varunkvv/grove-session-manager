@@ -47,7 +47,7 @@ export interface SessionRow {
   usage?: ModelUsage[];
   /** what the session is doing right now, when its hooks report to us */
   live?: LiveStatus;
-  /** its subagents, running ones first. only live sessions are scanned for these. */
+  /** its subagents, running ones first. every session, live or long finished. */
   agents?: SessionAgent[];
   /** put away on purpose: out of the list and out of search unless it is asking for someone */
   archived?: boolean;

@@ -8,6 +8,7 @@ import {
   type Disposable,
   EMPTY_AGENT_SNAPSHOT,
   type LiveStatus,
+  mapLimit,
   projectDirLabel,
   type SessionIndex,
   type SessionRecord,
@@ -33,7 +34,7 @@ export interface SessionServiceOptions {
   maxParsed?: number;
   emitPatch: (patch: { upserts: SessionRow[]; removes: SessionKey[]; replace: boolean }) => void;
   emitStatus: (status: IndexStatus) => void;
-  /** a fresh look at one live session's subagents, for whoever wants to say more about them */
+  /** a fresh look at one session's subagents, for whoever wants to say more about them */
   onAgents?: (key: SessionKey, snapshot: AgentSnapshot) => void;
 }
 
@@ -108,7 +109,9 @@ export class SessionService {
   private live: ReadonlyMap<string, LiveStatus> = new Map();
   private archived: ReadonlySet<string> = new Set();
   private runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map();
-  /** the subagents of the live sessions only, by transcript path */
+  /** sessions with a process still running, busy or idle, whether or not a hook reports them */
+  private alive: ReadonlySet<string> = new Set();
+  /** every session's subagents, by transcript path. a session without any has no entry. */
   private agents = new Map<SessionKey, AgentSnapshot>();
   private scanning = new Set<SessionKey>();
   private watcher: Disposable | null = null;
@@ -188,9 +191,7 @@ export class SessionService {
       const stats = await this.index.refresh({ onBatch: () => this.rebuild() });
       this.rebuild();
       // fs.watch coalesces and drops, so the periodic pass and window focus re-read them too
-      for (const row of this.rows.values()) {
-        if (this.live.has(row.sessionId)) void this.refreshAgents(row.key);
-      }
+      await this.refreshAllAgents();
       this.opts.emitStatus({
         phase: this.index.health() === "degraded" ? "degraded" : "idle",
         done: stats.files - stats.unparsed,
@@ -230,60 +231,108 @@ export class SessionService {
     this.rebuild();
   }
 
-  /** hook-reported status, by session id. a session resumed in two places shows on both rows. */
+  /**
+   * hook-reported status by session id, and the sessions whose process is still up. a session
+   * resumed in two places shows on both rows.
+   */
   setLive(
     live: ReadonlyMap<string, LiveStatus>,
     runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map(),
+    alive: ReadonlySet<string> = new Set(),
   ): void {
-    const wasRuns = this.runs;
+    const was = { live: this.live, runs: this.runs, alive: this.alive };
     this.live = new Map(live);
     this.runs = new Map(runs);
+    this.alive = new Set(alive);
     this.rebuild();
     for (const row of this.rows.values()) {
-      if (!this.live.has(row.sessionId)) {
-        // a session that is no longer live has nothing running inside it
-        if (this.agents.delete(row.key)) this.rebuild();
-        continue;
+      const id = row.sessionId;
+      const wasLive = was.live.has(id) || was.alive.has(id);
+      // a session that stopped has nothing running inside it any more, and one that started may
+      // have. a subagent hook moved. the watcher covers everything else.
+      if (wasLive !== this.isLive(id) || this.runs.get(id) !== was.runs.get(id)) {
+        void this.refreshAgents(row.key);
       }
-      // a first look, or a subagent hook moved. the watcher covers everything else.
-      const moved = this.runs.get(row.sessionId) !== wasRuns.get(row.sessionId);
-      if (moved || !this.agents.has(row.key)) void this.refreshAgents(row.key);
     }
   }
 
   /**
-   * the subagents of one live session. only live sessions are scanned - every session on the
-   * machine would mean opening a `subagents/` dir per row on every startup, for rows nobody is
-   * watching. the watcher, the live status and the periodic rescan all land here.
+   * whether anything of this session can still be running. a hook status is not enough on its
+   * own: a session no hook covers can sit idle while a background agent it started keeps working,
+   * and only the live process registry sees that.
+   */
+  private isLive(sessionId: string): boolean {
+    return this.live.has(sessionId) || this.alive.has(sessionId);
+  }
+
+  /**
+   * one session's subagents, live or long finished - what the agents of a session from tuesday
+   * did is a question worth an answer. the watcher, the live status and the periodic rescan all
+   * land here.
    */
   private async refreshAgents(key: SessionKey): Promise<void> {
     if (this.disposed || this.scanning.has(key)) return;
-    const row = this.rows.get(key);
-    if (!row) return;
-    const status = this.live.get(row.sessionId);
-    if (!status) {
-      if (this.agents.delete(key)) this.rebuild();
-      return;
-    }
     this.scanning.add(key);
     try {
-      const prev = this.agents.get(key) ?? EMPTY_AGENT_SNAPSHOT;
-      const runs = this.runs.get(row.sessionId);
-      const snapshot = await scanSessionAgents(key, {
-        sessionLive: true,
-        prev,
-        ...(runs ? { runs } : {}),
-      });
-      if (this.disposed) return;
-      const wasEmpty = snapshot.agents.length === 0 && prev.agents.length === 0;
-      this.agents.set(key, snapshot);
-      this.opts.onAgents?.(key, snapshot);
-      if (!wasEmpty) this.rebuild();
-    } catch (e) {
-      log.warn("subagent scan of", key, e);
+      if (this.store(key, await this.scanAgents(key))) this.rebuild();
     } finally {
       this.scanning.delete(key);
     }
+  }
+
+  /**
+   * every session at once, then one rebuild. not cached: the whole machine measured 11ms cold
+   * (54 sessions, 76 agents), and a cache keyed on the session's transcript would go stale
+   * exactly while a background agent is still writing and its parent is quiet.
+   */
+  private async refreshAllAgents(): Promise<void> {
+    const keys = [...this.rows.keys()].filter((k) => !this.scanning.has(k));
+    for (const k of keys) this.scanning.add(k);
+    try {
+      const scanned = await mapLimit(keys, 8, async (key) => ({
+        key,
+        snapshot: await this.scanAgents(key),
+      }));
+      let changed = false;
+      for (const { key, snapshot } of scanned) changed = this.store(key, snapshot) || changed;
+      if (changed) this.rebuild();
+    } finally {
+      for (const k of keys) this.scanning.delete(k);
+    }
+  }
+
+  private async scanAgents(key: SessionKey): Promise<AgentSnapshot | null> {
+    const row = this.rows.get(key);
+    if (!row || this.disposed) return null;
+    try {
+      const runs = this.runs.get(row.sessionId);
+      return await scanSessionAgents(key, {
+        sessionLive: this.isLive(row.sessionId),
+        prev: this.agents.get(key) ?? EMPTY_AGENT_SNAPSHOT,
+        ...(runs ? { runs } : {}),
+      });
+    } catch (e) {
+      log.warn("subagent scan of", key, e);
+      return null;
+    }
+  }
+
+  /** true when the rows need rebuilding. a session with no agents keeps no snapshot. */
+  private store(key: SessionKey, snapshot: AgentSnapshot | null): boolean {
+    if (!snapshot || this.disposed) return false;
+    if (snapshot.agents.length === 0) {
+      if (!this.agents.delete(key)) return false;
+      this.opts.onAgents?.(key, snapshot);
+      return true;
+    }
+    this.agents.set(key, snapshot);
+    this.opts.onAgents?.(key, snapshot);
+    return true;
+  }
+
+  /** the last scan of one session's agents, with the file each one writes to */
+  agentSnapshot(key: SessionKey): AgentSnapshot | undefined {
+    return this.agents.get(key);
   }
 
   /** one agent's summary. dropped when the agent finished while the model was still thinking. */
