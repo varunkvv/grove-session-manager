@@ -184,9 +184,20 @@ function buildHandlers(deps: Deps): Handlers {
         ...(folderExists ? (hint ? { hint } : {}) : { hint: "the folder is gone" }),
       });
       actions.push({ id: "terminal", label: "Resume in Terminal", enabled: true });
-      actions.push({ id: "copy-command", label: "Copy resume command", enabled: true });
+      actions.push({
+        id: "copy-command",
+        label: "Copy resume command",
+        keys: "\u2318\u21e7C",
+        enabled: true,
+      });
       if (needsYou(row.live)) {
-        actions.push({ id: "mark-seen", label: "Mark as seen", enabled: true, secondary: true });
+        actions.push({
+          id: "mark-seen",
+          label: "Mark as seen",
+          keys: "\u2318D",
+          enabled: true,
+          secondary: true,
+        });
       }
       actions.push({ id: "copy-id", label: "Copy session ID", enabled: true, secondary: true });
       actions.push({

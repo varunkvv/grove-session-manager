@@ -4,7 +4,7 @@ import type { SessionAction } from "../../shared/ipc.ts";
 import { focusSearch, runAction } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { optionId } from "./SessionList.tsx";
-import { cx, Icon } from "./ui.tsx";
+import { cx, Icon, Kbd } from "./ui.tsx";
 
 const ICONS = {
   "combo-land": "external",
@@ -127,6 +127,7 @@ export function SessionActionMenu() {
               <Icon name={ICONS[a.id]} className="text-fg-3" />
               <span className="min-w-0 flex-1 truncate">{a.label}</span>
               {a.hint && <span className="shrink-0 text-meta text-fg-3">{a.hint}</span>}
+              {a.keys && <Kbd>{a.keys}</Kbd>}
             </button>
           </div>
         ))}

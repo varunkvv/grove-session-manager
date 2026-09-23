@@ -128,11 +128,20 @@ test("a session asking for permission comes first, and leaves once someone looke
   hookEvent(SID.b, "Stop", { last_assistant_message: "migration applied" });
   await expect(rows.first().getByTestId("live-badge")).toHaveText("Your turn");
 
-  // the action menu can clear it without opening anything
+  // the action menu can clear it without opening anything, and says which key does the same
   await rows.first().click({ button: "right" });
+  await expect(page.getByTestId("action-mark-seen")).toContainText("\u2318D");
   await page.getByTestId("action-mark-seen").click();
   await expect(page.getByTestId("needs-you-header")).toHaveCount(0);
   await expect(rows.first()).toContainText("Newest session");
+
+  // and that key clears the next one without the menu at all
+  hookEvent(SID.b, "UserPromptSubmit", { prompt: "and again" });
+  hookEvent(SID.b, "Stop", { last_assistant_message: "second pass done" });
+  await expect(page.getByTestId("needs-you-header")).toBeVisible();
+  await page.keyboard.press("Meta+ArrowUp");
+  await page.keyboard.press("Meta+d");
+  await expect(page.getByTestId("needs-you-header")).toHaveCount(0);
 });
 
 test("search reaches into the conversation, past titles and prompts", async () => {

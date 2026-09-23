@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildList, nextActiveKey } from "../../src/renderer/logic/rows.ts";
+import { buildList, needsYouKeys, nextActiveKey } from "../../src/renderer/logic/rows.ts";
 import { usageChip, usageTooltip } from "../../src/renderer/logic/usage.ts";
 import type { SessionRow } from "../../src/shared/ipc.ts";
 
@@ -169,6 +169,24 @@ describe("sessions that need you", () => {
     );
     expect(list.keys).toEqual(["done", "perm", "new", "run", "seen"]);
     expect(list.items[0]).toMatchObject({ type: "header", label: "Needs you" });
+  });
+
+  it("marking everything as seen covers the inbox on screen, and nothing else", () => {
+    const rs = [
+      row("perm", { title: "asks", live: live("permission", NOW) }),
+      row("run", { title: "busy", live: live("running", NOW) }),
+      row("done", { title: "done", comboName: "infra", live: live("waiting", NOW) }),
+      row("seen", { title: "looked", live: live("waiting", NOW, true) }),
+      row("quiet", { title: "nothing going on" }),
+    ];
+    const all = buildList(rs, { scope: "all", combo: null, query: "", now: NOW });
+    expect(needsYouKeys(all).sort()).toEqual(["done", "perm"]);
+    // the scope is part of what is on screen
+    const scoped = buildList(rs, { scope: "combo", combo: "infra", query: "", now: NOW });
+    expect(needsYouKeys(scoped)).toEqual(["done"]);
+    expect(needsYouKeys(buildList([], { scope: "all", combo: null, query: "", now: NOW }))).toEqual(
+      [],
+    );
   });
 
   it("a search is about finding: no triage section, and conversation hits join in", () => {

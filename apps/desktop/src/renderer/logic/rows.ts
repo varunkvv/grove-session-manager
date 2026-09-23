@@ -125,6 +125,14 @@ export function buildList(
   return { items, keys, tokens, elsewhere, scoped };
 }
 
+/**
+ * the rows on screen that are asking for someone. that is what "mark everything as seen" means:
+ * the inbox you are looking at, scope and all, not every session on the machine.
+ */
+export function needsYouKeys(model: ListModel): SessionKey[] {
+  return model.items.flatMap((i) => (i.type === "row" && needsYou(i.row.live) ? [i.id] : []));
+}
+
 /** which row is active after the list changed. tracked by key, so live inserts never move it. */
 export function nextActiveKey(
   prevKeys: readonly SessionKey[],

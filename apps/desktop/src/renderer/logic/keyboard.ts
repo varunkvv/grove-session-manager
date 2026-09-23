@@ -12,6 +12,8 @@ export type Intent =
   | { type: "scope"; scope: Scope }
   | { type: "combo-step"; delta: 1 | -1 }
   | { type: "copy-resume" }
+  | { type: "mark-seen" }
+  | { type: "mark-all-seen" }
   | { type: "new-combo" }
   | { type: "open-combo" }
   | { type: "edit-combo" }
@@ -65,6 +67,8 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     if (k === ",") return { type: "settings" };
     if (k === "r") return e.shift ? { type: "repair-combo" } : { type: "refresh" };
     if (k === "c" && e.shift) return { type: "copy-resume" };
+    // the "i have read that" key. today it costs a right click and a menu item.
+    if (k === "d") return e.shift ? { type: "mark-all-seen" } : { type: "mark-seen" };
     if (e.key === "Enter") return { type: "activate-default" };
     if (e.key === "ArrowDown") return { type: "move-to", where: "last" };
     if (e.key === "ArrowUp") return { type: "move-to", where: "first" };

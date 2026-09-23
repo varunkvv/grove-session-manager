@@ -73,6 +73,12 @@ describe("keyboard model", () => {
       type: "copy-resume",
     });
     expect(interpret(ctx(), key("c", { meta: true }))).toBeNull();
+    expect(interpret(ctx(), key("d", { meta: true }))).toEqual({ type: "mark-seen" });
+    expect(interpret(ctx(), key("D", { meta: true, shift: true }))).toEqual({
+      type: "mark-all-seen",
+    });
+    // a bare letter types into the search field, so every shortcut needs the modifier
+    expect(interpret(ctx(), key("d"))).toBeNull();
     expect(interpret(ctx(), key("ArrowDown", { meta: true }))).toEqual({
       type: "move-to",
       where: "last",

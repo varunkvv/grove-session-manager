@@ -7,6 +7,7 @@ import { Rail } from "./components/Rail.tsx";
 import { SessionActionMenu } from "./components/SessionActionMenu.tsx";
 import { listRef, SessionsPane } from "./components/SessionsPane.tsx";
 import { type Intent, interpret } from "./logic/keyboard.ts";
+import { needsYouKeys } from "./logic/rows.ts";
 import {
   activate,
   activateDefault,
@@ -48,6 +49,15 @@ function perform(intent: Intent): void {
           .runSessionAction(s.activeKey, "copy-command")
           .then(() => s.toast({ level: "info", title: "Resume command copied" }));
       break;
+    // both are no-ops on a row that is not asking for anything, and neither moves the selection
+    case "mark-seen":
+      if (s.activeKey) void window.grove.markSeen([s.activeKey]);
+      break;
+    case "mark-all-seen": {
+      const seen = needsYouKeys(listRef.current);
+      if (seen.length > 0) void window.grove.markSeen(seen);
+      break;
+    }
     case "focus-search":
     case "type-through":
       focusSearch(intent.type === "focus-search");

@@ -185,6 +185,8 @@ export interface SessionAction {
   id: SessionActionId;
   label: string;
   hint?: string;
+  /** the shortcut that does the same thing, shown right-aligned. only where one exists. */
+  keys?: string;
   enabled: boolean;
   /** drawn after a separator */
   secondary?: boolean;

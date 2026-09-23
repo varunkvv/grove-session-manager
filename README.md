@@ -115,6 +115,28 @@ whole file, so it is read once in a background pass after the list is up, then o
 writes match Claude Code's own `/cost`. Its input and output run a bit higher, because it also counts side calls (titles,
 compaction) that are never written to the transcript.
 
+## Keyboard
+
+The search field keeps focus while the arrows move the active row, so a bare letter always types.
+Every shortcut carries a modifier.
+
+| | |
+| --- | --- |
+| `↵` / `⌘↵` | open the active session (the offer list, or the first offer without showing it) |
+| `↑` `↓` `PgUp` `PgDn` `⌘↑` `⌘↓` | move the active row |
+| `⌥↑` `⌥↓` | step through combos |
+| `⌘1` `⌘2` | this combo's sessions / all sessions |
+| `⌘K` | the active row's actions |
+| `⌘D` | mark the active row as seen |
+| `⌘⇧D` | mark everything under **Needs you** as seen |
+| `⌘⇧C` | copy its resume command |
+| `⌘F` / `/` | search |
+| `Esc` | close what is open, then clear the query |
+| `⌘N` `⌘O` `⌘E` `⌘R` `⌘⇧R` `⌘,` | new / open / edit combo, refresh, repair, settings |
+
+`⌘D` and `⌘⇧D` do nothing on a row that is not asking for anything, and neither moves the selection.
+The action menu shows the key next to the action that does the same thing.
+
 ## On disk
 
 ```
