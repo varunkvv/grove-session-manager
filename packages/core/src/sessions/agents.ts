@@ -262,6 +262,7 @@ export async function scanSessionAgents(
       agent.summary = was.summary;
       if (was.summaryAt !== undefined) agent.summaryAt = was.summaryAt;
     }
+    if (was?.found) agent.found = was.found;
 
     const finished =
       run?.stoppedAt !== undefined || !sessionLive || now - lastActivityAt > AGENT_IDLE_DONE_MS;

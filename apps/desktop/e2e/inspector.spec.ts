@@ -1,3 +1,4 @@
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { agentFile, appendCalls, FANOUT, writeDerive, writeFanOut } from "./helpers/agents.ts";
@@ -383,4 +384,31 @@ test("search reaches what agents said, and opens the agent at the step that said
   const agents = page.getByTestId("agent-list-row");
   await expect(agents).toHaveCount(1);
   await expect(agents.first().getByTestId("agent-list-second")).toContainText("No local database");
+});
+
+test("a finished agent someone looked at before keeps the line it was given, for nothing", async () => {
+  const { cwd } = setup();
+  // what an earlier look paid for: the line for the survey agent, as its transcript is now
+  const file = agentFile(fx, cwd, FANOUT.session, FANOUT.survey);
+  const info = statSync(file);
+  mkdirSync(path.join(fx.root, ".grove"), { recursive: true });
+  writeFileSync(
+    path.join(fx.root, ".grove", "agent-lines.v1.json"),
+    JSON.stringify({
+      [`${FANOUT.survey}:${info.mtimeMs}:${info.size}`]:
+        "found two changed queries, the events join has no index",
+    }),
+  );
+  app = await launchApp(fx);
+  const { page } = app;
+  const rows = page.getByTestId("session-row");
+  await waitFor(async () => (await rows.count()) === 2);
+  await rows.filter({ hasText: "Database CPU spike" }).getByTestId("row-agents").click();
+  const survey = page
+    .getByTestId("inspector")
+    .getByTestId("agent-row")
+    .filter({ hasText: "Survey the nightly job" });
+  await expect(survey.getByTestId("agent-line")).toHaveText(
+    "found two changed queries, the events join has no index",
+  );
 });

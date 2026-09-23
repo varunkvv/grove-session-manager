@@ -465,7 +465,14 @@ describe("words for a step", () => {
   });
 
   it("the first sentence of a result is plain words", () => {
-    expect(firstSentence("## Summary\n\n**Done.** Three commits, nothing pushed.")).toBe("Done.");
+    // "Done." alone says nothing, so a short first sentence takes the next one along
+    expect(
+      firstSentence("## Summary\n\n**Done.** Three commits, nothing pushed. Tests pass."),
+    ).toBe("Done. Three commits, nothing pushed.");
+    expect(firstSentence("done.\n\nthe hooks are repaired on focus too.")).toBe(
+      "done. the hooks are repaired on focus too.",
+    );
+    expect(firstSentence("Confirmed the gaps.")).toBe("Confirmed the gaps.");
     expect(firstSentence("- the `retry` is lost in the worker. more")).toBe(
       "the retry is lost in the worker.",
     );

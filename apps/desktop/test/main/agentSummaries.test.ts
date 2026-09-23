@@ -1,10 +1,18 @@
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AgentSnapshot, SessionAgent } from "@grove/core";
 import { describe, expect, it } from "vitest";
 import {
   AgentSummaries,
+  FOUND_FILE,
   type SummarySpawn,
   summaryArgs,
   summaryPrompt,
@@ -230,5 +238,89 @@ describe("agent summaries", () => {
     await settle();
     expect(summaries).toEqual([]);
     service.dispose();
+  });
+});
+
+describe("a line for a finished agent", () => {
+  function found(
+    opts: { reply?: string | null; enabled?: boolean; visible?: boolean; dir?: string } = {},
+  ) {
+    const dir = opts.dir ?? sandbox();
+    const calls: string[] = [];
+    const lines: Array<{ id: string; line: string }> = [];
+    const service = new AgentSummaries({
+      stateDir: dir,
+      claudeBin: async () => "/bin/claude",
+      enabled: () => opts.enabled ?? true,
+      visible: () => opts.visible ?? true,
+      onSummary: () => {},
+      onFound: (_key, id, line) => lines.push({ id, line }),
+      spawn: async (_bin, _args, input) => {
+        calls.push(input);
+        return opts.reply === undefined
+          ? "found the lease is renewed only on success\n"
+          : opts.reply;
+      },
+      now: () => NOW,
+    });
+    return { service, calls, lines, dir };
+  }
+  const done = agent({ state: "done" });
+
+  it("is asked once, when someone looks, and kept for good", async () => {
+    const h = found();
+    const snap = snapshot(h.dir, [done], "7:77");
+    await h.service.seen(KEY, done, snap.reads.a1);
+    await settle();
+    expect(h.calls).toHaveLength(1);
+    expect(h.calls[0]).toContain("has finished");
+    expect(h.calls[0]).toContain("what it found or did");
+    expect(h.calls[0]).toContain("Rewrite the retry policy");
+    expect(h.lines).toEqual([{ id: "a1", line: "found the lease is renewed only on success" }]);
+    expect(JSON.parse(readFileSync(path.join(h.dir, FOUND_FILE), "utf8"))).toEqual({
+      "a1:7:77": "found the lease is renewed only on success",
+    });
+
+    // looked at again, and after a restart: never asked again
+    await h.service.seen(KEY, done, snap.reads.a1);
+    const again = found({ dir: h.dir });
+    await again.service.seen(KEY, done, snap.reads.a1);
+    await settle();
+    expect(h.calls).toHaveLength(1);
+    expect(again.calls).toHaveLength(0);
+    expect(again.lines).toEqual([{ id: "a1", line: "found the lease is renewed only on success" }]);
+
+    // and a scan brings it back for a row that lost it, still for nothing
+    const later = found({ dir: h.dir });
+    later.service.note(KEY, snap);
+    await settle();
+    expect(later.lines.map((l) => l.id)).toEqual(["a1"]);
+    expect(later.calls).toHaveLength(0);
+  });
+
+  it("never for an agent nobody looked at, a running one, or with the setting off or the window hidden", async () => {
+    const h = found();
+    h.service.note(KEY, snapshot(h.dir, [done]));
+    await settle();
+    expect(h.calls).toHaveLength(0);
+    await h.service.seen(KEY, agent({ state: "running" }), snapshot(h.dir, [agent()]).reads.a1);
+    const off = found({ enabled: false });
+    await off.service.seen(KEY, done, snapshot(off.dir, [done]).reads.a1);
+    const hidden = found({ visible: false });
+    await hidden.service.seen(KEY, done, snapshot(hidden.dir, [done]).reads.a1);
+    await settle();
+    expect([h.calls, off.calls, hidden.calls].map((c) => c.length)).toEqual([0, 0, 0]);
+  });
+
+  it("a failed call keeps nothing and is not tried again while the app runs", async () => {
+    const h = found({ reply: null });
+    const snap = snapshot(h.dir, [done], "7:77");
+    await h.service.seen(KEY, done, snap.reads.a1);
+    await settle();
+    await h.service.seen(KEY, done, snap.reads.a1);
+    await settle();
+    expect(h.calls).toHaveLength(1);
+    expect(h.lines).toEqual([]);
+    expect(existsSync(path.join(h.dir, FOUND_FILE))).toBe(false);
   });
 });

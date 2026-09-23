@@ -874,6 +874,7 @@ const bridge: Bridge = {
     return { gen, detail: { ...held, key } };
   },
   agentStep: async (_key, _agentId, stepId) => bodies.get(stepId) ?? null,
+  agentsSeen: async () => {},
   openExternal: () => okv(undefined),
   markSeen: async () => {},
   archiveSessions: () => okv(undefined),

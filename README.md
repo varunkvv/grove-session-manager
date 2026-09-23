@@ -101,6 +101,11 @@ asking it would cost a whole turn on its full context. It runs every 30 seconds 
 open, only when the transcript has moved since the last one, two at a time. It spends your own Claude auth, so
 **Summarise what each running agent is doing** in Settings switches it off.
 
+A finished agent gets one line too, on what it found or did, the first time it is on screen - its row in the
+inspector, or its detail. Its transcript will never change again, so the line is asked for once, ever, and kept in
+`.grove/agent-lines.v1.json`. Nothing is summarised that nobody looked at: history is not worth anyone's tokens until
+someone opens it. The same switch turns it off.
+
 ### What the agents did
 
 `⌘I`, a click on a row's agents, or **Inspect agents** in its action menu opens a pane beside the list with what that

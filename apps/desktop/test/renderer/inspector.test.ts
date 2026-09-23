@@ -173,6 +173,11 @@ describe("the list of agents", () => {
     expect(agentLine(running, stats({ lastStep: "Read q.ts" }))?.text).toBe("Read q.ts");
     expect(agentLine(running, undefined)?.text).toBe("Grep");
     expect(agentLine(agent("d"), stats({ outcome: "Found it." }))?.text).toBe("Found it.");
+    // once someone looked, a model's line on what it found says it better
+    expect(
+      agentLine(agent("d", { found: "found the lease renewal bug" }), stats({ outcome: "Done." }))
+        ?.text,
+    ).toBe("found the lease renewal bug");
     expect(agentLine(agent("d"), stats({ error: "API Error: x" }))).toEqual({
       text: "API Error: x",
       tone: "error",

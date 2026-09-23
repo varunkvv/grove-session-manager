@@ -356,6 +356,18 @@ export class SessionService {
     this.rebuild();
   }
 
+  /** a finished agent's line: what it found or did. kept across rescans like a summary. */
+  applyFound(key: SessionKey, agentId: string, line: string): void {
+    const snapshot = this.agents.get(key);
+    const agent = snapshot?.agents.find((a) => a.id === agentId);
+    if (!snapshot || !agent || agent.state !== "done" || agent.found === line) return;
+    this.agents.set(key, {
+      ...snapshot,
+      agents: snapshot.agents.map((a) => (a.id === agentId ? { ...a, found: line } : a)),
+    });
+    this.rebuild();
+  }
+
   byId(sessionId: string): SessionRow[] {
     return [...this.rows.values()].filter((r) => r.sessionId === sessionId);
   }

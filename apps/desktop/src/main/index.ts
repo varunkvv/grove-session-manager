@@ -100,6 +100,7 @@ async function start(): Promise<void> {
     enabled: () => settings.agentSummaries !== false && !appEnv.customRoot,
     visible: () => !!win && win.isVisible() && !win.isMinimized(),
     onSummary: (key, id, summary, at) => sessions.applySummary(key, id, summary, at),
+    onFound: (key, id, line) => sessions.applyFound(key, id, line),
   });
 
   let handlers: AppHandlers | null = null;
@@ -190,6 +191,13 @@ async function start(): Promise<void> {
     combos,
     archive,
     inspector,
+    seen: (key, ids) => {
+      const snapshot = sessions.agentSnapshot(key);
+      for (const id of ids) {
+        const agent = snapshot?.agents.find((a) => a.id === id);
+        if (agent) void summaries?.seen(key, agent, snapshot?.reads[id]);
+      }
+    },
     editor,
     pusher,
     window: () => win,

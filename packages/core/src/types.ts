@@ -210,9 +210,11 @@ export interface SessionAgent {
   lastTool?: string;
   lastToolAt?: number;
   state: "running" | "done";
-  /** one line from a cheap model reading the agent's own transcript */
+  /** one line from a cheap model reading the agent's own transcript: what it is doing right now */
   summary?: string;
   summaryAt?: number;
+  /** once it has finished and someone looked: what it found or did, in one line. asked once. */
+  found?: string;
 }
 
 export interface LiveStatus {

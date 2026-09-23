@@ -474,15 +474,19 @@ export function timelineView(state: TimelineState): AgentTimeline {
   return view;
 }
 
+/** a sentence shorter than this says nothing on its own ("Done.") and takes the next one along */
+const SHORT_SENTENCE = 24;
+
 /**
  * the first sentence of a result, as plain words: the one line a row has room for. markdown
  * syntax is dropped rather than rendered - this is a summary line, not the report.
  */
 export function firstSentence(markdown: string, max = 160): string {
   let heading = "";
+  let said = "";
   for (const raw of markdown.split("\n")) {
     const isHeading = /^\s*#{1,6}\s/.test(raw);
-    const line = raw
+    let line = raw
       .replace(/^\s*(#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*)/, "")
       .replace(/[*_`~]+/g, "")
       .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -491,13 +495,19 @@ export function firstSentence(markdown: string, max = 160): string {
     if (!line || /^(\||-{3,}|={3,})/.test(line)) continue;
     // a heading is a title. only when there is nothing else does it stand in for a sentence.
     if (isHeading) {
+      if (said) break;
       heading ||= line;
       continue;
     }
-    const end = /[.!?](\s|$)/.exec(line);
-    return squash(end ? line.slice(0, end.index + 1) : line, max);
+    while (line) {
+      const end = /[.!?](\s|$)/.exec(line);
+      const sentence = end ? line.slice(0, end.index + 1) : line;
+      said = said ? `${said} ${sentence}` : sentence;
+      if (said.length >= SHORT_SENTENCE) return squash(said, max);
+      line = end ? line.slice(end.index + 1).trim() : "";
+    }
   }
-  return squash(heading, max);
+  return squash(said || heading, max);
 }
 
 /** a workflow journal's result: text as it is, anything structured as json the renderer can show */

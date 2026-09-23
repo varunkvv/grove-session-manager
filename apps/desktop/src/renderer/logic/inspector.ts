@@ -209,7 +209,9 @@ export function agentLine(
     return now ? { text: now, tone: "quiet" } : null;
   }
   if (stats?.interrupted) return { text: "Interrupted", tone: "quiet" };
-  return stats?.outcome ? { text: stats.outcome, tone: "quiet" } : null;
+  // the line a model wrote once someone looked says it better than the result's first sentence
+  const done = agent.found ?? stats?.outcome;
+  return done ? { text: done, tone: "quiet" } : null;
 }
 
 /** `3 agents · 44m of agent time · 1.2M tokens` */

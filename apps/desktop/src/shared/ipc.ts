@@ -329,6 +329,8 @@ export interface Api {
     /** a search that led here: `found` is the fold index of the step that matched it best */
     find?: string,
   ): Promise<{ gen: number; detail: AgentDetail; found?: number } | null>;
+  /** these agents are on screen. a finished one without a line gets one, asked once, ever. */
+  agentsSeen(key: SessionKey, agentIds: string[]): Promise<void>;
   /** one step opened: read back from the two transcript lines it points at */
   agentStep(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
@@ -392,6 +394,7 @@ export const INVOKE_CHANNELS = [
   "inspectSession",
   "agentStep",
   "followAgent",
+  "agentsSeen",
   "openExternal",
   "markSeen",
   "archiveSessions",

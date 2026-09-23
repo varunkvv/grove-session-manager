@@ -57,6 +57,8 @@ export interface Deps {
   combos: ComboService;
   archive: ArchiveService;
   inspector: AgentInspector;
+  /** these agents of a session are on screen: a finished one gets its line, once */
+  seen?: (key: SessionKey, agentIds: string[]) => void;
   editor: EditorService;
   pusher: Pusher;
   window: () => BrowserWindow | null;
@@ -256,11 +258,18 @@ function buildHandlers(deps: Deps): Handlers {
 
     async followAgent(key, agentId, find) {
       if (agentId !== null && (typeof key !== "string" || !sessions.get(key))) return null;
+      // an agent on screen is one being looked at
+      if (typeof agentId === "string") deps.seen?.(key, [agentId]);
       return deps.inspector.follow(
         key,
         agentId,
         typeof find === "string" ? find.slice(0, 500) : "",
       );
+    },
+
+    async agentsSeen(key, agentIds) {
+      if (typeof key !== "string" || !sessions.get(key) || !Array.isArray(agentIds)) return;
+      deps.seen?.(key, agentIds.filter((id): id is string => typeof id === "string").slice(0, 50));
     },
 
     async agentStep(key, agentId, stepId) {

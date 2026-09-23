@@ -2,7 +2,17 @@ import { execFile } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type AgentSnapshot, agentDigest, readTail, squash } from "@grove/core";
+import {
+  type AgentRead,
+  type AgentSnapshot,
+  agentDigest,
+  isObject,
+  readJsonGuarded,
+  readTail,
+  type SessionAgent,
+  squash,
+  writeFileAtomic,
+} from "@grove/core";
 import type { SessionKey } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 
@@ -53,6 +63,23 @@ export function summaryPrompt(agentType: string, description: string | undefined
   );
 }
 
+/**
+ * for an agent that has finished: what it found or did. its transcript never changes again, so
+ * the answer is kept and this is asked once per agent - and only for one someone is looking at.
+ */
+export function foundPrompt(agentType: string, asked: string | undefined, digest: string) {
+  const task = asked ? `It was asked to: ${asked}\n` : "";
+  return (
+    `Below is the end of a log written by a "${agentType}" coding agent that has finished.\n${task}` +
+    "Reply with one lowercase phrase of at most 14 words saying what it found or did. " +
+    "No preamble, no quotes, no full stop.\n\n" +
+    digest
+  );
+}
+
+/** the lines asked for finished agents, by `<agent id>:<mark>`. a cache: safe to delete. */
+export const FOUND_FILE = "agent-lines.v1.json";
+
 export type SummarySpawn = (
   bin: string,
   args: readonly string[],
@@ -89,11 +116,24 @@ export interface AgentSummariesOptions {
   /** nobody reads a hidden window, so a hidden window pays for nothing */
   visible: () => boolean;
   onSummary: (key: SessionKey, agentId: string, summary: string, at: number) => void;
+  /** a finished agent's line, new or remembered */
+  onFound?: (key: SessionKey, agentId: string, line: string) => void;
   spawn?: SummarySpawn;
   now?: () => number;
   /** REFRESH_MS. only a test ever passes anything else. */
   refreshMs?: number;
 }
+
+type Job =
+  | { kind: "running"; key: SessionKey; id: string; file: string; mark: string }
+  | {
+      kind: "found";
+      key: SessionKey;
+      id: string;
+      file: string;
+      mark: string;
+      agent: SessionAgent;
+    };
 
 /**
  * one short line per running agent, written by a cheap model reading the agent's own transcript.
@@ -110,7 +150,11 @@ export class AgentSummaries {
   private latest = new Map<SessionKey, AgentSnapshot>();
   /** agent id -> the file mark it was summarised at, and when */
   private done = new Map<string, { mark: string; at: number }>();
-  private queue: Array<{ key: SessionKey; id: string; file: string; mark: string }> = [];
+  private queue: Job[] = [];
+  /** finished agents' lines, loaded on first use */
+  private lines: Promise<Map<string, string>> | null = null;
+  /** `<id>:<mark>` already asked this run, answered or not: once is the promise */
+  private asked = new Set<string>();
   private queued = new Set<string>();
   private running = 0;
   private disposed = false;
@@ -135,6 +179,49 @@ export class AgentSummaries {
     this.latest.set(key, snapshot);
     if (snapshot.agents.length === 0) this.latest.delete(key);
     this.pump(key, snapshot);
+    // a line already paid for is shown again, and costs nothing
+    if (this.opts.onFound && snapshot.agents.some((a) => a.state === "done" && !a.found)) {
+      void this.remembered(key, snapshot);
+    }
+  }
+
+  private loadLines(): Promise<Map<string, string>> {
+    this.lines ??= readJsonGuarded(path.join(this.opts.stateDir, FOUND_FILE)).then((read) => {
+      const out = new Map<string, string>();
+      if (read.status === "ok" && isObject(read.value)) {
+        for (const [k, v] of Object.entries(read.value)) if (typeof v === "string") out.set(k, v);
+      }
+      return out;
+    });
+    return this.lines;
+  }
+
+  private async remembered(key: SessionKey, snapshot: AgentSnapshot): Promise<void> {
+    const lines = await this.loadLines();
+    for (const agent of snapshot.agents) {
+      const read = snapshot.reads[agent.id];
+      const line =
+        read && agent.state === "done" ? lines.get(`${agent.id}:${read.mark}`) : undefined;
+      if (line && agent.found !== line) this.opts.onFound?.(key, agent.id, line);
+    }
+  }
+
+  /**
+   * a finished agent is on screen: its line, from what was kept or asked for now. never for an
+   * agent nobody looks at - summarising history would spend someone's money on nothing.
+   */
+  async seen(key: SessionKey, agent: SessionAgent, read: AgentRead | undefined): Promise<void> {
+    if (this.disposed || agent.state !== "done" || !read || !this.opts.onFound) return;
+    const id = `${agent.id}:${read.mark}`;
+    const kept = (await this.loadLines()).get(id);
+    if (kept) {
+      if (agent.found !== kept) this.opts.onFound(key, agent.id, kept);
+      return;
+    }
+    if (!this.opts.enabled() || !this.opts.visible() || this.asked.has(id)) return;
+    this.asked.add(id);
+    this.queue.push({ kind: "found", key, id: agent.id, file: read.file, mark: read.mark, agent });
+    void this.drain();
   }
 
   /** the window came back. nothing was refreshed while it was hidden, so catch up now. */
@@ -154,7 +241,7 @@ export class AgentSummaries {
       if (was?.mark === read.mark) continue;
       if (was && now - was.at < this.refreshMs) continue;
       this.queued.add(agent.id);
-      this.queue.push({ key, id: agent.id, file: read.file, mark: read.mark });
+      this.queue.push({ kind: "running", key, id: agent.id, file: read.file, mark: read.mark });
     }
     void this.drain();
   }
@@ -171,7 +258,8 @@ export class AgentSummaries {
     }
   }
 
-  private async run(job: { key: SessionKey; id: string; file: string; mark: string }) {
+  private async run(job: Job) {
+    if (job.kind === "found") return this.runFound(job);
     // claimed before the call, so a failure still waits out the cadence instead of retrying at once
     this.done.set(job.id, { mark: job.mark, at: this.now() });
     const agent = this.latest.get(job.key)?.agents.find((a) => a.id === job.id);
@@ -200,6 +288,38 @@ export class AgentSummaries {
       this.opts.onSummary(job.key, job.id, squash(line, SUMMARY_MAX), this.now());
     } catch (e) {
       log.warn("agent summary:", e);
+    }
+  }
+
+  private async runFound(job: Extract<Job, { kind: "found" }>): Promise<void> {
+    try {
+      const tail = await readTail(job.file, TAIL_BYTES);
+      const digest = agentDigest(tail.text);
+      if (!digest) return;
+      const bin = await this.opts.claudeBin();
+      const cwd = summaryCwd(this.opts.stateDir);
+      await mkdir(cwd, { recursive: true });
+      const out = await this.spawn(
+        bin,
+        summaryArgs(),
+        foundPrompt(job.agent.agentType, job.agent.description ?? job.agent.asked, digest),
+        cwd,
+      );
+      const line = out
+        ?.split("\n")
+        .map((l) => l.trim())
+        .find(Boolean);
+      if (!line) return;
+      const found = squash(line, SUMMARY_MAX);
+      const lines = await this.loadLines();
+      lines.set(`${job.id}:${job.mark}`, found);
+      await writeFileAtomic(
+        path.join(this.opts.stateDir, FOUND_FILE),
+        JSON.stringify(Object.fromEntries(lines)),
+      ).catch((e) => log.warn("agent lines:", e));
+      this.opts.onFound?.(job.key, job.id, found);
+    } catch (e) {
+      log.warn("agent found line:", e);
     }
   }
 

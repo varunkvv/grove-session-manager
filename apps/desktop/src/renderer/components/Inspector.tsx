@@ -222,6 +222,7 @@ function SessionAgents({
         <FanOutView picture={picture} lit={hovered ?? active} onHover={setHovered} onPick={open} />
       </div>
       <AgentListView
+        sessionKey={row.key}
         items={items}
         ids={ids}
         inspection={inspection}
@@ -316,7 +317,11 @@ function FanOutView({
   );
 }
 
+/** how long a row has to stay in sight to count as looked at: scrolling past is not looking */
+const SEEN_MS = 600;
+
 function AgentListView({
+  sessionKey,
   items,
   ids,
   inspection,
@@ -327,6 +332,7 @@ function AgentListView({
   onMove,
   onOpen,
 }: {
+  sessionKey: SessionKey;
   items: AgentListItem[];
   ids: string[];
   inspection: SessionInspection | null;
@@ -343,6 +349,35 @@ function AgentListView({
     if (!active) return;
     document.getElementById(`agent-${active}`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
+  // finished agents on screen get a line saying what they found - asked once, for what is seen
+  // biome-ignore lint/correctness/useExhaustiveDependencies: new rows are new things to watch
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const inSight = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.agentId;
+          if (!id) continue;
+          if (e.isIntersecting) inSight.add(id);
+          else inSight.delete(id);
+        }
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (inSight.size > 0) void window.grove.agentsSeen(sessionKey, [...inSight]);
+        }, SEEN_MS);
+      },
+      { root, threshold: 0.6 },
+    );
+    for (const el of root.querySelectorAll('[data-agent-id][data-state="done"]')) io.observe(el);
+    return () => {
+      io.disconnect();
+      clearTimeout(timer);
+    };
+  }, [sessionKey, items]);
+
   // back from an agent, with the keyboard still in the pane
   useEffect(() => {
     if (paneFocus.pending) {
@@ -436,6 +471,7 @@ function AgentRowView({
   return (
     <div
       id={`agent-${agent.id}`}
+      data-agent-id={agent.id}
       role="option"
       aria-selected={active}
       data-testid="agent-row"

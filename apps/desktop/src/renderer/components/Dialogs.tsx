@@ -445,7 +445,8 @@ export function SettingsDialog() {
           </div>
           <span className="mt-1 block text-meta text-fg-3">
             Reads the agent's own transcript with Claude Haiku, every 30s while the window is open.
-            It spends your Claude subscription, and never interrupts the session doing the work.
+            A finished agent gets one line on what it found, once, the first time you look at it. It
+            spends your Claude subscription, and never interrupts the session doing the work.
           </span>
         </div>
         {error && <p className="text-accent">{error}</p>}
