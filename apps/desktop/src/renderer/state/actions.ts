@@ -38,8 +38,34 @@ export async function openCombo(name: string, sessionKey?: SessionKey): Promise<
   }
 }
 
+/** the inspector on this session, or on the active row. it follows the selection from then on. */
+export function openInspector(key?: SessionKey): void {
+  const s = state();
+  s.set({
+    ...(key ? { activeKey: key } : {}),
+    inspector: s.inspector ?? { agent: null },
+  });
+}
+
+/** into the inspector's list, when it has one. false when there is nothing there to move through. */
+export function focusInspector(): boolean {
+  const list = document.querySelector<HTMLElement>("[data-inspector-list]");
+  list?.focus();
+  return !!list;
+}
+
+export function closeInspector(): void {
+  state().set({ inspector: null });
+  focusSearch(false);
+}
+
 export async function runAction(key: SessionKey, action: SessionActionId): Promise<void> {
   state().set({ menu: null });
+  if (action === "inspect") {
+    openInspector(key);
+    focusSearch(false);
+    return;
+  }
   const res = await api().runSessionAction(key, action);
   if (report("That did not work", res) && res.ok && res.value.message) {
     state().toast({ level: "info", title: res.value.message });

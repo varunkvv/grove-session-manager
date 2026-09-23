@@ -53,6 +53,41 @@ export interface SessionRow {
   archived?: boolean;
 }
 
+/**
+ * what an agent's own transcript says about it, beyond what the scan of every session knows. read
+ * when someone looks, not for every row: it means folding the whole transcript.
+ */
+export interface AgentStats {
+  id: string;
+  toolCount: number;
+  /** the context its last response ran with - how Claude Code itself counts an agent's tokens */
+  tokens: number;
+  model?: string;
+  /** its first and last timestamps. file times lie once a file is copied. */
+  startedAt?: number;
+  lastAt?: number;
+  /** the first sentence of what it came back with */
+  outcome?: string;
+  /** the start of what it was asked, for an agent nobody gave a label (a workflow's) */
+  asked?: string;
+  /** the last tool it called: what it is doing, when there is no summary line */
+  lastStep?: string;
+  /** the api error it died on */
+  error?: string;
+  interrupted?: boolean;
+  /** the agent that started it, when another agent did */
+  parentId?: string;
+  /** Claude Code has deleted its transcript */
+  gone?: boolean;
+}
+
+export interface SessionInspection {
+  key: SessionKey;
+  agents: Record<string, AgentStats>;
+  /** by run: the directory name under subagents/workflows/ */
+  workflows: Record<string, { name?: string; summary?: string }>;
+}
+
 /** a folder people keep coming back to: repos their sessions ran in, and folders already in combos */
 export interface FrequentFolder {
   path: string;
@@ -183,7 +218,8 @@ export type SessionActionId =
   | "reveal"
   | "mark-seen"
   | "archive"
-  | "unarchive";
+  | "unarchive"
+  | "inspect";
 
 export interface SessionAction {
   id: SessionActionId;
@@ -211,6 +247,8 @@ export interface Api {
   sessionActions(key: SessionKey): Promise<SessionAction[]>;
   /** the whole conversation, for rows the instant filter over titles and prompts missed */
   searchSessions(query: string): Promise<{ query: string; hits: SearchHit[] }>;
+  /** what each of a session's agents did, from their own transcripts. null for an unknown row. */
+  inspectSession(key: SessionKey): Promise<SessionInspection | null>;
   /** takes sessions out of "needs you" until their next event */
   markSeen(keys: SessionKey[]): Promise<void>;
   /** puts sessions away, or brings them back. writes the decision to ~/claude-ws/archived.json. */
@@ -266,6 +304,7 @@ export const INVOKE_CHANNELS = [
   "rescan",
   "sessionActions",
   "searchSessions",
+  "inspectSession",
   "markSeen",
   "archiveSessions",
   "runSessionAction",
@@ -303,6 +342,7 @@ export type MenuCommandId =
   | "focus-search"
   | "scope-combo"
   | "scope-all"
+  | "inspect"
   | "settings";
 
 export interface ToastMessage {

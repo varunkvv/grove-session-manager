@@ -18,6 +18,7 @@ import { OpQueue } from "./opQueue.ts";
 import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer } from "./protocol.ts";
 import { Pusher } from "./push.ts";
+import { AgentInspector } from "./services/agentInspector.ts";
 import { AgentSummaries } from "./services/agentSummaries.ts";
 import { ArchiveService } from "./services/archive.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
@@ -82,6 +83,10 @@ async function start(): Promise<void> {
       pusher.send("sessions:patch", { rev: pusher.nextRev("sessions"), ...patch }),
     emitStatus: (status) => pusher.send("sessions:index", status),
     onAgents: (key, snapshot) => summaries?.note(key, snapshot),
+  });
+  const inspector = new AgentInspector({
+    stateDir: appEnv.stateDir,
+    snapshot: (key) => sessions.agentSnapshot(key),
   });
   const archive = new ArchiveService({
     appRoot: appEnv.appRoot,
@@ -183,6 +188,7 @@ async function start(): Promise<void> {
     live,
     combos,
     archive,
+    inspector,
     editor,
     pusher,
     window: () => win,

@@ -30,6 +30,7 @@ import { AppError, toOutcomeError } from "./errors.ts";
 import { log } from "./log.ts";
 import { isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
+import type { AgentInspector } from "./services/agentInspector.ts";
 import type { ArchiveService } from "./services/archive.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
@@ -55,6 +56,7 @@ export interface Deps {
   live: LiveService;
   combos: ComboService;
   archive: ArchiveService;
+  inspector: AgentInspector;
   editor: EditorService;
   pusher: Pusher;
   window: () => BrowserWindow | null;
@@ -207,6 +209,9 @@ function buildHandlers(deps: Deps): Handlers {
         keys: "\u2318\u21e7C",
         enabled: true,
       });
+      if (row.agents && row.agents.length > 0) {
+        actions.push({ id: "inspect", label: "Inspect agents", keys: "\u2318I", enabled: true });
+      }
       if (needsYou(row.live)) {
         actions.push({
           id: "mark-seen",
@@ -243,6 +248,11 @@ function buildHandlers(deps: Deps): Handlers {
       return actions;
     },
 
+    async inspectSession(key) {
+      if (typeof key !== "string" || !sessions.get(key)) return null;
+      return deps.inspector.inspect(key);
+    },
+
     async searchSessions(query) {
       if (typeof query !== "string") throw new AppError("bad-query", "Nothing to search for.");
       return { query, hits: await sessions.search(query.slice(0, 500)) };
@@ -275,6 +285,8 @@ function buildHandlers(deps: Deps): Handlers {
         deps.live.markSeen([row.sessionId]);
         return {};
       }
+      // the inspector is the renderer's own: nothing to do here
+      if (action === "inspect") return {};
       if (action === "archive" || action === "unarchive") {
         await archiveByKey(deps, [key], action === "archive");
         return {};

@@ -7,7 +7,7 @@ import {
   nextActiveKey,
   splitQuery,
 } from "../logic/rows.ts";
-import { activate, focusSearch, openCombo, openMenu } from "../state/actions.ts";
+import { activate, focusSearch, openCombo, openInspector, openMenu } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Banner } from "./Chrome.tsx";
 import { optionId, SessionList } from "./SessionList.tsx";
@@ -207,6 +207,7 @@ export function SessionsPane() {
   }, []);
   const onActivate = useCallback((key: SessionKey) => void activate(key), []);
   const onMenu = useCallback((key: SessionKey) => void openMenu(key), []);
+  const onInspect = useCallback((key: SessionKey) => openInspector(key), []);
 
   const scanning = index.phase === "scanning" || index.phase === "cache";
 
@@ -279,6 +280,7 @@ export function SessionsPane() {
             total={model.keys.length}
             onActivate={onActivate}
             onMenu={onMenu}
+            onInspect={onInspect}
             onPageSize={onPageSize}
           />
           <HiddenMatches model={model} />
@@ -286,10 +288,10 @@ export function SessionsPane() {
       )}
 
       <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line px-5 text-meta text-fg-4">
-        <span>
+        <span className="shrink-0 whitespace-nowrap">
           <Kbd>↵</Kbd> open
         </span>
-        <span>
+        <span className="shrink-0 whitespace-nowrap">
           <Kbd>⌘K</Kbd> actions
         </span>
         <span className="ml-auto truncate">

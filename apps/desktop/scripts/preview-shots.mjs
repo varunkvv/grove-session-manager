@@ -56,6 +56,10 @@ await open("banner");
 await shot("08-banner");
 await open("nosessions");
 await shot("09-no-sessions");
+await open("agents");
+await page.keyboard.press("ArrowDown");
+await page.keyboard.press("Meta+i");
+await shot("10-inspector");
 
 await browser.close();
 await server.close();

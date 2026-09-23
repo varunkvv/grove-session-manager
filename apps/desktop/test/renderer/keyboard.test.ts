@@ -88,4 +88,26 @@ describe("keyboard model", () => {
   it("IME composition is never interpreted", () => {
     expect(interpret(ctx(), key("Enter", { composing: true }))).toBeNull();
   });
+
+  it("cmd-I opens and closes the inspector, and Escape leaves it one step at a time", () => {
+    expect(interpret(ctx(), key("i", { meta: true }))).toEqual({ type: "inspect" });
+    const open = ctx({ inspector: true, query: "x" });
+    expect(interpret({ ...open, inInspector: true, inSearch: false }, key("Escape"))).toEqual({
+      type: "inspector-leave",
+    });
+    // out of it first, then closed, and only then is the query cleared
+    expect(interpret(open, key("Escape"))).toEqual({ type: "inspector-close" });
+    expect(interpret(ctx({ query: "x" }), key("Escape"))).toEqual({ type: "clear-query" });
+  });
+
+  it("Tab moves into the inspector, and its own list owns the arrows there", () => {
+    expect(interpret(ctx({ inspector: true }), key("Tab"))).toEqual({ type: "inspector-enter" });
+    expect(interpret(ctx(), key("Tab"))).toBeNull();
+    const inside = ctx({ inspector: true, inInspector: true, inSearch: false });
+    expect(interpret(inside, key("Tab", { shift: true }))).toEqual({ type: "inspector-leave" });
+    expect(interpret(inside, key("ArrowDown"))).toBeNull();
+    expect(interpret(inside, key("Enter"))).toBeNull();
+    // shortcuts still work from in there
+    expect(interpret(inside, key("i", { meta: true }))).toEqual({ type: "inspect" });
+  });
 });

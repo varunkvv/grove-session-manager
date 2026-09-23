@@ -3,17 +3,21 @@ import type { MenuCommandId } from "../shared/ipc.ts";
 import { Toasts } from "./components/Chrome.tsx";
 import { ComboDialog } from "./components/ComboDialog.tsx";
 import { DeleteComboDialog, SettingsDialog, TeardownDialog } from "./components/Dialogs.tsx";
+import { Workspace } from "./components/Inspector.tsx";
 import { Rail } from "./components/Rail.tsx";
 import { SessionActionMenu } from "./components/SessionActionMenu.tsx";
-import { listRef, SessionsPane } from "./components/SessionsPane.tsx";
+import { listRef } from "./components/SessionsPane.tsx";
 import { type Intent, interpret } from "./logic/keyboard.ts";
 import { needsYouKeys } from "./logic/rows.ts";
 import {
   activate,
   activateDefault,
   archiveSessions,
+  closeInspector,
+  focusInspector,
   focusSearch,
   openCombo,
+  openInspector,
   openMenu,
   refresh,
   repairSelected,
@@ -64,6 +68,19 @@ function perform(intent: Intent): void {
       if (row) void archiveSessions([row.key], !row.archived);
       break;
     }
+    case "inspect":
+      if (s.inspector) closeInspector();
+      else openInspector();
+      break;
+    case "inspector-enter":
+      focusInspector();
+      break;
+    case "inspector-leave":
+      focusSearch(false);
+      break;
+    case "inspector-close":
+      closeInspector();
+      break;
     case "focus-search":
     case "type-through":
       focusSearch(intent.type === "focus-search");
@@ -120,6 +137,7 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "focus-search": { type: "focus-search" },
   "scope-combo": { type: "scope", scope: "combo" },
   "scope-all": { type: "scope", scope: "all" },
+  inspect: { type: "inspect" },
   settings: { type: "settings" },
 };
 
@@ -152,6 +170,7 @@ export function App() {
       const s = useStore.getState();
       const target = e.target as HTMLElement | null;
       const inSearch = target?.id === "search";
+      const inInspector = !!target?.closest?.('[data-testid="inspector"]');
       const inText =
         !inSearch &&
         (target?.tagName === "INPUT" ||
@@ -164,6 +183,8 @@ export function App() {
           inOtherTextField: inText,
           inSearch,
           pageSize: listRef.pageSize,
+          inspector: s.inspector !== null,
+          inInspector,
         },
         {
           key: e.key,
@@ -220,7 +241,7 @@ export function App() {
   return (
     <div className="flex h-full min-h-0 overflow-hidden" data-testid="app-ready">
       <Rail />
-      <SessionsPane />
+      <Workspace />
       <SessionActionMenu />
       <ComboDialog />
       <TeardownDialog />

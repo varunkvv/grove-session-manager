@@ -147,6 +147,11 @@ input:focus-visible {
   outline: none;
 }
 
+/* a list that holds focus says where the keyboard is with its active row, not a ring round it */
+[data-inspector-list]:focus-visible {
+  outline: none;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

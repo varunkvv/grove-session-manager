@@ -37,7 +37,7 @@ describe("design lint", () => {
     }
   });
 
-  it("the accent is for state that matters: drift, search highlights, the banner action, warnings, a session waiting on you", () => {
+  it("the accent is for state that matters: drift, search highlights, the banner action, warnings, a session waiting on you, an agent that failed", () => {
     const uses = files.flatMap(([f, src]) =>
       (src.match(/(?:bg|text|border)-accent(?:-soft)?/g) ?? []).map(() => f),
     );
@@ -48,12 +48,19 @@ describe("design lint", () => {
       "components/ComboDialog.tsx",
       "components/Dialogs.tsx",
       "components/SessionList.tsx",
+      "components/Inspector.tsx",
     ]);
     for (const f of uses) expect(allowed.has(f), `${f} uses the accent`).toBe(true);
     // a row takes the accent only when its session asks for someone, never for decoration
     const list = files.find(([f]) => f === "components/SessionList.tsx")![1];
     for (const line of list.split("\n").filter((l) => /-accent/.test(l))) {
       expect(line, "accent on a session row outside the live badge").toMatch(/loud|NEEDS_YOU/);
+    }
+    // the inspector's only colour is an agent or a step that ended in an error
+    for (const [f, src] of files.filter(([f]) => f === "components/Inspector.tsx")) {
+      for (const line of src.split("\n").filter((l) => /-accent/.test(l))) {
+        expect(line, `accent in ${f} for something other than an error`).toMatch(/error/);
+      }
     }
   });
 });

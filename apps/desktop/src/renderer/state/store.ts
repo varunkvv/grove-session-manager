@@ -30,6 +30,15 @@ export interface Toast extends ToastMessage {
   id: number;
 }
 
+/**
+ * the agent inspector beside the list. it has no session of its own: it shows whichever row is
+ * active, like a mail app's reading pane.
+ */
+export interface InspectorState {
+  /** the agent the pane's keyboard is on */
+  agent: string | null;
+}
+
 interface State {
   ready: boolean;
   env: EnvInfo | null;
@@ -48,6 +57,8 @@ interface State {
   activeKey: SessionKey | null;
   menu: MenuState | null;
   dialog: DialogState;
+  /** null while closed */
+  inspector: InspectorState | null;
   toasts: Toast[];
   bannerDismissed: boolean;
   now: number;
@@ -76,6 +87,7 @@ export const useStore = create<State>((set) => ({
   activeKey: null,
   menu: null,
   dialog: null,
+  inspector: null,
   toasts: [],
   bannerDismissed: false,
   now: Date.now(),

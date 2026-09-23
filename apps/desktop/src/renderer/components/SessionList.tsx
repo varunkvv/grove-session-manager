@@ -2,7 +2,7 @@ import { formatRelativeTime, highlightRanges, type LiveStatus } from "@grove/cor
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, type ReactNode, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
-import { agentsChip, agentsTooltip } from "../logic/agents.ts";
+import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
 import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
 import { cx, Icon, Mono } from "./ui.tsx";
@@ -78,6 +78,7 @@ interface RowProps {
   total: number;
   onActivate: (key: SessionKey, el: HTMLElement) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
+  onInspect: (key: SessionKey) => void;
 }
 
 const SessionRowView = memo(function SessionRowView(p: RowProps) {
@@ -99,7 +100,8 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
         p.onMenu(row.key, e.currentTarget);
       }}
       className={cx(
-        "fade mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
+        // a container, so a row made narrow by the inspector beside it drops what matters least
+        "fade @container mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
         p.active ? "bg-active" : "hover:bg-raised",
       )}
     >
@@ -139,16 +141,27 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           )}
           {/* quiet: agents fanning out is the session working, not the session asking for anything */}
           {row.agents && row.agents.length > 0 && (
-            <span
+            <button
+              type="button"
+              tabIndex={-1}
               data-testid="row-agents"
-              className="max-w-64 truncate text-fg-3"
+              className="fade max-w-64 truncate text-fg-3 hover:text-fg-2"
               title={agentsTooltip(row.agents)}
+              onClick={(e) => {
+                // what the agents did, not what the row opens
+                e.stopPropagation();
+                p.onInspect(row.key);
+              }}
             >
-              {agentsChip(row.agents, p.now)}
-            </span>
+              <span className="@max-xl:hidden">{agentsChip(row.agents, p.now)}</span>
+              <span className="hidden @max-xl:inline">{agentsCount(row.agents)}</span>
+            </button>
           )}
           {row.usage && row.usage.length > 0 && (
-            <Mono className="max-w-56 truncate text-fg-4" title={usageTooltip(row.usage)}>
+            <Mono
+              className="max-w-56 truncate text-fg-4 @max-2xl:hidden"
+              title={usageTooltip(row.usage)}
+            >
               <span data-testid="row-usage">
                 <Highlighted text={usageChip(row.usage)} tokens={p.tokens} />
               </span>
@@ -160,7 +173,7 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
             </Mono>
           )}
           {row.gitBranch && (
-            <span className="flex max-w-52 items-center gap-1 self-center">
+            <span className="flex max-w-52 items-center gap-1 self-center @max-lg:max-w-28">
               <Icon name="branch" size={11} className="text-fg-4" />
               <Mono className="truncate">
                 <Highlighted text={row.gitBranch} tokens={p.tokens} />
@@ -192,6 +205,7 @@ export function SessionList({
   total,
   onActivate,
   onMenu,
+  onInspect,
   onPageSize,
 }: {
   items: ListItem[];
@@ -202,6 +216,7 @@ export function SessionList({
   total: number;
   onActivate: (key: SessionKey, el: HTMLElement) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
+  onInspect: (key: SessionKey) => void;
   onPageSize: (rows: number) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -285,6 +300,7 @@ export function SessionList({
                       total={total}
                       onActivate={onActivate}
                       onMenu={onMenu}
+                      onInspect={onInspect}
                     />
                   </div>
                 </div>

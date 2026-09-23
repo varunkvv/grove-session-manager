@@ -1,5 +1,10 @@
 import { formatDuration, type SessionAgent } from "@grove/core/pure";
 
+/** all a narrow row has room for. the inspector beside it has the rest. */
+export function agentsCount(agents: readonly SessionAgent[]): string {
+  return `${agents.length} agent${agents.length === 1 ? "" : "s"}`;
+}
+
 /** the row has one line, so: how many there are, then the running ones and how long they have been at it. */
 export function agentsChip(agents: readonly SessionAgent[], now: number): string {
   if (agents.length === 0) return "";

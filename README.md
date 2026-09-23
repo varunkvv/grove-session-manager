@@ -85,8 +85,8 @@ Landing on a session, or **Mark as seen** in its action menu, takes it out of th
 ### What is running inside a session
 
 A session grinding away alone and a session with five agents fanned out look the same from the outside. Rows show
-their subagents - how many, and for the running ones what kind and how long they have been at it. The detail is in the
-row's tooltip: what each agent was asked to do, and the last tool it picked up.
+their subagents - how many, and for the running ones what kind and how long they have been at it. The row's tooltip
+says what each agent was asked to do and the last tool it picked up, and the inspector (below) has the rest.
 
 It comes from `~/.claude/projects/<slug>/<sessionId>/subagents/`, where each agent writes its own transcript next to an
 `agent-<id>.meta.json` holding the label its parent gave it. Nothing there records when an agent ended, so the exact
@@ -100,6 +100,21 @@ the tail of that agent's own transcript - the session doing the work is never in
 asking it would cost a whole turn on its full context. It runs every 30 seconds per agent, only while the window is
 open, only when the transcript has moved since the last one, two at a time. It spends your own Claude auth, so
 **Summarise what each running agent is doing** in Settings switches it off.
+
+### What the agents did
+
+`⌘I`, a click on a row's agents, or **Inspect agents** in its action menu opens a pane beside the list with what that
+session's agents did. It follows the selected row like a mail app's reading pane: open it once, then move through the
+list. At the top is one lane per agent, from its start to its end. The axis spans the agents' own window - first start
+to last end - so a session open for two days whose agents ran in a twenty-minute burst does not come out as slivers.
+Under it, one row per agent: what it was for and how long it ran, its type, tool calls and tokens, and what it came
+back with (while it runs, what it is doing). An agent that died on an API error is the only colour in the pane.
+`Tab` moves into the pane and the arrows move there, `Esc` steps back out, and the next `Esc` closes it. A window too
+narrow for both gets the pane over the list instead of a crushed list.
+
+The numbers come from each agent's own transcript, read when you look - never for every row. Tokens are what Claude
+Code itself reports for an agent: the context its last response ran with, not a sum over every response. A finished
+agent's reading is kept in `.grove/`, keyed by its file's size and time, so the next look is one file read.
 
 ### Search reaches the whole conversation
 
@@ -145,6 +160,7 @@ Every shortcut carries a modifier.
 | `⌥↑` `⌥↓` | step through combos |
 | `⌘1` `⌘2` | this combo's sessions / all sessions |
 | `⌘K` | the active row's actions |
+| `⌘I` | what the active session's agents did. `Tab` moves into it, `Esc` steps back out |
 | `⌘D` | mark the active row as seen |
 | `⌘⇧D` | mark everything under **Needs you** as seen |
 | `⌘⇧A` | archive the active session, or bring it back |

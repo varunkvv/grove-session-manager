@@ -18,7 +18,8 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     label: string,
     accelerator: string,
     id: MenuCommandId,
-  ): MenuItemConstructorOptions => ({ label, accelerator, click: () => o.send(id) });
+    extra: Partial<MenuItemConstructorOptions> = {},
+  ): MenuItemConstructorOptions => ({ label, accelerator, click: () => o.send(id), ...extra });
   const separator: MenuItemConstructorOptions = { type: "separator" };
   const settings = command("Settings…", "CmdOrCtrl+,", "settings");
 
@@ -71,6 +72,10 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     submenu: [
       command("This Combo's Sessions", "CmdOrCtrl+1", "scope-combo"),
       command("All Sessions", "CmdOrCtrl+2", "scope-all"),
+      separator,
+      // a toggle needs exactly one owner. the page takes the key already, and a press both the
+      // page and the menu acted on would open the pane and close it again.
+      command("Inspect Agents", "CmdOrCtrl+I", "inspect", { registerAccelerator: false }),
       separator,
       command("Refresh", "CmdOrCtrl+R", "refresh"),
       ...(o.isDev

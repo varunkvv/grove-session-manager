@@ -115,7 +115,10 @@ test("a session nobody is running still says how many agents it had", async () =
   const rows = app.page.getByTestId("session-row");
   await waitFor(async () => (await rows.count()) === 1);
   // no hook, no process: nothing of it is running, however recently its files were written
-  await expect(rows.first().getByTestId("row-agents")).toHaveText("2 agents");
+  // what shows: the chip carries a short form too, for a row narrowed by the inspector
+  await expect(rows.first().getByTestId("row-agents")).toHaveText("2 agents", {
+    useInnerText: true,
+  });
   await expect(rows.first().getByTestId("live-badge")).toHaveCount(0);
 });
 

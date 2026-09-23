@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -159,6 +160,157 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
   const when = new Date(at);
   utimesSync(file, when, when);
   return file;
+}
+
+export type AgentStepSpec =
+  | { say: string; at: number }
+  | {
+      tool: string;
+      input: Record<string, unknown>;
+      result: string;
+      at: number;
+      took?: number;
+      error?: boolean;
+    };
+
+export interface AgentSpec {
+  cwd: string;
+  sessionId: string;
+  id: string;
+  agentType: string;
+  description?: string;
+  spawnDepth?: number;
+  toolUseId?: string;
+  /** the workflow run it belongs to: its directory under subagents/workflows/ */
+  workflow?: string;
+  prompt: string;
+  model?: string;
+  /** when it started, as ms before now. step times are seconds after that. */
+  startedAgoMs: number;
+  steps: AgentStepSpec[];
+  /** what it came back with, and when (seconds after it started). absent while it runs. */
+  result?: { text: string; at: number };
+  /** the api error it died on, and when */
+  apiError?: { text: string; at: number };
+}
+
+/** an agent's own transcript and meta, shaped like Claude Code writes them */
+export function writeAgent(fx: Fixture, a: AgentSpec): string {
+  const t0 = Date.now() - a.startedAgoMs;
+  const stamp = (s: number) => new Date(t0 + s * 1000).toISOString();
+  const base = (s: number) => ({
+    isSidechain: true,
+    agentId: a.id,
+    timestamp: stamp(s),
+    userType: "external",
+    entrypoint: "claude-vscode",
+    cwd: a.cwd,
+    sessionId: a.sessionId,
+    version: "2.1.278",
+  });
+  let n = 0;
+  const says = (block: Record<string, unknown>, s: number) => {
+    n++;
+    return {
+      type: "assistant",
+      message: {
+        model: a.model ?? "claude-sonnet-5",
+        id: `msg_${a.id}_${n}`,
+        type: "message",
+        role: "assistant",
+        content: [block],
+        usage: {
+          input_tokens: 2,
+          output_tokens: 60 + n * 40,
+          cache_read_input_tokens: 18_000 + n * 2_400,
+          cache_creation_input_tokens: 900,
+        },
+      },
+      ...base(s),
+    };
+  };
+  const lines: object[] = [
+    { type: "user", message: { role: "user", content: a.prompt }, ...base(0) },
+  ];
+  for (const [i, step] of a.steps.entries()) {
+    if ("say" in step) {
+      lines.push(says({ type: "text", text: step.say }, step.at));
+      continue;
+    }
+    const id = `toolu_${a.id}_${i}`;
+    lines.push(says({ type: "tool_use", id, name: step.tool, input: step.input }, step.at));
+    lines.push({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { tool_use_id: id, type: "tool_result", content: step.result, is_error: !!step.error },
+        ],
+      },
+      ...base(step.at + (step.took ?? 1)),
+    });
+  }
+  if (a.result) lines.push(says({ type: "text", text: a.result.text }, a.result.at));
+  if (a.apiError) {
+    lines.push({
+      type: "assistant",
+      message: {
+        model: "<synthetic>",
+        id: `msg_${a.id}_error`,
+        role: "assistant",
+        content: [{ type: "text", text: a.apiError.text }],
+      },
+      isApiErrorMessage: true,
+      error: "server_error",
+      ...base(a.apiError.at),
+    });
+  }
+  const dir = path.join(
+    fx.projectsDir,
+    claudeProjectSlug(a.cwd),
+    a.sessionId,
+    "subagents",
+    ...(a.workflow ? ["workflows", a.workflow] : []),
+  );
+  mkdirSync(dir, { recursive: true });
+  const meta = a.workflow
+    ? { agentType: "workflow-subagent", spawnDepth: 1, model: "sonnet" }
+    : {
+        agentType: a.agentType,
+        description: a.description,
+        toolUseId: a.toolUseId ?? `toolu_parent_${a.id}`,
+        spawnDepth: a.spawnDepth ?? 1,
+        requestShape: "foreground",
+        requestNonInteractive: true,
+      };
+  writeFileSync(path.join(dir, `agent-${a.id}.meta.json`), JSON.stringify(meta));
+  const file = path.join(dir, `agent-${a.id}.jsonl`);
+  writeFileSync(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  // the file was last written when its last line was, unless it is still being written
+  const last = a.result?.at ?? a.apiError?.at;
+  if (last !== undefined) {
+    const when = new Date(t0 + last * 1000);
+    utimesSync(file, when, when);
+  }
+  return file;
+}
+
+let hooks = 0;
+/** what the status hook writes: the hook's own stdin, one file per event, renamed into place */
+export function hookEvent(
+  fx: Fixture,
+  sessionId: string,
+  event: string,
+  extra: Record<string, unknown> = {},
+): void {
+  const dir = path.join(fx.root, ".grove", "events");
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${process.pid}-${++hooks}`);
+  writeFileSync(
+    `${file}.tmp`,
+    JSON.stringify({ session_id: sessionId, hook_event_name: event, cwd: "/x", ...extra }),
+  );
+  renameSync(`${file}.tmp`, `${file}.json`);
 }
 
 export function git(cwd: string, ...args: string[]): string {

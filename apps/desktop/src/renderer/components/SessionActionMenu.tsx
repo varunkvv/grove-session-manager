@@ -16,6 +16,7 @@ const ICONS = {
   "mark-seen": "check",
   archive: "archive",
   unarchive: "archive",
+  inspect: "lanes",
 } as const;
 
 const USAGE_COLUMNS = ["in", "out", "cache read", "cache write"] as const;

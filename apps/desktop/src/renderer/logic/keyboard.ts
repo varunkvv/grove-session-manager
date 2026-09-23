@@ -15,6 +15,10 @@ export type Intent =
   | { type: "mark-seen" }
   | { type: "mark-all-seen" }
   | { type: "toggle-archive" }
+  | { type: "inspect" }
+  | { type: "inspector-enter" }
+  | { type: "inspector-leave" }
+  | { type: "inspector-close" }
   | { type: "new-combo" }
   | { type: "open-combo" }
   | { type: "edit-combo" }
@@ -31,6 +35,10 @@ export interface KeyContext {
   inOtherTextField: boolean;
   inSearch: boolean;
   pageSize: number;
+  /** the agent inspector is showing */
+  inspector?: boolean;
+  /** DOM focus is inside it. it moves through its own list with the arrows. */
+  inInspector?: boolean;
 }
 
 export interface KeyInput {
@@ -51,10 +59,18 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (e.composing) return null;
   if (e.key === "Escape") {
     if (ctx.overlay) return { type: "close-overlay" };
+    // one step at a time: out of the inspector, then close it, then the query
+    if (ctx.inInspector) return { type: "inspector-leave" };
+    if (ctx.inspector) return { type: "inspector-close" };
     if (ctx.query) return { type: "clear-query" };
     return { type: "focus-search" };
   }
   if (ctx.overlay) return null;
+  if (e.key === "Tab" && !e.meta && !e.alt && !e.ctrl) {
+    if (ctx.inspector && !ctx.inInspector && !e.shift) return { type: "inspector-enter" };
+    if (ctx.inInspector && e.shift) return { type: "inspector-leave" };
+    return null;
+  }
 
   if (e.meta && !e.alt && !e.ctrl) {
     const k = e.key.toLowerCase();
@@ -72,12 +88,15 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     if (k === "d") return e.shift ? { type: "mark-all-seen" } : { type: "mark-seen" };
     // plain cmd-A is select-all in the search field, and stays that way
     if (k === "a" && e.shift) return { type: "toggle-archive" };
+    if (k === "i" && !e.shift) return { type: "inspect" };
     if (e.key === "Enter") return { type: "activate-default" };
     if (e.key === "ArrowDown") return { type: "move-to", where: "last" };
     if (e.key === "ArrowUp") return { type: "move-to", where: "first" };
     return null;
   }
   if (ctx.inOtherTextField) return null;
+  // the inspector moves through its own list
+  if (ctx.inInspector) return null;
 
   if (e.alt && !e.meta && !e.ctrl) {
     if (e.key === "ArrowDown") return { type: "combo-step", delta: 1 };
