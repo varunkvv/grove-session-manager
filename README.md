@@ -83,6 +83,48 @@ Hooks only cover the sessions that have them. Every live Claude Code process als
 
 Landing on a session, or **Mark as seen** in its action menu, takes it out of the list until its next event.
 
+### Sessions that keep going in the background
+
+A session started in the Claude Code panel is a child of that VS Code window, so it ends when the window does.
+Claude Code ships its own supervisor for sessions that should outlive every terminal and editor: `claude --bg`,
+`claude agents`, and a daemon that runs them. Grove does not supervise anything itself. It is the bridge between the
+two: it shows what the supervisor runs, lands on those sessions without breaking them, and hands a session over.
+
+- **Seeing them.** A session the supervisor knows carries a quiet **Background** on its row, with its state
+  (working, blocked, done, failed, stopped) and what it waits on in the tooltip. That comes from
+  `claude agents --json --all`, asked at startup, when the window comes forward, when a background process comes,
+  goes or changes in the live registry, and after anything Grove runs - never on a timer. A background session in
+  a combo reports through its hooks like any other. One outside every combo that is blocked on you lands under
+  **Needs you** from that list instead.
+- **Landing on one.** While the supervisor holds a session, resuming it anywhere else is refused, so the row offers
+  **Open in Terminal (attach)** first, then **Stop and open** in your editor (it asks first if the session is
+  mid-turn), and **Stop background session**. The usual land actions are not offered on it.
+- **Handing one over.** **Continue in background…** on a session nothing is running asks for the prompt to send
+  (`continue where you left off` to start with), then runs `claude --resume <id> --bg` in the session's own folder.
+  It carries on under the same id and transcript. It is not offered while a panel or terminal still has the session
+  open: that would start a copy. **New background session…** in a combo's menu starts one in the combo root.
+- **Interrupted.** A session that was running when its process went away (a window closed on it mid-turn, a crash,
+  a reboot) keeps a quiet **Interrupted** marker, and **Continue in background…** becomes its first action. So does
+  a background run that failed. The fact is kept in `.grove/interrupted.json`, so it is still there after a reboot,
+  and it clears as soon as the session shows a sign of life.
+
+What survives what: closing the terminal or the editor, yes. Sleep pauses it, and it picks up on wake. A reboot
+stops it, and it comes back as interrupted - Grove never restarts anything on its own.
+
+A background session keeps the environment it was dispatched with for good, and an app opened from Finder has
+almost none (`PATH=/usr/bin:/bin:/usr/sbin:/sbin`: no node, no pnpm, no gh). So every `claude` Grove runs for this
+gets your login shell's environment, read once per app run.
+
+Since Claude Code 2.1.281, a folder has to have passed the CLI's trust prompt once before anything can be sent to the
+background there, and a combo only ever opened from VS Code has not. The first time, **Continue in Terminal** runs
+the same command in Terminal, where the prompt can be answered. Every later hand-over there works directly. Grove
+never writes that trust itself.
+
+Grove only ever calls Claude Code's own commands for all of this: `claude agents --json --all`,
+`claude --resume <id> --bg -- <prompt>`, `claude --bg --name=<name> -- <prompt>`, `claude attach <id>` in Terminal
+and `claude stop <id>`. Never `claude rm`, never `claude daemon`, and never a permission flag - a background session
+that stops on a permission prompt shows up under **Needs you**, and attach is where it gets answered.
+
 ### What is running inside a session
 
 A session grinding away alone and a session with five agents fanned out look the same from the outside. Rows show
