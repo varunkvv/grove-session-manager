@@ -73,6 +73,17 @@ describe("what a session offers, by who holds it", () => {
     });
   });
 
+  it("cut off mid-turn: picking it up in the background leads", () => {
+    const f = facts({ row: { interrupted: { why: "gone", at: 1 } } });
+    expect(ids(f).slice(0, 4)).toEqual(["continue-bg", "combo-land", "folder-land", "terminal"]);
+    // still refused while a panel has it open
+    const open = facts({
+      row: { interrupted: { why: "gone", at: 1 } },
+      holder: { kind: "interactive", entrypoint: "claude-vscode" },
+    });
+    expect(sessionActionList(open)[0]).toMatchObject({ id: "continue-bg", enabled: false });
+  });
+
   it("a session whose folder is gone has nowhere to continue from", () => {
     expect(action(facts({ folderExists: false }), "continue-bg")).toMatchObject({
       enabled: false,

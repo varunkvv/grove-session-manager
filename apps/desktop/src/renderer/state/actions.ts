@@ -1,4 +1,5 @@
 import type { SessionActionId, SessionKey } from "../../shared/ipc.ts";
+import { continuePrompt } from "../logic/background.ts";
 import { agentIdOf, sessionKeyOf, splitQuery } from "../logic/rows.ts";
 import { useStore } from "./store.ts";
 
@@ -116,9 +117,6 @@ export function closeInspector(): void {
   focusSearch(false);
 }
 
-/** what a background session is asked to do when it picks a conversation back up */
-export const CONTINUE_PROMPT = "continue where you left off";
-
 export async function runAction(key: SessionKey, action: SessionActionId): Promise<void> {
   state().set({ menu: null });
   if (action === "inspect") {
@@ -128,8 +126,13 @@ export async function runAction(key: SessionKey, action: SessionActionId): Promi
   }
   // nothing is sent before the person has seen the prompt and pressed the button
   if (action === "continue-bg") {
+    const row = state().sessions.find((r) => r.key === key);
     state().set({
-      dialog: { kind: "background", target: { kind: "continue", key }, prompt: CONTINUE_PROMPT },
+      dialog: {
+        kind: "background",
+        target: { kind: "continue", key },
+        prompt: continuePrompt(row),
+      },
     });
     return;
   }
@@ -175,8 +178,9 @@ export async function activate(key: SessionKey): Promise<void> {
   const row = state().sessions.find((r) => r.key === key);
   if (!row) return;
   state().set({ activeKey: key });
-  // held by Claude Code's supervisor: the editor would be refused, so the offers decide
-  if (row.comboName && row.comboRelation === "root" && !row.background?.held) {
+  // held by Claude Code's supervisor, the editor would be refused. cut off mid-turn, picking it
+  // up in the background is likelier than opening it. either way the offers decide.
+  if (row.comboName && row.comboRelation === "root" && !row.background?.held && !row.interrupted) {
     return openCombo(row.comboName, key);
   }
   return openMenu(key);
@@ -186,11 +190,12 @@ export async function activate(key: SessionKey): Promise<void> {
 export async function activateDefault(key: SessionKey): Promise<void> {
   const row = state().sessions.find((r) => r.key === key);
   if (!row) return;
-  if (row.comboName && row.comboRelation === "root" && !row.background?.held) {
+  if (row.comboName && row.comboRelation === "root" && !row.background?.held && !row.interrupted) {
     return openCombo(row.comboName, key);
   }
   const first = (await api().sessionActions(key)).find((a) => a.enabled);
-  // an offer that interrupts something is never run without asking
+  // an offer that interrupts something is never run without asking. one that asks for a prompt
+  // opens its dialog: runAction does that.
   if (first?.confirm) return state().set({ dialog: { kind: "confirm", key, action: first } });
   if (first) await runAction(key, first.id);
 }

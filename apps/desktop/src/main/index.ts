@@ -144,6 +144,7 @@ async function start(): Promise<void> {
       n.show();
     },
     onBackgroundMoved: () => void background.read(),
+    onInterrupted: (interrupted) => sessions.setInterrupted(interrupted),
   });
 
   // a background session keeps the environment it was dispatched with. Finder's is no good.

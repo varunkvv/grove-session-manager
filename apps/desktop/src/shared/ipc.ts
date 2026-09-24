@@ -65,6 +65,11 @@ export interface SessionRow {
   archived?: boolean;
   /** Claude Code's supervisor knows it: running in the background now, or once and not removed */
   background?: BackgroundView;
+  /**
+   * it stopped mid-turn without finishing: its process went away while it was running (a window
+   * closed on it, a crash, a reboot), or the supervisor says its background run failed
+   */
+  interrupted?: { why: "gone" | "failed"; at?: number };
 }
 
 /**

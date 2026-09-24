@@ -105,7 +105,12 @@ function heldActions(f: ActionFacts): SessionAction[] {
 
 export function sessionActionList(f: ActionFacts): SessionAction[] {
   const held = daemonHeld(f);
-  const actions: SessionAction[] = held ? heldActions(f) : [...landActions(f), continueAction(f)];
+  // a session that lost its process mid-turn: picking it back up is the likely next step
+  const actions: SessionAction[] = held
+    ? heldActions(f)
+    : f.row.interrupted
+      ? [continueAction(f), ...landActions(f)]
+      : [...landActions(f), continueAction(f)];
   actions.push({
     id: "copy-command",
     label: "Copy resume command",

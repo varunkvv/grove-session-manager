@@ -69,6 +69,19 @@ export function backgroundView(e: BackgroundEntry): BackgroundView {
   };
 }
 
+/**
+ * a session the supervisor holds is running, and one it stopped was stopped on purpose - neither
+ * reads as interrupted, whatever grove saw of its process. a background run that failed does.
+ */
+export function interruptedView(
+  mark: { at: number } | undefined,
+  bg: BackgroundEntry | undefined,
+): SessionRow["interrupted"] {
+  if (bg?.pid !== undefined || bg?.state === "stopped") return undefined;
+  if (bg?.state === "failed") return { why: "failed", ...(mark ? { at: mark.at } : {}) };
+  return mark ? { why: "gone", at: mark.at } : undefined;
+}
+
 function toRow(
   record: SessionRecord & { comboName?: string },
   labels: ReadonlyMap<string, string>,
@@ -76,6 +89,7 @@ function toRow(
   agents: ReadonlyMap<SessionKey, AgentSnapshot>,
   archived: ReadonlySet<string>,
   background: ReadonlyMap<string, BackgroundEntry>,
+  interrupted: ReadonlyMap<string, { at: number }>,
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -110,6 +124,8 @@ function toRow(
   if (status) row.live = status;
   const bg = background.get(record.sessionId);
   if (bg) row.background = backgroundView(bg);
+  const cut = interruptedView(interrupted.get(record.sessionId), bg);
+  if (cut) row.interrupted = cut;
   const found = agents.get(record.path);
   if (found && found.agents.length > 0) row.agents = found.agents;
   return row;
@@ -130,6 +146,8 @@ export class SessionService {
   private archived: ReadonlySet<string> = new Set();
   /** what the supervisor said last, by session id */
   private background: ReadonlyMap<string, BackgroundEntry> = new Map();
+  /** sessions whose process went away mid-turn, by session id */
+  private interrupted: ReadonlyMap<string, { at: number }> = new Map();
   private runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map();
   /** sessions with a process still running, busy or idle, whether or not a hook reports them */
   private alive: ReadonlySet<string> = new Set();
@@ -250,6 +268,12 @@ export class SessionService {
   /** a real answer from `claude agents --json`. an unknown one never gets here. */
   setBackground(entries: ReadonlyMap<string, BackgroundEntry>): void {
     this.background = new Map(entries);
+    this.rebuild();
+  }
+
+  /** the live service noticed a process go away mid-turn, or a session come back */
+  setInterrupted(interrupted: ReadonlyMap<string, { at: number }>): void {
+    this.interrupted = new Map(interrupted);
     this.rebuild();
   }
 
@@ -464,7 +488,7 @@ export class SessionService {
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
     const next = views.map((v) =>
-      toRow(v, labels, this.live, this.agents, this.archived, this.background),
+      toRow(v, labels, this.live, this.agents, this.archived, this.background, this.interrupted),
     );
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;

@@ -191,3 +191,45 @@ test("a new background session starts in the combo folder, named, with the promp
   expect(call?.argv).toEqual(["--bg", "--name=nightly tidy", "--", "tidy the logs folder"]);
   expect(call?.cwd).toBe(root);
 });
+
+test("a session cut off mid-turn says so quietly, and leads with picking it back up", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const queue = makePlainDir(fx, "queue");
+  writeSession(fx, { cwd: queue, sessionId: SID.free, title: "Cut off", ageMs: 60_000 });
+  // what the app noticed before it was last closed: the process went away while it ran
+  mkdirSync(path.join(fx.root, ".grove"), { recursive: true });
+  writeFileSync(
+    path.join(fx.root, ".grove", "interrupted.json"),
+    JSON.stringify({ [SID.free]: { at: Date.now() - 3_600_000 } }),
+  );
+  const fake = writeFakeClaude(path.join(fx.dir, "bin"), [
+    { pid: 1, kind: "interactive", sessionId: SID.panel, status: "idle", cwd: "/elsewhere" },
+  ]);
+  app = await launchApp(fx, { GROVE_CLAUDE_BIN: fake.bin });
+  const { page } = app;
+
+  const row = page.getByTestId("session-row").filter({ hasText: "Cut off" });
+  await expect(row.getByTestId("row-interrupted")).toHaveText("Interrupted");
+  // quiet: not the inbox
+  await expect(page.getByTestId("needs-you-header")).toHaveCount(0);
+  await row.click();
+  await expect(page.getByTestId("session-menu").getByRole("menuitem").first()).toHaveAttribute(
+    "data-testid",
+    "action-continue-bg",
+  );
+  await page.getByTestId("action-continue-bg").click();
+  const dialog = page.getByTestId("background-dialog");
+  await expect(dialog.getByTestId("bg-prompt")).toHaveValue(
+    "continue where you left off - you were interrupted",
+  );
+  await dialog.getByTestId("bg-run").click();
+  await expect(
+    page.getByTestId("toast").filter({ hasText: "continuing in background" }),
+  ).toBeVisible();
+  expect(dispatches(fake).map((c) => c.argv)).toEqual([
+    ["--resume", SID.free, "--bg", "--", "continue where you left off - you were interrupted"],
+  ]);
+  // handed over: running in the background, not interrupted any more
+  await expect(row.getByTestId("row-interrupted")).toHaveCount(0);
+  await expect(row.getByTestId("row-background")).toHaveAttribute("data-held", "true");
+});

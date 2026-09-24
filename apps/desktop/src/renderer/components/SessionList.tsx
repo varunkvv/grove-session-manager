@@ -8,7 +8,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, type ReactNode, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
-import { backgroundTooltip } from "../logic/background.ts";
+import { backgroundTooltip, interruptedTooltip } from "../logic/background.ts";
 import { agentName } from "../logic/inspector.ts";
 import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
@@ -160,6 +160,17 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           {row.archived && (
             <span data-testid="row-archived" className="shrink-0 text-fg-4">
               Archived
+            </span>
+          )}
+          {/* quiet on purpose: not the inbox, not a notification. the action menu leads with the fix */}
+          {row.interrupted && (
+            <span
+              data-testid="row-interrupted"
+              data-why={row.interrupted.why}
+              className="shrink-0 text-fg-3"
+              title={interruptedTooltip(row.interrupted, p.now)}
+            >
+              Interrupted
             </span>
           )}
           {/* quiet like the agents chip: Claude Code's supervisor runs it, whatever it is doing */}

@@ -22,6 +22,13 @@ import {
   writeFileAtomic,
 } from "@grove/core";
 import { log } from "../log.ts";
+import {
+  expireInterruptions,
+  INTERRUPTED_FILE,
+  type Interruption,
+  parseInterruptions,
+  vanished,
+} from "./interrupted.ts";
 
 const POLL_MS = 10_000;
 const PERSIST_DEBOUNCE_MS = 1000;
@@ -51,13 +58,22 @@ export interface LiveServiceOptions {
    * what it is doing - only `claude agents --json` can - so this is when to ask it.
    */
   onBackgroundMoved?: () => void;
+  /** sessions whose process went away mid-turn, and when grove noticed. kept across restarts. */
+  onInterrupted?: (interrupted: ReadonlyMap<string, Interruption>) => void;
   now?: () => number;
   /** the user settings watch's debounce. only a test passes anything else. */
   hookDebounceMs?: number;
 }
 
-/** drops what is too old to be true any more. pure, so it is testable without a clock. */
-export function expireStatuses(statuses: Map<string, LiveStatus>, now: number): boolean {
+/**
+ * drops what is too old to be true any more. pure, so it is testable without a clock. a running
+ * session gone quiet this long has most likely lost its process: `onStale` hears about each one.
+ */
+export function expireStatuses(
+  statuses: Map<string, LiveStatus>,
+  now: number,
+  onStale?: (sessionId: string) => void,
+): boolean {
   let changed = false;
   for (const [id, s] of statuses) {
     // a registry entry is a live process, not a guess with a shelf life. it goes when the pid does.
@@ -68,6 +84,7 @@ export function expireStatuses(statuses: Map<string, LiveStatus>, now: number): 
         ? now - s.lastEventAt > RUNNING_STALE_MS
         : now - s.at > WAITING_EXPIRY_MS;
     if (stale) {
+      if (s.state === "running") onStale?.(id);
       statuses.delete(id);
       changed = true;
     }
@@ -94,6 +111,9 @@ export class LiveService {
   private backgroundKey = "";
   /** the first word from the supervisor lands without a notification, like events from before start */
   private backgroundRead = false;
+  /** sessions last seen running whose process went away. a quiet marker, never the inbox. */
+  private interrupted = new Map<string, Interruption>();
+  private readonly interruptedFile: string;
   private watcher: FSWatcher | null = null;
   private registryWatcher: FSWatcher | null = null;
   private registryRetry: NodeJS.Timeout | null = null;
@@ -110,6 +130,7 @@ export class LiveService {
     this.opts = opts;
     this.eventsDir = statusEventsDir(opts.stateDir);
     this.stateFile = path.join(opts.stateDir, "live-status.json");
+    this.interruptedFile = path.join(opts.stateDir, INTERRUPTED_FILE);
   }
 
   private now(): number {
@@ -126,13 +147,19 @@ export class LiveService {
         }
       }
     }
-    expireStatuses(this.statuses, this.now());
+    const kept = await readJsonGuarded(this.interruptedFile);
+    if (kept.status === "ok") this.interrupted = parseInterruptions(kept.value);
+    expireInterruptions(this.interrupted, this.now());
+    // a session that was running when the app last looked, and has been quiet since: after a
+    // reboot this is the only one of the three signals that is there
+    expireStatuses(this.statuses, this.now(), (id) => this.interrupt([id]));
     await mkdir(this.eventsDir, { recursive: true }).catch(() => {});
     // events that arrived while the app was closed: they update state but do not notify
     await this.drain(false);
     // before the first paint, so a session that died while the app was closed never shows as running
     await this.syncRegistry();
     this.opts.onChange(this.statuses, this.runs, this.alive);
+    this.opts.onInterrupted?.(this.interrupted);
     try {
       this.watcher = watch(this.eventsDir, () => void this.drain(true));
       this.watcher.on("error", (e) => log.warn("status watch:", e));
@@ -142,7 +169,10 @@ export class LiveService {
     this.watchRegistry();
     // FSEvents can coalesce or drop. the poll also ages out stale states.
     this.poll = setInterval(() => {
-      if (expireStatuses(this.statuses, this.now())) this.changed();
+      const stale: string[] = [];
+      const expired = expireStatuses(this.statuses, this.now(), (id) => stale.push(id));
+      this.interrupt(stale);
+      if (expireInterruptions(this.interrupted, this.now()) || expired) this.changed();
       void this.drain(true);
       void this.syncRegistry();
     }, POLL_MS);
@@ -158,7 +188,14 @@ export class LiveService {
     this.alive = alive;
     // an empty read clears nothing, same as applyRegistry: it means no registry, not no sessions
     if (entries.length > 0) this.holders = new Map(entries.map((e) => [e.sessionId, e]));
-    if (applyRegistry(this.statuses, entries, this.now()) || moved) this.changed();
+    const before = new Map(this.statuses);
+    const applied = applyRegistry(this.statuses, entries, this.now());
+    // running a moment ago and no process now: it did not end its turn, it lost its process
+    const gone = vanished(before, this.statuses, alive);
+    const back = [...alive].filter((id) => this.interrupted.has(id));
+    this.interrupt(gone);
+    this.resume(back);
+    if (applied || moved || gone.length > 0 || back.length > 0) this.changed();
     const background = entries
       .filter((e) => e.kind === "bg")
       .map((e) => `${e.sessionId}:${e.status}`)
@@ -168,6 +205,28 @@ export class LiveService {
       this.backgroundKey = background;
       this.opts.onBackgroundMoved?.();
     }
+  }
+
+  /** the sessions whose process went away mid-turn */
+  interruptions(): ReadonlyMap<string, Interruption> {
+    return this.interrupted;
+  }
+
+  private interrupt(ids: readonly string[]): void {
+    const at = this.now();
+    for (const id of ids) this.interrupted.set(id, { at });
+  }
+
+  /** alive again: an event from it, a process, or grove handing it to the supervisor */
+  private resume(ids: readonly string[]): boolean {
+    let changed = false;
+    for (const id of ids) changed = this.interrupted.delete(id) || changed;
+    return changed;
+  }
+
+  /** grove just handed it to Claude Code's supervisor: not interrupted any more */
+  clearInterrupted(sessionId: string): void {
+    if (this.resume([sessionId])) this.changed();
   }
 
   /**
@@ -293,7 +352,11 @@ export class LiveService {
     if (events.length === 0) return;
     const before = new Map(this.statuses);
     for (const ev of events) {
-      const next = reduceStatus(this.statuses.get(ev.sessionId), ev);
+      const prev = this.statuses.get(ev.sessionId);
+      // the session ended mid-turn: a window closed on it. anything else it says means it lives.
+      if (ev.event === "SessionEnd" && prev?.state === "running") this.interrupt([ev.sessionId]);
+      else if (ev.event !== "SessionEnd") this.resume([ev.sessionId]);
+      const next = reduceStatus(prev, ev);
       if (next) this.statuses.set(ev.sessionId, next);
       else this.statuses.delete(ev.sessionId);
       const runs = reduceAgentRuns(this.runs.get(ev.sessionId), ev);
@@ -313,6 +376,13 @@ export class LiveService {
     }
   }
 
+  private persistInterrupted(): Promise<void> {
+    return writeFileAtomic(
+      this.interruptedFile,
+      JSON.stringify(Object.fromEntries(this.interrupted)),
+    ).catch((e) => log.warn("interrupted write:", e));
+  }
+
   /** only what a restart should believe. a registry state is re-read from the live processes. */
   private persistable(): string {
     return JSON.stringify(Object.fromEntries([...this.statuses].filter(([, s]) => !s.source)));
@@ -320,12 +390,14 @@ export class LiveService {
 
   private changed(): void {
     this.opts.onChange(this.statuses, this.runs, this.alive);
+    this.opts.onInterrupted?.(this.interrupted);
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
       void writeFileAtomic(this.stateFile, this.persistable()).catch((e) =>
         log.warn("status write:", e),
       );
+      void this.persistInterrupted();
     }, PERSIST_DEBOUNCE_MS);
     this.persistTimer.unref?.();
   }
@@ -342,6 +414,7 @@ export class LiveService {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
       void writeFileAtomic(this.stateFile, this.persistable()).catch(() => {});
+      void this.persistInterrupted();
     }
   }
 }

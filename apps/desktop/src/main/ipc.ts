@@ -456,6 +456,7 @@ function buildHandlers(deps: Deps): Handlers {
         if (!res.ok) {
           throw res.notTrusted ? notTrusted(cwd) : claudeFailure("claude --bg failed", res.out);
         }
+        deps.live.clearInterrupted(row.sessionId);
         return {
           ...(res.id ? { id: res.id } : {}),
           message: res.id ? `continuing in background · ${res.id}` : "continuing in background",
