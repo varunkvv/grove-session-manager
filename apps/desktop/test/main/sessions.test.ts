@@ -199,3 +199,41 @@ describe("an agent still writing after its session went quiet", () => {
     expect(hits.map((h) => h.agent)).toEqual(["a2"]);
   });
 });
+
+describe("a session Claude Code runs in the background", () => {
+  it("carries the supervisor's word on its row, without the pid", async () => {
+    const service = machine();
+    await service.loadCached([]);
+    await service.refresh();
+    expect(service.list()[0]?.background).toBeUndefined();
+    service.setBackground(
+      new Map([
+        [
+          SID,
+          {
+            sessionId: SID,
+            id: "d7b6bcc2",
+            pid: 4112,
+            state: "blocked",
+            waitingFor: "permission prompt",
+          },
+        ],
+      ]),
+    );
+    expect(service.list()[0]?.background).toEqual({
+      id: "d7b6bcc2",
+      held: true,
+      state: "blocked",
+      waitingFor: "permission prompt",
+    });
+    // stopped: the row stays known to the supervisor, with nothing holding it
+    service.setBackground(new Map([[SID, { sessionId: SID, id: "d7b6bcc2", state: "stopped" }]]));
+    expect(service.list()[0]?.background).toEqual({
+      id: "d7b6bcc2",
+      held: false,
+      state: "stopped",
+    });
+    service.setBackground(new Map());
+    expect(service.list()[0]?.background).toBeUndefined();
+  });
+});

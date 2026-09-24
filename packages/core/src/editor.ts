@@ -52,14 +52,22 @@ export function resolveEditor(
   };
 }
 
-function launchEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  // the editor's launcher script branches on these. inherited from Electron they break it.
+/**
+ * an environment fit to hand to another program. the editor's launcher script branches on these,
+ * and inherited from Electron they break it. a claude started from the app must not boot as node
+ * either.
+ */
+export function stripLaunchEnv(from: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...from };
   for (const key of Object.keys(env)) {
     if (key === "ELECTRON_RUN_AS_NODE" || key === "NODE_OPTIONS" || key.startsWith("VSCODE_"))
       delete env[key];
   }
   return env;
+}
+
+function launchEnv(): NodeJS.ProcessEnv {
+  return stripLaunchEnv(process.env);
 }
 
 /** fire and forget, but a missing binary comes back as a value instead of an unhandled error */

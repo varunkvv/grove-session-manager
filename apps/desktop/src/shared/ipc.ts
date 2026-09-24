@@ -23,6 +23,18 @@ export type Outcome<T = void> =
 /** the transcript path. unique by construction - titles and even session ids are not. */
 export type SessionKey = string;
 
+/** what Claude Code's supervisor says about a session it runs in the background (`claude --bg`) */
+export interface BackgroundView {
+  /** the short id `claude attach` and `claude stop` take */
+  id?: string;
+  /** `working` | `blocked` | `done` | `failed` | `stopped` */
+  state?: string;
+  /** the supervisor holds a live worker for it, so a resume anywhere else is refused */
+  held: boolean;
+  /** what a blocked one waits on: `permission prompt`, `input needed`, ... */
+  waitingFor?: string;
+}
+
 export interface SessionRow {
   key: SessionKey;
   sessionId: string;
@@ -51,6 +63,8 @@ export interface SessionRow {
   agents?: SessionAgent[];
   /** put away on purpose: out of the list and out of search unless it is asking for someone */
   archived?: boolean;
+  /** Claude Code's supervisor knows it: running in the background now, or once and not removed */
+  background?: BackgroundView;
 }
 
 /**

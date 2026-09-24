@@ -3,6 +3,7 @@ import {
   type AgentRun,
   type AgentSnapshot,
   assignCombos,
+  type BackgroundEntry,
   type Combo,
   createSessionIndex,
   type Disposable,
@@ -19,7 +20,13 @@ import {
   watchProjects,
 } from "@grove/core";
 import { rowHaystack } from "../../shared/haystack.ts";
-import type { IndexStatus, SearchHit, SessionKey, SessionRow } from "../../shared/ipc.ts";
+import type {
+  BackgroundView,
+  IndexStatus,
+  SearchHit,
+  SessionKey,
+  SessionRow,
+} from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { diffRows, PatchCoalescer } from "../patchCoalescer.ts";
 
@@ -52,12 +59,23 @@ function labelsByProjectDir(records: readonly SessionRecord[]): Map<string, stri
   return labels;
 }
 
+/** only what a row shows and its actions need. the pid itself never leaves main. */
+export function backgroundView(e: BackgroundEntry): BackgroundView {
+  return {
+    held: e.pid !== undefined,
+    ...(e.id ? { id: e.id } : {}),
+    ...(e.state ? { state: e.state } : {}),
+    ...(e.waitingFor ? { waitingFor: e.waitingFor } : {}),
+  };
+}
+
 function toRow(
   record: SessionRecord & { comboName?: string },
   labels: ReadonlyMap<string, string>,
   live: ReadonlyMap<string, LiveStatus>,
   agents: ReadonlyMap<SessionKey, AgentSnapshot>,
   archived: ReadonlySet<string>,
+  background: ReadonlyMap<string, BackgroundEntry>,
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -90,6 +108,8 @@ function toRow(
   if (archived.has(record.sessionId)) row.archived = true;
   const status = live.get(record.sessionId);
   if (status) row.live = status;
+  const bg = background.get(record.sessionId);
+  if (bg) row.background = backgroundView(bg);
   const found = agents.get(record.path);
   if (found && found.agents.length > 0) row.agents = found.agents;
   return row;
@@ -108,6 +128,8 @@ export class SessionService {
   private combos: Combo[] = [];
   private live: ReadonlyMap<string, LiveStatus> = new Map();
   private archived: ReadonlySet<string> = new Set();
+  /** what the supervisor said last, by session id */
+  private background: ReadonlyMap<string, BackgroundEntry> = new Map();
   private runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map();
   /** sessions with a process still running, busy or idle, whether or not a hook reports them */
   private alive: ReadonlySet<string> = new Set();
@@ -222,6 +244,12 @@ export class SessionService {
   /** somebody archived or un-archived something, or hand-edited archived.json */
   setArchived(ids: ReadonlySet<string>): void {
     this.archived = new Set(ids);
+    this.rebuild();
+  }
+
+  /** a real answer from `claude agents --json`. an unknown one never gets here. */
+  setBackground(entries: ReadonlyMap<string, BackgroundEntry>): void {
+    this.background = new Map(entries);
     this.rebuild();
   }
 
@@ -435,7 +463,9 @@ export class SessionService {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
-    const next = views.map((v) => toRow(v, labels, this.live, this.agents, this.archived));
+    const next = views.map((v) =>
+      toRow(v, labels, this.live, this.agents, this.archived, this.background),
+    );
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;
     this.rows = new Map(next.map((row) => [row.key, row]));

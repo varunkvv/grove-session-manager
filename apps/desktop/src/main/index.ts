@@ -6,6 +6,7 @@ import {
   needsYou,
   type Settings,
   sessionsRegistryDir,
+  stripLaunchEnv,
 } from "@grove/core";
 import type { BrowserWindow } from "electron";
 import * as electron from "electron";
@@ -21,6 +22,7 @@ import { Pusher } from "./push.ts";
 import { AgentInspector } from "./services/agentInspector.ts";
 import { AgentSummaries } from "./services/agentSummaries.ts";
 import { ArchiveService } from "./services/archive.ts";
+import { BackgroundService } from "./services/background.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
@@ -124,16 +126,31 @@ async function start(): Promise<void> {
         body,
         silent: false,
       });
+      const toApp = () => {
+        win?.show();
+        win?.focus();
+      };
       n.on("click", () => {
+        // the supervisor holds it: an editor's resume would be refused. the app has the way in.
+        if (sessions.byId(sessionId)[0]?.background?.held) return toApp();
         // the folder may be gone by now. then the app is the next best place to land.
         void handlers
           ?.runSessionAction(row.key, row.comboName ? "combo-land" : "folder-land")
-          .catch(() => {
-            win?.show();
-            win?.focus();
-          });
+          .catch(toApp);
       });
       n.show();
+    },
+    onBackgroundMoved: () => void background.read(),
+  });
+
+  const background = new BackgroundService({
+    claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
+    env: async () => stripLaunchEnv(process.env),
+    // a test root never runs the real claude, only a stub it names
+    enabled: () => !appEnv.customRoot || appEnv.claudeBinOverride !== undefined,
+    onEntries: (entries) => {
+      sessions.setBackground(entries);
+      live.applyBackground(entries);
     },
   });
 
@@ -224,7 +241,11 @@ async function start(): Promise<void> {
     combos.watchFile();
     void combos.reconcileAll();
     void editor.status(true).then((status) => pusher.send("editor:status", status));
-    void live.start().catch((e) => log.warn("session status:", e));
+    void live
+      .start()
+      .catch((e) => log.warn("session status:", e))
+      // stopped and finished background sessions have no process, so the registry never says
+      .then(() => background.read());
     // combos made before status tracking existed get their hooks without anyone opening them
     void combos.syncStatusHooks();
     if (settings.trackAllSessions) void live.trackAllSessions(true).catch((e) => log.warn(e));
@@ -235,6 +256,7 @@ async function start(): Promise<void> {
     // catches a settings file a session put back while the app was closed. the watch has the rest.
     void combos.syncStatusHooks();
     void live.syncUserHooks();
+    void background.read();
   });
   // nothing is summarised while the window is hidden, so coming back has to ask for it
   const wake = () => summaries?.wake();

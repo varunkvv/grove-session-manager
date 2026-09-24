@@ -3,12 +3,15 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
   type AgentRun,
+  applyBackground,
   applyRegistry,
+  type BackgroundEntry,
   type Disposable,
   drainStatusEvents,
   isObject,
   type LiveStatus,
   needsYou,
+  type RegistryEntry,
   readJsonGuarded,
   readRegistry,
   reduceAgentRuns,
@@ -43,6 +46,11 @@ export interface LiveServiceOptions {
   ) => void;
   /** a session just started needing someone */
   onNeedsYou: (sessionId: string, status: LiveStatus) => void;
+  /**
+   * a background session's process came, went, or changed its status. the registry cannot say
+   * what it is doing - only `claude agents --json` can - so this is when to ask it.
+   */
+  onBackgroundMoved?: () => void;
   now?: () => number;
   /** the user settings watch's debounce. only a test passes anything else. */
   hookDebounceMs?: number;
@@ -53,7 +61,8 @@ export function expireStatuses(statuses: Map<string, LiveStatus>, now: number): 
   let changed = false;
   for (const [id, s] of statuses) {
     // a registry entry is a live process, not a guess with a shelf life. it goes when the pid does.
-    if (s.source === "registry") continue;
+    // the supervisor's word goes when the supervisor says otherwise.
+    if (s.source) continue;
     const stale =
       s.state === "running"
         ? now - s.lastEventAt > RUNNING_STALE_MS
@@ -79,6 +88,12 @@ export class LiveService {
   private runs = new Map<string, Record<string, AgentRun>>();
   /** session ids with a live process, from the last registry read */
   private alive = new Set<string>();
+  /** the last registry read, by session id: who holds each live session */
+  private holders = new Map<string, RegistryEntry>();
+  /** background processes and their statuses, as of the last registry read */
+  private backgroundKey = "";
+  /** the first word from the supervisor lands without a notification, like events from before start */
+  private backgroundRead = false;
   private watcher: FSWatcher | null = null;
   private registryWatcher: FSWatcher | null = null;
   private registryRetry: NodeJS.Timeout | null = null;
@@ -141,7 +156,39 @@ export class LiveService {
     const alive = new Set(entries.map((e) => e.sessionId));
     const moved = alive.size !== this.alive.size || [...alive].some((id) => !this.alive.has(id));
     this.alive = alive;
+    // an empty read clears nothing, same as applyRegistry: it means no registry, not no sessions
+    if (entries.length > 0) this.holders = new Map(entries.map((e) => [e.sessionId, e]));
     if (applyRegistry(this.statuses, entries, this.now()) || moved) this.changed();
+    const background = entries
+      .filter((e) => e.kind === "bg")
+      .map((e) => `${e.sessionId}:${e.status}`)
+      .sort()
+      .join(",");
+    if (background !== this.backgroundKey) {
+      this.backgroundKey = background;
+      this.opts.onBackgroundMoved?.();
+    }
+  }
+
+  /**
+   * the live process holding a session, if any: an `interactive` one is a panel or a terminal,
+   * a `bg` one is Claude Code's supervisor. from the last registry read, so a moment old.
+   */
+  holder(sessionId: string): RegistryEntry | undefined {
+    return this.holders.get(sessionId);
+  }
+
+  /**
+   * what `claude agents --json` said, by session id. only a real answer comes here - an unknown
+   * one changes nothing. see applyBackground for who wins.
+   */
+  applyBackground(entries: ReadonlyMap<string, BackgroundEntry>): void {
+    const notify = this.backgroundRead;
+    this.backgroundRead = true;
+    const before = new Map(this.statuses);
+    if (!applyBackground(this.statuses, entries, this.now())) return;
+    this.changed();
+    if (notify) this.notifyEntered(before);
   }
 
   /** never creates the directory: nothing of ours goes inside Claude Code's config dir. */
@@ -255,7 +302,10 @@ export class LiveService {
     }
     expireStatuses(this.statuses, this.now());
     this.changed();
-    if (!notify) return;
+    if (notify) this.notifyEntered(before);
+  }
+
+  private notifyEntered(before: ReadonlyMap<string, LiveStatus>): void {
     for (const [id, s] of this.statuses) {
       const was = before.get(id);
       const entered = needsYou(s) && (!needsYou(was) || was?.state !== s.state || was.at !== s.at);
