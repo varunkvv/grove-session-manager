@@ -17,6 +17,9 @@ const ICONS = {
   archive: "archive",
   unarchive: "archive",
   inspect: "lanes",
+  attach: "terminal",
+  "stop-land": "external",
+  stop: "stop",
 } as const;
 
 const USAGE_COLUMNS = ["in", "out", "cache read", "cache write"] as const;
@@ -85,7 +88,13 @@ export function SessionActionMenu() {
     }
     set({ menu: { ...menu, index: i } });
   };
-  const run = (a: SessionAction | undefined) => a?.enabled && void runAction(menu.key, a.id);
+  const run = (a: SessionAction | undefined) => {
+    if (!a?.enabled) return;
+    // it interrupts something: asked first, in a dialog of its own
+    if (a.confirm)
+      return set({ menu: null, dialog: { kind: "confirm", key: menu.key, action: a } });
+    void runAction(menu.key, a.id);
+  };
 
   return (
     <>

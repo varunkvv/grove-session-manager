@@ -19,7 +19,9 @@ export type DialogState =
   | { kind: "combo"; editing?: string }
   | { kind: "teardown"; name: string }
   | { kind: "delete"; name: string }
-  | { kind: "settings" };
+  | { kind: "settings" }
+  /** an action that interrupts something, asked before it runs */
+  | { kind: "confirm"; key: SessionKey; action: SessionAction };
 
 export interface MenuState {
   key: SessionKey;

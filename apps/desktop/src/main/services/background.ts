@@ -8,6 +8,18 @@ const READ_TIMEOUT_MS = 5000;
 
 /** `--all` keeps a finished or stopped session in the list until someone `claude rm`s it */
 export const AGENTS_ARGS = ["agents", "--json", "--all"] as const;
+/** stopping waits for the worker to wind down. give it room, but not forever. */
+const STOP_TIMEOUT_MS = 30_000;
+/** after a stop, how long to wait for the supervisor to say the worker is gone */
+export const RELEASE_TIMEOUT_MS = 10_000;
+
+/**
+ * `claude stop`, never `claude rm`: rm deletes the row and reasons about worktrees, and a
+ * combo's working copies are linked worktrees. stop keeps the conversation.
+ */
+export function stopArgs(shortId: string): string[] {
+  return ["stop", shortId];
+}
 
 export interface ClaudeRun {
   /** null when it never ran, or was killed at the timeout */
@@ -78,6 +90,40 @@ export class BackgroundService {
     return this.entries.get(sessionId);
   }
 
+  /** one claude command, with the binary and environment every call of this feature gets */
+  async exec(args: readonly string[], o: { cwd: string; timeoutMs: number }): Promise<ClaudeRun> {
+    const [bin, env] = await Promise.all([this.opts.claudeBin(), this.opts.env()]);
+    return this.run(bin, args, { cwd: o.cwd, env, timeoutMs: o.timeoutMs });
+  }
+
+  /** `claude stop <id>`, then a fresh read so the row stops offering what no longer applies */
+  async stop(shortId: string): Promise<ClaudeRun> {
+    const out = await this.exec(stopArgs(shortId), {
+      cwd: os.tmpdir(),
+      timeoutMs: STOP_TIMEOUT_MS,
+    });
+    await this.read();
+    return out;
+  }
+
+  /**
+   * until the supervisor says it holds no worker for the session, read after read. a resume in
+   * the editor before that is refused. false when it still holds one at the deadline.
+   */
+  async waitReleased(
+    sessionId: string,
+    timeoutMs = RELEASE_TIMEOUT_MS,
+    everyMs = 400,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const entries = await this.read();
+      if (entries && entries.get(sessionId)?.pid === undefined) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((r) => setTimeout(r, everyMs));
+    }
+  }
+
   /**
    * one read at a time. a call during one gets the read after it, which has started since the
    * call - what a caller that just ran a command needs. null is "unknown", never "none".
@@ -90,20 +136,20 @@ export class BackgroundService {
       });
       return this.queued;
     }
-    this.reading = this.readOnce().finally(() => {
-      this.reading = null;
-    });
+    this.reading = this.readOnce()
+      .catch((e) => {
+        log.warn("claude agents --json:", e);
+        return null;
+      })
+      .finally(() => {
+        this.reading = null;
+      });
     return this.reading;
   }
 
   private async readOnce(): Promise<ReadonlyMap<string, BackgroundEntry> | null> {
     if (!this.opts.enabled()) return null;
-    const [bin, env] = await Promise.all([this.opts.claudeBin(), this.opts.env()]);
-    const out = await this.run(bin, AGENTS_ARGS, {
-      cwd: os.tmpdir(),
-      env,
-      timeoutMs: READ_TIMEOUT_MS,
-    });
+    const out = await this.exec(AGENTS_ARGS, { cwd: os.tmpdir(), timeoutMs: READ_TIMEOUT_MS });
     const list = out.code === 0 ? parseBackgroundList(out.stdout) : null;
     if (!list) {
       // once per kind of failure: a machine without claude would otherwise log on every focus

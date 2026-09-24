@@ -32,6 +32,7 @@ import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { AgentInspector } from "./services/agentInspector.ts";
 import type { ArchiveService } from "./services/archive.ts";
+import type { BackgroundService } from "./services/background.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import type { EditorService } from "./services/editor.ts";
@@ -39,11 +40,13 @@ import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
 import {
   isResumeScriptName,
+  isValidShortId,
   RESUME_SCRIPT_MAX_AGE_MS,
   resolveClaudeBin,
   resumeScriptBody,
   resumeScriptPath,
 } from "./services/resumeScript.ts";
+import { daemonHeld, sessionActionList } from "./services/sessionActions.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { keptFolderToast } from "./services/views.ts";
 
@@ -56,6 +59,8 @@ export interface Deps {
   live: LiveService;
   combos: ComboService;
   archive: ArchiveService;
+  /** Claude Code's supervisor, through its own commands */
+  background: BackgroundService;
   inspector: AgentInspector;
   /** these agents of a session are on screen: a finished one gets its line, once */
   seen?: (key: SessionKey, agentIds: string[]) => void;
@@ -150,6 +155,35 @@ function claudeBin(deps: Deps): Promise<string> {
   return resolveClaudeBin(deps.env.home, deps.env.claudeBinOverride ?? deps.settings().claudePath);
 }
 
+/** a .command file in the run dir, opened by Terminal. the body is built by the caller. */
+async function openInTerminal(deps: Deps, sessionId: string, body: string): Promise<void> {
+  const file = resumeScriptPath(deps.env.stateDir, sessionId);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, body);
+  await chmod(file, 0o755);
+  const opened = await runDetached(deps.env.openBin, [file]);
+  if (!opened.ok) throw new AppError(opened.error.code, opened.error.message);
+  void sweepResumeScripts(deps.env.stateDir);
+}
+
+/** the short id of a session the supervisor knows, checked before anything runs it */
+function shortIdOf(deps: Deps, row: SessionRow): string {
+  const id = deps.background.get(row.sessionId)?.id ?? row.background?.id;
+  if (!isValidShortId(id)) {
+    throw new AppError(
+      "no-background",
+      "Claude Code has not said which background session this is.",
+    );
+  }
+  return id;
+}
+
+/** a claude command that failed, as something a person can read */
+function claudeFailure(what: string, out: { code: number | null; stderr: string; stdout: string }) {
+  const said = (out.stderr || out.stdout).trim().split("\n").slice(-3).join(" ");
+  return new AppError("claude-failed", said ? `${what}: ${said}` : `${what} (exit ${out.code}).`);
+}
+
 function buildHandlers(deps: Deps): Handlers {
   const { sessions, combos, editor, pusher, env } = deps;
   let lastPickedDir: string | undefined;
@@ -183,72 +217,17 @@ function buildHandlers(deps: Deps): Handlers {
       ]);
     },
 
-    async sessionActions(key) {
+    async sessionActions(key): Promise<SessionAction[]> {
       const row = requireSession(deps, key);
-      const label = editor.current().label;
-      const companion = await editor.companionInstalled();
-      const folder = folderForSession(row);
-      const folderExists = await isDirectory(folder);
-      const hint = companion ? undefined : "opens without landing";
-      const actions: SessionAction[] = [];
-      if (row.comboName) {
-        actions.push({
-          id: "combo-land",
-          label: `Open ${row.comboName} and land on session`,
-          enabled: true,
-          ...(hint ? { hint } : {}),
-        });
-      }
-      actions.push({
-        id: "folder-land",
-        label: `Open folder in ${label} and land on session`,
-        enabled: folderExists,
-        ...(folderExists ? (hint ? { hint } : {}) : { hint: "the folder is gone" }),
+      const holder = deps.live.holder(row.sessionId);
+      return sessionActionList({
+        row,
+        editorLabel: editor.current().label,
+        companion: await editor.companionInstalled(),
+        folderExists: await isDirectory(folderForSession(row)),
+        needsYou: needsYou(row.live),
+        ...(holder ? { holder } : {}),
       });
-      actions.push({ id: "terminal", label: "Resume in Terminal", enabled: true });
-      actions.push({
-        id: "copy-command",
-        label: "Copy resume command",
-        keys: "\u2318\u21e7C",
-        enabled: true,
-      });
-      if (row.agents && row.agents.length > 0) {
-        actions.push({ id: "inspect", label: "Inspect agents", keys: "\u2318I", enabled: true });
-      }
-      if (needsYou(row.live)) {
-        actions.push({
-          id: "mark-seen",
-          label: "Mark as seen",
-          keys: "\u2318D",
-          enabled: true,
-          secondary: true,
-        });
-      }
-      actions.push(
-        row.archived
-          ? {
-              id: "unarchive",
-              label: "Unarchive",
-              keys: "\u2318\u21e7A",
-              enabled: true,
-              secondary: true,
-            }
-          : {
-              id: "archive",
-              label: "Archive",
-              keys: "\u2318\u21e7A",
-              enabled: true,
-              secondary: true,
-            },
-      );
-      actions.push({ id: "copy-id", label: "Copy session ID", enabled: true, secondary: true });
-      actions.push({
-        id: "reveal",
-        label: "Reveal transcript in Finder",
-        enabled: true,
-        secondary: true,
-      });
-      return actions;
     },
 
     async inspectSession(key) {
@@ -306,7 +285,9 @@ function buildHandlers(deps: Deps): Handlers {
     async runSessionAction(key, action) {
       const row = requireSession(deps, key);
       // landing on a session is looking at it
-      if (action === "combo-land" || action === "folder-land") deps.live.markSeen([row.sessionId]);
+      if (["combo-land", "folder-land", "attach", "stop-land"].includes(action)) {
+        deps.live.markSeen([row.sessionId]);
+      }
       if (!isValidSessionId(row.sessionId)) {
         throw new AppError("bad-session-id", "That session has no usable ID.");
       }
@@ -321,45 +302,83 @@ function buildHandlers(deps: Deps): Handlers {
         await archiveByKey(deps, [key], action === "archive");
         return {};
       }
+      const landFolder = async (): Promise<{ message?: string }> => {
+        if (!(await isDirectory(folder))) {
+          throw new AppError("cwd-missing", "That session's folder no longer exists.");
+        }
+        const prepared = await prepareFolderOpen(env.appRoot, folder as string, {
+          sessionId: row.sessionId,
+          source: "app",
+        });
+        if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
+        const launched = await openInEditor(folder as string, editor.current());
+        if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+        return (await editor.companionInstalled())
+          ? {}
+          : {
+              message: `${editor.current().label} opened without landing: the companion extension is missing.`,
+            };
+      };
+      const landCombo = async (): Promise<{ message?: string }> => {
+        if (!row.comboName) throw new AppError("no-combo", "That session is not in a combo.");
+        await api.openCombo(row.comboName, key);
+        return {};
+      };
+      // the supervisor holds it: the editor's resume, or a terminal's, would be refused
+      const refuseHeld = () => {
+        if (daemonHeld({ row, holder: deps.live.holder(row.sessionId) })) {
+          throw new AppError(
+            "held",
+            "Claude Code is running this session in the background. Open it in Terminal (attach), or stop it first.",
+          );
+        }
+      };
       switch (action) {
-        case "combo-land": {
-          if (!row.comboName) throw new AppError("no-combo", "That session is not in a combo.");
-          await api.openCombo(row.comboName, key);
-          return {};
-        }
-        case "folder-land": {
-          if (!(await isDirectory(folder))) {
-            throw new AppError("cwd-missing", "That session's folder no longer exists.");
-          }
-          const prepared = await prepareFolderOpen(env.appRoot, folder as string, {
-            sessionId: row.sessionId,
-            source: "app",
-          });
-          if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
-          const launched = await openInEditor(folder as string, editor.current());
-          if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
-          return (await editor.companionInstalled())
-            ? {}
-            : {
-                message: `${editor.current().label} opened without landing: the companion extension is missing.`,
-              };
-        }
+        case "combo-land":
+          refuseHeld();
+          return landCombo();
+        case "folder-land":
+          refuseHeld();
+          return landFolder();
         case "terminal": {
-          const file = resumeScriptPath(env.stateDir, row.sessionId);
-          await mkdir(path.dirname(file), { recursive: true });
-          await writeFile(
-            file,
+          refuseHeld();
+          await openInTerminal(
+            deps,
+            row.sessionId,
             resumeScriptBody({
               sessionId: row.sessionId,
               cwd: (await isDirectory(folder)) ? folder : undefined,
               claudeBin: await claudeBin(deps),
             }),
           );
-          await chmod(file, 0o755);
-          const opened = await runDetached(env.openBin, [file]);
-          if (!opened.ok) throw new AppError(opened.error.code, opened.error.message);
-          void sweepResumeScripts(env.stateDir);
           return {};
+        }
+        case "attach": {
+          await openInTerminal(
+            deps,
+            row.sessionId,
+            resumeScriptBody({
+              sessionId: row.sessionId,
+              claudeBin: await claudeBin(deps),
+              attach: shortIdOf(deps, row),
+            }),
+          );
+          return {};
+        }
+        case "stop":
+        case "stop-land": {
+          const id = shortIdOf(deps, row);
+          const out = await deps.background.stop(id);
+          if (out.code !== 0) throw claudeFailure(`claude stop ${id} failed`, out);
+          if (action === "stop") return { message: `Stopped ${id}` };
+          if (!(await deps.background.waitReleased(row.sessionId))) {
+            throw new AppError(
+              "still-held",
+              `Stopped ${id}, but Claude Code still holds it. Try again in a moment.`,
+            );
+          }
+          // not through combo-land's check: the registry can lag the supervisor by a beat
+          return row.comboName ? landCombo() : landFolder();
         }
         case "copy-command": {
           const cwd = (await isDirectory(folder)) ? folder : undefined;

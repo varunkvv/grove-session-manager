@@ -147,3 +147,35 @@ describe("reading the background sessions", () => {
     expect(failed).toEqual({ code: 3, stdout: "", stderr: "no\n" });
   });
 });
+
+describe("stopping a background session", () => {
+  const held = {
+    pid: 4112,
+    id: "d7b6bcc2",
+    sessionId: SID.a,
+    kind: "background",
+    status: "busy",
+    state: "working",
+  };
+
+  it("runs `claude stop <id>`, never rm, and waits until the supervisor lets go", async () => {
+    const fake = writeFakeClaude(sandbox(), [held]);
+    const { bg } = service({ bin: fake.bin });
+    await bg.read();
+    expect(bg.get(SID.a)?.pid).toBe(4112);
+    const out = await bg.stop("d7b6bcc2");
+    expect(out.code).toBe(0);
+    expect(await bg.waitReleased(SID.a, 2000, 10)).toBe(true);
+    expect(bg.get(SID.a)).toMatchObject({ state: "stopped" });
+    expect(bg.get(SID.a)?.pid).toBeUndefined();
+    const argv = fakeClaudeCalls(fake).map((c) => c.argv);
+    expect(argv).toContainEqual(["stop", "d7b6bcc2"]);
+    expect(argv.flat()).not.toContain("rm");
+  });
+
+  it("gives up at the deadline while the worker is still there", async () => {
+    const fake = writeFakeClaude(sandbox(), [held]);
+    const { bg } = service({ bin: fake.bin });
+    expect(await bg.waitReleased(SID.a, 100, 10)).toBe(false);
+  });
+});

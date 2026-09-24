@@ -240,6 +240,27 @@ describe("the resume script", () => {
     expect(() => resumeScriptPath("/state", "../../etc/passwd")).toThrow();
   });
 
+  it("a session the supervisor holds opens with attach, its id quoted and held to a plain token", () => {
+    const body = resumeScriptBody({
+      sessionId: "aaaaaaaa-0000-4000-8000-000000000001",
+      cwd: "/tmp/ignored",
+      claudeBin: "/Users/you/.local/bin/claude",
+      attach: "d7b6bcc2",
+    });
+    expect(body).toBe("#!/bin/zsh\ncd ~\nexec '/Users/you/.local/bin/claude' attach 'd7b6bcc2'\n");
+    for (const bad of ["x; rm -rf ~", "", "$(id)", "a b", "d7b6bcc2\n"]) {
+      expect(
+        () =>
+          resumeScriptBody({
+            sessionId: "aaaaaaaa-0000-4000-8000-000000000001",
+            claudeBin: "claude",
+            attach: bad,
+          }),
+        JSON.stringify(bad),
+      ).toThrow();
+    }
+  });
+
   it("a missing folder still resumes, from home", () => {
     const body = resumeScriptBody({
       sessionId: "aaaaaaaa-0000-4000-8000-000000000001",

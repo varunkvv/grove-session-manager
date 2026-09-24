@@ -303,7 +303,12 @@ export type SessionActionId =
   | "mark-seen"
   | "archive"
   | "unarchive"
-  | "inspect";
+  | "inspect"
+  /** a session Claude Code's supervisor holds: `claude attach <id>` in Terminal */
+  | "attach"
+  /** `claude stop <id>`, then land on it like any other session */
+  | "stop-land"
+  | "stop";
 
 export interface SessionAction {
   id: SessionActionId;
@@ -314,6 +319,8 @@ export interface SessionAction {
   enabled: boolean;
   /** drawn after a separator */
   secondary?: boolean;
+  /** asked before it runs: it interrupts something */
+  confirm?: { title: string; body: string; label: string };
 }
 
 export interface OpenReport {

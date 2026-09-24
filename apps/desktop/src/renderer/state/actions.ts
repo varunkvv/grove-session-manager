@@ -165,7 +165,10 @@ export async function activate(key: SessionKey): Promise<void> {
   const row = state().sessions.find((r) => r.key === key);
   if (!row) return;
   state().set({ activeKey: key });
-  if (row.comboName && row.comboRelation === "root") return openCombo(row.comboName, key);
+  // held by Claude Code's supervisor: the editor would be refused, so the offers decide
+  if (row.comboName && row.comboRelation === "root" && !row.background?.held) {
+    return openCombo(row.comboName, key);
+  }
   return openMenu(key);
 }
 
@@ -173,8 +176,12 @@ export async function activate(key: SessionKey): Promise<void> {
 export async function activateDefault(key: SessionKey): Promise<void> {
   const row = state().sessions.find((r) => r.key === key);
   if (!row) return;
-  if (row.comboName && row.comboRelation === "root") return openCombo(row.comboName, key);
+  if (row.comboName && row.comboRelation === "root" && !row.background?.held) {
+    return openCombo(row.comboName, key);
+  }
   const first = (await api().sessionActions(key)).find((a) => a.enabled);
+  // an offer that interrupts something is never run without asking
+  if (first?.confirm) return state().set({ dialog: { kind: "confirm", key, action: first } });
   if (first) await runAction(key, first.id);
 }
 

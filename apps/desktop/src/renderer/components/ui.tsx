@@ -20,7 +20,8 @@ type IconName =
   | "warning"
   | "check"
   | "archive"
-  | "lanes";
+  | "lanes"
+  | "stop";
 
 const PATHS: Record<IconName, ReactNode> = {
   branch: (
@@ -87,6 +88,7 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   // the inspector's own picture, small: agents as lanes on a clock
   lanes: <path d="M2.25 4.5h5M5.25 8h8.5M3.75 11.5h5.5" />,
+  stop: <rect x="4" y="4" width="8" height="8" rx="1.5" />,
 };
 
 export function Icon({

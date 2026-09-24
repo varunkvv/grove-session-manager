@@ -131,11 +131,14 @@ async function start(): Promise<void> {
         win?.focus();
       };
       n.on("click", () => {
-        // the supervisor holds it: an editor's resume would be refused. the app has the way in.
-        if (sessions.byId(sessionId)[0]?.background?.held) return toApp();
+        // the supervisor holds it: an editor's resume would be refused, so it opens where it runs
+        const held = sessions.byId(sessionId)[0]?.background?.held;
         // the folder may be gone by now. then the app is the next best place to land.
         void handlers
-          ?.runSessionAction(row.key, row.comboName ? "combo-land" : "folder-land")
+          ?.runSessionAction(
+            row.key,
+            held ? "attach" : row.comboName ? "combo-land" : "folder-land",
+          )
           .catch(toApp);
       });
       n.show();
@@ -207,6 +210,7 @@ async function start(): Promise<void> {
     live,
     combos,
     archive,
+    background,
     inspector,
     seen: (key, ids) => {
       const snapshot = sessions.agentSnapshot(key);

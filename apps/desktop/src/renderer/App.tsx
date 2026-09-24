@@ -2,7 +2,12 @@ import { useEffect } from "react";
 import type { MenuCommandId } from "../shared/ipc.ts";
 import { Toasts } from "./components/Chrome.tsx";
 import { ComboDialog } from "./components/ComboDialog.tsx";
-import { DeleteComboDialog, SettingsDialog, TeardownDialog } from "./components/Dialogs.tsx";
+import {
+  ConfirmDialog,
+  DeleteComboDialog,
+  SettingsDialog,
+  TeardownDialog,
+} from "./components/Dialogs.tsx";
 import { Workspace } from "./components/Inspector.tsx";
 import { Rail } from "./components/Rail.tsx";
 import { SessionActionMenu } from "./components/SessionActionMenu.tsx";
@@ -267,6 +272,7 @@ export function App() {
       <TeardownDialog />
       <DeleteComboDialog />
       <SettingsDialog />
+      <ConfirmDialog />
       <Toasts />
     </div>
   );

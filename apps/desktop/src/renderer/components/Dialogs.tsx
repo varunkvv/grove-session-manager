@@ -1,6 +1,7 @@
 import type { TeardownOutcome } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
+import { runAction } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Button, cx, Field, Icon, inputClass, Modal, Mono, Spinner, Switch } from "./ui.tsx";
 
@@ -288,6 +289,44 @@ export function DeleteComboDialog() {
         )}
         {error && <p className="text-accent">{error}</p>}
       </div>
+    </Modal>
+  );
+}
+
+/** one question before an action that interrupts something. Cancel is where the keyboard starts. */
+export function ConfirmDialog() {
+  const dialog = useStore((s) => s.dialog);
+  const set = useStore((s) => s.set);
+  const open = dialog?.kind === "confirm";
+  const confirm = open ? dialog.action.confirm : undefined;
+  const close = () => set({ dialog: null });
+  return (
+    <Modal
+      open={open && !!confirm}
+      onClose={close}
+      title={confirm?.title ?? ""}
+      width={440}
+      testId="confirm-dialog"
+      footer={
+        <>
+          <Button variant="secondary" autoFocus onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            data-testid="confirm-run"
+            onClick={() => {
+              if (dialog?.kind !== "confirm") return;
+              close();
+              void runAction(dialog.key, dialog.action.id);
+            }}
+          >
+            {confirm?.label}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-fg-2">{confirm?.body}</p>
     </Modal>
   );
 }
