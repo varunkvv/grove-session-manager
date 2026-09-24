@@ -19,6 +19,7 @@ import {
 } from "../../src/main/services/live.ts";
 import {
   claudeBinCandidates,
+  claudeScriptBody,
   isResumeScriptName,
   resumeScriptBody,
   resumeScriptPath,
@@ -259,6 +260,25 @@ describe("the resume script", () => {
         JSON.stringify(bad),
       ).toThrow();
     }
+  });
+
+  it("a dispatch in Terminal quotes every argument, and stops if the folder is gone", () => {
+    const body = claudeScriptBody({
+      cwd: "/ws/it's a combo",
+      claudeBin: "/Users/you/.local/bin/claude",
+      args: [
+        "--resume",
+        "aaaaaaaa-0000-4000-8000-000000000001",
+        "--bg",
+        "--",
+        "fix it; rm -rf ~ 'now' $(id)",
+      ],
+    });
+    expect(body).toBe(
+      "#!/bin/zsh\ncd '/ws/it'\\''s a combo' || exit 1\n" +
+        "exec '/Users/you/.local/bin/claude' '--resume' 'aaaaaaaa-0000-4000-8000-000000000001' '--bg' '--' " +
+        "'fix it; rm -rf ~ '\\''now'\\'' $(id)'\n",
+    );
   });
 
   it("a missing folder still resumes, from home", () => {

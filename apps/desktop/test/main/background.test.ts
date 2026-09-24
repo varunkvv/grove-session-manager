@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import type { BackgroundEntry } from "@grove/core";
 import { describe, expect, it } from "vitest";
-import { fakeClaudeCalls, setFakeAgents, writeFakeClaude } from "../../e2e/helpers/fakeClaude.ts";
+import {
+  fakeClaudeCalls,
+  setFakeAgents,
+  setUntrusted,
+  writeFakeClaude,
+} from "../../e2e/helpers/fakeClaude.ts";
 import {
   AGENTS_ARGS,
   BackgroundService,
@@ -177,5 +182,66 @@ describe("stopping a background session", () => {
     const fake = writeFakeClaude(sandbox(), [held]);
     const { bg } = service({ bin: fake.bin });
     expect(await bg.waitReleased(SID.a, 100, 10)).toBe(false);
+  });
+});
+
+describe("handing a session to the supervisor", () => {
+  it("builds argv with the prompt after `--`, and no permission flags", async () => {
+    const { continueArgs, newSessionArgs } = await import("../../src/main/services/background.ts");
+    expect(continueArgs(SID.a, "--dangerously-skip-permissions")).toEqual([
+      "--resume",
+      SID.a,
+      "--bg",
+      "--",
+      "--dangerously-skip-permissions",
+    ]);
+    expect(newSessionArgs("do it")).toEqual(["--bg", "--", "do it"]);
+    expect(newSessionArgs("do it", "-x name")).toEqual(["--bg", "--name=-x name", "--", "do it"]);
+    const all = [...continueArgs(SID.a, "x"), ...newSessionArgs("x", "n")].join(" ");
+    expect(all).not.toMatch(/permission|dangerously|skip/);
+  });
+
+  it("reads the short id from the supervisor, and from the printed line when it has to", async () => {
+    const { backgroundedId, isNotTrusted } = await import("../../src/main/services/background.ts");
+    expect(backgroundedId("backgrounded · d7b6bcc2\n")).toBe("d7b6bcc2");
+    expect(backgroundedId("\x1b[2mbackgrounded · 60221e3b\x1b[0m")).toBe("60221e3b");
+    expect(backgroundedId("something else")).toBeUndefined();
+    const refusal =
+      "Workspace not trusted. Run `claude` in /ws/combo once and accept the trust prompt, then retry.\n";
+    expect(isNotTrusted({ code: 1, stdout: "", stderr: refusal })).toBe(true);
+    expect(isNotTrusted({ code: 1, stdout: "", stderr: "API Error" })).toBe(false);
+    expect(isNotTrusted({ code: 0, stdout: refusal, stderr: "" })).toBe(false);
+  });
+
+  it("continues under the same id, in the session's folder, with the env it was given", async () => {
+    const { continueArgs } = await import("../../src/main/services/background.ts");
+    const dir = sandbox();
+    const fake = writeFakeClaude(dir, []);
+    const { bg, seen } = service({ bin: fake.bin });
+    const res = await bg.dispatch(continueArgs(SID.a, "continue where you left off"), {
+      cwd: dir,
+      sessionId: SID.a,
+    });
+    expect(res).toMatchObject({ ok: true, id: "abcd1234" });
+    const call = fakeClaudeCalls(fake).find((c) => c.argv.includes("--bg"));
+    expect(call).toEqual({
+      argv: ["--resume", SID.a, "--bg", "--", "continue where you left off"],
+      cwd: dir,
+      path: "/usr/bin:/bin",
+    });
+    // read again straight after, so the row is marked
+    expect(bg.get(SID.a)).toMatchObject({ id: "abcd1234", state: "working" });
+    expect(seen.length).toBeGreaterThan(0);
+  });
+
+  it("a folder the CLI never trusted comes back as that, not as a failure to show raw", async () => {
+    const { continueArgs } = await import("../../src/main/services/background.ts");
+    const dir = sandbox();
+    const fake = writeFakeClaude(dir, []);
+    setUntrusted(fake, true);
+    const { bg } = service({ bin: fake.bin });
+    const res = await bg.dispatch(continueArgs(SID.a, "go"), { cwd: dir, sessionId: SID.a });
+    expect(res).toMatchObject({ ok: false, notTrusted: true });
+    expect(bg.get(SID.a)).toBeUndefined();
   });
 });

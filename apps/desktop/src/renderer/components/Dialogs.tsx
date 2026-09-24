@@ -331,6 +331,128 @@ export function ConfirmDialog() {
   );
 }
 
+/**
+ * the prompt a background session starts from, typed or checked by the person. Claude Code's
+ * supervisor runs it from here on; Grove only hands it over. a folder the CLI never trusted gets
+ * one way through: the same command in Terminal, where the trust prompt can be answered.
+ */
+export function BackgroundDialog() {
+  const dialog = useStore((s) => s.dialog);
+  const set = useStore((s) => s.set);
+  const toast = useStore((s) => s.toast);
+  const open = dialog?.kind === "background";
+  const target = open ? dialog.target : null;
+  const [prompt, setPrompt] = useState("");
+  const [name, setName] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<{ code: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setPrompt(dialog.prompt);
+    setName("");
+    setError(null);
+    setRunning(false);
+  }, [open, dialog]);
+
+  const close = () => set({ dialog: null });
+  const empty = prompt.trim() === "";
+
+  async function run(terminal: boolean) {
+    if (!target || empty) return;
+    setRunning(true);
+    const res = await window.grove.dispatchBackground({
+      ...(target.kind === "continue"
+        ? { kind: "continue" as const, key: target.key }
+        : { kind: "new" as const, combo: target.combo, ...(name.trim() ? { name } : {}) }),
+      prompt,
+      ...(terminal ? { terminal: true } : {}),
+    });
+    setRunning(false);
+    if (!res.ok) return setError(res.error);
+    close();
+    toast({ level: "info", title: res.value.message });
+  }
+
+  const title =
+    target?.kind === "new" ? `New background session in ${target.combo}` : "Continue in background";
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      title={title}
+      width={520}
+      testId="background-dialog"
+      footer={
+        <>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          {error?.code === "not-trusted" && (
+            <Button
+              variant="secondary"
+              disabled={running || empty}
+              onClick={() => void run(true)}
+              data-testid="bg-terminal"
+            >
+              Continue in Terminal
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            disabled={running || empty}
+            onClick={() => void run(false)}
+            data-testid="bg-run"
+          >
+            {running ? "Handing over" : target?.kind === "new" ? "Start" : "Continue in background"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-fg-3">
+          {target?.kind === "new"
+            ? "Claude Code's own supervisor runs it in the combo folder. It keeps going after every window closes."
+            : "Claude Code's own supervisor picks this conversation up where it stopped, and keeps it going after every window closes."}{" "}
+          A permission prompt puts it under Needs you. Open in Terminal (attach) answers it.
+        </p>
+        {target?.kind === "new" && (
+          <Field label="Name" hint="Optional. Shown in claude agents and in the list here.">
+            <input
+              className={inputClass}
+              value={name}
+              maxLength={100}
+              onChange={(e) => setName(e.target.value)}
+              data-testid="bg-name"
+            />
+          </Field>
+        )}
+        <Field label="Prompt" hint="Sent as it is, once you press the button.">
+          <textarea
+            className={cx(inputClass, "h-auto min-h-24 resize-y py-1.5 leading-5")}
+            rows={4}
+            value={prompt}
+            autoFocus
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void run(false);
+              }
+            }}
+            data-testid="bg-prompt"
+          />
+        </Field>
+        {error && (
+          <p className="text-accent" data-testid="bg-error" data-code={error.code}>
+            {error.message}
+          </p>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function SettingsDialog() {
   const dialog = useStore((s) => s.dialog);
   const settings = useStore((s) => s.settings);

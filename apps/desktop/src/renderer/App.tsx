@@ -3,6 +3,7 @@ import type { MenuCommandId } from "../shared/ipc.ts";
 import { Toasts } from "./components/Chrome.tsx";
 import { ComboDialog } from "./components/ComboDialog.tsx";
 import {
+  BackgroundDialog,
   ConfirmDialog,
   DeleteComboDialog,
   SettingsDialog,
@@ -273,6 +274,7 @@ export function App() {
       <DeleteComboDialog />
       <SettingsDialog />
       <ConfirmDialog />
+      <BackgroundDialog />
       <Toasts />
     </div>
   );

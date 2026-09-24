@@ -21,7 +21,14 @@ export type DialogState =
   | { kind: "delete"; name: string }
   | { kind: "settings" }
   /** an action that interrupts something, asked before it runs */
-  | { kind: "confirm"; key: SessionKey; action: SessionAction };
+  | { kind: "confirm"; key: SessionKey; action: SessionAction }
+  /** hand a session, or a new one in a combo, to Claude Code's supervisor */
+  | {
+      kind: "background";
+      target: { kind: "continue"; key: SessionKey } | { kind: "new"; combo: string };
+      /** what the prompt starts as. the person can change it, and nothing goes without them. */
+      prompt: string;
+    };
 
 export interface MenuState {
   key: SessionKey;

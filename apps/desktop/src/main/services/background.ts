@@ -21,6 +21,42 @@ export function stopArgs(shortId: string): string[] {
   return ["stop", shortId];
 }
 
+/** dispatching starts the supervisor when none is up. it prints its line and returns. */
+const DISPATCH_TIMEOUT_MS = 60_000;
+
+/**
+ * hands a session nothing is running to the supervisor, under its own id and transcript. the
+ * prompt comes after `--`, so typed text starting with a dash can never become a flag. no
+ * permission mode and no skip-permissions: a session that stops on a prompt shows up as blocked,
+ * and attach is how it gets answered.
+ */
+export function continueArgs(sessionId: string, prompt: string): string[] {
+  return ["--resume", sessionId, "--bg", "--", prompt];
+}
+
+/** a new background session. `--name=` in one argument, so a name can never read as a flag. */
+export function newSessionArgs(prompt: string, name?: string): string[] {
+  return ["--bg", ...(name ? [`--name=${name}`] : []), "--", prompt];
+}
+
+/**
+ * since 2.1.281 a dispatch into a folder that never passed the CLI's trust prompt exits 1 with
+ * "Workspace not trusted. Run `claude` in <dir> once and accept the trust prompt, then retry."
+ * on stderr. a combo only ever used from VS Code has not.
+ */
+export function isNotTrusted(out: ClaudeRun): boolean {
+  return out.code !== 0 && /not trusted/i.test(`${out.stderr}\n${out.stdout}`);
+}
+
+/** `backgrounded · d7b6bcc2`: the short id, from what the dispatch printed */
+export function backgroundedId(stdout: string): string | undefined {
+  return /backgrounded\s*\S\s*([A-Za-z0-9_-]+)/i.exec(stdout)?.[1];
+}
+
+export type Dispatched =
+  | { ok: true; id?: string; out: ClaudeRun }
+  | { ok: false; notTrusted: boolean; out: ClaudeRun };
+
 export interface ClaudeRun {
   /** null when it never ran, or was killed at the timeout */
   code: number | null;
@@ -104,6 +140,23 @@ export class BackgroundService {
     });
     await this.read();
     return out;
+  }
+
+  /**
+   * runs a `--bg` command in `cwd` (the session's own folder, so its CLAUDE.md and hooks load),
+   * then reads the supervisor again so the row shows it. the short id comes from that read when
+   * the session is known, and from the printed line otherwise.
+   */
+  async dispatch(
+    args: readonly string[],
+    o: { cwd: string; sessionId?: string },
+  ): Promise<Dispatched> {
+    const out = await this.exec(args, { cwd: o.cwd, timeoutMs: DISPATCH_TIMEOUT_MS });
+    if (out.code !== 0) return { ok: false, notTrusted: isNotTrusted(out), out };
+    const entries = await this.read();
+    const known = o.sessionId ? entries?.get(o.sessionId)?.id : undefined;
+    const id = known ?? backgroundedId(out.stdout);
+    return { ok: true, ...(id ? { id } : {}), out };
   }
 
   /**

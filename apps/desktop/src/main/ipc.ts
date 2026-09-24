@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildResumeCommand,
   classifyPath,
+  isObject,
   isValidSessionId,
   needsYou,
   openInEditor,
@@ -32,13 +34,14 @@ import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { AgentInspector } from "./services/agentInspector.ts";
 import type { ArchiveService } from "./services/archive.ts";
-import type { BackgroundService } from "./services/background.ts";
+import { type BackgroundService, continueArgs, newSessionArgs } from "./services/background.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import type { EditorService } from "./services/editor.ts";
 import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
 import {
+  claudeScriptBody,
   isResumeScriptName,
   isValidShortId,
   RESUME_SCRIPT_MAX_AGE_MS,
@@ -46,7 +49,7 @@ import {
   resumeScriptBody,
   resumeScriptPath,
 } from "./services/resumeScript.ts";
-import { daemonHeld, sessionActionList } from "./services/sessionActions.ts";
+import { daemonHeld, heldWhere, sessionActionList } from "./services/sessionActions.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { keptFolderToast } from "./services/views.ts";
 
@@ -82,6 +85,7 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "rescan",
   "archiveSessions",
   "runSessionAction",
+  "dispatchBackground",
   "createCombo",
   "updateCombo",
   "deleteCombo",
@@ -177,6 +181,20 @@ function shortIdOf(deps: Deps, row: SessionRow): string {
   }
   return id;
 }
+
+/** the longest prompt grove hands over. anything longer belongs in a plan file. */
+const PROMPT_MAX = 20_000;
+const NAME_MAX = 100;
+
+function notTrusted(cwd: string): AppError {
+  return new AppError(
+    "not-trusted",
+    `Claude Code has not been trusted in ${cwd} from a terminal yet. Continue in Terminal asks once - after that, sessions there go to the background from here directly.`,
+  );
+}
+
+const TERMINAL_MESSAGE =
+  "Opened in Terminal. Accept the trust prompt there, and it goes to the background.";
 
 /** a claude command that failed, as something a person can read */
 function claudeFailure(what: string, out: { code: number | null; stderr: string; stdout: string }) {
@@ -296,8 +314,8 @@ function buildHandlers(deps: Deps): Handlers {
         deps.live.markSeen([row.sessionId]);
         return {};
       }
-      // the inspector is the renderer's own: nothing to do here
-      if (action === "inspect") return {};
+      // the inspector and the prompt dialog are the renderer's own: nothing to do here
+      if (action === "inspect" || action === "continue-bg") return {};
       if (action === "archive" || action === "unarchive") {
         await archiveByKey(deps, [key], action === "archive");
         return {};
@@ -394,6 +412,80 @@ function buildHandlers(deps: Deps): Handlers {
           electron.shell.showItemInFolder(row.key);
           return {};
       }
+    },
+
+    async dispatchBackground(req) {
+      if (!isObject(req) || (req.kind !== "continue" && req.kind !== "new")) {
+        throw new AppError("invalid", "Nothing to hand over.");
+      }
+      const prompt = typeof req.prompt === "string" ? req.prompt.trim() : "";
+      // a bare `--bg` with nothing to do would only sit there
+      if (!prompt) throw new AppError("empty-prompt", "Say what it should do first.");
+      if (prompt.length > PROMPT_MAX) {
+        throw new AppError("long-prompt", "That prompt is too long. Put it in a plan file.");
+      }
+      const bin = await claudeBin(deps);
+      if (req.kind === "continue") {
+        const row = requireSession(deps, req.key);
+        if (!isValidSessionId(row.sessionId)) {
+          throw new AppError("bad-session-id", "That session has no usable ID.");
+        }
+        const cwd = folderForSession(row);
+        if (!cwd || !(await isDirectory(cwd))) {
+          throw new AppError("cwd-missing", "That session's folder no longer exists.");
+        }
+        // a live process on the conversation: `--resume --bg` would start a copy, and say so
+        const holder = deps.live.holder(row.sessionId);
+        if (holder?.kind === "interactive") {
+          const where = heldWhere(holder.entrypoint, editor.current().label);
+          throw new AppError("held", `It is ${where}. Close it there first.`);
+        }
+        if (daemonHeld({ row, ...(holder ? { holder } : {}) })) {
+          throw new AppError("held", "Claude Code is already running it in the background.");
+        }
+        const args = continueArgs(row.sessionId, prompt);
+        if (req.terminal) {
+          await openInTerminal(
+            deps,
+            row.sessionId,
+            claudeScriptBody({ cwd, claudeBin: bin, args }),
+          );
+          return { message: TERMINAL_MESSAGE };
+        }
+        const res = await deps.background.dispatch(args, { cwd, sessionId: row.sessionId });
+        if (!res.ok) {
+          throw res.notTrusted ? notTrusted(cwd) : claudeFailure("claude --bg failed", res.out);
+        }
+        return {
+          ...(res.id ? { id: res.id } : {}),
+          message: res.id ? `continuing in background · ${res.id}` : "continuing in background",
+        };
+      }
+      const combo = combos.find(String(req.combo));
+      const name = typeof req.name === "string" ? req.name.replace(/\s+/g, " ").trim() : "";
+      if (name.length > NAME_MAX) throw new AppError("long-name", "That name is too long.");
+      if (!(await isDirectory(combo.root))) {
+        throw new AppError("cwd-missing", `${combo.root} does not exist.`);
+      }
+      const args = newSessionArgs(prompt, name || undefined);
+      if (req.terminal) {
+        await openInTerminal(
+          deps,
+          randomUUID(),
+          claudeScriptBody({ cwd: combo.root, claudeBin: bin, args }),
+        );
+        return { message: TERMINAL_MESSAGE };
+      }
+      const res = await deps.background.dispatch(args, { cwd: combo.root });
+      if (!res.ok) {
+        throw res.notTrusted
+          ? notTrusted(combo.root)
+          : claudeFailure("claude --bg failed", res.out);
+      }
+      return {
+        ...(res.id ? { id: res.id } : {}),
+        message: res.id ? `started in background · ${res.id}` : "started in background",
+      };
     },
 
     async validateComboName(name, self) {

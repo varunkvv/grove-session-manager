@@ -308,7 +308,9 @@ export type SessionActionId =
   | "attach"
   /** `claude stop <id>`, then land on it like any other session */
   | "stop-land"
-  | "stop";
+  | "stop"
+  /** hand a session nothing is running to Claude Code's supervisor. asks for the prompt first. */
+  | "continue-bg";
 
 export interface SessionAction {
   id: SessionActionId;
@@ -322,6 +324,17 @@ export interface SessionAction {
   /** asked before it runs: it interrupts something */
   confirm?: { title: string; body: string; label: string };
 }
+
+/** what to hand Claude Code's supervisor: a session to continue, or a new one in a combo */
+export type BackgroundRequest = (
+  | { kind: "continue"; key: SessionKey }
+  | { kind: "new"; combo: string; name?: string }
+) & {
+  /** typed by the person, never sent without them pressing the button. never empty. */
+  prompt: string;
+  /** run it in Terminal instead, where the CLI's one-time trust prompt can be answered */
+  terminal?: boolean;
+};
 
 export interface OpenReport {
   launched: boolean;
@@ -364,6 +377,12 @@ export interface Api {
     key: SessionKey,
     action: SessionActionId,
   ): Promise<Outcome<{ message?: string }>>;
+  /**
+   * `claude --resume <id> --bg` or `claude --bg`, with the login shell's environment. fails with
+   * code `not-trusted` in a folder that never passed the CLI's trust prompt: `terminal: true` is
+   * the way through.
+   */
+  dispatchBackground(req: BackgroundRequest): Promise<Outcome<{ id?: string; message: string }>>;
 
   validateComboName(
     name: string,
@@ -420,6 +439,7 @@ export const INVOKE_CHANNELS = [
   "markSeen",
   "archiveSessions",
   "runSessionAction",
+  "dispatchBackground",
   "validateComboName",
   "validateDraft",
   "pickDirectories",

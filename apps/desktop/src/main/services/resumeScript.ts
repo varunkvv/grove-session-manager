@@ -10,6 +10,20 @@ export function resumeScriptPath(stateDir: string, sessionId: string): string {
   return path.join(stateDir, "run", `resume-${sessionId}.command`);
 }
 
+/**
+ * a .command for a claude command in a folder, when it has to happen where a person can answer
+ * (the CLI's one-time trust prompt). every argument is quoted: a prompt is typed text. a folder
+ * that is gone stops it, rather than dispatching from somewhere else.
+ */
+export function claudeScriptBody(o: {
+  cwd: string;
+  claudeBin: string;
+  args: readonly string[];
+}): string {
+  const bin = o.claudeBin === "claude" ? "claude" : shellQuote(o.claudeBin);
+  return `#!/bin/zsh\ncd ${shellQuote(o.cwd)} || exit 1\nexec ${[bin, ...o.args.map(shellQuote)].join(" ")}\n`;
+}
+
 /** only our own files are ever swept out of the run dir */
 export function isResumeScriptName(name: string): boolean {
   return /^resume-[0-9a-fA-F-]{36}\.command$/.test(name);

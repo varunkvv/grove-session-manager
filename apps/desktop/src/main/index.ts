@@ -6,7 +6,6 @@ import {
   needsYou,
   type Settings,
   sessionsRegistryDir,
-  stripLaunchEnv,
 } from "@grove/core";
 import type { BrowserWindow } from "electron";
 import * as electron from "electron";
@@ -26,6 +25,7 @@ import { BackgroundService } from "./services/background.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
+import { LoginEnv } from "./services/loginEnv.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { SessionService } from "./services/sessions.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
@@ -146,9 +146,17 @@ async function start(): Promise<void> {
     onBackgroundMoved: () => void background.read(),
   });
 
+  // a background session keeps the environment it was dispatched with. Finder's is no good.
+  const loginEnv = new LoginEnv({
+    home: appEnv.home,
+    base: process.env,
+    claudeConfigDir: () => path.dirname(projectsDir),
+    // a test root never runs anyone's rc files
+    useShell: !appEnv.customRoot,
+  });
   const background = new BackgroundService({
     claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
-    env: async () => stripLaunchEnv(process.env),
+    env: () => loginEnv.get(),
     // a test root never runs the real claude, only a stub it names
     enabled: () => !appEnv.customRoot || appEnv.claudeBinOverride !== undefined,
     onEntries: (entries) => {

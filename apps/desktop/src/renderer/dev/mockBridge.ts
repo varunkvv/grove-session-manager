@@ -879,6 +879,7 @@ const bridge: Bridge = {
   markSeen: async () => {},
   archiveSessions: () => okv(undefined),
   runSessionAction: () => okv({ message: "Done (mock)" }),
+  dispatchBackground: () => okv({ id: "d7b6bcc2", message: "continuing in background · d7b6bcc2" }),
   validateComboName: async (name) => ({
     slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
     root: `/Users/you/claude-ws/${name}`,

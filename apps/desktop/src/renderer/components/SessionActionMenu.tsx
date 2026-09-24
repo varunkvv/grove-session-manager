@@ -20,6 +20,7 @@ const ICONS = {
   attach: "terminal",
   "stop-land": "external",
   stop: "stop",
+  "continue-bg": "moon",
 } as const;
 
 const USAGE_COLUMNS = ["in", "out", "cache read", "cache write"] as const;

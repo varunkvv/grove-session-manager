@@ -23,6 +23,32 @@ export function daemonHeld(f: Pick<ActionFacts, "row" | "holder">): boolean {
   return f.row.background?.held === true || f.holder?.kind === "bg";
 }
 
+/** where an interactive process holding a session lives, in words */
+export function heldWhere(entrypoint: string | undefined, editorLabel: string): string {
+  if (entrypoint === "claude-vscode") return `still open in ${editorLabel}`;
+  if (entrypoint === "cli") return "still open in a terminal";
+  return "still open somewhere else";
+}
+
+/**
+ * hand the session to Claude Code's supervisor. only when no live process holds it: a
+ * `--resume --bg` on a held session starts a copy of the conversation, which is the one thing
+ * this must never do.
+ */
+function continueAction(f: ActionFacts): SessionAction {
+  const base = { id: "continue-bg" as const, label: "Continue in background\u2026" };
+  if (f.holder?.kind === "interactive") {
+    const how = f.holder.entrypoint === "claude-vscode" ? "close its tab first" : "quit it first";
+    return {
+      ...base,
+      enabled: false,
+      hint: `${heldWhere(f.holder.entrypoint, f.editorLabel)} - ${how}`,
+    };
+  }
+  if (!f.folderExists) return { ...base, enabled: false, hint: "the folder is gone" };
+  return { ...base, enabled: true };
+}
+
 function landActions(f: ActionFacts): SessionAction[] {
   const hint = f.companion ? undefined : "opens without landing";
   const out: SessionAction[] = [];
@@ -79,7 +105,7 @@ function heldActions(f: ActionFacts): SessionAction[] {
 
 export function sessionActionList(f: ActionFacts): SessionAction[] {
   const held = daemonHeld(f);
-  const actions: SessionAction[] = held ? heldActions(f) : landActions(f);
+  const actions: SessionAction[] = held ? heldActions(f) : [...landActions(f), continueAction(f)];
   actions.push({
     id: "copy-command",
     label: "Copy resume command",

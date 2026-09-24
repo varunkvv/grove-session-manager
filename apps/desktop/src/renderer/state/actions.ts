@@ -116,11 +116,21 @@ export function closeInspector(): void {
   focusSearch(false);
 }
 
+/** what a background session is asked to do when it picks a conversation back up */
+export const CONTINUE_PROMPT = "continue where you left off";
+
 export async function runAction(key: SessionKey, action: SessionActionId): Promise<void> {
   state().set({ menu: null });
   if (action === "inspect") {
     openInspector(key);
     focusSearch(false);
+    return;
+  }
+  // nothing is sent before the person has seen the prompt and pressed the button
+  if (action === "continue-bg") {
+    state().set({
+      dialog: { kind: "background", target: { kind: "continue", key }, prompt: CONTINUE_PROMPT },
+    });
     return;
   }
   const res = await api().runSessionAction(key, action);
