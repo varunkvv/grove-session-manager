@@ -1,5 +1,5 @@
 import type { TeardownOutcome } from "@grove/core/pure";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
 import { runAction } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
@@ -346,6 +346,7 @@ export function BackgroundDialog() {
   const [name, setName] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -353,6 +354,8 @@ export function BackgroundDialog() {
     setName("");
     setError(null);
     setRunning(false);
+    // after the modal opened (a parent's effect runs after its children's), or it takes focus back
+    field.current?.focus();
   }, [open, dialog]);
 
   const close = () => set({ dialog: null });
@@ -432,7 +435,7 @@ export function BackgroundDialog() {
             className={cx(inputClass, "h-auto min-h-24 resize-y py-1.5 leading-5")}
             rows={4}
             value={prompt}
-            autoFocus
+            ref={field}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {

@@ -192,6 +192,14 @@ function ComboMenu({ combo, onClose }: { combo: ComboView; onClose: () => void }
   const set = useStore((s) => s.set);
   const hasWorktrees = combo.folders.some((f) => f.mode === "worktree");
   const items: Array<[string, () => void, boolean?]> = [
+    [
+      "New background session\u2026",
+      // Claude Code's supervisor runs it in the combo root, so CLAUDE.md and the hooks load
+      () =>
+        set({
+          dialog: { kind: "background", target: { kind: "new", combo: combo.name }, prompt: "" },
+        }),
+    ],
     ["Edit combo", () => set({ dialog: { kind: "combo", editing: combo.name } })],
     [
       "Repair all",
