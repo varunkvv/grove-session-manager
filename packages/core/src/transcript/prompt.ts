@@ -1,4 +1,6 @@
-import { isObject } from "../fsx.ts";
+// no node: imports here: the conversation fold, which the renderer can load, reads prompts with it
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
 
 const REMINDER_OPEN = "<system-reminder>";
 const REMINDER_CLOSE = "</system-reminder>";

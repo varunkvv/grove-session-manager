@@ -11,6 +11,7 @@ import {
   TimelineFold,
   type TimelineState,
 } from "./timeline.ts";
+import { readWholeLines } from "./transcriptLines.ts";
 
 const READ_BYTES = 1 << 20;
 const NL = 0x0a;
@@ -36,32 +37,10 @@ export async function readAgentTimeline(
     const resume =
       prev && prev.version === TIMELINE_VERSION && prev.offset <= size ? prev : undefined;
     const fold = new TimelineFold(resume, { home: opts.home ?? os.homedir() });
-    let offset = fold.state.offset;
-    if (offset === size) return fold.state;
-    let carry: Buffer = Buffer.alloc(0);
-    const buf = Buffer.alloc(Math.min(READ_BYTES, size - offset));
-    let at = offset;
-    while (at < size) {
-      const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, size - at), at);
-      if (bytesRead === 0) break;
-      // where chunk[0] sits in the file: the unfinished line carried over starts before `at`
-      const base = at - carry.length;
-      at += bytesRead;
-      const chunk = carry.length
-        ? Buffer.concat([carry, buf.subarray(0, bytesRead)])
-        : buf.subarray(0, bytesRead);
-      let start = 0;
-      for (;;) {
-        const nl = chunk.indexOf(NL, start);
-        if (nl < 0) break;
-        if (nl > start) fold.line(chunk.toString("utf8", start, nl), base + start, nl - start);
-        start = nl + 1;
-      }
-      // only whole lines count as read. one still being written is picked up next time.
-      offset = base + start;
-      carry = Buffer.from(chunk.subarray(start));
-    }
-    fold.state.offset = offset;
+    if (fold.state.offset === size) return fold.state;
+    fold.state.offset = await readWholeLines(fh, fold.state.offset, size, (text, at, length) =>
+      fold.line(text, at, length),
+    );
     return fold.state;
   } finally {
     await fh.close();

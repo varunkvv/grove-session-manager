@@ -1,6 +1,11 @@
 // turns a session's real subagents into a committable fixture: every line kept, every piece of
 // text replaced.
 //   node packages/core/scripts/redact-agents.ts <transcript.jsonl> <name> --agents <id>[,<id>] [--out dir]
+//   node packages/core/scripts/redact-agents.ts <transcript.jsonl> <name> --lines <from>:<to> [--agents ...]
+//
+// with --lines it is the session's own conversation that is kept: every line of that stretch of
+// the main transcript (0-based, `to` exclusive), whole. start it on a prompt and end it before one,
+// or the fixture begins and ends in the middle of a turn. --agents is optional then.
 //
 // unlike redact-fixture.ts this keeps WHOLE files - a timeline needs every line, not a head and a
 // tail. what it keeps is structure: entry and block types, tool names, timestamps, models, usage,
@@ -10,7 +15,7 @@
 // agent's result still equals the agent's own. long strings are capped: offsets only have to be
 // true within the fixture.
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
@@ -20,9 +25,10 @@ const flag = (f: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const wanted = new Set((flag("--agents") ?? "").split(",").filter(Boolean));
-if (!src || !name || wanted.size === 0) {
+const range = /^(\d+):(\d+)$/.exec(flag("--lines") ?? "");
+if (!src || !name || (wanted.size === 0 && !range)) {
   console.error(
-    "usage: redact-agents.ts <transcript.jsonl> <name> --agents <id>[,<id>] [--out dir]",
+    "usage: redact-agents.ts <transcript.jsonl> <name> (--agents <id>[,<id>] | --lines <from>:<to>) [--out dir]",
   );
   process.exit(2);
 }
@@ -52,6 +58,15 @@ const KEEP_VALUES_FOR_KEYS = new Set([
   "status",
   "error",
   "taskType",
+  // what a session's own lines are read by: a system line's kind, who a user line came from, how
+  // a queued message was sent, what started a compaction
+  "subtype",
+  "kind",
+  "commandMode",
+  "trigger",
+  "permissionMode",
+  "media_type",
+  "level",
 ]);
 // kept as the start of a string, because code reads them: they say how a step or an agent ended
 const MARKERS = [
@@ -62,6 +77,11 @@ const MARKERS = [
   "The coordinator sent a message while you were working:",
   "[Subagent hand-back]",
 ];
+// a turned-down tool call says who said no, then their words. the words are replaced, the phrase
+// that introduces them is not: it is how the person's reply is found.
+const PHRASES = ["reason for the rejection:", "the user said:"];
+// a command's name and a task's status are what a line is read by, not what anyone wrote
+const KEEP_TAG_TEXT = new Set(["command-name", "command-message", "status"]);
 const WORDS =
   "the agent read a file then ran tests and wrote notes about what changed in each module so the next step could start from there".split(
     " ",
@@ -100,7 +120,8 @@ function filler(original: string, len: number): string {
   return out.join(" ").slice(0, len);
 }
 
-let realCwd = "";
+/** the folders the transcript ran in, longest first. a session can move between repos. */
+let realCwds: string[] = [];
 const fakeCwd = `/fixture/${name}`;
 /** prose and paths that went in, checked against what came out */
 const replaced = new Set<string>();
@@ -108,8 +129,31 @@ const keptValues = new Set<string>();
 
 let cap = CAP;
 
+/**
+ * an envelope Claude Code wraps text in (`<command-name>`, `<local-command-stdout>`,
+ * `<task-notification>`...): the tags stay, what is between them is replaced
+ */
+function redactTagged(value: string): string {
+  let open = "";
+  return value
+    .split(/(<\/?[a-zA-Z][\w-]*>)/)
+    .map((part) => {
+      const tag = /^<(\/?)([a-zA-Z][\w-]*)>$/.exec(part);
+      if (tag) {
+        open = tag[1] ? "" : tag[2]!;
+        return part;
+      }
+      if (!part.trim() || KEEP_TAG_TEXT.has(open)) return part;
+      if (ids.has(part.trim())) return part.replace(part.trim(), ids.get(part.trim())!);
+      replaced.add(part.trim().slice(0, 60));
+      return filler(part, Math.min(part.length, cap));
+    })
+    .join("");
+}
+
 function redactString(key: string, value: string, parentType: unknown): string {
   if (ids.has(value)) return ids.get(value)!;
+  if (/^\s*<[a-zA-Z][\w-]*>/.test(value) && value.includes("</")) return redactTagged(value);
   if (KEEP_VALUES_FOR_KEYS.has(key)) {
     keptValues.add(value);
     return value;
@@ -123,7 +167,8 @@ function redactString(key: string, value: string, parentType: unknown): string {
   if (!value) return value;
   if (value.length >= 12 && /[\s/]/.test(value)) replaced.add(value.slice(0, 60));
   const len = Math.min(value.length, key === "signature" || key === "encrypted_content" ? 16 : cap);
-  if (realCwd && value.startsWith(`${realCwd}/`)) {
+  const realCwd = realCwds.find((c) => value.startsWith(`${c}/`));
+  if (realCwd) {
     // a path under the working directory keeps its shape: a target is shown relative to it
     const rest = value.slice(realCwd.length + 1, realCwd.length + 1 + cap);
     const shaped = rest
@@ -137,6 +182,12 @@ function redactString(key: string, value: string, parentType: unknown): string {
   for (const m of MARKERS) {
     if (!value.startsWith(m)) continue;
     keptValues.add(m);
+    const phrase = PHRASES.find((p) => value.includes(p));
+    if (phrase) {
+      keptValues.add(phrase);
+      const words = value.slice(value.indexOf(phrase) + phrase.length);
+      return `${m} ${phrase} ${filler(words, Math.min(words.length, cap))}`;
+    }
     return m + filler(value, Math.max(0, len - m.length));
   }
   return filler(value, len);
@@ -150,11 +201,13 @@ function redact(value: unknown, key = "", parentType?: unknown): unknown {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       // wireToolInputs is keyed by tool id, file history by path
+      // a prose key (AskUserQuestion's answers are keyed by the question) is cut like a value
+      // made from the same words, so the two still match
       const safeKey = ids.has(k)
         ? ids.get(k)!
         : /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(k) && !/^(toolu|srvtoolu|msg|req)_/.test(k)
           ? k
-          : filler(k, k.length);
+          : filler(k, Math.min(k.length, cap));
       out[safeKey] = redact(v, k, obj.type);
     }
     return out;
@@ -178,6 +231,10 @@ const ID_KEYS = new Set([
   "leafUuid",
   "taskId",
   "runId",
+  "source_uuid",
+  "logicalParentUuid",
+  "messageId",
+  "snapshotMessageId",
 ]);
 function collectIds(value: unknown, key = ""): void {
   if (typeof value === "string") {
@@ -212,7 +269,7 @@ const parse = (file: string) =>
 // the agents, wherever they sit under subagents/
 const sessionId = path.basename(src, ".jsonl");
 const subagents = path.join(path.dirname(src), sessionId, "subagents");
-const found = readdirSync(subagents, { recursive: true })
+const found = (wanted.size ? readdirSync(subagents, { recursive: true }) : [])
   .map(String)
   .flatMap((rel) => {
     const m = /(?:^|\/)agent-([^./]+)\.jsonl$/.exec(rel);
@@ -234,12 +291,36 @@ const agents = found.map(({ id, rel }) => {
   for (const l of [...lines, ...journal]) collectIds(l);
   return { id, rel, meta, lines, wf, journal };
 });
-realCwd =
-  (agents[0]?.lines.find((l) => (l as { cwd?: unknown }).cwd) as { cwd?: string })?.cwd ?? "";
-
 // from the parent: the calls that started these agents, what came back, and any line that names
-// one of them (a background agent's completion notice, a workflow's launch result)
+// one of them (a background agent's completion notice, a workflow's launch result). or, for a
+// session's own conversation, every line of the stretch asked for.
 const parentLines = readFileSync(src, "utf8").split("\n").filter(Boolean);
+// a session's stretch is mostly lines its fold never reads: hook results, token reminders, file
+// history, titles written again and again. one in LEAN of each stays, so the fixture still has
+// them to skip, and the rest go - they would be most of its bytes.
+const LEAN = 25;
+const noise = new Map<string, number>();
+const stretch = (range ? parentLines.slice(Number(range[1]), Number(range[2])) : []).filter(
+  (line) => {
+    const row = JSON.parse(line) as { type?: string; attachment?: { type?: string } };
+    if (row.type === "user" || row.type === "assistant" || row.type === "system") return true;
+    if (row.attachment?.type === "queued_command") return true;
+    const kind = `${row.type}:${row.attachment?.type ?? ""}`;
+    const n = noise.get(kind) ?? 0;
+    noise.set(kind, n + 1);
+    return n % LEAN === 0;
+  },
+);
+realCwds = [
+  ...new Set(
+    [...agents.flatMap((a) => a.lines), ...stretch.map((l) => JSON.parse(l) as unknown)].flatMap(
+      (l) => {
+        const cwd = (l as { cwd?: unknown }).cwd;
+        return typeof cwd === "string" && cwd.length > 1 ? [cwd] : [];
+      },
+    ),
+  ),
+].sort((a, b) => b.length - a.length);
 const needles = new Set<string>([
   ...agents.map((a) => a.id),
   ...agents.flatMap((a) => (typeof a.meta.toolUseId === "string" ? [a.meta.toolUseId] : [])),
@@ -250,9 +331,9 @@ for (const line of parentLines) {
   // a workflow's launch result names the run. the call it answers is the Workflow tool_use.
   for (const m of line.matchAll(/"tool_use_id":"(toolu_[A-Za-z0-9]+)"/g)) needles.add(m[1]!);
 }
-const kept = parentLines
-  .filter((line) => [...needles].some((n) => line.includes(n)))
-  .map((l) => JSON.parse(l) as unknown);
+const kept = (
+  range ? stretch : parentLines.filter((line) => [...needles].some((n) => line.includes(n)))
+).map((l) => JSON.parse(l) as unknown);
 for (const l of kept) collectIds(l);
 
 const write = (file: string, text: string) => {
@@ -263,8 +344,33 @@ const write = (file: string, text: string) => {
 // but their strings are cut short - they are most of the bytes.
 const redactLine = (row: unknown) => {
   cap = (row as { type?: unknown }).type === "attachment" ? 24 : CAP;
-  return JSON.stringify(redact(row));
+  return JSON.stringify(redact(range ? lean(row) : row));
 };
+
+/**
+ * a session's lines without what nothing reads and most of the bytes are: the usage breakdown
+ * past the four counts, and the wire copy of every tool input (a timeline never reads it)
+ */
+function lean(row: unknown): unknown {
+  const r = row as { message?: { usage?: Record<string, unknown> }; wireToolInputs?: unknown };
+  if (!r || typeof r !== "object") return row;
+  const { wireToolInputs: _wire, ...rest } = r as Record<string, unknown>;
+  const usage = r.message?.usage;
+  if (!usage) return rest;
+  const keep = [
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+  ];
+  return {
+    ...rest,
+    message: {
+      ...r.message,
+      usage: Object.fromEntries(keep.flatMap((k) => (k in usage ? [[k, usage[k]]] : []))),
+    },
+  };
+}
 const jsonl = (rows: unknown[]) => `${rows.map(redactLine).join("\n")}\n`;
 
 const outSession = ids.get(sessionId)!;
@@ -284,16 +390,17 @@ for (const a of agents) {
 }
 
 // nothing real may survive: no id, no path, no piece of prose
-const everything = readdirSync(path.join(outRoot, outSession), { recursive: true })
+const outDir = path.join(outRoot, outSession);
+const everything = (existsSync(outDir) ? readdirSync(outDir, { recursive: true }) : [])
   .map(String)
   .filter((n) => n.endsWith(".json") || n.endsWith(".jsonl"))
-  .map((n) => readFileSync(path.join(outRoot, outSession, n), "utf8"))
+  .map((n) => readFileSync(path.join(outDir, n), "utf8"))
   .join("\n")
   .concat(readFileSync(path.join(outRoot, `${outSession}.jsonl`), "utf8"));
 for (const real of ids.keys()) {
   if (everything.includes(real)) throw new Error(`leak: id ${real} survived`);
 }
-for (const needle of [realCwd, sessionId, path.basename(path.dirname(src))]) {
+for (const needle of [...realCwds, sessionId, path.basename(path.dirname(src))]) {
   if (needle && everything.includes(needle)) throw new Error(`leak: ${needle} survived`);
 }
 for (const original of replaced) {

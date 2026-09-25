@@ -267,6 +267,15 @@ function usageTotal(u: unknown): number {
 
 export interface FoldOptions {
   home?: string;
+  /** what a tool step keeps of its input. 0 keeps none: a view that never shows it. */
+  inputPreview?: number;
+  /** what a tool step keeps of its result. 0 keeps none. */
+  resultPreview?: number;
+  /**
+   * the prompt is someone else's business: every user text is something said part way through.
+   * a session's turn is folded this way - its prompt was read before the work started.
+   */
+  promptless?: boolean;
 }
 
 /**
@@ -277,6 +286,9 @@ export interface FoldOptions {
 export class TimelineFold {
   readonly state: TimelineState;
   private readonly home: string | undefined;
+  private readonly inputPreview: number;
+  private readonly resultPreview: number;
+  private readonly promptless: boolean;
   /** tool_use id -> index of the step still waiting for its result */
   private readonly pending = new Map<string, number>();
 
@@ -288,6 +300,9 @@ export class TimelineFold {
       ...(state.last ? { last: { ...state.last, texts: [...state.last.texts] } } : {}),
     };
     this.home = opts.home;
+    this.inputPreview = opts.inputPreview ?? INPUT_PREVIEW;
+    this.resultPreview = opts.resultPreview ?? RESULT_PREVIEW;
+    this.promptless = opts.promptless ?? false;
     this.state.steps.forEach((s, i) => {
       if (s.kind === "tool" && s.durationMs === undefined && !s.ref) this.pending.set(s.id, i);
     });
@@ -303,7 +318,11 @@ export class TimelineFold {
       // a torn or junk line. the rest of the file still counts.
       return;
     }
-    if (!isObject(entry)) return;
+    if (isObject(entry)) this.entry(entry, offset, length);
+  }
+
+  /** a line already parsed: a session's fold reads every line once and hands its turn the work */
+  entry(entry: Record<string, unknown>, offset: number, length: number): void {
     const s = this.state;
     const parsed = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
     if (Number.isFinite(parsed)) {
@@ -367,7 +386,9 @@ export class TimelineFold {
         }
         let input = "";
         try {
-          input = cut(JSON.stringify(block.input ?? {}), INPUT_PREVIEW);
+          if (this.inputPreview > 0) {
+            input = cut(JSON.stringify(block.input ?? {}), this.inputPreview);
+          }
         } catch {
           // an input that does not serialise has nothing to show
         }
@@ -403,7 +424,9 @@ export class TimelineFold {
     const next: ToolStep = { ...step, durationMs: Math.max(0, at - step.at) };
     if (result) {
       next.ref = line;
-      if (result.text) next.result = squash(result.text, RESULT_PREVIEW);
+      if (result.text && this.resultPreview > 0) {
+        next.result = squash(result.text, this.resultPreview);
+      }
       if (result.isError) {
         next.isError = true;
         next.failure = failureOf(result.text);
@@ -432,7 +455,12 @@ export class TimelineFold {
     const text = userText(content).trim();
     if (!text) return;
     // the first thing an agent is given is what it was asked to do
-    if (s.prompt === undefined && s.steps.length === 0 && entry.isMeta !== true) {
+    if (
+      !this.promptless &&
+      s.prompt === undefined &&
+      s.steps.length === 0 &&
+      entry.isMeta !== true
+    ) {
       s.prompt = cut(text, PROMPT_MAX);
       return;
     }
