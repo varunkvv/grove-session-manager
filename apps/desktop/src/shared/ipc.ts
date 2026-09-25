@@ -8,13 +8,16 @@ import type {
   FolderState,
   LiveStatus,
   LongWorkMode,
+  Mark,
   ModelUsage,
+  Prompt,
+  Question,
   SessionAgent,
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
 
-export type { SessionAgent };
+export type { Mark, Prompt, Question, SessionAgent };
 
 export type Outcome<T = void> =
   | { ok: true; value: T }
@@ -164,6 +167,15 @@ export interface AgentSteps {
   head: Omit<AgentDetail, "key" | "id" | "steps" | "prompt">;
 }
 
+/** one hunk of a unified diff: lines start with " ", "+" or "-" */
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
 /** one tool call opened: the whole input, and the whole result up to a cap */
 export interface StepDetail {
   input: string;
@@ -171,6 +183,93 @@ export interface StepDetail {
   isError?: boolean;
   /** cut at the cap */
   truncated: boolean;
+  /** what it did to files: an Edit's or a Write's patch, the files a Bash command changed */
+  diffs?: Array<{ path: string; hunks: DiffHunk[]; created?: boolean }>;
+  /** a Bash call's streams, apart */
+  bash?: {
+    stdout: string;
+    stderr: string;
+    interrupted: boolean;
+    /** where a big output went. said, never read. */
+    persisted?: string;
+    exit?: string;
+    background?: string;
+  };
+  /** an AskUserQuestion's every question and option, with what was picked */
+  questions?: Question[];
+  /** an ExitPlanMode's plan, whole. markdown, untrusted. */
+  plan?: string;
+}
+
+/**
+ * one turn of a session's conversation as the pane draws it before its work is opened: the
+ * prompt, what is always in sight, the work line's numbers and the answer. no steps.
+ */
+export interface ConversationTurn {
+  kind: "turn";
+  /** where it sits in the conversation. stable while the session writes: turns are only added. */
+  n: number;
+  /** absent for work that went on after a compaction with nobody asking */
+  prompt?: Prompt;
+  /** a plan, a question, what the person said while it worked. `step` is where each goes in the work. */
+  marks: Mark[];
+  /** every text block of its final message. markdown, untrusted. */
+  answer?: string;
+  /** a slash command's output */
+  output?: string;
+  /** the api call failed for good, in Claude Code's words */
+  error?: string;
+  /** the last api error of a run of retries nothing came after */
+  apiError?: string;
+  interrupted?: boolean;
+  /** tool calls */
+  tools: number;
+  filesEdited: number;
+  agents: number;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+}
+
+export interface ConversationDivider {
+  kind: "compact";
+  n: number;
+  at: number;
+  trigger?: string;
+  preTokens?: number;
+  postTokens?: number;
+  /** what Claude Code carried on with. markdown, untrusted. */
+  summary?: string;
+}
+
+export type ConversationEntry = ConversationTurn | ConversationDivider;
+
+/** a whole session's conversation, turn by turn, and what the header says about it */
+export interface ConversationView {
+  key: SessionKey;
+  items: ConversationEntry[];
+  /** the model of its last response */
+  model?: string;
+  tools: number;
+  turns: number;
+  startedAt?: number;
+  lastAt?: number;
+  /** the newest turn's work, while the session is running: it is open from the start */
+  live?: { n: number; steps: DetailStep[] };
+}
+
+/**
+ * what changed in the conversation on screen since the last push. every entry at or past `from` is
+ * replaced by `items`. `live` is the newest turn's work from step `from` on, when it moved.
+ */
+export interface ConversationTurns {
+  key: SessionKey;
+  /** which follow this belongs to. a push from an earlier one is dropped. */
+  gen: number;
+  from: number;
+  items: ConversationEntry[];
+  head: Omit<ConversationView, "key" | "items" | "live">;
+  live?: { n: number; from: number; steps: DetailStep[] };
 }
 
 /** a folder people keep coming back to: repos their sessions ran in, and folders already in combos */
@@ -372,6 +471,23 @@ export interface Api {
   agentsSeen(key: SessionKey, agentIds: string[]): Promise<void>;
   /** one step opened: read back from the two transcript lines it points at */
   agentStep(key: SessionKey, agentId: string, stepId: string): Promise<StepDetail | null>;
+  /**
+   * the session's own conversation on screen: every turn, without the work. from here until the
+   * next call, what it writes arrives as `conversation:turns`. a null key stops that.
+   */
+  followConversation(
+    key: SessionKey | null,
+    /** a search that led here: `found` is the turn that matched it best, and the step inside it */
+    find?: string,
+  ): Promise<{
+    gen: number;
+    conversation: ConversationView;
+    found?: { n: number; step?: number };
+  } | null>;
+  /** one turn's work, opened */
+  conversationSteps(key: SessionKey, n: number): Promise<DetailStep[] | null>;
+  /** one step of the conversation opened, by its tool_use id */
+  conversationStep(key: SessionKey, stepId: string): Promise<StepDetail | null>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
   openExternal(url: string): Promise<Outcome>;
   /** takes sessions out of "needs you" until their next event */
@@ -439,6 +555,9 @@ export const INVOKE_CHANNELS = [
   "inspectSession",
   "agentStep",
   "followAgent",
+  "followConversation",
+  "conversationSteps",
+  "conversationStep",
   "agentsSeen",
   "openExternal",
   "markSeen",
@@ -511,6 +630,7 @@ export interface PushEvents {
   "menu:command": { id: MenuCommandId };
   toast: ToastMessage;
   "agent:steps": AgentSteps;
+  "conversation:turns": ConversationTurns;
 }
 
 export const PUSH_CHANNELS = [
@@ -522,6 +642,7 @@ export const PUSH_CHANNELS = [
   "menu:command",
   "toast",
   "agent:steps",
+  "conversation:turns",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 export interface Bridge extends Api {

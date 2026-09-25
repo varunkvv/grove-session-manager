@@ -90,6 +90,10 @@ async function start(): Promise<void> {
     stateDir: appEnv.stateDir,
     snapshot: (key) => sessions.agentSnapshot(key),
     onSteps: (steps) => pusher.send("agent:steps", steps),
+    // the row's key is its transcript path, and only a row the index has names a file
+    transcript: (key) => sessions.get(key)?.key,
+    running: (key) => sessions.get(key)?.live?.state === "running",
+    onTurns: (turns) => pusher.send("conversation:turns", turns),
   });
   const archive = new ArchiveService({
     appRoot: appEnv.appRoot,

@@ -874,6 +874,10 @@ const bridge: Bridge = {
     return { gen, detail: { ...held, key } };
   },
   agentStep: async (_key, _agentId, stepId) => bodies.get(stepId) ?? null,
+  // a realistic long conversation arrives with the conversation view
+  followConversation: async () => null,
+  conversationSteps: async () => null,
+  conversationStep: async () => null,
   agentsSeen: async () => {},
   openExternal: () => okv(undefined),
   markSeen: async () => {},

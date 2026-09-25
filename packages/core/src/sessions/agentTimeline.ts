@@ -4,6 +4,7 @@ import { open, readdir, readFile, stat, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isObject, readJsonGuarded, writeFileAtomic } from "../fsx.ts";
+import { type Question, questionsOf, withPicks } from "./conversation.ts";
 import {
   type LineRef,
   resultText,
@@ -73,6 +74,15 @@ const clip = (s: string) =>
     ? { text: s.slice(0, DETAIL_MAX_CHARS), truncated: true }
     : { text: s, truncated: false };
 
+/** one hunk of a unified diff: lines start with " ", "+" or "-" */
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
 export interface ToolDetail {
   /** the whole input, as indented json */
   input: string;
@@ -80,6 +90,27 @@ export interface ToolDetail {
   isError?: boolean;
   /** the result was longer than DETAIL_MAX_CHARS */
   truncated: boolean;
+  /**
+   * what the call did to files, as Claude Code worked it out: an Edit's or a Write's patch, or
+   * the files a Bash command changed. a new file is its whole content, added.
+   */
+  diffs?: Array<{ path: string; hunks: DiffHunk[]; created?: boolean }>;
+  /** a Bash call's two streams, apart */
+  bash?: {
+    stdout: string;
+    stderr: string;
+    interrupted: boolean;
+    /** a big output went to a file instead: the path Claude Code says, never read */
+    persisted?: string;
+    /** Claude Code's reading of the exit code ("No matches found") */
+    exit?: string;
+    /** it went on in the background, under this task id */
+    background?: string;
+  };
+  /** an AskUserQuestion: every question with every option, and what was picked */
+  questions?: Question[];
+  /** an ExitPlanMode: the plan, whole */
+  plan?: string;
 }
 
 /**
@@ -98,16 +129,121 @@ export async function readToolDetail(
   if (!isObject(call)) return null;
   const input = clip(JSON.stringify(call.input ?? {}, null, 2));
   const detail: ToolDetail = { input: input.text, truncated: input.truncated };
-  if (!step.ref) return detail;
-  const result = contentOf(await readLine(file, step.ref)).find(
+  if (!step.ref) {
+    structured(detail, call, null);
+    return detail;
+  }
+  const resultLine = await readLine(file, step.ref);
+  const result = contentOf(resultLine).find(
     (b) => isObject(b) && b.type === "tool_result" && b.tool_use_id === step.id,
   );
-  if (!isObject(result)) return detail;
+  if (!isObject(result)) {
+    structured(detail, call, null);
+    return detail;
+  }
   const text = clip(resultText(result.content));
   detail.result = text.text;
   detail.truncated ||= text.truncated;
   if (result.is_error === true) detail.isError = true;
+  structured(detail, call, resultLine);
   return detail;
+}
+
+/** diff lines kept across every file of one call. a scroller, not a file viewer. */
+const DIFF_LINES_MAX = 4_000;
+
+function hunksOf(value: unknown, budget: { lines: number; chars: number }): DiffHunk[] {
+  if (!Array.isArray(value)) return [];
+  const hunks: DiffHunk[] = [];
+  for (const h of value) {
+    if (!isObject(h) || !Array.isArray(h.lines) || budget.lines <= 0) continue;
+    const lines: string[] = [];
+    for (const l of h.lines) {
+      if (typeof l !== "string" || budget.lines <= 0 || budget.chars <= 0) break;
+      lines.push(l);
+      budget.lines--;
+      budget.chars -= l.length;
+    }
+    const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    hunks.push({
+      oldStart: n(h.oldStart),
+      oldLines: n(h.oldLines),
+      newStart: n(h.newStart),
+      newLines: n(h.newLines),
+      lines,
+    });
+  }
+  return hunks;
+}
+
+/**
+ * the parts of `toolUseResult` worth drawing rather than dumping: Claude Code writes it beside
+ * every tool result in a session's own transcript (rarely in an agent's). `originalFile` is the
+ * whole file before the edit, and is never copied out.
+ */
+function structured(
+  detail: ToolDetail,
+  call: Record<string, unknown>,
+  line: Record<string, unknown> | null,
+): void {
+  const told = line?.toolUseResult;
+  const name = call.name;
+  const input = call.input;
+  if (name === "ExitPlanMode" && isObject(input) && typeof input.plan === "string") {
+    detail.plan = clip(input.plan).text;
+  }
+  if (name === "AskUserQuestion") {
+    const questions = questionsOf(input);
+    if (questions.length) {
+      detail.questions = withPicks(questions, isObject(told) ? told.answers : undefined);
+    }
+  }
+  if (!isObject(told)) return;
+  const budget = { lines: DIFF_LINES_MAX, chars: DETAIL_MAX_CHARS };
+  const diffs: NonNullable<ToolDetail["diffs"]> = [];
+  if (typeof told.filePath === "string" && Array.isArray(told.structuredPatch)) {
+    const hunks = hunksOf(told.structuredPatch, budget);
+    if (hunks.length) diffs.push({ path: told.filePath, hunks });
+    else if (told.type === "create" && typeof told.content === "string") {
+      // a new file has no patch: all of it was added
+      const lines = told.content.split("\n");
+      if (lines.at(-1) === "") lines.pop();
+      const added = hunksOf(
+        [
+          {
+            oldStart: 0,
+            oldLines: 0,
+            newStart: 1,
+            newLines: lines.length,
+            lines: lines.map((l) => `+${l}`),
+          },
+        ],
+        budget,
+      );
+      diffs.push({ path: told.filePath, hunks: added, created: true });
+    }
+  }
+  const edited = isObject(told.bashEditDiff) ? told.bashEditDiff.files : undefined;
+  if (Array.isArray(edited)) {
+    for (const f of edited) {
+      if (!isObject(f) || typeof f.filePath !== "string") continue;
+      const hunks = hunksOf(f.hunks, budget);
+      if (hunks.length) diffs.push({ path: f.filePath, hunks });
+    }
+  }
+  if (diffs.length) detail.diffs = diffs;
+  if (typeof told.stdout === "string" || typeof told.stderr === "string") {
+    const out = clip(typeof told.stdout === "string" ? told.stdout : "");
+    const err = clip(typeof told.stderr === "string" ? told.stderr : "");
+    detail.truncated ||= out.truncated || err.truncated;
+    detail.bash = { stdout: out.text, stderr: err.text, interrupted: told.interrupted === true };
+    if (typeof told.persistedOutputPath === "string")
+      detail.bash.persisted = told.persistedOutputPath;
+    if (typeof told.returnCodeInterpretation === "string" && told.returnCodeInterpretation) {
+      detail.bash.exit = told.returnCodeInterpretation;
+    }
+    if (typeof told.backgroundTaskId === "string") detail.bash.background = told.backgroundTaskId;
+  }
 }
 
 /**

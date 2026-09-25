@@ -177,6 +177,10 @@ function redactString(key: string, value: string, parentType: unknown): string {
       .join("/");
     return `${fakeCwd}/${shaped}`;
   }
+  // a diff line says what it is with its first character: context, added or removed
+  if (key === "lines" && /^[ +-]/.test(value)) {
+    return value[0] + filler(value, Math.max(0, len - 1));
+  }
   const exit = /^(Error: )?Exit code \d+/.exec(value)?.[0];
   if (exit) return exit + filler(value, Math.max(0, len - exit.length));
   for (const m of MARKERS) {

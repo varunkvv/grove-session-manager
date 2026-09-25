@@ -191,7 +191,8 @@ function rejectionWords(text: string): string | undefined {
   return said ? cut(said, PROMPT_MAX) : undefined;
 }
 
-function questionsOf(input: unknown): Question[] {
+/** the questions of an AskUserQuestion call, from its input */
+export function questionsOf(input: unknown): Question[] {
   if (!isObject(input) || !Array.isArray(input.questions)) return [];
   return input.questions.flatMap((q): Question[] => {
     if (!isObject(q) || typeof q.question !== "string") return [];
@@ -215,7 +216,7 @@ function questionsOf(input: unknown): Question[] {
  * when a key does not match exactly (it was edited, or cut), the answer at the same position is
  * the one that belongs to it.
  */
-function withPicks(questions: Question[], answers: unknown): Question[] {
+export function withPicks(questions: Question[], answers: unknown): Question[] {
   if (!isObject(answers)) return questions;
   const values = Object.values(answers);
   return questions.map((q, i) => {

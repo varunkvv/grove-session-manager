@@ -3,6 +3,8 @@ import path from "node:path";
 import {
   type AgentSnapshot,
   agentParents,
+  answerSteps,
+  type ConversationItem,
   fileMark,
   firstSentence,
   loadCachedTimeline,
@@ -26,12 +28,22 @@ import type {
   AgentDetail,
   AgentStats,
   AgentSteps,
-  DetailStep,
+  ConversationTurns,
+  ConversationView,
   SessionInspection,
   SessionKey,
   StepDetail,
 } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
+import {
+  Conversations,
+  conversationHead,
+  conversationView,
+  entryView,
+  findTurn,
+  turnSteps,
+} from "./conversations.ts";
+import { detailSteps } from "./detailSteps.ts";
 
 /** folded timelines kept in memory. the 4MB agent folds to ~270KB, so this stays well under 20MB. */
 const MEMORY = 48;
@@ -44,22 +56,43 @@ export interface AgentInspectorOptions {
   snapshot: (key: SessionKey) => AgentSnapshot | undefined;
   /** what the agent on screen wrote since the last push */
   onSteps?: (steps: AgentSteps) => void;
+  /** a session's transcript, from the index: never a path the renderer sent */
+  transcript?: (key: SessionKey) => string | undefined;
+  /** whether a session is in the middle of a turn */
+  running?: (key: SessionKey) => boolean;
+  /** what the conversation on screen wrote since the last push */
+  onTurns?: (turns: ConversationTurns) => void;
   tailMs?: number;
 }
 
-interface Follow {
+interface Watched {
   key: SessionKey;
-  id: string;
   file: string;
   gen: number;
-  /** the steps array last sent. unchanged steps are the same objects in the next fold. */
-  sent: TimelineState["steps"];
-  /** fold indexes the view left out as the result when it was sent */
-  drop: readonly number[];
   mark: string;
   timer: NodeJS.Timeout;
   busy: boolean;
 }
+
+interface AgentFollow extends Watched {
+  kind: "agent";
+  id: string;
+  /** the steps array last sent. unchanged steps are the same objects in the next fold. */
+  sent: TimelineState["steps"];
+  /** fold indexes the view left out as the result when it was sent */
+  drop: readonly number[];
+}
+
+interface ConversationFollow extends Watched {
+  kind: "conversation";
+  /** the items last sent. an unchanged turn is the same object in the next fold. */
+  sent: readonly ConversationItem[];
+  /** the newest turn as it was sent: its steps, and the ones it drew as its answer */
+  live: { n: number; steps: TimelineState["steps"]; answer: readonly number[] } | null;
+}
+
+/** the one thing on screen: an agent, or a session's own conversation. one pane, one of these. */
+type Follow = AgentFollow | ConversationFollow;
 
 /**
  * what a session's agents did, read from their own transcripts when someone looks - never for
@@ -75,12 +108,14 @@ export class AgentInspector {
   private readonly folding = new Map<string, Promise<TimelineState | null>>();
   /** workflow names by session. a run's name never changes once it is known. */
   private readonly runs = new Map<SessionKey, { mark: string; runs: Map<string, WorkflowRun> }>();
-  /** the one agent on screen. there is one pane, so there is one of these. */
+  /** the one thing on screen. there is one pane, so there is one of these. */
   private following: Follow | null = null;
   private gen = 0;
+  readonly conversations: Conversations;
 
   constructor(opts: AgentInspectorOptions) {
     this.opts = opts;
+    this.conversations = new Conversations({ stateDir: opts.stateDir });
     this.cacheDir = timelineCacheDir(opts.stateDir);
     const sweep = setTimeout(() => void sweepTimelineCache(this.cacheDir), 60_000);
     sweep.unref?.();
@@ -255,9 +290,13 @@ export class AgentInspector {
     agentId: string | null,
     find = "",
   ): Promise<{ gen: number; detail: AgentDetail; found?: number } | null> {
+    // leaving an agent stops watching it, and never the conversation that took its place
+    if (typeof agentId !== "string") {
+      if (this.following?.kind === "agent") this.unfollow();
+      return null;
+    }
     this.unfollow();
     const gen = ++this.gen;
-    if (typeof agentId !== "string") return null;
     const found = this.find(key, agentId);
     if (!found) return null;
     const state = await this.timeline(found.file, found.agent.state === "done");
@@ -266,7 +305,8 @@ export class AgentInspector {
     if (!state || !info || gen !== this.gen) return null;
     const detail = await this.build(key, found, state);
     if (gen !== this.gen) return null;
-    const f: Follow = {
+    const f: AgentFollow = {
+      kind: "agent",
       key,
       id: agentId,
       file: found.file,
@@ -284,11 +324,18 @@ export class AgentInspector {
   }
 
   private unfollow(): void {
-    if (this.following) clearInterval(this.following.timer);
+    const f = this.following;
+    if (f) clearInterval(f.timer);
+    // whatever the last push read of a running session goes to disk now, not in 30s
+    if (f?.kind === "conversation") this.conversations.save(f.file);
     this.following = null;
   }
 
-  private async tick(f: Follow): Promise<void> {
+  private tick(f: Follow): Promise<void> {
+    return f.kind === "agent" ? this.tickAgent(f) : this.tickConversation(f);
+  }
+
+  private async tickAgent(f: AgentFollow): Promise<void> {
     if (this.following !== f || f.busy) return;
     f.busy = true;
     try {
@@ -322,6 +369,142 @@ export class AgentInspector {
 
   dispose(): void {
     this.unfollow();
+  }
+
+  /** a session's agents, by the Agent call that started each: what makes an Agent step a link */
+  private started(key: SessionKey): Map<string, string> {
+    return new Map(
+      (this.opts.snapshot(key)?.agents ?? []).flatMap((a) =>
+        a.toolUseId ? [[a.toolUseId, a.id] as const] : [],
+      ),
+    );
+  }
+
+  /** a session's transcript, only ever from the index */
+  private transcript(key: SessionKey): string | null {
+    if (typeof key !== "string") return null;
+    return this.opts.transcript?.(key) ?? null;
+  }
+
+  /**
+   * a session's own conversation on screen: every turn now, then what it writes, pushed as it
+   * lands - from the first turn that changed, and the newest turn's work from its first changed
+   * step. the same poller as an agent's: whichever was on screen before stops.
+   */
+  async followConversation(
+    key: SessionKey | null,
+    find = "",
+  ): Promise<{
+    gen: number;
+    conversation: ConversationView;
+    found?: { n: number; step?: number };
+  } | null> {
+    if (key === null) {
+      if (this.following?.kind === "conversation") this.unfollow();
+      return null;
+    }
+    this.unfollow();
+    const gen = ++this.gen;
+    const file = this.transcript(key);
+    if (!file) return null;
+    const read = await this.conversations.read(file);
+    if (!read || gen !== this.gen) return null;
+    const { state, mark } = read;
+    const conversation = conversationView(key, state, {
+      running: this.opts.running?.(key) ?? false,
+      started: this.started(key),
+    });
+    const n = state.items.length - 1;
+    const last = state.items[n];
+    const f: ConversationFollow = {
+      kind: "conversation",
+      key,
+      file,
+      gen,
+      sent: state.items,
+      live:
+        last?.kind === "turn"
+          ? { n, steps: last.work.steps, answer: answerSteps(last.work) }
+          : null,
+      mark,
+      timer: setInterval(() => void this.tick(f), this.opts.tailMs ?? TAIL_MS),
+      busy: false,
+    };
+    f.timer.unref?.();
+    this.following = f;
+    const found = find ? findTurn(state, tokenize(find)) : undefined;
+    return { gen, conversation, ...(found ? { found } : {}) };
+  }
+
+  private async tickConversation(f: ConversationFollow): Promise<void> {
+    if (this.following !== f || f.busy) return;
+    f.busy = true;
+    try {
+      const info = await stat(f.file).catch(() => null);
+      if (!info || fileMark(info) === f.mark) return;
+      const read = await this.conversations.read(f.file);
+      if (!read || this.following !== f) return;
+      const { state, mark } = read;
+      f.mark = mark;
+      const from = firstChange(f.sent, state.items, []);
+      const n = state.items.length - 1;
+      const last = state.items[n];
+      let live: ConversationTurns["live"];
+      let next: ConversationFollow["live"] = null;
+      if (last?.kind === "turn") {
+        const answer = answerSteps(last.work);
+        next = { n, steps: last.work.steps, answer };
+        // a text that moved in or out of the answer changes the lines without changing a step
+        const at =
+          f.live?.n === n
+            ? firstChange(f.live.steps, last.work.steps, [...f.live.answer, ...answer])
+            : 0;
+        if (f.live?.n !== n || at < last.work.steps.length || f.live.steps.length > at) {
+          live = {
+            n,
+            from: at,
+            steps: turnSteps(last, this.started(f.key)).filter((s) => s.n >= at),
+          };
+        }
+      }
+      f.sent = state.items;
+      f.live = next;
+      if (from >= state.items.length && !live) return;
+      this.opts.onTurns?.({
+        key: f.key,
+        gen: f.gen,
+        from,
+        items: state.items.slice(from).map((item, i) => entryView(item, from + i)),
+        head: conversationHead(state),
+        ...(live ? { live } : {}),
+      });
+    } catch (e) {
+      log.warn("conversation tail of", f.file, e);
+    } finally {
+      f.busy = false;
+    }
+  }
+
+  /** one turn's work, opened */
+  async conversationSteps(key: SessionKey, n: number) {
+    const file = this.transcript(key);
+    if (!file || typeof n !== "number") return null;
+    const read = await this.conversations.read(file);
+    const turn = read?.state.items[n];
+    return turn?.kind === "turn" ? turnSteps(turn, this.started(key)) : null;
+  }
+
+  /** one step of the conversation opened. the only place a whole tool result is read. */
+  async conversationStep(key: SessionKey, stepId: string): Promise<StepDetail | null> {
+    const file = this.transcript(key);
+    if (!file || typeof stepId !== "string") return null;
+    const read = await this.conversations.read(file);
+    for (const item of read?.state.items ?? []) {
+      if (item.kind !== "turn") continue;
+      const step = item.work.steps.find((s) => s.kind === "tool" && s.id === stepId);
+      if (step?.kind === "tool") return readToolDetail(file, step);
+    }
+    return null;
   }
 
   /** one step opened. the only place a whole tool result is read. */
@@ -391,46 +574,6 @@ export function firstChange(
   const n = Math.min(sent.length, next.length);
   while (i < n && sent[i] === next[i]) i++;
   return Math.min(i, ...moved);
-}
-
-/**
- * the view's steps, numbered by where they sit in the fold. the view only ever leaves out the
- * final message's text, so a step keeps its number while the agent writes more.
- */
-function detailSteps(
-  all: readonly TimelineState["steps"][number][],
-  shown: readonly TimelineState["steps"][number][],
-  started: ReadonlyMap<string, string>,
-): DetailStep[] {
-  const index = new Map(all.map((s, i) => [s, i]));
-  return shown.map((s): DetailStep => {
-    const n = index.get(s) ?? -1;
-    if (s.kind !== "tool") {
-      return s.kind === "message"
-        ? {
-            kind: "message",
-            n,
-            text: s.text,
-            at: s.at,
-            ...(s.interrupted ? { interrupted: true } : {}),
-          }
-        : { kind: s.kind, n, text: s.text, at: s.at };
-    }
-    const step: DetailStep = {
-      kind: "tool",
-      n,
-      id: s.id,
-      name: s.name,
-      target: s.target,
-      at: s.at,
-    };
-    if (s.durationMs !== undefined) step.durationMs = s.durationMs;
-    if (s.failure) step.failure = s.failure;
-    if (s.server) step.server = true;
-    const child = started.get(s.id);
-    if (child) step.agentId = child;
-    return step;
-  });
 }
 
 function statsOf(

@@ -274,6 +274,25 @@ function buildHandlers(deps: Deps): Handlers {
       return deps.inspector.step(key, agentId, stepId);
     },
 
+    async followConversation(key, find) {
+      if (key === null) return deps.inspector.followConversation(null);
+      if (typeof key !== "string" || !sessions.get(key)) return null;
+      return deps.inspector.followConversation(
+        key,
+        typeof find === "string" ? find.slice(0, 500) : "",
+      );
+    },
+
+    async conversationSteps(key, n) {
+      if (typeof key !== "string" || !sessions.get(key) || !Number.isInteger(n)) return null;
+      return deps.inspector.conversationSteps(key, n);
+    },
+
+    async conversationStep(key, stepId) {
+      if (typeof key !== "string" || !sessions.get(key)) return null;
+      return deps.inspector.conversationStep(key, stepId);
+    },
+
     async openExternal(url) {
       const safe = externalUrl(url);
       if (!safe) throw new AppError("bad-link", "Only web links open from here.");

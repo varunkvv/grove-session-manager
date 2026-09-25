@@ -1,6 +1,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { readToolDetail } from "../../src/sessions/agentTimeline.ts";
 import {
   answerSteps,
   ConversationFold,
@@ -15,6 +16,7 @@ import {
   readConversation,
   saveCachedConversation,
 } from "../../src/sessions/conversationFile.ts";
+import type { ToolStep } from "../../src/sessions/timeline.ts";
 import {
   apiError,
   apiErrorMessage,
@@ -498,5 +500,92 @@ describe("what the real stretch does not have", () => {
       kind: "compact",
       summary: expect.stringContaining("reading files"),
     });
+  });
+});
+
+describe("a step of the conversation, opened", () => {
+  const toolSteps = (state: ConversationState) =>
+    turns(state).flatMap((t) => t.work.steps.filter((s): s is ToolStep => s.kind === "tool"));
+
+  it("draws what an Edit, a Write and a Bash did from Claude Code's own account of it", async () => {
+    const steps = toolSteps(await readConversation(FIXTURE));
+    const edit = await readToolDetail(FIXTURE, steps.find((s) => s.name === "Edit")!);
+    expect(edit?.diffs?.[0]?.path).toMatch(/^\/fixture\//);
+    const hunk = edit?.diffs?.[0]?.hunks[0];
+    expect(hunk?.lines.every((l) => /^[ +-]/.test(l))).toBe(true);
+    expect(hunk?.newStart).toBeGreaterThan(0);
+    // the file as it was before is in the transcript too, and never read out of it
+    expect(JSON.stringify(edit)).not.toContain("originalFile");
+    const writes = await Promise.all(
+      steps.filter((s) => s.name === "Write").map((s) => readToolDetail(FIXTURE, s)),
+    );
+    const created = writes.find((w) => w?.diffs?.[0]?.created);
+    expect(created?.diffs?.[0]?.hunks[0]?.lines.every((l) => l.startsWith("+"))).toBe(true);
+    const bash = await readToolDetail(FIXTURE, steps.find((s) => s.name === "Bash" && s.ref)!);
+    expect(bash?.bash).toMatchObject({ interrupted: false });
+    expect(typeof bash?.bash?.stdout).toBe("string");
+  });
+
+  it("keeps a Bash call's streams apart, and says where a big output went without reading it", async () => {
+    const file = sandboxFile(
+      jsonl([
+        prompt("run it", 0),
+        says("m1", call("b1", "Bash", { command: "pnpm test" }), 1),
+        result("b1", "Exit code 1\nFAIL", 2, {
+          isError: true,
+          told: {
+            stdout: "FAIL src/a.test.ts",
+            stderr: "npm ERR! test failed",
+            interrupted: false,
+            isImage: false,
+            noOutputExpected: false,
+            persistedOutputPath: "/work/api/.claude/tool-results/b1.txt",
+            returnCodeInterpretation: "Tests failed",
+          },
+        }),
+      ]),
+    );
+    const state = await readConversation(file);
+    const detail = await readToolDetail(file, toolSteps(state)[0]!);
+    expect(detail?.bash).toEqual({
+      stdout: "FAIL src/a.test.ts",
+      stderr: "npm ERR! test failed",
+      interrupted: false,
+      persisted: "/work/api/.claude/tool-results/b1.txt",
+      exit: "Tests failed",
+    });
+    expect(detail?.isError).toBe(true);
+  });
+
+  it("gives a question every option and its pick, and a plan whole", async () => {
+    const file = sandboxFile(
+      jsonl([
+        prompt("plan it", 0),
+        says(
+          "m1",
+          call("q1", "AskUserQuestion", {
+            questions: [
+              {
+                question: "Which db?",
+                header: "DB",
+                options: [
+                  { label: "pg", description: "d" },
+                  { label: "mysql", description: "d" },
+                ],
+              },
+            ],
+          }),
+          1,
+        ),
+        result("q1", "answered", 2, { told: { questions: [], answers: { "Which db?": "pg" } } }),
+        says("m2", call("p1", "ExitPlanMode", { plan: "# plan\n\nstep one" }), 3),
+      ]),
+    );
+    const [question, plan] = toolSteps(await readConversation(file));
+    expect((await readToolDetail(file, question!))?.questions).toEqual([
+      { question: "Which db?", header: "DB", options: ["pg", "mysql"], picked: "pg" },
+    ]);
+    // still waiting on the person: the plan is there before any answer is
+    expect((await readToolDetail(file, plan!))?.plan).toBe("# plan\n\nstep one");
   });
 });
