@@ -24,6 +24,7 @@ export type Intent =
   | { type: "inspector-back" }
   | { type: "none" }
   | { type: "new-combo" }
+  | { type: "new-session" }
   | { type: "open-combo" }
   | { type: "edit-combo" }
   | { type: "repair-combo" }
@@ -92,6 +93,7 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     // the next free number: 1-3 keep what they meant
     if (k === "4") return { type: "scope", scope: "inbox" };
     if (k === "n") return { type: "new-combo" };
+    if (k === "t") return { type: "new-session" };
     if (k === "o") return { type: "open-combo" };
     if (k === "e") return { type: "edit-combo" };
     if (k === ",") return { type: "settings" };

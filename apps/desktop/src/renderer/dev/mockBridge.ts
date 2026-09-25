@@ -936,6 +936,12 @@ const bridge: Bridge = {
   archiveSessions: () => okv(undefined),
   runSessionAction: () => okv({ message: "Done (mock)" }),
   dispatchBackground: () => okv({ id: "d7b6bcc2", message: "continuing in background · d7b6bcc2" }),
+  startSession: (req) =>
+    okv(
+      req.where === "background"
+        ? { id: "e4c1a2b3", message: "started in background · e4c1a2b3" }
+        : { message: req.where === "terminal" ? "Opened a new session in Terminal" : "Opening" },
+    ),
   validateComboName: async (name) => ({
     slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
     root: `/Users/you/claude-ws/${name}`,

@@ -187,7 +187,7 @@ describe("stopping a background session", () => {
 
 describe("handing a session to the supervisor", () => {
   it("builds argv with the prompt after `--`, and no permission flags", async () => {
-    const { continueArgs, newSessionArgs } = await import("../../src/main/services/background.ts");
+    const { continueArgs } = await import("../../src/main/services/background.ts");
     expect(continueArgs(SID.a, "--dangerously-skip-permissions")).toEqual([
       "--resume",
       SID.a,
@@ -195,10 +195,7 @@ describe("handing a session to the supervisor", () => {
       "--",
       "--dangerously-skip-permissions",
     ]);
-    expect(newSessionArgs("do it")).toEqual(["--bg", "--", "do it"]);
-    expect(newSessionArgs("do it", "-x name")).toEqual(["--bg", "--name=-x name", "--", "do it"]);
-    const all = [...continueArgs(SID.a, "x"), ...newSessionArgs("x", "n")].join(" ");
-    expect(all).not.toMatch(/permission|dangerously|skip/);
+    expect(continueArgs(SID.a, "x").join(" ")).not.toMatch(/permission|dangerously|skip/);
   });
 
   it("reads the short id from the supervisor, and from the printed line when it has to", async () => {

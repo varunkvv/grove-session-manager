@@ -3,7 +3,7 @@ import type { ComboView, FolderView } from "../../shared/ipc.ts";
 import { needsYou } from "../logic/rows.ts";
 import { focusSearch, openCombo } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Icon, IconButton, Mono, NeedsPill, Spinner, Switch } from "./ui.tsx";
+import { Button, cx, Icon, IconButton, Kbd, Mono, NeedsPill, Spinner, Switch } from "./ui.tsx";
 
 const DRIFT = new Set(["stale", "foreign", "missing-origin"]);
 
@@ -191,14 +191,12 @@ function LongWorkRow({ combo }: { combo: ComboView }) {
 function ComboMenu({ combo, onClose }: { combo: ComboView; onClose: () => void }) {
   const set = useStore((s) => s.set);
   const hasWorktrees = combo.folders.some((f) => f.mode === "worktree");
-  const items: Array<[string, () => void, boolean?]> = [
+  const items: Array<[string, () => void, boolean?, string?]> = [
     [
-      "New background session\u2026",
-      // Claude Code's supervisor runs it in the combo root, so CLAUDE.md and the hooks load
-      () =>
-        set({
-          dialog: { kind: "background", target: { kind: "new", combo: combo.name }, prompt: "" },
-        }),
+      "New session\u2026",
+      () => set({ dialog: { kind: "new-session", combo: combo.name } }),
+      false,
+      "\u2318T",
     ],
     ["Edit combo", () => set({ dialog: { kind: "combo", editing: combo.name } })],
     [
@@ -222,7 +220,7 @@ function ComboMenu({ combo, onClose }: { combo: ComboView; onClose: () => void }
         className="absolute right-2 z-50 mt-1 w-48 rounded-lg bg-overlay p-1.5 overlay-shadow"
         data-testid="combo-menu"
       >
-        {items.map(([label, run, disabled]) => (
+        {items.map(([label, run, disabled, keys]) => (
           <button
             key={label}
             type="button"
@@ -232,9 +230,10 @@ function ComboMenu({ combo, onClose }: { combo: ComboView; onClose: () => void }
               onClose();
               run();
             }}
-            className="flex h-7 w-full items-center rounded-md px-2.5 text-left text-sm text-fg-2 hover:bg-active hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+            className="flex h-7 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-fg-2 hover:bg-active hover:text-fg disabled:pointer-events-none disabled:opacity-40"
           >
-            {label}
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            {keys && <Kbd>{keys}</Kbd>}
           </button>
         ))}
       </div>

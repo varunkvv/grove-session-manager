@@ -23,13 +23,15 @@ export type DialogState =
   | { kind: "settings" }
   /** an action that interrupts something, asked before it runs */
   | { kind: "confirm"; key: SessionKey; action: SessionAction }
-  /** hand a session, or a new one in a combo, to Claude Code's supervisor */
+  /** hand a session nothing is running to Claude Code's supervisor */
   | {
       kind: "background";
-      target: { kind: "continue"; key: SessionKey } | { kind: "new"; combo: string };
+      target: { kind: "continue"; key: SessionKey };
       /** what the prompt starts as. the person can change it, and nothing goes without them. */
       prompt: string;
-    };
+    }
+  /** a new session in a combo: the editor, Terminal or the background, with its own settings */
+  | { kind: "new-session"; combo: string };
 
 export type PaneView = "conversation" | "agents";
 

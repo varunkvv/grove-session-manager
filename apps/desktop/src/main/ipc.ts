@@ -36,12 +36,20 @@ import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { AgentInspector } from "./services/agentInspector.ts";
 import type { ArchiveService } from "./services/archive.ts";
-import { type BackgroundService, continueArgs, newSessionArgs } from "./services/background.ts";
+import { type BackgroundService, continueArgs } from "./services/background.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
-import type { EditorService } from "./services/editor.ts";
+import { compareVersions, type EditorService } from "./services/editor.ts";
 import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
+import {
+  backgroundArgs,
+  editorPrompt,
+  NEW_CONVERSATION_COMPANION,
+  PROMPT_MAX,
+  parseNewSession,
+  terminalArgs,
+} from "./services/newSession.ts";
 import {
   claudeScriptBody,
   isResumeScriptName,
@@ -91,6 +99,7 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "archiveSessions",
   "runSessionAction",
   "dispatchBackground",
+  "startSession",
   "createCombo",
   "updateCombo",
   "deleteCombo",
@@ -186,10 +195,6 @@ function shortIdOf(deps: Deps, row: SessionRow): string {
   }
   return id;
 }
-
-/** the longest prompt grove hands over. anything longer belongs in a plan file. */
-const PROMPT_MAX = 20_000;
-const NAME_MAX = 100;
 
 function notTrusted(cwd: string): AppError {
   return new AppError(
@@ -450,7 +455,7 @@ function buildHandlers(deps: Deps): Handlers {
     },
 
     async dispatchBackground(req) {
-      if (!isObject(req) || (req.kind !== "continue" && req.kind !== "new")) {
+      if (!isObject(req) || req.kind !== "continue") {
         throw new AppError("invalid", "Nothing to hand over.");
       }
       const prompt = typeof req.prompt === "string" ? req.prompt.trim() : "";
@@ -460,51 +465,91 @@ function buildHandlers(deps: Deps): Handlers {
         throw new AppError("long-prompt", "That prompt is too long. Put it in a plan file.");
       }
       const bin = await claudeBin(deps);
-      if (req.kind === "continue") {
-        const row = requireSession(deps, req.key);
-        if (!isValidSessionId(row.sessionId)) {
-          throw new AppError("bad-session-id", "That session has no usable ID.");
-        }
-        const cwd = folderForSession(row);
-        if (!cwd || !(await isDirectory(cwd))) {
-          throw new AppError("cwd-missing", "That session's folder no longer exists.");
-        }
-        // a live process on the conversation: `--resume --bg` would start a copy, and say so
-        const holder = deps.live.holder(row.sessionId);
-        if (holder?.kind === "interactive") {
-          const where = heldWhere(holder.entrypoint, editor.current().label);
-          throw new AppError("held", `It is ${where}. Close it there first.`);
-        }
-        if (daemonHeld({ row, ...(holder ? { holder } : {}) })) {
-          throw new AppError("held", "Claude Code is already running it in the background.");
-        }
-        const args = continueArgs(row.sessionId, prompt);
-        if (req.terminal) {
-          await openInTerminal(
-            deps,
-            row.sessionId,
-            claudeScriptBody({ cwd, claudeBin: bin, args }),
-          );
-          return { message: TERMINAL_MESSAGE };
-        }
-        const res = await deps.background.dispatch(args, { cwd, sessionId: row.sessionId });
-        if (!res.ok) {
-          throw res.notTrusted ? notTrusted(cwd) : claudeFailure("claude --bg failed", res.out);
-        }
-        deps.live.clearInterrupted(row.sessionId);
-        return {
-          ...(res.id ? { id: res.id } : {}),
-          message: res.id ? `continuing in background · ${res.id}` : "continuing in background",
-        };
+      const row = requireSession(deps, req.key);
+      if (!isValidSessionId(row.sessionId)) {
+        throw new AppError("bad-session-id", "That session has no usable ID.");
       }
-      const combo = combos.find(String(req.combo));
-      const name = typeof req.name === "string" ? req.name.replace(/\s+/g, " ").trim() : "";
-      if (name.length > NAME_MAX) throw new AppError("long-name", "That name is too long.");
+      const cwd = folderForSession(row);
+      if (!cwd || !(await isDirectory(cwd))) {
+        throw new AppError("cwd-missing", "That session's folder no longer exists.");
+      }
+      // a live process on the conversation: `--resume --bg` would start a copy, and say so
+      const holder = deps.live.holder(row.sessionId);
+      if (holder?.kind === "interactive") {
+        const where = heldWhere(holder.entrypoint, editor.current().label);
+        throw new AppError("held", `It is ${where}. Close it there first.`);
+      }
+      if (daemonHeld({ row, ...(holder ? { holder } : {}) })) {
+        throw new AppError("held", "Claude Code is already running it in the background.");
+      }
+      const args = continueArgs(row.sessionId, prompt);
+      if (req.terminal) {
+        await openInTerminal(deps, row.sessionId, claudeScriptBody({ cwd, claudeBin: bin, args }));
+        return { message: TERMINAL_MESSAGE };
+      }
+      const res = await deps.background.dispatch(args, { cwd, sessionId: row.sessionId });
+      if (!res.ok) {
+        throw res.notTrusted ? notTrusted(cwd) : claudeFailure("claude --bg failed", res.out);
+      }
+      deps.live.clearInterrupted(row.sessionId);
+      return {
+        ...(res.id ? { id: res.id } : {}),
+        message: res.id ? `continuing in background · ${res.id}` : "continuing in background",
+      };
+    },
+
+    async startSession(raw) {
+      const req = parseNewSession(raw);
+      const combo = combos.find(req.combo);
       if (!(await isDirectory(combo.root))) {
         throw new AppError("cwd-missing", `${combo.root} does not exist.`);
       }
-      const args = newSessionArgs(prompt, name || undefined);
-      if (req.terminal) {
+      const label = editor.current().label;
+
+      if (req.where === "editor") {
+        const prompt = editorPrompt(req.prompt, req.longWork);
+        const { companionVersion } = await editor.status();
+        // an older companion cannot start a conversation, and an unpinned link would go to
+        // whichever window has focus. the combo still opens; the prompt waits on the clipboard.
+        if (
+          !companionVersion ||
+          compareVersions(companionVersion, NEW_CONVERSATION_COMPANION) < 0
+        ) {
+          await api.openCombo(combo.name);
+          if (prompt) electron.clipboard.writeText(prompt);
+          const why = companionVersion
+            ? `The Grove extension in ${label} is older than ${NEW_CONVERSATION_COMPANION}, so it cannot start the conversation.`
+            : `The Grove extension is not installed in ${label}, so it cannot start the conversation.`;
+          return prompt
+            ? { message: "Prompt copied - paste it into a new Claude conversation", body: why }
+            : { message: `Opened ${combo.name} in ${label}`, body: why };
+        }
+        const report = await combos.open(combo, undefined, { newConversation: true, prompt });
+        const launched = await openInEditor(report.workspaceFile, editor.current());
+        if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+        for (const warning of report.warnings) {
+          pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
+        }
+        return { message: `Opening ${combo.name} in ${label} on a new conversation` };
+      }
+
+      const bin = await claudeBin(deps);
+      if (req.where === "terminal") {
+        // the combo root as the cwd, so its CLAUDE.md and hooks load
+        await openInTerminal(
+          deps,
+          randomUUID(),
+          claudeScriptBody({
+            cwd: combo.root,
+            claudeBin: bin,
+            args: terminalArgs(req, req.prompt),
+          }),
+        );
+        return { message: `Opened a new session in Terminal, in ${combo.name}` };
+      }
+
+      const args = backgroundArgs(req, req.prompt);
+      if (req.throughTerminal) {
         await openInTerminal(
           deps,
           randomUUID(),

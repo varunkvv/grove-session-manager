@@ -44,6 +44,7 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     label: "File",
     submenu: [
       command("New Combo…", "CmdOrCtrl+N", "new-combo"),
+      command("New Session…", "CmdOrCtrl+T", "new-session"),
       command("Open Combo in Editor", "CmdOrCtrl+O", "open-combo"),
       separator,
       command("Edit Combo…", "CmdOrCtrl+E", "edit-combo"),

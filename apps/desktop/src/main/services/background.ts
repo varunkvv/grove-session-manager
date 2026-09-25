@@ -34,11 +34,6 @@ export function continueArgs(sessionId: string, prompt: string): string[] {
   return ["--resume", sessionId, "--bg", "--", prompt];
 }
 
-/** a new background session. `--name=` in one argument, so a name can never read as a flag. */
-export function newSessionArgs(prompt: string, name?: string): string[] {
-  return ["--bg", ...(name ? [`--name=${name}`] : []), "--", prompt];
-}
-
 /**
  * since 2.1.281 a dispatch into a folder that never passed the CLI's trust prompt exits 1 with
  * "Workspace not trusted. Run `claude` in <dir> once and accept the trust prompt, then retry."

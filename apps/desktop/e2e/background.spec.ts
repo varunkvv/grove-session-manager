@@ -168,31 +168,6 @@ test("continue in background sends the prompt it was given, from the session's o
   await expect(page.getByTestId("action-continue-bg")).toHaveCount(0);
 });
 
-test("a new background session starts in the combo folder, named, with the prompt typed", async () => {
-  fx = makeFixture({ withCompanion: true });
-  const root = writeCombo("ops");
-  const fake = writeFakeClaude(path.join(fx.dir, "bin"), []);
-  app = await launchApp(fx, { GROVE_CLAUDE_BIN: fake.bin });
-  const { page } = app;
-
-  await page.getByTestId("combo-row").filter({ hasText: "ops" }).click();
-  await page.getByTestId("combo-more").click();
-  await page.getByRole("menuitem", { name: "New background session…" }).click();
-  const dialog = page.getByTestId("background-dialog");
-  await expect(dialog).toBeVisible();
-  // nothing typed, nothing to send
-  await expect(dialog.getByTestId("bg-run")).toBeDisabled();
-  await dialog.getByTestId("bg-name").fill("nightly tidy");
-  await dialog.getByTestId("bg-prompt").fill("tidy the logs folder");
-  await dialog.getByTestId("bg-run").click();
-  await expect(
-    page.getByTestId("toast").filter({ hasText: "started in background" }),
-  ).toBeVisible();
-  const [call] = dispatches(fake);
-  expect(call?.argv).toEqual(["--bg", "--name=nightly tidy", "--", "tidy the logs folder"]);
-  expect(call?.cwd).toBe(root);
-});
-
 test("a session cut off mid-turn says so quietly, and leads with picking it back up", async () => {
   fx = makeFixture({ withCompanion: true });
   const queue = makePlainDir(fx, "queue");

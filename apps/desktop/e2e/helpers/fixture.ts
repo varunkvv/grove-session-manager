@@ -28,6 +28,8 @@ export interface Fixture {
 
 export interface FixtureOptions {
   withCompanion?: boolean;
+  /** the installed companion's version. 9.9.9 unless a test needs an older one. */
+  companionVersion?: string;
   withClaude?: boolean;
 }
 
@@ -72,10 +74,11 @@ export function makeFixture(o: FixtureOptions = {}): Fixture {
 
   const installed: unknown[] = [];
   if (o.withCompanion) {
+    const version = o.companionVersion ?? "9.9.9";
     installed.push({
       identifier: { id: COMPANION_ID },
-      version: "9.9.9",
-      relativeLocation: "companion-9.9.9",
+      version,
+      relativeLocation: `companion-${version}`,
     });
   }
   if (o.withClaude) {

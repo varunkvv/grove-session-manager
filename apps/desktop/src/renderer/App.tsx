@@ -10,6 +10,7 @@ import {
   TeardownDialog,
 } from "./components/Dialogs.tsx";
 import { Workspace } from "./components/Inspector.tsx";
+import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
 import { Rail } from "./components/Rail.tsx";
 import { SessionActionMenu } from "./components/SessionActionMenu.tsx";
 import { listRef } from "./components/SessionsPane.tsx";
@@ -142,6 +143,17 @@ function perform(intent: Intent): void {
     case "new-combo":
       s.set({ dialog: { kind: "combo" } });
       break;
+    case "new-session":
+      // the menu's accelerator still fires under an open dialog. it must not reset one.
+      if (s.dialog) break;
+      if (s.selectedCombo) s.set({ dialog: { kind: "new-session", combo: s.selectedCombo } });
+      else
+        s.toast({
+          level: "info",
+          title: "Pick a combo first",
+          body: "A new session starts in one.",
+        });
+      break;
     case "edit-combo":
       if (s.selectedCombo) s.set({ dialog: { kind: "combo", editing: s.selectedCombo } });
       break;
@@ -162,6 +174,7 @@ function perform(intent: Intent): void {
 
 const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "new-combo": { type: "new-combo" },
+  "new-session": { type: "new-session" },
   "open-combo": { type: "open-combo" },
   "edit-combo": { type: "edit-combo" },
   "repair-combo": { type: "repair-combo" },
@@ -290,6 +303,7 @@ export function App() {
       <SettingsDialog />
       <ConfirmDialog />
       <BackgroundDialog />
+      <NewSessionDialog />
       <Toasts />
     </div>
   );

@@ -66,6 +66,9 @@ describe("keyboard model", () => {
       delta: 1,
     });
     expect(interpret(ctx(), key("r", { meta: true }))).toEqual({ type: "refresh" });
+    expect(interpret(ctx(), key("t", { meta: true }))).toEqual({ type: "new-session" });
+    // an open dialog keeps it: a second cmd-T must not start over on what was typed
+    expect(interpret(ctx({ overlay: true }), key("t", { meta: true }))).toBeNull();
     expect(interpret(ctx(), key("R", { meta: true, shift: true }))).toEqual({
       type: "repair-combo",
     });

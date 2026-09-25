@@ -54,9 +54,28 @@ answer questions and plan. Three files do it:
 The indirection is the point. `CLAUDE.md` is read once, when a session starts, so a switch written there could never reach
 a session that is already running. The policy file is read at the moment of decision, so flipping it takes effect on a
 running session's next long task. Flip it in the app (the switch in an open combo) or from the editor
-(`Grove: Toggle Background Long Work`). Saying "do this one here" in the chat overrules it for a single task.
+(`Grove: Toggle Background Long Work`). Saying "do this one here" in the chat overrules it for a single task, and
+**New session…** can set it for one session (below).
 
 It is a default by instruction, not an enforcement: Claude still decides what counts as long.
+
+### Starting a session with its own settings
+
+**New session…** (`⌘T`, or the first item in a combo's menu) starts one in the selected combo, in one of three places:
+
+| where | what happens | settings it can take |
+| --- | --- | --- |
+| VS Code (or Cursor) | the combo opens on a new conversation in the Claude panel, the prompt waiting in its input box - you send it | long work |
+| Terminal | a Terminal window runs `claude` in the combo root, the prompt as its first message | long work, model, permission mode, effort, name |
+| Background | `claude --bg` in the combo root, the prompt sent | long work, model, permission mode, effort, name |
+
+Every setting has a Default that passes nothing, so the combo's own settings decide. Long work defaults to what the
+combo says; overriding it for one session goes into that session's system prompt (`--append-system-prompt`) for the
+CLI targets. The Claude panel takes nothing from outside but a prompt, so there the override is the prompt's first
+line, where you see it before sending. The dialog remembers every choice per combo, but not the prompt or the name.
+
+Starting a conversation in the editor needs Grove Companion 0.3.0 or later. With an older one, the combo still opens,
+and the prompt is put on the clipboard to paste into a new conversation.
 
 ### Needs you
 
@@ -114,7 +133,7 @@ two: it shows what the supervisor runs, lands on those sessions without breaking
 - **Handing one over.** **Continue in background…** on a session nothing is running asks for the prompt to send
   (`continue where you left off` to start with), then runs `claude --resume <id> --bg` in the session's own folder.
   It carries on under the same id and transcript. It is not offered while a panel or terminal still has the session
-  open: that would start a copy. **New background session…** in a combo's menu starts one in the combo root.
+  open: that would start a copy. **New session…** with Background picked starts a new one in the combo root.
 - **Interrupted.** A session that was running when its process went away (a window closed on it mid-turn, a crash,
   a reboot) keeps a quiet **Interrupted** marker, and **Continue in background…** becomes its first action. So does
   a background run that failed. The fact is kept in `.grove/interrupted.json`, so it is still there after a reboot,
@@ -133,9 +152,10 @@ the same command in Terminal, where the prompt can be answered. Every later hand
 never writes that trust itself.
 
 Grove only ever calls Claude Code's own commands for all of this: `claude agents --json --all`,
-`claude --resume <id> --bg -- <prompt>`, `claude --bg --name=<name> -- <prompt>`, `claude attach <id>` in Terminal
-and `claude stop <id>`. Never `claude rm`, never `claude daemon`, and never a permission flag - a background session
-that stops on a permission prompt shows up under **Needs you**, and attach is where it gets answered.
+`claude --resume <id> --bg -- <prompt>`, `claude --bg [settings] --name=<name> -- <prompt>`, `claude attach <id>` in
+Terminal and `claude stop <id>`. Never `claude rm`, never `claude daemon`, and no permission flag unless you pick a mode
+in **New session…** - a background session that stops on a permission prompt shows up under **Needs you**, and attach
+is where it gets answered.
 
 ### What is running inside a session
 
@@ -304,6 +324,7 @@ Every shortcut carries a modifier.
 | `⌘G` / `⌘⇧G` | the next / previous turn of the conversation that says the search |
 | `⌘J` | every prompt of the conversation in the pane, to filter and go to |
 | `Esc` | close what is open, then clear the query |
+| `⌘T` | a new session in the selected combo: VS Code, Terminal or the background |
 | `⌘N` `⌘O` `⌘E` `⌘R` `⌘⇧R` `⌘,` | new / open / edit combo, refresh, repair, settings |
 
 `⌘D` and `⌘⇧D` do nothing on a row that is not asking for anything, and neither moves the selection.

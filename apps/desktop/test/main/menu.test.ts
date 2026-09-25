@@ -62,4 +62,21 @@ describe("the menu", () => {
     expect(next?.registerAccelerator).toBe(false);
     expect(previous?.registerAccelerator).toBe(false);
   });
+
+  it("cmd-T starts a new session, from the File menu", () => {
+    const sent: MenuCommandId[] = [];
+    const template = buildMenuTemplate({
+      appName: "Grove",
+      isDev: false,
+      isMac: true,
+      send: (id) => sent.push(id),
+    });
+    const file = template.find((m) => m.label === "File");
+    const item = ((file?.submenu ?? []) as MenuItemConstructorOptions[]).find(
+      (i) => i.accelerator === "CmdOrCtrl+T",
+    );
+    expect(item?.label).toBe("New Session…");
+    (item?.click as (() => void) | undefined)?.();
+    expect(sent).toEqual(["new-session"]);
+  });
 });

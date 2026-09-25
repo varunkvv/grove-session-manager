@@ -16,6 +16,7 @@ import type {
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
+import type { NewSessionRequest, NewSessionResult } from "./newSession.ts";
 
 export type { Mark, Prompt, Question, SessionAgent };
 
@@ -462,16 +463,15 @@ export interface SessionAction {
   confirm?: { title: string; body: string; label: string };
 }
 
-/** what to hand Claude Code's supervisor: a session to continue, or a new one in a combo */
-export type BackgroundRequest = (
-  | { kind: "continue"; key: SessionKey }
-  | { kind: "new"; combo: string; name?: string }
-) & {
+/** a session nothing is running, to hand to Claude Code's supervisor. a new one is `startSession`. */
+export interface BackgroundRequest {
+  kind: "continue";
+  key: SessionKey;
   /** typed by the person, never sent without them pressing the button. never empty. */
   prompt: string;
   /** run it in Terminal instead, where the CLI's one-time trust prompt can be answered */
   terminal?: boolean;
-};
+}
 
 export interface OpenReport {
   launched: boolean;
@@ -544,6 +544,11 @@ export interface Api {
    * the way through.
    */
   dispatchBackground(req: BackgroundRequest): Promise<Outcome<{ id?: string; message: string }>>;
+  /**
+   * a new session in a combo: the editor on a new conversation with the prompt in its input box,
+   * an interactive claude in Terminal, or `claude --bg`. `not-trusted` as in dispatchBackground.
+   */
+  startSession(req: NewSessionRequest): Promise<Outcome<NewSessionResult>>;
 
   validateComboName(
     name: string,
@@ -606,6 +611,7 @@ export const INVOKE_CHANNELS = [
   "archiveSessions",
   "runSessionAction",
   "dispatchBackground",
+  "startSession",
   "validateComboName",
   "validateDraft",
   "pickDirectories",
@@ -633,6 +639,7 @@ export const INVOKE_CHANNELS = [
 
 export type MenuCommandId =
   | "new-combo"
+  | "new-session"
   | "open-combo"
   | "edit-combo"
   | "repair-combo"

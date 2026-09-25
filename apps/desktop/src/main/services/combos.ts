@@ -13,6 +13,7 @@ import {
   forceRemoveWorktree,
   type LongWorkMode,
   loadCombos,
+  type PrepareOptions,
   prepareComboOpen,
   reconcileCombo,
   repairCombo,
@@ -312,12 +313,15 @@ export class ComboService {
   open(
     combo: Combo,
     sessionId?: string,
+    /** a new conversation instead of a session, with its prompt */
+    land: Pick<PrepareOptions, "newConversation" | "prompt"> = {},
   ): Promise<{ workspaceFile: string; outcomes: FolderOutcome[]; warnings: string[] }> {
     return this.mutate(async () => {
       this.setBusyAll(combo, "creating");
       try {
         const report = await prepareComboOpen(this.opts.appRoot, combo, {
           sessionId,
+          ...land,
           gitPath: this.opts.gitPath,
           source: "app",
           onOutcome: (o) => this.applyOutcome(combo, o, "open"),

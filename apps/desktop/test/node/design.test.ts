@@ -52,6 +52,7 @@ describe("design lint", () => {
       "components/AgentDetail.tsx",
       "components/ConversationPane.tsx",
       "components/Steps.tsx",
+      "components/NewSessionDialog.tsx",
     ]);
     for (const f of uses) expect(allowed.has(f), `${f} uses the accent`).toBe(true);
     // a row takes the accent only when its session asks for someone, never for decoration
@@ -59,12 +60,14 @@ describe("design lint", () => {
     for (const line of list.split("\n").filter((l) => /-accent/.test(l))) {
       expect(line, "accent on a session row outside the live badge").toMatch(/loud|NEEDS_YOU/);
     }
-    // the pane's only colour is an agent, a step or a turn that ended in an error
+    // the pane's only colour is an agent, a step or a turn that ended in an error. the new-session
+    // dialog's is a start that failed, same as the other dialogs.
     const inspector = new Set([
       "components/Inspector.tsx",
       "components/AgentDetail.tsx",
       "components/ConversationPane.tsx",
       "components/Steps.tsx",
+      "components/NewSessionDialog.tsx",
     ]);
     for (const [f, src] of files.filter(([f]) => inspector.has(f))) {
       for (const line of src.split("\n").filter((l) => /-accent/.test(l))) {

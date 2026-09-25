@@ -332,9 +332,10 @@ export function ConfirmDialog() {
 }
 
 /**
- * the prompt a background session starts from, typed or checked by the person. Claude Code's
- * supervisor runs it from here on; Grove only hands it over. a folder the CLI never trusted gets
- * one way through: the same command in Terminal, where the trust prompt can be answered.
+ * the prompt a session nothing is running continues from, typed or checked by the person. Claude
+ * Code's supervisor runs it from here on; Grove only hands it over. a folder the CLI never trusted
+ * gets one way through: the same command in Terminal, where the trust prompt can be answered. a
+ * new session in a combo is NewSessionDialog.
  */
 export function BackgroundDialog() {
   const dialog = useStore((s) => s.dialog);
@@ -343,7 +344,6 @@ export function BackgroundDialog() {
   const open = dialog?.kind === "background";
   const target = open ? dialog.target : null;
   const [prompt, setPrompt] = useState("");
-  const [name, setName] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -351,7 +351,6 @@ export function BackgroundDialog() {
   useEffect(() => {
     if (!open) return;
     setPrompt(dialog.prompt);
-    setName("");
     setError(null);
     setRunning(false);
     // after the modal opened (a parent's effect runs after its children's), or it takes focus back
@@ -365,9 +364,8 @@ export function BackgroundDialog() {
     if (!target || empty) return;
     setRunning(true);
     const res = await window.grove.dispatchBackground({
-      ...(target.kind === "continue"
-        ? { kind: "continue" as const, key: target.key }
-        : { kind: "new" as const, combo: target.combo, ...(name.trim() ? { name } : {}) }),
+      kind: "continue",
+      key: target.key,
       prompt,
       ...(terminal ? { terminal: true } : {}),
     });
@@ -377,13 +375,11 @@ export function BackgroundDialog() {
     toast({ level: "info", title: res.value.message });
   }
 
-  const title =
-    target?.kind === "new" ? `New background session in ${target.combo}` : "Continue in background";
   return (
     <Modal
       open={open}
       onClose={close}
-      title={title}
+      title="Continue in background"
       width={520}
       testId="background-dialog"
       footer={
@@ -407,29 +403,17 @@ export function BackgroundDialog() {
             onClick={() => void run(false)}
             data-testid="bg-run"
           >
-            {running ? "Handing over" : target?.kind === "new" ? "Start" : "Continue in background"}
+            {running ? "Handing over" : "Continue in background"}
           </Button>
         </>
       }
     >
       <div className="space-y-3">
         <p className="text-fg-3">
-          {target?.kind === "new"
-            ? "Claude Code's own supervisor runs it in the combo folder. It keeps going after every window closes."
-            : "Claude Code's own supervisor picks this conversation up where it stopped, and keeps it going after every window closes."}{" "}
-          A permission prompt puts it under Needs you. Open in Terminal (attach) answers it.
+          Claude Code's own supervisor picks this conversation up where it stopped, and keeps it
+          going after every window closes. A permission prompt puts it under Needs you. Open in
+          Terminal (attach) answers it.
         </p>
-        {target?.kind === "new" && (
-          <Field label="Name" hint="Optional. Shown in claude agents and in the list here.">
-            <input
-              className={inputClass}
-              value={name}
-              maxLength={100}
-              onChange={(e) => setName(e.target.value)}
-              data-testid="bg-name"
-            />
-          </Field>
-        )}
         <Field label="Prompt" hint="Sent as it is, once you press the button.">
           <textarea
             className={cx(inputClass, "h-auto min-h-24 resize-y py-1.5 leading-5")}
