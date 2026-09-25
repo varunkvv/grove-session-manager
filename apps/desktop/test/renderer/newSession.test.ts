@@ -7,6 +7,7 @@ import {
   primaryLabel,
   promptHint,
   saveChoices,
+  settingsNote,
 } from "../../src/renderer/logic/newSession.ts";
 
 function memory() {
@@ -88,6 +89,13 @@ describe("what the dialog says", () => {
     expect(promptHint("editor")).toMatch(/^Optional\..*input box/);
     expect(promptHint("terminal")).toMatch(/^Optional\..*first message/);
     expect(promptHint("background")).not.toMatch(/Optional/);
+  });
+
+  it("haiku in plan mode says that it plans with Sonnet. nothing else gets a note", () => {
+    expect(settingsNote({ model: "haiku", mode: "plan" })).toMatch(/plans with Sonnet/);
+    expect(settingsNote({ model: "haiku", mode: "" })).toBeNull();
+    expect(settingsNote({ model: "sonnet", mode: "plan" })).toBeNull();
+    expect(settingsNote({ model: "", mode: "plan" })).toBeNull();
   });
 
   it("the combo default names what the combo says now", () => {

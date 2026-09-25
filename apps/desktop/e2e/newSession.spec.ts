@@ -162,6 +162,9 @@ test("Terminal runs claude in the combo root with the flags picked, the prompt a
   await dialog.getByTestId("ns-model").selectOption("haiku");
   await dialog.getByTestId("ns-mode").selectOption("plan");
   await dialog.getByTestId("ns-effort").selectOption("low");
+  await expect(dialog.getByTestId("ns-settings-note")).toHaveText(
+    "In plan mode Claude Code plans with Sonnet, then works on Haiku.",
+  );
   await dialog.getByTestId("ns-long-work").selectOption("foreground");
   await dialog.getByTestId("ns-name").fill("-flaky retry");
   const typed = `pick up the "retry" test - it's flaky; $(nope)`;
@@ -217,6 +220,7 @@ test("background sends the flags before `--`, and an untrusted folder goes throu
   await expect(dialog.getByTestId("ns-run")).toBeDisabled();
   await dialog.getByTestId("ns-model").selectOption("sonnet");
   await dialog.getByTestId("ns-effort").selectOption("high");
+  await expect(dialog.getByTestId("ns-settings-note")).toHaveCount(0);
   await dialog.getByTestId("ns-long-work").selectOption("background");
   await dialog.getByTestId("ns-name").fill("nightly tidy");
   await dialog.getByTestId("ns-prompt").fill("tidy the logs folder");

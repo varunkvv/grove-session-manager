@@ -98,6 +98,16 @@ export function promptHint(where: NewSessionWhere): string {
   return "Sent as it is, once you press the button.";
 }
 
+/**
+ * a combination that does something other than it says. Claude Code runs Haiku's planning on
+ * Sonnet (seen on 2.1.281: a `--model haiku --permission-mode plan` session answered as Sonnet).
+ */
+export function settingsNote(choices: Pick<NewSessionChoices, "model" | "mode">): string | null {
+  return choices.model === "haiku" && choices.mode === "plan"
+    ? "In plan mode Claude Code plans with Sonnet, then works on Haiku."
+    : null;
+}
+
 export function longWorkOptions(
   comboMode: LongWorkMode,
 ): Array<{ value: NewSessionChoices["longWork"]; label: string }> {

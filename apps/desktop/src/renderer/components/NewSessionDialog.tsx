@@ -16,6 +16,7 @@ import {
   primaryLabel,
   promptHint,
   saveChoices,
+  settingsNote,
   whereHint,
 } from "../logic/newSession.ts";
 import { useStore } from "../state/store.ts";
@@ -230,6 +231,11 @@ export function NewSessionDialog() {
                 "ns-effort",
               )}
             </div>
+            {settingsNote(choices) && (
+              <p className="-mt-1 text-meta text-fg-3" data-testid="ns-settings-note">
+                {settingsNote(choices)}
+              </p>
+            )}
             <Field label="Name" hint="Optional. Shown in claude agents and the resume picker.">
               <input
                 className={inputClass}
