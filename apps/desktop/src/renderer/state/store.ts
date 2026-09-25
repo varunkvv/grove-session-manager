@@ -30,6 +30,8 @@ export type DialogState =
       prompt: string;
     };
 
+export type PaneView = "conversation" | "agents";
+
 export interface MenuState {
   key: SessionKey;
   actions: SessionAction[];
@@ -41,10 +43,15 @@ export interface Toast extends ToastMessage {
 }
 
 /**
- * the agent inspector beside the list. it has no session of its own: it shows whichever row is
- * active, like a mail app's reading pane.
+ * the pane beside the list. it has no session of its own: it shows whichever row is active, like
+ * a mail app's reading pane - the session's conversation, or what its agents did.
  */
 export interface InspectorState {
+  /**
+   * what it shows of the session. the arrows keep it; a session with no agents shows its
+   * conversation whatever this says.
+   */
+  view: PaneView;
   /** the agent the pane's keyboard is on */
   agent: string | null;
   /** the agent whose detail is showing in place of the list, and the session it belongs to */

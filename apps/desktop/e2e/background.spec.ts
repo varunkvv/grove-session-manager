@@ -78,8 +78,9 @@ test("a session Claude Code runs in the background is opened where it runs, neve
   await expect(marker).toHaveAttribute("data-held", "true");
   await expect(marker).toHaveAttribute("title", "Background session d7b6bcc2 · working");
 
-  // a combo-root row opens its combo on a click. this one would be refused there: the offers instead
-  await row.click();
+  // a combo-root row opens its combo on a double-click. this one would be refused there: the
+  // offers instead
+  await row.dblclick();
   await expect(page.getByTestId("session-menu")).toBeVisible();
   await expect(page.getByTestId("action-attach")).toBeEnabled();
   for (const land of ["combo-land", "folder-land", "terminal", "continue-bg"]) {
@@ -91,7 +92,7 @@ test("a session Claude Code runs in the background is opened where it runs, neve
   expect(readExecLog(fx).some((l) => l.bin === "code")).toBe(false);
 
   // stopping a session at work asks first, then stops it (never rm) and lands like any other
-  await row.click();
+  await row.dblclick();
   await page.getByTestId("action-stop-land").click();
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await page.getByTestId("confirm-run").click();
@@ -121,7 +122,7 @@ test("continue in background sends the prompt it was given, from the session's o
 
   // a folder the CLI never trusted: the dispatch is refused, and Terminal is the way through
   setUntrusted(fake, true);
-  await row.click();
+  await row.dblclick();
   await page.getByTestId("action-continue-bg").click();
   const dialog = page.getByTestId("background-dialog");
   const prompt = dialog.getByTestId("bg-prompt");
@@ -145,7 +146,7 @@ test("continue in background sends the prompt it was given, from the session's o
 
   // trusted now: straight to the supervisor, with the prompt as typed and a PATH that has claude's
   setUntrusted(fake, false);
-  await row.click();
+  await row.dblclick();
   await page.getByTestId("action-continue-bg").click();
   await prompt.fill(typed);
   await dialog.getByTestId("bg-run").click();
@@ -162,7 +163,7 @@ test("continue in background sends the prompt it was given, from the session's o
 
   // the supervisor has it now: the row says so, and offers attach
   await expect(row.getByTestId("row-background")).toHaveAttribute("data-held", "true");
-  await row.click();
+  await row.dblclick();
   await expect(page.getByTestId("action-attach")).toBeEnabled();
   await expect(page.getByTestId("action-continue-bg")).toHaveCount(0);
 });
@@ -212,7 +213,7 @@ test("a session cut off mid-turn says so quietly, and leads with picking it back
   await expect(row.getByTestId("row-interrupted")).toHaveText("Interrupted");
   // quiet: not the inbox
   await expect(page.getByTestId("needs-you-header")).toHaveCount(0);
-  await row.click();
+  await row.dblclick();
   await expect(page.getByTestId("session-menu").getByRole("menuitem").first()).toHaveAttribute(
     "data-testid",
     "action-continue-bg",

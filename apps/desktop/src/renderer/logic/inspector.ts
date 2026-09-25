@@ -1,20 +1,31 @@
 import { formatDuration, formatTokens, modelLabel, type SessionAgent } from "@grove/core/pure";
 import type { AgentStats, SessionInspection } from "../../shared/ipc.ts";
 
-/** the pane's width range, and what the list keeps beside it */
-export const PANE_MIN = 440;
-export const PANE_MAX = 560;
+/**
+ * the pane's width range, and what the list keeps beside it. a conversation is read, so the pane
+ * starts at half of what the rail leaves - 440-560px was too narrow for prose.
+ */
+export const PANE_MIN = 480;
+export const PANE_MAX = 960;
 export const LIST_MIN = 420;
 
 export type PaneLayout = { mode: "side" | "overlay"; width: number };
 
+/** the widest the pane can be beside a list that keeps its minimum */
+export function paneWidth(available: number, wanted?: number): number {
+  const most = Math.min(PANE_MAX, available - LIST_MIN);
+  const want = wanted ?? Math.round(available / 2);
+  return Math.round(Math.max(PANE_MIN, Math.min(most, want)));
+}
+
 /**
  * beside the list when the window has room for both, over it from the right when it does not -
- * crushing the list to fit would make both unreadable. `available` is what the rail leaves.
+ * crushing the list to fit would make both unreadable. `available` is what the rail leaves, and
+ * `wanted` the width someone dragged it to.
  */
-export function paneLayout(available: number): PaneLayout {
-  const want = Math.round(Math.min(PANE_MAX, Math.max(PANE_MIN, available * 0.42)));
-  if (available - want >= LIST_MIN) return { mode: "side", width: want };
+export function paneLayout(available: number, wanted?: number): PaneLayout {
+  if (available - PANE_MIN >= LIST_MIN)
+    return { mode: "side", width: paneWidth(available, wanted) };
   // as narrow as it can be, so the selected row still shows beside it
   return { mode: "overlay", width: Math.max(0, Math.min(PANE_MIN, available - 24)) };
 }

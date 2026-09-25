@@ -42,16 +42,26 @@ function inspection(
   };
 }
 
-describe("where the inspector goes", () => {
+describe("where the pane goes", () => {
   it("beside the list while both fit, over it from the right when they do not", () => {
-    // the default 1180px window, less the rail
-    expect(paneLayout(892)).toEqual({ mode: "side", width: PANE_MIN });
-    expect(892 - PANE_MIN).toBeGreaterThanOrEqual(LIST_MIN);
-    const wide = paneLayout(2000);
-    expect(wide).toEqual({ mode: "side", width: PANE_MAX });
-    // a 1000px window: the list would be crushed, so the pane covers part of it instead
+    // the default 1280px window, less the rail: half each
+    expect(paneLayout(992)).toEqual({ mode: "side", width: 496 });
+    expect(992 - 496).toBeGreaterThanOrEqual(LIST_MIN);
+    // never narrower than a conversation can be read at, never wider than a line wants
+    expect(paneLayout(900)).toEqual({ mode: "side", width: PANE_MIN });
+    expect(paneLayout(2400)).toEqual({ mode: "side", width: PANE_MAX });
+    // the old default 1180px window, and a 1000px one: the list would be crushed, so the pane
+    // covers part of it instead
+    expect(paneLayout(892)).toEqual({ mode: "overlay", width: PANE_MIN });
     expect(paneLayout(712)).toEqual({ mode: "overlay", width: PANE_MIN });
-    expect(paneLayout(1152).mode).toBe("side");
+  });
+
+  it("keeps the width it was dragged to, as far as the list lets it", () => {
+    expect(paneLayout(1600, 700)).toEqual({ mode: "side", width: 700 });
+    // the list keeps its 420px, the pane its 480px, whatever was asked
+    expect(paneLayout(1000, 900)).toEqual({ mode: "side", width: 1000 - LIST_MIN });
+    expect(paneLayout(1600, 200)).toEqual({ mode: "side", width: PANE_MIN });
+    expect(paneLayout(2400, 5000)).toEqual({ mode: "side", width: PANE_MAX });
   });
 });
 

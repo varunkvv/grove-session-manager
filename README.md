@@ -149,6 +149,22 @@ inspector, or its detail. Its transcript will never change again, so the line is
 `.grove/agent-lines.v1.json`. Nothing is summarised that nobody looked at: history is not worth anyone's tokens until
 someone opens it. The same switch turns it off.
 
+### Reading a session
+
+A click on a session reads it: a pane opens beside the list with the session's whole conversation, and it follows the
+selected row like a mail app's reading pane. Going to the session is the deliberate act - a double-click, `↵`, the
+**Open in VS Code** button at the top of the pane, or the quiet **Open** a row shows in place of its time while the
+pointer is on it. All four do what `↵` always did: a session at a combo's root opens its combo and lands on it, a
+session Claude Code runs in the background opens where it runs (so the button says **Open in Terminal**), anything else
+takes the first way in. `⋯` beside the button has every other way in. The pane's first opening waits out a
+double-click, so the list moving under the pointer never turns a double-click into two things.
+
+The header says where the session ran, its branch, the model of its last response, how long it went on and how many
+tools it called. A session with agents gets **Conversation · Agents** under it. The pane starts at half of what the
+rail leaves (at least 480px, at most 960px, and the list always keeps 420px); drag its left edge to change that - the
+width is remembered - and double-click the edge to go back to half. A window too narrow for both gets the pane over
+the list instead.
+
 ### What the agents did
 
 `⌘I`, a click on a row's agents, or **Inspect agents** in its action menu opens a pane beside the list with what that
@@ -231,12 +247,12 @@ Every shortcut carries a modifier.
 
 | | |
 | --- | --- |
-| `↵` / `⌘↵` | open the active session (the offer list, or the first offer without showing it) |
+| `↵` / `⌘↵` | open the active session (the offer list, or the first offer without showing it). A click reads it in the pane, a double-click opens it |
 | `↑` `↓` `PgUp` `PgDn` `⌘↑` `⌘↓` | move the active row |
 | `⌥↑` `⌥↓` | step through combos |
 | `⌘1` `⌘2` `⌘3` | this combo's sessions / all sessions / every agent |
 | `⌘K` | the active row's actions |
-| `⌘I` | what the active session's agents did. `Tab` moves into it, `Esc` steps back out |
+| `⌘I` | the pane: the active session's conversation, or what its agents did. `Tab` moves into it, `Esc` steps back out |
 | `⌘D` | mark the active row as seen |
 | `⌘⇧D` | mark everything under **Needs you** as seen |
 | `⌘⇧A` | archive the active session, or bring it back |

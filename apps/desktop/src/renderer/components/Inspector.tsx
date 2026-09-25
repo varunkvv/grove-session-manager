@@ -1,5 +1,12 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { SessionInspection, SessionKey, SessionRow } from "../../shared/ipc.ts";
+import type {
+  ConversationView,
+  SessionAction,
+  SessionInspection,
+  SessionKey,
+  SessionRow,
+} from "../../shared/ipc.ts";
+import { conversationMeta, openLabel } from "../logic/conversation.ts";
 import {
   type AgentListItem,
   agentDuration,
@@ -11,16 +18,32 @@ import {
   type FanOut,
   fanOut,
   laneGeometry,
+  PANE_MIN,
   type PaneLayout,
   paneLayout,
+  paneWidth,
   sessionAgentSummary,
 } from "../logic/inspector.ts";
-import { agentIdOf, sessionKeyOf } from "../logic/rows.ts";
-import { agentHit, closeAgent, closeInspector, openAgent, paneFocus } from "../state/actions.ts";
+import { agentIdOf, sessionKeyOf, splitQuery } from "../logic/rows.ts";
+import {
+  activateDefault,
+  agentHit,
+  closeAgent,
+  closeInspector,
+  focusSearch,
+  openAgent,
+  openMenu,
+  paneFocus,
+} from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { AgentDetailView } from "./AgentDetail.tsx";
+import {
+  ConversationPane,
+  lastConversation,
+  useFollowedConversation,
+} from "./ConversationPane.tsx";
 import { SessionsPane } from "./SessionsPane.tsx";
-import { cx, Icon, IconButton } from "./ui.tsx";
+import { Button, cx, Icon, IconButton, Segmented } from "./ui.tsx";
 
 /** the last look at each session, so coming back to one draws its numbers at once */
 const inspections = new Map<SessionKey, SessionInspection>();
@@ -59,8 +82,30 @@ function useInspection(row: SessionRow | undefined): SessionInspection | null {
 }
 
 /** the list and, beside it or over it, the inspector */
+/** where the width someone dragged the pane to is kept. per machine, and it can be refused. */
+const WIDTH_KEY = "grove.paneWidth";
+
+function savedWidth(): number | undefined {
+  try {
+    const n = Number(window.localStorage.getItem(WIDTH_KEY));
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveWidth(width: number | undefined): void {
+  try {
+    if (width === undefined) window.localStorage.removeItem(WIDTH_KEY);
+    else window.localStorage.setItem(WIDTH_KEY, String(Math.round(width)));
+  } catch {
+    // private storage off: the width lasts until the window closes
+  }
+}
+
 export function Workspace() {
   const open = useStore((s) => s.inspector !== null);
+  const view = useStore((s) => s.inspector?.view);
   const ref = useRef<HTMLDivElement>(null);
   // in the Agents scope a row is an agent, and selecting one opens the inspector on it
   const activeKey = useStore((s) => s.activeKey);
@@ -81,39 +126,103 @@ export function Workspace() {
       return;
     }
     const hit = agentHit(session);
-    if (!hit || !useStore.getState().inspector) return;
+    // the arrows keep the view: an agent is only brought up where agents are on screen
+    if (!hit || useStore.getState().inspector?.view !== "agents") return;
     if (detail?.key !== session || detail.id !== hit.agent) {
       openAgent(session, hit.agent, { find: hit.find });
     }
   }, [activeKey, deep]);
-  const [layout, setLayout] = useState<PaneLayout>({ mode: "side", width: 440 });
+  const [available, setAvailable] = useState(0);
+  const [wanted, setWanted] = useState<number | undefined>(savedWidth);
+  const dragged = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = () => setLayout(paneLayout(el.clientWidth));
+    const measure = () => setAvailable(el.clientWidth);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  const layout: PaneLayout = available
+    ? paneLayout(available, wanted)
+    : { mode: "side", width: PANE_MIN };
   return (
     <div ref={ref} className="relative flex h-full min-h-0 min-w-0 flex-1">
       <SessionsPane />
       {open && (
         <aside
-          aria-label="Agents"
+          aria-label="Session"
           data-testid="inspector"
           data-layout={layout.mode}
+          data-view={view}
           style={{ width: layout.width }}
           className={cx(
-            "flex h-full min-h-0 shrink-0 flex-col border-l border-line bg-canvas",
+            "relative flex h-full min-h-0 shrink-0 flex-col border-l border-line bg-canvas",
             layout.mode === "overlay" && "absolute top-0 right-0 bottom-0 z-20",
           )}
         >
+          {layout.mode === "side" && (
+            <DragEdge
+              onDrag={(x) => {
+                const right = ref.current?.getBoundingClientRect().right ?? x;
+                dragged.current = paneWidth(available, right - x);
+                setWanted(dragged.current);
+              }}
+              onDone={() => saveWidth(dragged.current)}
+              onReset={() => {
+                saveWidth(undefined);
+                setWanted(undefined);
+              }}
+            />
+          )}
           <InspectorBody />
         </aside>
       )}
     </div>
+  );
+}
+
+/**
+ * the pane's left edge: drag it to make the pane wider or narrower, double-click it to go back to
+ * half. a hairline stays a hairline - only the cursor says it can be moved.
+ */
+function DragEdge({
+  onDrag,
+  onDone,
+  onReset,
+}: {
+  onDrag: (clientX: number) => void;
+  onDone: () => void;
+  onReset: () => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Pane width"
+      data-testid="pane-edge"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setDragging(true);
+      }}
+      onPointerMove={(e) => {
+        if (dragging) onDrag(e.clientX);
+      }}
+      onPointerUp={(e) => {
+        if (!dragging) return;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        setDragging(false);
+        onDone();
+      }}
+      onDoubleClick={onReset}
+      className={cx(
+        "no-drag fade absolute top-0 bottom-0 -left-[3px] z-10 w-[6px] cursor-col-resize",
+        dragging && "bg-line-strong",
+      )}
+    />
   );
 }
 
@@ -136,30 +245,125 @@ function InspectorBody() {
   const detail = useStore((s) => s.inspector?.detail ?? null);
   const set = useStore((s) => s.set);
   useEffect(() => {
-    if (detail && detail.key !== activeKey) set({ inspector: { agent: null, detail: null } });
+    const inspector = useStore.getState().inspector;
+    if (inspector && detail && detail.key !== activeKey) {
+      set({ inspector: { ...inspector, agent: null, detail: null } });
+    }
   }, [detail, activeKey, set]);
+  // a session with no agents has only its conversation to show, whatever the arrows kept
+  const view = useStore((s) => s.inspector?.view ?? "conversation");
+  const agentCount = row?.agents?.length ?? 0;
+  const shown = view === "agents" && agentCount > 0 ? "agents" : "conversation";
+  // a search that led here: the conversation opens where it matched
+  const query = useStore((s) => splitQuery(s.query).text);
+  const conversation = useFollowedConversation(
+    shown === "conversation" && row ? row.key : null,
+    query || undefined,
+  );
 
   return (
     <>
-      <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-line pr-3 pl-5">
+      <PaneHeader row={row} head={conversation.view ?? lastConversation(row?.key)} />
+      {row && activeKey && agentCount > 0 && (
+        <div className="flex shrink-0 items-center gap-3 px-5 pt-3">
+          <Segmented
+            label="Show"
+            value={shown}
+            onChange={(v) => {
+              const inspector = useStore.getState().inspector;
+              if (inspector) set({ inspector: { ...inspector, view: v, detail: null } });
+              // like the scope switch: the keyboard stays with the list, and Tab goes into the pane
+              focusSearch(false);
+            }}
+            options={[
+              { value: "conversation", label: "Conversation", testId: "view-conversation" },
+              { value: "agents", label: `Agents ${agentCount}`, testId: "view-agents" },
+            ]}
+          />
+        </div>
+      )}
+      {!row || !activeKey ? (
+        <Quiet>Select a session to read it.</Quiet>
+      ) : shown === "agents" ? (
+        <SessionAgents key={activeKey} row={row} inspection={inspection} now={clock} />
+      ) : (
+        <ConversationPane key={activeKey} view={conversation.view} missing={conversation.missing} />
+      )}
+    </>
+  );
+}
+
+/**
+ * the session on screen, in a row's two lines: its title, then where it ran and how much it did.
+ * the open button goes where Enter would, without asking first unless going would interrupt it.
+ */
+function PaneHeader({ row, head }: { row: SessionRow | undefined; head: ConversationView | null }) {
+  const editorLabel = useStore((s) => s.editor?.label ?? "the editor");
+  const offer = useFirstOffer(row);
+  return (
+    <header className="drag flex h-[52px] shrink-0 items-center gap-2 border-b border-line pr-3 pl-5">
+      <div className="min-w-0 flex-1">
         <h2
-          className="min-w-0 flex-1 truncate font-medium text-fg"
+          className="truncate font-medium text-fg"
           data-testid="inspector-title"
           title={row?.title}
         >
           {row ? (row.title ?? "Untitled session") : "No session"}
         </h2>
-        <IconButton label="Close (Esc)" onClick={closeInspector} data-testid="inspector-close">
-          <Icon name="x" size={12} />
-        </IconButton>
-      </header>
-      {row && activeKey ? (
-        <SessionAgents key={activeKey} row={row} inspection={inspection} now={clock} />
-      ) : (
-        <Quiet>Select a session to see what its agents did.</Quiet>
+        {row && (
+          <p className="truncate text-sm text-fg-3" data-testid="pane-meta">
+            {conversationMeta(row, head)}
+          </p>
+        )}
+      </div>
+      {row && (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="pane-open"
+            disabled={offer ? !offer.enabled : false}
+            onClick={() => void activateDefault(row.key)}
+          >
+            {openLabel(offer, editorLabel)}
+          </Button>
+          <IconButton
+            label="Actions (⌘K)"
+            data-testid="pane-actions"
+            onClick={() => void openMenu(row.key)}
+          >
+            <Icon name="more" size={14} />
+          </IconButton>
+        </>
       )}
-    </>
+      <IconButton label="Close (Esc)" onClick={closeInspector} data-testid="inspector-close">
+        <Icon name="x" size={12} />
+      </IconButton>
+    </header>
   );
+}
+
+/** the first enabled offer for this session: what the open button runs */
+function useFirstOffer(row: SessionRow | undefined): SessionAction | undefined {
+  const [offer, setOffer] = useState<SessionAction | undefined>(undefined);
+  const key = row?.key;
+  // held, cut off or neither changes which offer comes first
+  const state = `${row?.background?.held}:${row?.interrupted?.why}:${row?.comboRelation}`;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the state string is what moves it
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    void window.grove
+      .sessionActions(key)
+      .then((actions) => {
+        if (!cancelled) setOffer(actions.find((a) => a.enabled) ?? actions[0]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [key, state]);
+  return offer;
 }
 
 function Quiet({ children }: { children: ReactNode }) {
@@ -191,7 +395,7 @@ function SessionAgents({
   const ids = useMemo(() => items.flatMap((i) => (i.type === "agent" ? [i.id] : [])), [items]);
   const active = inspectorAgent && ids.includes(inspectorAgent) ? inspectorAgent : null;
   // the arrows move the keyboard's row. a click, Enter or a bar opens the agent.
-  const move = (id: string) => set({ inspector: { agent: id, detail: null } });
+  const move = (id: string) => set({ inspector: { view: "agents", agent: id, detail: null } });
   const open = (id: string) => openAgent(row.key, id);
 
   if (agents.length === 0) return <Quiet>No agents in this session.</Quiet>;

@@ -9,10 +9,12 @@ import {
 } from "../logic/rows.ts";
 import {
   activate,
+  activateDefault,
   agentHit,
   focusSearch,
   openAgent,
   openCombo,
+  openConversation,
   openInspector,
   openMenu,
 } from "../state/actions.ts";
@@ -22,6 +24,8 @@ import { optionId, SessionList } from "./SessionList.tsx";
 import { Button, Icon, Kbd, Segmented, Spinner } from "./ui.tsx";
 
 const LIST_ID = "session-listbox";
+/** how long a first click waits for a second before it opens the pane */
+const DOUBLE_CLICK_MS = 300;
 
 /** the list the keyboard handler in App works against. kept outside React so a keypress never waits for a render. */
 export const listRef: { current: ListModel; pageSize: number } = {
@@ -226,7 +230,29 @@ export function SessionsPane() {
   const onPageSize = useCallback((rows: number) => {
     listRef.pageSize = rows;
   }, []);
-  const onActivate = useCallback((key: SessionKey) => void activate(key), []);
+  // opening the pane moves the list under the pointer, so the second click of a double-click
+  // would land in the pane. the pane's first opening waits out a double-click; once it is open
+  // nothing moves, and a click shows the conversation at once.
+  const opening = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSelect = useCallback(
+    (key: SessionKey) => {
+      if (opening.current) clearTimeout(opening.current);
+      opening.current = null;
+      if (useStore.getState().inspector) return openConversation(key);
+      set({ activeKey: key });
+      opening.current = setTimeout(() => {
+        opening.current = null;
+        openConversation(key);
+      }, DOUBLE_CLICK_MS);
+    },
+    [set],
+  );
+  const onActivate = useCallback((key: SessionKey) => {
+    if (opening.current) clearTimeout(opening.current);
+    opening.current = null;
+    void activate(key);
+  }, []);
+  const onOpen = useCallback((key: SessionKey) => void activateDefault(key), []);
   const onMenu = useCallback((key: SessionKey) => void openMenu(key), []);
   const onInspect = useCallback(
     (key: SessionKey, agent?: string) => {
@@ -325,7 +351,9 @@ export function SessionsPane() {
             now={now}
             listId={LIST_ID}
             total={model.keys.length}
+            onSelect={onSelect}
             onActivate={onActivate}
+            onOpen={onOpen}
             onMenu={onMenu}
             onInspect={onInspect}
             onPageSize={onPageSize}
@@ -335,8 +363,9 @@ export function SessionsPane() {
       )}
 
       <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line px-5 text-meta text-fg-4">
-        <span className="shrink-0 whitespace-nowrap">
-          <Kbd>↵</Kbd> open
+        {/* a click reads a session here. going to it is the deliberate one. */}
+        <span className="shrink-0 whitespace-nowrap" data-testid="footer-open">
+          Click to read · <Kbd>↵</Kbd> or double-click opens
         </span>
         <span className="shrink-0 whitespace-nowrap">
           <Kbd>⌘K</Kbd> actions

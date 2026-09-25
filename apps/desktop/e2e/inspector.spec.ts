@@ -57,12 +57,17 @@ test("the inspector shows what a session's agents did, and follows the selection
   hookEvent(fx, FANOUT.session, "UserPromptSubmit", { prompt: "go" });
   await expect(rows.first().getByTestId("live-badge")).toHaveAttribute("data-state", "running");
 
+  // cmd-I opens the pane on the session's conversation. its agents are one segment away
   await page.keyboard.press("Meta+i");
   const pane = page.getByTestId("inspector");
   await expect(pane).toBeVisible();
   await expect(pane.getByTestId("inspector-title")).toHaveText(
     "Database CPU spike during the nightly job",
   );
+  await expect(pane).toHaveAttribute("data-view", "conversation");
+  await expect(pane.getByTestId("view-agents")).toHaveText("Agents 5");
+  await pane.getByTestId("view-agents").click();
+  await expect(pane).toHaveAttribute("data-view", "agents");
   await expect(pane.getByTestId("agent-row")).toHaveCount(5);
   await expect(pane.getByTestId("fan-bar")).toHaveCount(5);
   // the numbers come from each agent's own transcript, a moment after the scan draws the rows
@@ -90,11 +95,18 @@ test("the inspector shows what a session's agents did, and follows the selection
   await expect(page.getByTestId("search")).toBeFocused();
   await expect(pane).toBeVisible();
 
-  // it follows the selected row, like a reading pane
+  // it follows the selected row, like a reading pane. a session with no agents has only its
+  // conversation to show, and the pane shows that without being asked
   await page.keyboard.press("ArrowDown");
   await expect(pane.getByTestId("inspector-title")).toHaveText("Onboarding copy changes");
-  await expect(pane.getByTestId("inspector-empty")).toHaveText("No agents in this session.");
-  await shot(page, "19-inspector-empty");
+  await expect(pane.getByTestId("view-agents")).toHaveCount(0);
+  await expect(pane.getByTestId("conversation")).toContainText(
+    "soften the copy on the onboarding panel",
+  );
+  // back on a session with agents, the arrows kept the view
+  await page.keyboard.press("ArrowUp");
+  await expect(pane.getByTestId("agent-row")).toHaveCount(5);
+  await page.keyboard.press("ArrowDown");
 
   await page.keyboard.press("Escape");
   await expect(pane).toHaveCount(0);

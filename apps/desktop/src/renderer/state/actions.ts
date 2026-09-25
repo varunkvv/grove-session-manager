@@ -40,12 +40,32 @@ export async function openCombo(name: string, sessionKey?: SessionKey): Promise<
   }
 }
 
-/** the inspector on this session, or on the active row. it follows the selection from then on. */
+/**
+ * the pane on what this session's agents did, or the active row's. it follows the selection from
+ * then on.
+ */
 export function openInspector(key?: SessionKey): void {
   const s = state();
   s.set({
     ...(key ? { activeKey: key } : {}),
-    inspector: s.inspector ?? { agent: null, detail: null },
+    inspector: { agent: null, detail: null, ...s.inspector, view: "agents" },
+  });
+}
+
+/**
+ * the pane on this session's own conversation: what a click on a row does. `find` is a search
+ * that led here, and the conversation opens at the turn that matched it.
+ */
+export function openConversation(key: SessionKey, opts: { find?: string } = {}): void {
+  const s = state();
+  s.set({
+    activeKey: key,
+    inspector: {
+      view: "conversation",
+      agent: s.inspector?.agent ?? null,
+      detail: null,
+      ...(opts.find ? { find: opts.find } : {}),
+    },
   });
 }
 
@@ -84,6 +104,7 @@ export function openAgent(
   if (showing && opts.focus) focusInspector();
   s.set({
     inspector: {
+      view: "agents",
       agent: id,
       detail: { key, id },
       ...(step !== undefined ? { step } : {}),
@@ -109,7 +130,7 @@ export function closeAgent(): void {
   const detail = s.inspector?.detail;
   if (!detail) return;
   paneFocus.pending = focusInPane();
-  s.set({ inspector: { agent: detail.id, detail: null } });
+  s.set({ inspector: { view: "agents", agent: detail.id, detail: null } });
 }
 
 export function closeInspector(): void {
@@ -164,8 +185,9 @@ export async function openMenu(key: SessionKey): Promise<void> {
 }
 
 /**
- * Enter and click do the same thing. a session that lives at a combo's root opens that combo and
- * lands on it. anything else gets the offer list, because there is more than one sensible way in.
+ * Enter and a double-click do the same thing (a click reads the session in the pane). a session
+ * that lives at a combo's root opens that combo and lands on it. anything else gets the offer
+ * list, because there is more than one sensible way in.
  */
 export async function activate(key: SessionKey): Promise<void> {
   // an agent's row opens that agent, keyboard and all
@@ -186,7 +208,7 @@ export async function activate(key: SessionKey): Promise<void> {
   return openMenu(key);
 }
 
-/** Cmd+Enter: the first enabled offer, without showing the list */
+/** Cmd+Enter, and the pane's open button: the first enabled offer, without showing the list */
 export async function activateDefault(key: SessionKey): Promise<void> {
   const row = state().sessions.find((r) => r.key === key);
   if (!row) return;

@@ -83,7 +83,11 @@ interface RowProps {
   now: number;
   index: number;
   total: number;
+  /** a click: read it in the pane */
+  onSelect: (key: SessionKey) => void;
+  /** a double-click, or the row's open button: go to it */
   onActivate: (key: SessionKey, el: HTMLElement) => void;
+  onOpen: (key: SessionKey) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
   onInspect: (key: SessionKey, agent?: string) => void;
   /** the search found this session through one of its agents */
@@ -102,7 +106,11 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
       aria-setsize={p.total}
       data-testid="session-row"
       data-active={p.active || undefined}
-      onClick={(e) => p.onActivate(row.key, e.currentTarget)}
+      onClick={(e) => {
+        // the second click of a double-click is the double-click's
+        if (e.detail < 2) p.onSelect(row.key);
+      }}
+      onDoubleClick={(e) => p.onActivate(row.key, e.currentTarget)}
       onKeyDown={() => {}}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -110,7 +118,7 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
       }}
       className={cx(
         // a container, so a row made narrow by the inspector beside it drops what matters least
-        "fade @container mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
+        "fade group @container mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
         p.active ? "bg-active" : "hover:bg-raised",
       )}
     >
@@ -121,14 +129,35 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           {untitled ? "Untitled session" : <Highlighted text={row.title ?? ""} tokens={p.tokens} />}
         </span>
         {row.live && <LiveBadge live={row.live} />}
-        <span
-          className={cx(
-            "shrink-0 text-sm tabular-nums",
-            p.now - row.activityMs < 60_000 ? "text-fg-2" : "text-fg-3",
-          )}
-          title={new Date(row.activityMs).toLocaleString()}
-        >
-          {formatRelativeTime(row.activityMs, p.now)}
+        {/* the time keeps its room while the button sits over it, so nothing moves on hover */}
+        <span className="relative shrink-0">
+          <span
+            className={cx(
+              "text-sm tabular-nums",
+              p.now - row.activityMs < 60_000 ? "text-fg-2" : "text-fg-3",
+              p.active ? "invisible" : "group-hover:invisible",
+            )}
+            title={new Date(row.activityMs).toLocaleString()}
+          >
+            {formatRelativeTime(row.activityMs, p.now)}
+          </span>
+          <button
+            type="button"
+            tabIndex={-1}
+            data-testid="row-open"
+            title="Open it where it runs - a double-click or ↵ does the same"
+            onClick={(e) => {
+              e.stopPropagation();
+              p.onOpen(row.key);
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+            className={cx(
+              "fade absolute inset-y-0 right-0 items-center text-sm text-fg-2 hover:text-fg",
+              p.active ? "flex" : "hidden group-hover:flex",
+            )}
+          >
+            Open
+          </button>
         </span>
       </div>
       <div className="flex items-baseline gap-3 text-sm text-fg-3">
@@ -144,6 +173,7 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
                 e.stopPropagation();
                 p.onInspect(row.key, p.agentHit);
               }}
+              onDoubleClick={(e) => e.stopPropagation()}
             >
               <Highlighted text={p.secondary} tokens={p.tokens} />
             </button>
@@ -198,6 +228,7 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
                 e.stopPropagation();
                 p.onInspect(row.key);
               }}
+              onDoubleClick={(e) => e.stopPropagation()}
             >
               <span className="@max-xl:hidden">{agentsChip(row.agents, p.now)}</span>
               <span className="hidden @max-xl:inline">{agentsCount(row.agents)}</span>
@@ -321,7 +352,9 @@ export function SessionList({
   now,
   listId,
   total,
+  onSelect,
   onActivate,
+  onOpen,
   onMenu,
   onInspect,
   onPageSize,
@@ -332,7 +365,9 @@ export function SessionList({
   now: number;
   listId: string;
   total: number;
+  onSelect: (key: SessionKey) => void;
   onActivate: (key: SessionKey, el: HTMLElement) => void;
+  onOpen: (key: SessionKey) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
   onInspect: (key: SessionKey, agent?: string) => void;
   onPageSize: (rows: number) => void;
@@ -431,7 +466,9 @@ export function SessionList({
                       now={now}
                       index={positions.get(item.id) ?? 0}
                       total={total}
+                      onSelect={onSelect}
                       onActivate={onActivate}
+                      onOpen={onOpen}
                       onMenu={onMenu}
                       onInspect={onInspect}
                       {...(item.agent ? { agentHit: item.agent } : {})}

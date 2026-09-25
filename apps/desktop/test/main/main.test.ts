@@ -455,8 +455,9 @@ describe("the window and the environment", () => {
     // a window bigger than the screen is shrunk, never left off it
     const big = clampBounds({ x: 0, y: 0, width: 4000, height: 3000 }, displays);
     expect(big.width).toBeLessThanOrEqual(1512);
-    expect(clampBounds(null, displays)).toMatchObject({ width: 1180, height: 760 });
-    expect(clampBounds({ width: "wide" }, displays)).toMatchObject({ width: 1180 });
+    // wide enough by default for the list and a readable pane side by side
+    expect(clampBounds(null, displays)).toMatchObject({ width: 1280, height: 800 });
+    expect(clampBounds({ width: "wide" }, displays)).toMatchObject({ width: 1280 });
   });
 
   it("a test root, a dev build and the installed app never share one instance lock", () => {

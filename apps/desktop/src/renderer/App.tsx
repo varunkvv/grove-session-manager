@@ -26,6 +26,7 @@ import {
   focusSearch,
   openAgent,
   openCombo,
+  openConversation,
   openInspector,
   openMenu,
   refresh,
@@ -85,6 +86,7 @@ function perform(intent: Intent): void {
       else if (session && s.activeKey && agentIdOf(s.activeKey)) {
         openAgent(session, agentIdOf(s.activeKey) ?? "");
       } else if (session && hit) openAgent(session, hit.agent, { find: hit.find });
+      else if (session) openConversation(session);
       else openInspector();
       break;
     }

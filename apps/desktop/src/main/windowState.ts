@@ -17,7 +17,7 @@ export interface WindowBounds {
   height: number;
 }
 
-export const DEFAULT_SIZE = { width: 1180, height: 760 } as const;
+export const DEFAULT_SIZE = { width: 1280, height: 800 } as const;
 export const MIN_SIZE = { width: 880, height: 520 } as const;
 
 // how much of the window has to be on a display before its saved position is believed.
