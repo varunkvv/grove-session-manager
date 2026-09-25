@@ -3,6 +3,7 @@ import path from "node:path";
 import { pendingDir, writeIntent } from "@grove/core";
 import { describe, expect, it } from "vitest";
 import { drainIntents } from "../src/drain.ts";
+import { CLAUDE_OPEN_COMMAND } from "../src/resume.ts";
 import { fakeDeps, SID, writeSession } from "./helpers/fakeDeps.ts";
 
 function setup(rootName = "prod-debug") {
@@ -22,6 +23,16 @@ describe("draining resume intents", () => {
     expect(f.commands[0]!.args).toEqual([SID.a, "go"]);
     expect(readdirSync(pendingDir(f.deps.appRoot))).toEqual([]);
     expect(await drainIntents(f.deps, "activation")).toBeNull();
+  });
+
+  it("a new conversation for this workspace opens a fresh panel with the prompt, no session", async () => {
+    const { root } = setup();
+    const f = fakeDeps({ root });
+    await writeIntent(f.deps.appRoot, { kind: "new", cwd: root, prompt: "tidy the logs" });
+    expect(await drainIntents(f.deps, "watch")).toBe("command");
+    expect(f.commands).toEqual([{ id: CLAUDE_OPEN_COMMAND, args: [undefined, "tidy the logs"] }]);
+    expect(f.logs.some((l) => l.includes("claimed intent for a new conversation"))).toBe(true);
+    expect(readdirSync(pendingDir(f.deps.appRoot))).toEqual([]);
   });
 
   it("an intent for another folder is left for its own window", async () => {

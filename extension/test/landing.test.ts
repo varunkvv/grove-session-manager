@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLAUDE_OPEN_COMMAND, resumeSession } from "../src/resume.ts";
+import { CLAUDE_OPEN_COMMAND, resumeSession, startConversation } from "../src/resume.ts";
 import { fakeDeps, SID, writeSession } from "./helpers/fakeDeps.ts";
 
 describe("landing on a session", () => {
@@ -70,5 +70,36 @@ describe("landing on a session", () => {
     expect(f.uris).toEqual([]);
     focus!();
     expect(await pending).toBe("uri");
+  });
+});
+
+describe("starting a new conversation", () => {
+  it("the same command with no session: a new panel, the prompt in its input box", async () => {
+    const f = fakeDeps();
+    expect(await startConversation(f.deps, "tidy the logs")).toBe("command");
+    expect(f.commands).toEqual([{ id: CLAUDE_OPEN_COMMAND, args: [undefined, "tidy the logs"] }]);
+    expect(f.uris).toEqual([]);
+  });
+
+  it("needs no transcript, and an empty prompt is no prompt", async () => {
+    const f = fakeDeps();
+    expect(await startConversation(f.deps)).toBe("command");
+    expect(f.commands[0]!.args).toEqual([undefined, undefined]);
+    expect(f.warnings).toEqual([]);
+  });
+
+  it("falls back to the deep link without a session, pinned to this window", async () => {
+    const f = fakeDeps({ commandFails: "command 'claude-vscode.primaryEditor.open' not found" });
+    expect(await startConversation(f.deps, "go & see")).toBe("uri");
+    expect(f.commands).toHaveLength(3);
+    expect(f.uris).toEqual(["vscode://anthropic.claude-code/open?prompt=go+%26+see"]);
+  });
+
+  it("no Claude Code extension -> one warning, no command, no link", async () => {
+    const f = fakeDeps({ activateClaude: async () => false });
+    expect(await startConversation(f.deps, "x")).toBe("missing-claude");
+    expect(f.warnings).toHaveLength(1);
+    expect(f.commands).toEqual([]);
+    expect(f.uris).toEqual([]);
   });
 });

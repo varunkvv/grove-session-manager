@@ -107,6 +107,15 @@ export function buildSessionUri(uriScheme: string, sessionId: string, prompt?: s
   return `${uriScheme}://${CLAUDE_EXTENSION_ID}/open?${params.toString()}`;
 }
 
+/**
+ * the same deep link without a session: the Claude extension hands `primaryEditor.open` an
+ * undefined id, which is a new conversation with the prompt waiting in its input box
+ */
+export function buildNewConversationUri(uriScheme: string, prompt?: string): string {
+  const query = prompt ? `?${new URLSearchParams({ prompt }).toString()}` : "";
+  return `${uriScheme}://${CLAUDE_EXTENSION_ID}/open${query}`;
+}
+
 /** reads the editor's own registry. `--list-extensions` would start an Electron process for this. */
 export async function installedExtensionVersion(
   editor: EditorTarget,

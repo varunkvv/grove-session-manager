@@ -2,7 +2,7 @@
   "name": "grove-companion",
   "displayName": "Grove Companion",
   "description": "Lands VS Code on the Claude Code session that Grove handed over, and keeps a combo's workspace in sync.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "varunkvv",
   "private": true,
   "license": "MIT",

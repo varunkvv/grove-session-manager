@@ -1,7 +1,9 @@
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { prepareComboOpen } from "../src/combos/prepare.ts";
 import {
+  buildNewConversationUri,
   buildSessionUri,
   installedExtensionVersion,
   resolveEditor,
@@ -32,6 +34,7 @@ describe("resume intents", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]!.intent).toMatchObject({
       version: 1,
+      kind: "resume",
       sessionId: SID.b,
       cwd,
       prompt: "continue",
@@ -69,9 +72,84 @@ describe("resume intents", () => {
       JSON.stringify({ sessionId: "x; rm -rf ~", cwd: "/", issuedAt: now }),
     );
 
-    expect((await listIntents(app)).map((i) => i.intent.sessionId)).toEqual([SID.c]);
+    expect((await listIntents(app)).map((i) => i.intent)).toEqual([
+      expect.objectContaining({ kind: "resume", sessionId: SID.c }),
+    ]);
     expect(await sweepIntents(app)).toBe(4);
     expect(readdirSync(pendingDir(app))).toHaveLength(1);
+  });
+
+  it("a new conversation carries a prompt and no session, and is claimed like any other", async () => {
+    const app = makeSandbox("grove-intent-");
+    const cwd = path.join(app, "ops");
+    mkdirSync(cwd);
+    const file = await writeIntent(app, {
+      kind: "new",
+      cwd,
+      workspaceFile: path.join(cwd, "ops.code-workspace"),
+      prompt: "tidy the logs",
+      source: "app",
+    });
+    const onDisk = JSON.parse(readFileSync(file, "utf8"));
+    // what an older companion reads: no session id, so it has nothing to land on and skips it
+    expect(onDisk).not.toHaveProperty("sessionId");
+    expect(onDisk).toMatchObject({ kind: "new", cwd, prompt: "tidy the logs" });
+    expect(await claimIntent(file)).toEqual({
+      version: 1,
+      kind: "new",
+      cwd,
+      workspaceFile: path.join(cwd, "ops.code-workspace"),
+      prompt: "tidy the logs",
+      issuedAt: onDisk.issuedAt,
+      source: "app",
+    });
+  });
+
+  it("a file from before `kind` is a resume. a new one naming a session, or an unknown kind, is junk", async () => {
+    const app = makeSandbox("grove-intent-");
+    mkdirSync(pendingDir(app), { recursive: true });
+    const now = Date.now();
+    const put = (name: string, body: object) =>
+      writeFileSync(
+        path.join(pendingDir(app), name),
+        JSON.stringify({ cwd: app, issuedAt: now, ...body }),
+      );
+    put("old.json", { version: 1, sessionId: SID.a });
+    put("both.json", { kind: "new", sessionId: SID.b });
+    put("odd.json", { kind: "fork", sessionId: SID.c });
+    put("empty.json", { kind: "resume" });
+    expect((await listIntents(app)).map((i) => [path.basename(i.file), i.intent])).toEqual([
+      ["old.json", expect.objectContaining({ kind: "resume", sessionId: SID.a })],
+    ]);
+  });
+
+  it("opening a combo on a new conversation leaves that for the combo's window, prompt and all", async () => {
+    const app = makeSandbox("grove-intent-");
+    const root = path.join(app, "ops");
+    mkdirSync(root);
+    const report = await prepareComboOpen(
+      app,
+      { name: "ops", root, folders: [] },
+      {
+        newConversation: true,
+        prompt: "tidy the logs",
+        source: "app",
+      },
+    );
+    const [pending] = await listIntents(app);
+    expect(pending?.file).toBe(report.intentFile);
+    expect(pending?.intent).toMatchObject({
+      kind: "new",
+      cwd: root,
+      workspaceFile: report.workspaceFile,
+      prompt: "tidy the logs",
+    });
+    // a plain open still leaves nothing behind
+    await claimIntent(pending!.file);
+    expect(
+      (await prepareComboOpen(app, { name: "ops", root, folders: [] })).intentFile,
+    ).toBeUndefined();
+    expect(await listIntents(app)).toEqual([]);
   });
 
   it("a session id that is not a uuid is refused at write time", async () => {
@@ -111,6 +189,13 @@ describe("editor handoff", () => {
       `cursor://anthropic.claude-code/open?session=${SID.a}&prompt=fix+it+%26+ship`,
     );
     expect(() => buildSessionUri("vscode", "nope")).toThrow();
+  });
+
+  it("a new conversation is the same link with no session", () => {
+    expect(buildNewConversationUri("vscode")).toBe("vscode://anthropic.claude-code/open");
+    expect(buildNewConversationUri("cursor", "tidy up\n& ship")).toBe(
+      "cursor://anthropic.claude-code/open?prompt=tidy+up%0A%26+ship",
+    );
   });
 
   it("absolute app-bundle paths by default, overridable for cursor and for tests", () => {

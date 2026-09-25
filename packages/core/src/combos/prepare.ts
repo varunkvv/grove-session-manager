@@ -11,6 +11,8 @@ import { writeWorkspaceFile } from "./workspace.ts";
 
 export interface PrepareOptions {
   sessionId?: string;
+  /** land on a new conversation instead of a session. needs companion 0.3.0 or later. */
+  newConversation?: boolean;
   prompt?: string;
   /** a stale folder may be a big checkout someone deleted on purpose. off unless asked. */
   repairStale?: boolean;
@@ -57,14 +59,16 @@ export async function prepareComboOpen(
   warnings.push(...ws.warnings);
 
   let intentFile: string | undefined;
+  const common = {
+    cwd: combo.root,
+    workspaceFile: ws.path,
+    prompt: opts.prompt,
+    source: opts.source,
+  };
   if (opts.sessionId) {
-    intentFile = await writeIntent(appRoot, {
-      sessionId: opts.sessionId,
-      cwd: combo.root,
-      workspaceFile: ws.path,
-      prompt: opts.prompt,
-      source: opts.source,
-    });
+    intentFile = await writeIntent(appRoot, { ...common, sessionId: opts.sessionId });
+  } else if (opts.newConversation) {
+    intentFile = await writeIntent(appRoot, { ...common, kind: "new" });
   }
   return {
     combo,
