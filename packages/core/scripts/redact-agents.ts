@@ -302,7 +302,7 @@ const parentLines = readFileSync(src, "utf8").split("\n").filter(Boolean);
 // a session's stretch is mostly lines its fold never reads: hook results, token reminders, file
 // history, titles written again and again. one in LEAN of each stays, so the fixture still has
 // them to skip, and the rest go - they would be most of its bytes.
-const LEAN = 25;
+const LEAN = 50;
 const noise = new Map<string, number>();
 const stretch = (range ? parentLines.slice(Number(range[1]), Number(range[2])) : []).filter(
   (line) => {
@@ -351,14 +351,48 @@ const redactLine = (row: unknown) => {
   return JSON.stringify(redact(range ? lean(row) : row));
 };
 
+/** what every line carries and no fold reads: where it was written from, and by what */
+const ENVELOPE = [
+  "wireToolInputs",
+  "parentUuid",
+  "slug",
+  "gitBranch",
+  "requestId",
+  "advisorModel",
+  "userType",
+  "entrypoint",
+  "version",
+  "promptId",
+  "sourceToolAssistantUUID",
+  "sessionId",
+  "effort",
+  "perTurnEffort",
+  "apiBlockIndex",
+];
+const MESSAGE_ENVELOPE = [
+  "context_management",
+  "stop_details",
+  "stop_sequence",
+  "container",
+  "diagnostics",
+  "stop_reason",
+];
+
 /**
  * a session's lines without what nothing reads and most of the bytes are: the usage breakdown
- * past the four counts, and the wire copy of every tool input (a timeline never reads it)
+ * past the four counts, the wire copy of every tool input, and the envelope every line repeats
  */
 function lean(row: unknown): unknown {
-  const r = row as { message?: { usage?: Record<string, unknown> }; wireToolInputs?: unknown };
+  const r = row as { message?: Record<string, unknown> & { usage?: Record<string, unknown> } };
   if (!r || typeof r !== "object") return row;
-  const { wireToolInputs: _wire, ...rest } = r as Record<string, unknown>;
+  const rest = Object.fromEntries(
+    Object.entries(r as Record<string, unknown>).filter(([k]) => !ENVELOPE.includes(k)),
+  );
+  if (r.message && typeof r.message === "object") {
+    rest.message = Object.fromEntries(
+      Object.entries(r.message).filter(([k]) => !MESSAGE_ENVELOPE.includes(k)),
+    );
+  }
   const usage = r.message?.usage;
   if (!usage) return rest;
   const keep = [
@@ -370,7 +404,7 @@ function lean(row: unknown): unknown {
   return {
     ...rest,
     message: {
-      ...r.message,
+      ...(rest.message as Record<string, unknown>),
       usage: Object.fromEntries(keep.flatMap((k) => (k in usage ? [[k, usage[k]]] : []))),
     },
   };
