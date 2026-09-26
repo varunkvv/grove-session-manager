@@ -5,12 +5,15 @@ import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
 import { backgroundTooltip, interruptedTooltip } from "../logic/background.ts";
 import { agentName } from "../logic/inspector.ts";
-import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
+import { type ListItem, NEEDS_YOU, needsYou } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
-import { cx, Highlighted, Icon, Mono } from "./ui.tsx";
+import { cx, Highlighted, Icon, Mono, NeedsPill } from "./ui.tsx";
 
 const ROW = 56;
 const HEADER = 30;
+/** the soft tint behind the NEEDS_YOU group, and only there. one band, one pill - never louder */
+const NEEDS_YOU_BAND = "bg-accent-band";
+const NEEDS_YOU_TEXT = "text-accent";
 /** an inbox row says what it is waiting for, so it has a line more than a list row */
 const INBOX_ROW = 88;
 
@@ -21,8 +24,8 @@ export function optionId(key: SessionKey): string {
 }
 
 /**
- * what the session is doing now. only the states that ask something of a person take the accent;
- * running is quiet, and a turn someone already looked at says nothing at all.
+ * what the session is doing now. everything asking for someone - permission, its turn, stopped -
+ * is the same pill; running is quiet, and a turn someone already looked at says nothing at all.
  */
 function LiveBadge({ live }: { live: LiveStatus }) {
   const label =
@@ -36,7 +39,14 @@ function LiveBadge({ live }: { live: LiveStatus }) {
             ? null
             : "Your turn";
   if (!label) return null;
-  const loud = live.state === "permission" || live.state === "failed";
+  if (needsYou(live)) {
+    return (
+      <NeedsPill testId="live-badge" state={live.state} title={live.detail}>
+        {label}
+      </NeedsPill>
+    );
+  }
+  // looked at but still asking (a permission prompt, a stop): said, not shouted
   return (
     <span
       data-testid="live-badge"
@@ -44,13 +54,13 @@ function LiveBadge({ live }: { live: LiveStatus }) {
       title={live.detail}
       className={cx(
         "flex shrink-0 items-center gap-1.5 text-sm",
-        loud ? "text-accent" : live.state === "running" ? "text-fg-3" : "text-fg-2",
+        live.state === "running" ? "text-fg-3" : "text-fg-2",
       )}
     >
       <span
         className={cx(
           "size-1.5 rounded-full",
-          loud ? "bg-accent" : live.state === "running" ? "live-pulse bg-fg-3" : "bg-fg-2",
+          live.state === "running" ? "live-pulse bg-fg-3" : "bg-fg-3",
         )}
       />
       {label}
@@ -60,6 +70,8 @@ function LiveBadge({ live }: { live: LiveStatus }) {
 
 interface RowProps {
   row: SessionRow;
+  /** in the band: the band already takes the row's side margin */
+  inBand?: boolean;
   secondary: string;
   tokens: readonly string[];
   active: boolean;
@@ -101,7 +113,8 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
       }}
       className={cx(
         // a container, so a row made narrow by the inspector beside it drops what matters least
-        "fade group @container mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
+        "fade group @container flex h-[52px] flex-col justify-center rounded-md px-3",
+        !p.inBand && "mx-2",
         p.active ? "bg-active" : "hover:bg-raised",
       )}
     >
@@ -559,14 +572,25 @@ export function SessionList({
                 transform: `translateY(${v.start}px)`,
               }}
             >
-              {item.type === "header" ? (
+              {item.type === "header" && item.label === NEEDS_YOU ? (
+                // the top of the band: what needs you sits apart from the rest of the day
+                <div className={cx("mx-2 h-full rounded-t-md pt-1", NEEDS_YOU_BAND)}>
+                  <div
+                    role="presentation"
+                    data-testid="needs-you-header"
+                    className={cx(
+                      "flex h-full items-end px-3 pb-1.5 text-meta font-medium tracking-wide",
+                      NEEDS_YOU_TEXT,
+                    )}
+                  >
+                    {item.label}
+                    {item.count ? ` · ${item.count}` : ""}
+                  </div>
+                </div>
+              ) : item.type === "header" ? (
                 <div
                   role="presentation"
-                  data-testid={item.label === NEEDS_YOU ? "needs-you-header" : undefined}
-                  className={cx(
-                    "flex h-full items-end px-5 pb-1.5 text-meta font-medium tracking-wide",
-                    item.label === NEEDS_YOU ? "text-accent" : "text-fg-3",
-                  )}
+                  className="flex h-full items-end px-5 pb-1.5 text-meta font-medium tracking-wide text-fg-3"
                 >
                   {item.label}
                 </div>
@@ -603,9 +627,16 @@ export function SessionList({
                   </div>
                 </div>
               ) : (
-                <div className="flex h-full items-center">
+                <div
+                  className={cx(
+                    "flex h-full items-center",
+                    item.band && cx("mx-2", NEEDS_YOU_BAND, item.band === "last" && "rounded-b-md"),
+                  )}
+                  data-band={item.band}
+                >
                   <div className="min-w-0 flex-1">
                     <SessionRowView
+                      inBand={!!item.band}
                       row={item.row}
                       secondary={item.secondary}
                       tokens={tokens}

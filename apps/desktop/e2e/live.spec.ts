@@ -96,6 +96,8 @@ test("a live session says what is running inside it", async () => {
   // the session's turn ending does not end its agents: a background one outlives it
   hookEvent(SID.a, "Stop", { last_assistant_message: "kicked off the survey" });
   await expect(rows.first().getByTestId("live-badge")).toHaveText("Your turn");
+  // your turn is asking too: the same pill, not a quieter word
+  await expect(rows.first().getByTestId("live-badge")).toHaveAttribute("data-needs-you", "true");
   await expect(chip).toContainText("1 agent");
 });
 
@@ -142,10 +144,22 @@ test("a session asking for permission comes first, and leaves once someone looke
   // the older session jumps the queue
   await expect(rows.first()).toContainText("Older one");
   await expect(rows.first().getByTestId("live-badge")).toHaveText("Needs permission");
+  // one step louder than the rest, no more: the group on a soft band, the state in one pill
+  await expect(page.getByTestId("needs-you-header")).toHaveText("Needs you · 1");
+  await expect(rows.first().getByTestId("live-badge")).toHaveAttribute("data-needs-you", "true");
+  await expect(page.locator('[data-band="last"]')).toHaveCount(1);
 
-  await page.screenshot({
-    path: path.join(import.meta.dirname, "screenshots", "14-needs-you.png"),
-  });
+  for (const [scheme, dir] of [
+    ["dark", ""],
+    ["light", "light"],
+  ] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.waitForTimeout(150);
+    await page.screenshot({
+      path: path.join(import.meta.dirname, "screenshots", dir, "14-needs-you.png"),
+    });
+  }
+  await page.emulateMedia({ colorScheme: "dark" });
 
   hookEvent(SID.b, "PostToolUse", { tool_name: "Bash" });
   hookEvent(SID.b, "Stop", { last_assistant_message: "migration applied" });

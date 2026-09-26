@@ -12,7 +12,13 @@ import type { SearchHit, SessionKey, SessionRow } from "../../shared/ipc.ts";
 export type Scope = "combo" | "all" | "agents" | "inbox";
 
 export type ListItem =
-  | { type: "header"; id: string; label: DayBucket | typeof NEEDS_YOU | typeof RUNNING }
+  | {
+      type: "header";
+      id: string;
+      label: DayBucket | typeof NEEDS_YOU | typeof RUNNING;
+      /** how many rows are under it: "Needs you · 3" */
+      count?: number;
+    }
   | {
       type: "row";
       id: SessionKey;
@@ -21,6 +27,8 @@ export type ListItem =
       secondaryIsMatch: boolean;
       /** the second line is what this agent said: the search found the session through it */
       agent?: string;
+      /** it sits in the band behind what needs you, the last one rounding it off */
+      band?: "in" | "last";
     }
   | {
       type: "agent";
@@ -171,8 +179,8 @@ export function buildList(
   const rest = pinned.length ? inScope.filter(({ r }) => !needsYou(r.live)) : inScope;
   if (pinned.length) {
     pinned.sort((a, b) => (b.r.live?.at ?? 0) - (a.r.live?.at ?? 0));
-    items.push({ type: "header", id: "h:needs-you", label: NEEDS_YOU });
-    for (const { r } of pinned) {
+    items.push({ type: "header", id: "h:needs-you", label: NEEDS_YOU, count: pinned.length });
+    pinned.forEach(({ r }, i) => {
       const secondary = secondaryLine(r, tokens);
       items.push({
         type: "row",
@@ -180,9 +188,10 @@ export function buildList(
         row: r,
         secondary: secondary.text,
         secondaryIsMatch: false,
+        band: i === pinned.length - 1 ? "last" : "in",
       });
       keys.push(r.key);
-    }
+    });
   }
 
   for (const { r, deep } of rest) {

@@ -419,3 +419,32 @@ export function Highlighted({ text, tokens }: { text: string; tokens: readonly s
   if (at < text.length) out.push(text.slice(at));
   return <>{out}</>;
 }
+
+/**
+ * what asks for you, said the same way everywhere: accent words on the soft tint, with the dot.
+ * the three states differ by the word, not the colour - all of them are asking.
+ */
+export function NeedsPill({
+  children,
+  title,
+  testId,
+  state,
+}: {
+  children: ReactNode;
+  title?: string;
+  testId?: string;
+  state?: string;
+}) {
+  return (
+    <span
+      data-testid={testId}
+      data-state={state}
+      data-needs-you
+      title={title}
+      className="flex h-5 shrink-0 items-center gap-1.5 rounded-full bg-accent-soft px-2 text-sm text-accent tabular-nums"
+    >
+      <span className="size-1.5 rounded-full bg-accent" />
+      {children}
+    </span>
+  );
+}
