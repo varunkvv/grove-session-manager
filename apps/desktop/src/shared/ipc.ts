@@ -103,11 +103,29 @@ export interface AgentStats {
   gone?: boolean;
 }
 
+/** the session's own conversation, as one more row of the Agents view */
+export interface MainStats {
+  /** the model of its last response */
+  model?: string;
+  tools: number;
+  turns: number;
+  startedAt?: number;
+  lastAt?: number;
+  /** the first sentence of its last answer */
+  outcome?: string;
+  /** the newest tool call: what it is doing, while it runs */
+  lastStep?: string;
+  /** each turn's work, first line to last. the fan-out draws its lane from these. */
+  spans: Array<[number, number]>;
+}
+
 export interface SessionInspection {
   key: SessionKey;
   agents: Record<string, AgentStats>;
   /** by run: the directory name under subagents/workflows/ */
   workflows: Record<string, { name?: string; summary?: string }>;
+  /** the session itself, beside its agents. absent when its transcript cannot be read. */
+  main?: MainStats;
 }
 
 /**

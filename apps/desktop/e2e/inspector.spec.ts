@@ -80,11 +80,24 @@ test("the inspector shows what a session's agents did, and follows the selection
   const survey = pane.getByTestId("agent-row").filter({ hasText: "Survey the nightly job" });
   await expect(survey).toContainText("Explore · 7 tools");
   await expect(survey.getByTestId("agent-line")).toContainText("The job runs 14 queries");
+
+  // the session itself is the first row, above its agents, and its own lane tops the fan-out
+  const main = pane.getByTestId("main-row");
+  await expect(main).toContainText("Main conversation");
+  await expect(main).toContainText("main · opus 5 · 0 tools");
+  await expect(main).toHaveAttribute("data-state", "running");
+  await expect(pane.getByTestId("fan-main")).toHaveAttribute("data-running", "true");
+  // the summary still counts agents only
+  await expect(pane.getByTestId("inspector-summary")).toContainText("5 agents");
   await shot(page, "19-inspector");
 
   // Tab goes into it and the arrows move there, not in the list of sessions
   await page.keyboard.press("Tab");
-  await expect(pane.locator('[data-testid="agent-row"][data-active]')).toHaveCount(1);
+  await expect(main).toHaveAttribute("data-active", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(pane.locator('[data-testid="agent-row"][data-active]')).toContainText(
+    "Survey the nightly job",
+  );
   await page.keyboard.press("ArrowDown");
   await expect(pane.locator('[data-testid="agent-row"][data-active]')).toContainText(
     "Find what changed",
@@ -103,9 +116,15 @@ test("the inspector shows what a session's agents did, and follows the selection
   await expect(pane.getByTestId("conversation")).toContainText(
     "soften the copy on the onboarding panel",
   );
-  // back on a session with agents, the arrows kept the view
+  // back on a session with agents, the arrows kept the view - and the list's keyboard row is
+  // this session's own again, not the one it had before the arrows left
   await page.keyboard.press("ArrowUp");
   await expect(pane.getByTestId("agent-row")).toHaveCount(5);
+  await expect(pane.locator('[data-testid="agent-row"][data-active]')).toHaveCount(0);
+  // the session's own row goes to its conversation
+  await main.click();
+  await expect(pane).toHaveAttribute("data-view", "conversation");
+  await pane.getByTestId("view-agents").click();
   await page.keyboard.press("ArrowDown");
 
   await page.keyboard.press("Escape");
@@ -328,21 +347,28 @@ test("the Agents scope lists every agent, running first, and selecting one opens
   await page.keyboard.press("Meta+3");
   await expect(page.getByTestId("scope-agents")).toHaveAttribute("aria-checked", "true");
   const agents = page.getByTestId("agent-list-row");
-  await expect(agents).toHaveCount(10);
-  // the two still running come first, the newest of them on top
-  await expect(agents.nth(0)).toHaveAttribute("data-state", "running");
-  await expect(agents.nth(0)).toContainText("Plan the index change");
-  await expect(agents.nth(1)).toContainText("Reproduce the spike against a replica");
-  await expect(agents.nth(2)).toHaveAttribute("data-state", "done");
+  await expect(agents).toHaveCount(11);
+  // what is working right now comes first, newest started on top: the session's own turn began
+  // with the prompt just now, then its two agents still running
+  await expect(agents.nth(0)).toHaveAttribute("data-main", "true");
+  await expect(agents.nth(0)).toContainText("Main conversation");
+  await expect(agents.nth(1)).toHaveAttribute("data-state", "running");
+  await expect(agents.nth(1)).toContainText("Plan the index change");
+  await expect(agents.nth(2)).toContainText("Reproduce the spike against a replica");
+  await expect(agents.nth(3)).toHaveAttribute("data-state", "done");
   // each says which session it ran in
-  await expect(agents.nth(0)).toContainText("Database CPU spike during the nightly job");
+  await expect(agents.nth(1)).toContainText("Database CPU spike during the nightly job");
   // a workflow's agent has no label: the scan reads the start of its prompt instead
   await expect(
     agents.filter({ hasText: "You are implementing an approved plan in the kirby repo." }),
   ).toHaveCount(1);
 
-  // selecting an agent opens the inspector on it, and it follows the selection
+  // selecting a row opens the pane on it, and it follows the selection: the session's own row
+  // is its conversation
   const pane = page.getByTestId("inspector");
+  await expect(pane).toHaveAttribute("data-view", "conversation");
+  await expect(pane.getByTestId("conversation")).toContainText("the primary is pinned");
+  await page.keyboard.press("ArrowDown");
   await expect(pane.getByTestId("agent-title")).toHaveText("Plan the index change");
   await expect(pane.getByTestId("inspector-title")).toHaveText(
     "Database CPU spike during the nightly job",

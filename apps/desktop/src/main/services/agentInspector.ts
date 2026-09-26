@@ -41,6 +41,7 @@ import {
   conversationView,
   entryView,
   findTurn,
+  mainStats,
   turnSteps,
 } from "./conversations.ts";
 import { detailSteps } from "./detailSteps.ts";
@@ -176,6 +177,15 @@ export class AgentInspector {
   async inspect(key: SessionKey): Promise<SessionInspection> {
     const snapshot = this.opts.snapshot(key);
     const out: SessionInspection = { key, agents: {}, workflows: {} };
+    // the session itself is the first row of its agents: read from the fold the pane keeps anyway
+    const file = this.transcript(key);
+    const read = file
+      ? await this.conversations.read(file).catch((e) => {
+          log.warn("conversation of", file, e);
+          return null;
+        })
+      : null;
+    if (read) out.main = mainStats(read.state);
     if (!snapshot || snapshot.agents.length === 0) return out;
     const folded = await mapLimit(snapshot.agents, 4, async (agent) => {
       const file = snapshot.reads[agent.id]?.file;

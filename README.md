@@ -203,7 +203,10 @@ session's agents did. It follows the selected row like a mail app's reading pane
 list. At the top is one lane per agent, from its start to its end. The axis spans the agents' own window - first start
 to last end - so a session open for two days whose agents ran in a twenty-minute burst does not come out as slivers.
 Under it, one row per agent: what it was for and how long it ran, its type, tool calls and tokens, and what it came
-back with (while it runs, what it is doing). An agent that died on an API error is the only colour in the pane.
+back with (while it runs, what it is doing). The session itself comes first, as **Main conversation** - its model and
+tool calls, and what it is doing now or the first sentence of its last answer - with its own lane on top of the
+picture, drawn from its turns inside the agents' window, so you can see it working, then waiting while its agents fan
+out. Clicking it goes back to the conversation. The summary line still counts agents only. An agent that died on an API error is the only colour in the pane.
 `Tab` moves into the pane and the arrows move there, `Esc` steps back out, and the next `Esc` closes it. A window too
 narrow for both gets the pane over the list instead of a crushed list.
 
@@ -225,7 +228,9 @@ and the list follows the newest one. Scroll up and it stays where you put it, wi
 it is doing now stays pinned under its name.
 
 **Agents** (`⌘3`, beside a combo's sessions and all of them) is every agent on the machine in one list: the ones still
-running first, then by the day they last did something, each with the session it ran in under its name. Selecting one
+running first, then by the day they last did something, each with the session it ran in under its name. A session in
+the middle of a turn is listed under **Running** too, as its main conversation, so that group answers what is working
+right now; finished sessions are not, the Sessions scope already has them. Selecting one
 opens the inspector on it, so `↑` `↓` walk through what every agent did without opening a single session. A workflow's
 agents carry no label of their own, so they go by the first line of what they were asked.
 

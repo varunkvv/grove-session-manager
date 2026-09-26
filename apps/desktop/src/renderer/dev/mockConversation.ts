@@ -7,6 +7,7 @@ import type {
   ConversationTurns,
   ConversationView,
   DetailStep,
+  MainStats,
   SessionRow,
   StepDetail,
 } from "../../shared/ipc.ts";
@@ -539,6 +540,28 @@ export function mockConversations(
           )
         : undefined;
       return { gen: mine, conversation: s.view, ...(found ? { found: { n: found.n } } : {}) };
+    },
+    /** the session as one more row of its agents */
+    main(key: string): MainStats | undefined {
+      const s = get(key);
+      if (!s) return undefined;
+      const turns = s.view.items.filter((i): i is ConversationTurn => i.kind === "turn");
+      const last = turns.at(-1);
+      const liveSteps = last ? (s.steps.get(last.n) ?? []) : [];
+      const step = liveSteps.findLast((x) => x.kind === "tool");
+      const answered = turns.findLast((t) => t.answer);
+      return {
+        model: s.view.model,
+        tools: s.view.tools,
+        turns: turns.length,
+        startedAt: s.view.startedAt,
+        lastAt: s.view.lastAt,
+        ...(answered?.answer ? { outcome: answered.answer.split(". ")[0] } : {}),
+        ...(step?.kind === "tool" ? { lastStep: `${step.name} ${step.target}` } : {}),
+        spans: turns.flatMap((t) =>
+          t.startedAt !== undefined && t.endedAt !== undefined ? [[t.startedAt, t.endedAt]] : [],
+        ) as Array<[number, number]>,
+      };
     },
     steps(key: string, n: number): DetailStep[] | null {
       return get(key)?.steps.get(n) ?? [];

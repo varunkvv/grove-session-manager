@@ -8,6 +8,7 @@ import {
 } from "@grove/core/pure";
 import { rowHaystack } from "../../shared/haystack.ts";
 import type { SearchHit, SessionKey, SessionRow } from "../../shared/ipc.ts";
+import { MAIN_ID } from "./inspector.ts";
 
 export type Scope = "combo" | "all" | "agents" | "inbox";
 
@@ -39,7 +40,9 @@ export type ListItem =
       match?: string;
     }
   /** a session asking for someone, in the Inbox: taller, and saying what it asks */
-  | { type: "inbox"; id: SessionKey; row: SessionRow };
+  | { type: "inbox"; id: SessionKey; row: SessionRow }
+  /** a running session's own conversation, among the agents at work */
+  | { type: "main"; id: string; row: SessionRow };
 
 /**
  * an agent's row in the Agents scope. the list, the keyboard and the active row all work on keys,
@@ -50,6 +53,9 @@ const AGENT_KEY = "\0agent:";
 export function agentKey(session: SessionKey, agentId: string): string {
   return `${session}${AGENT_KEY}${agentId}`;
 }
+
+/** the id a session's own conversation takes among its agents: one id for the pane and the scope */
+export const MAIN_AGENT = MAIN_ID;
 
 /** the session a key belongs to: itself, or the session of the agent it names */
 export function sessionKeyOf(key: string): SessionKey {
@@ -215,6 +221,14 @@ export function buildList(
   return { items, keys, tokens, elsewhere, scoped, archivedHidden, archivedOnly };
 }
 
+function mainMatches(r: SessionRow, tokens: readonly string[]): boolean {
+  const hay = ["main conversation", r.title, r.comboName, r.cwdBase]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  return tokens.every((t) => hay.includes(t));
+}
+
 function agentMatches(a: SessionAgent, r: SessionRow, tokens: readonly string[]): boolean {
   const hay = [a.description, a.asked, a.agentType, a.summary, r.title, r.comboName, r.cwdBase]
     .filter(Boolean)
@@ -255,6 +269,14 @@ export function buildAgentList(
   const done = found.filter(({ a }) => a.state !== "running");
   running.sort((x, y) => y.a.startedAt - x.a.startedAt);
   done.sort((x, y) => y.a.lastActivityAt - x.a.lastActivityAt);
+  // a session at work is working too: "Running" answers what is working right now. a finished
+  // one is not listed - the Sessions scope already has it
+  const mains = rows.filter(
+    (r) =>
+      r.live?.state === "running" &&
+      (archivedOnly ? r.archived : !r.archived) &&
+      (tokens.length === 0 || mainMatches(r, tokens)),
+  );
 
   const items: ListItem[] = [];
   const keys: SessionKey[] = [];
@@ -263,9 +285,25 @@ export function buildAgentList(
     items.push({ type: "agent", id, row: r, agent: a, ...(match !== undefined ? { match } : {}) });
     keys.push(id);
   };
-  if (running.length > 0) {
+  if (running.length > 0 || mains.length > 0) {
     items.push({ type: "header", id: "h:running", label: RUNNING });
-    running.forEach(push);
+    // the running ones newest first, sessions and agents alike
+    type Working =
+      | { kind: "agent"; at: number; hit: { r: SessionRow; a: SessionAgent; match?: string } }
+      | { kind: "main"; at: number; r: SessionRow };
+    const both: Working[] = [
+      ...running.map((hit): Working => ({ kind: "agent", at: hit.a.startedAt, hit })),
+      ...mains.map((r): Working => ({ kind: "main", at: r.live?.turnStart ?? r.live?.at ?? 0, r })),
+    ].sort((x, y) => y.at - x.at);
+    for (const x of both) {
+      if (x.kind === "agent") {
+        push(x.hit);
+        continue;
+      }
+      const id = agentKey(x.r.key, MAIN_AGENT);
+      items.push({ type: "main", id, row: x.r });
+      keys.push(id);
+    }
   }
   let bucket: DayBucket | null = null;
   for (const hit of done) {

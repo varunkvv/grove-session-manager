@@ -6,12 +6,14 @@ import {
   conversationCacheDir,
   conversationTotals,
   fileMark,
+  firstSentence,
   loadCachedConversation,
   type Mark,
   readConversation,
   saveCachedConversation,
   sweepTimelineCache,
   type Turn,
+  toolLabel,
   turnNumbers,
 } from "@grove/core";
 import type {
@@ -19,6 +21,7 @@ import type {
   ConversationTurn,
   ConversationView,
   DetailStep,
+  MainStats,
 } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { detailSteps } from "./detailSteps.ts";
@@ -261,4 +264,39 @@ export function findTurn(
     });
   });
   return best;
+}
+
+/**
+ * the session's own conversation, summed up the way an agent row is: what model, how much it did,
+ * what it said last or is doing now, and when each turn worked - the fan-out's main lane
+ */
+export function mainStats(state: ConversationState): MainStats {
+  const head = conversationHead(state);
+  const stats: MainStats = { tools: head.tools, turns: head.turns, spans: [] };
+  if (head.model) stats.model = head.model;
+  if (head.startedAt !== undefined) stats.startedAt = head.startedAt;
+  if (head.lastAt !== undefined) stats.lastAt = head.lastAt;
+  for (const item of state.items) {
+    if (item.kind !== "turn") continue;
+    const n = turnNumbers(item);
+    if (n.startedAt !== undefined && n.endedAt !== undefined)
+      stats.spans.push([n.startedAt, n.endedAt]);
+  }
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const item = state.items[i];
+    if (item?.kind !== "turn") continue;
+    if (!stats.lastStep) {
+      const step = item.work.steps.findLast((s) => s.kind === "tool" && !s.server);
+      if (step?.kind === "tool") stats.lastStep = `${toolLabel(step.name)} ${step.target}`.trim();
+    }
+    if (!stats.outcome) {
+      const answer = answerSteps(item.work).flatMap((j) => {
+        const s = item.work.steps[j];
+        return s?.kind === "text" ? [s.text] : [];
+      });
+      if (answer.length) stats.outcome = firstSentence(answer.join("\n\n"));
+    }
+    if (stats.lastStep && stats.outcome) break;
+  }
+  return stats;
 }

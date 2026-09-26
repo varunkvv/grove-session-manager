@@ -1,5 +1,5 @@
 import { formatDuration, formatTokens, modelLabel, type SessionAgent } from "@grove/core/pure";
-import type { AgentStats, SessionInspection } from "../../shared/ipc.ts";
+import type { AgentStats, MainStats, SessionInspection } from "../../shared/ipc.ts";
 
 /**
  * the pane's width range, and what the list keeps beside it. a conversation is read, so the pane
@@ -47,6 +47,11 @@ export interface FanOut {
   start: number;
   end: number;
   ticks: [string, string, string];
+  /**
+   * the session's own conversation, on top: each turn's work clipped to the agents' window, so
+   * main working, then waiting while its agents fan out, shows in one picture
+   */
+  main?: { segments: Array<{ left: number; width: number }>; running: boolean };
 }
 
 /** one lane each up to this many. past it, agents that never overlap share a lane. */
@@ -77,6 +82,27 @@ export function toneOf(agent: SessionAgent, stats: AgentStats | undefined): BarT
  * whose agents ran in a twenty-minute burst must not come out as slivers.
  */
 export function fanOut(
+  agents: readonly SessionAgent[],
+  inspection: SessionInspection | null | undefined,
+  now: number,
+  /** the session is in the middle of a turn: its last span goes on to now */
+  mainRunning = false,
+): FanOut {
+  const picture = agentsFanOut(agents, inspection, now);
+  const spans = inspection?.main?.spans;
+  if (!spans?.length || picture.bars.length === 0) return picture;
+  const span = Math.max(1000, picture.end - picture.start);
+  const segments = spans.flatMap(([s, e], i) => {
+    const end = mainRunning && i === spans.length - 1 ? now : e;
+    // the axis stays the agents' own window: what main did outside it is not drawn
+    const a = Math.max(s, picture.start);
+    const b = Math.min(end, picture.end);
+    return b > a ? [{ left: (a - picture.start) / span, width: (b - a) / span }] : [];
+  });
+  return { ...picture, main: { segments, running: mainRunning } };
+}
+
+function agentsFanOut(
   agents: readonly SessionAgent[],
   inspection: SessionInspection | null | undefined,
   now: number,
@@ -123,7 +149,11 @@ export function laneGeometry(lanes: number, max = 96): { pitch: number; bar: num
   return { pitch, bar: Math.max(1.5, Math.min(4, pitch - 2)) };
 }
 
+/** the session's own conversation, as a row of its agents. no agent id can look like this. */
+export const MAIN_ID = "@main";
+
 export type AgentListItem =
+  | { type: "main"; id: typeof MAIN_ID }
   | { type: "workflow"; id: string; label: string }
   | { type: "agent"; id: string; agent: SessionAgent; depth: number };
 
@@ -150,7 +180,8 @@ export function agentList(
       children.set(parent, [...(children.get(parent) ?? []), a]);
     } else roots.push(a);
   }
-  const items: AgentListItem[] = [];
+  // the session itself first: what sent them all out
+  const items: AgentListItem[] = inspection?.main ? [{ type: "main", id: MAIN_ID }] : [];
   const seen = new Set<string>();
   const add = (a: SessionAgent, depth: number) => {
     if (seen.has(a.id)) return;
@@ -258,4 +289,17 @@ export function agentDuration(
 /** a changed list of agents is what makes a fresh look worth asking for */
 export function agentsSignature(agents: readonly SessionAgent[] | undefined): string {
   return (agents ?? []).map((a) => `${a.id}:${a.state}:${a.lastActivityAt}`).join("|");
+}
+
+/** `main · opus 5 · 412 tools` */
+export function mainMeta(main: MainStats): string {
+  const parts = ["main"];
+  if (main.model) parts.push(modelLabel(main.model));
+  parts.push(`${main.tools} ${main.tools === 1 ? "tool" : "tools"}`);
+  return parts.join(" · ");
+}
+
+/** the third line: what it is doing while it runs, the first sentence of its last answer when not */
+export function mainLine(main: MainStats, running: boolean): string | null {
+  return (running ? (main.lastStep ?? main.outcome) : main.outcome) ?? null;
 }

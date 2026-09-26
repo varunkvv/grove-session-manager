@@ -873,6 +873,11 @@ function follow(key: string, a: SessionAgent, gen: number): void {
 }
 
 const convo = mockConversations(sessions, (channel, payload) => emit(channel, payload));
+// the session itself is the first of its agents
+for (const [key, inspection] of inspectionsByKey) {
+  const main = convo.main(key);
+  if (main) inspection.main = main;
+}
 
 const bridge: Bridge = {
   bootstrap: async () => boot,

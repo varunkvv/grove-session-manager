@@ -8,6 +8,9 @@ import {
   fanOut,
   LIST_MIN,
   laneGeometry,
+  MAIN_ID,
+  mainLine,
+  mainMeta,
   PANE_MAX,
   PANE_MIN,
   paneLayout,
@@ -131,7 +134,7 @@ describe("the list of agents", () => {
       ],
       inspection({ child: { parentId: "parent" } }),
     );
-    expect(items.map((i) => (i.type === "agent" ? `${i.id}:${i.depth}` : i.label))).toEqual([
+    expect(items.map((i) => (i.type === "agent" ? `${i.id}:${i.depth}` : i.id))).toEqual([
       "first:0",
       "parent:0",
       "child:1",
@@ -149,14 +152,9 @@ describe("the list of agents", () => {
       ],
       inspection({}, { wf_1: { name: "cdit-1249-derive" } }),
     );
-    expect(items.map((i) => (i.type === "agent" ? i.id : `[${i.label}]`))).toEqual([
-      "[cdit-1249-derive]",
-      "w1",
-      "w2",
-      "solo",
-      "[Workflow]",
-      "x1",
-    ]);
+    expect(
+      items.map((i) => (i.type === "agent" ? i.id : i.type === "workflow" ? `[${i.label}]` : i.id)),
+    ).toEqual(["[cdit-1249-derive]", "w1", "w2", "solo", "[Workflow]", "x1"]);
   });
 
   it("each row says what it was for, how big it got, and what came of it", () => {
@@ -210,5 +208,47 @@ describe("the list of agents", () => {
       ),
     ).toBe("2 agents · 14m of agent time · 1.2M tokens");
     expect(sessionAgentSummary([agent("a")], null, NOW)).toBe("1 agent · 10m of agent time");
+  });
+});
+
+describe("the session's own conversation, beside its agents", () => {
+  const main = {
+    model: "claude-opus-5",
+    tools: 412,
+    turns: 30,
+    startedAt: NOW - 60 * MIN,
+    lastAt: NOW - 2 * MIN,
+    outcome: "Pieces 1-3 are committed.",
+    lastStep: "Bash pnpm test",
+    spans: [
+      [NOW - 60 * MIN, NOW - 50 * MIN],
+      [NOW - 40 * MIN, NOW - 25 * MIN],
+      [NOW - 10 * MIN, NOW - 2 * MIN],
+    ] as Array<[number, number]>,
+  };
+
+  it("is the first row, and says what it is doing or what it said last", () => {
+    const items = agentList([agent("a", {})], { ...inspection({}), main });
+    expect(items.map((i) => i.id)).toEqual([MAIN_ID, "a"]);
+    expect(agentList([agent("a", {})], inspection({})).map((i) => i.id)).toEqual(["a"]);
+    expect(mainMeta(main)).toBe("main · opus 5 · 412 tools");
+    expect(mainLine(main, true)).toBe("Bash pnpm test");
+    expect(mainLine(main, false)).toBe("Pieces 1-3 are committed.");
+  });
+
+  it("draws its turns on top of the fan-out, clipped to the agents' own window", () => {
+    // one agent from 45 to 20 minutes ago: that is the axis
+    const one = agent("a", { startedAt: NOW - 45 * MIN, lastActivityAt: NOW - 20 * MIN });
+    const picture = fanOut([one], { ...inspection({}), main }, NOW);
+    expect(picture.start).toBe(NOW - 45 * MIN);
+    // the first turn ended before the agent started, the third began after it ended: only the
+    // second is on the axis
+    expect(picture.main?.segments).toEqual([{ left: 5 / 25, width: 15 / 25 }]);
+    expect(picture.main?.running).toBe(false);
+    // still running: the last turn reaches now, which the axis reaches too while an agent runs
+    const running = agent("b", { startedAt: NOW - 45 * MIN, state: "running" });
+    const live = fanOut([running], { ...inspection({}), main }, NOW, true);
+    expect(live.main?.segments.at(-1)).toEqual({ left: 35 / 45, width: 10 / 45 });
+    expect(live.main?.running).toBe(true);
   });
 });

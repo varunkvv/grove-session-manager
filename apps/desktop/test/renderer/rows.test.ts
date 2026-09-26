@@ -5,6 +5,7 @@ import {
   agentKey,
   buildList,
   inboxCount,
+  MAIN_AGENT,
   needsYouKeys,
   nextActiveKey,
   RUNNING,
@@ -359,6 +360,58 @@ describe("the Agents scope", () => {
     expect(find("webhook")).toEqual(["b1", "b2"]);
     expect(find("review diff")).toEqual(["b2"]);
     expect(find("old is:archived")).toEqual(["d1"]);
+  });
+});
+
+describe("a running session among the agents at work", () => {
+  const running = (at: number) => ({
+    state: "running" as const,
+    at,
+    lastEventAt: at,
+    turnStart: at,
+  });
+  const list = [
+    row("/p/busy.jsonl", {
+      title: "Tidy the logs",
+      live: running(NOW - 5 * 60_000),
+      agents: [
+        {
+          id: "x1",
+          agentType: "Explore",
+          description: "Find old files",
+          startedAt: NOW - 60_000,
+          lastActivityAt: NOW,
+          state: "running",
+        },
+      ],
+    }),
+    row("/p/solo.jsonl", { title: "No agents, but working", live: running(NOW - 30_000) }),
+    row("/p/done.jsonl", { title: "Finished earlier" }),
+    row("/p/away.jsonl", { title: "Archived and busy", archived: true, live: running(NOW) }),
+  ];
+
+  it("its own conversation shows under Running, newest first with the agents; a finished one does not", () => {
+    const m = buildList(list, { scope: "agents", combo: null, query: "", now: NOW });
+    expect(
+      m.items.map((i) =>
+        i.type === "header"
+          ? `[${i.label}]`
+          : i.type === "main"
+            ? `main:${i.row.title}`
+            : i.type === "agent"
+              ? i.agent.id
+              : "?",
+      ),
+    ).toEqual(["[Running]", "main:No agents, but working", "x1", "main:Tidy the logs"]);
+    expect(agentIdOf(m.keys[0] ?? "")).toBe(MAIN_AGENT);
+    expect(sessionKeyOf(m.keys[0] ?? "")).toBe("/p/solo.jsonl");
+  });
+
+  it("is found by its session's words, and by what it is", () => {
+    const byTitle = buildList(list, { scope: "agents", combo: null, query: "tidy", now: NOW });
+    expect(byTitle.items.filter((i) => i.type === "main")).toHaveLength(1);
+    const byName = buildList(list, { scope: "agents", combo: null, query: "main", now: NOW });
+    expect(byName.items.filter((i) => i.type === "main")).toHaveLength(2);
   });
 });
 

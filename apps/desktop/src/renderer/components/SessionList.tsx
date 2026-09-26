@@ -342,6 +342,64 @@ const AgentRowView = memo(function AgentRowView(p: {
   );
 });
 
+/**
+ * a running session's own conversation in the Agents scope, in an agent row's typography: working
+ * right now, like the agents under the same header - its session is the second line
+ */
+const MainListRowView = memo(function MainListRowView(p: {
+  id: string;
+  row: SessionRow;
+  tokens: readonly string[];
+  active: boolean;
+  now: number;
+  index: number;
+  total: number;
+  onActivate: (key: SessionKey, el: HTMLElement) => void;
+  onMenu: (key: SessionKey, el: HTMLElement) => void;
+}) {
+  const { row } = p;
+  const since = row.live?.turnStart ?? row.live?.at;
+  return (
+    <div
+      id={optionId(p.id)}
+      role="option"
+      aria-selected={p.active}
+      aria-posinset={p.index + 1}
+      aria-setsize={p.total}
+      data-testid="agent-list-row"
+      data-main
+      data-state="running"
+      data-active={p.active || undefined}
+      onClick={(e) => p.onActivate(p.id, e.currentTarget)}
+      onKeyDown={() => {}}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        p.onMenu(p.id, e.currentTarget);
+      }}
+      className={cx(
+        "fade mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
+        p.active ? "bg-active" : "hover:bg-raised",
+      )}
+    >
+      <div className="flex items-baseline gap-3">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">
+          <Highlighted text="Main conversation" tokens={p.tokens} />
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
+          <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
+          {since !== undefined ? formatDuration(p.now - since) : ""}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-3 text-sm text-fg-3">
+        <span className="min-w-0 flex-1 truncate" data-testid="agent-list-second">
+          <Highlighted text={row.title ?? "Untitled session"} tokens={p.tokens} />
+        </span>
+        <span className="shrink-0 text-fg-4">main</span>
+      </div>
+    </div>
+  );
+});
+
 /** what the inbox shows for a session that stopped on words, when the hook's copy was cut */
 const lastWords = new Map<string, string | null>();
 
@@ -599,6 +657,22 @@ export function SessionList({
                   <div className="min-w-0 flex-1">
                     <AgentRowView
                       item={item}
+                      tokens={tokens}
+                      active={item.id === activeKey}
+                      now={now}
+                      index={positions.get(item.id) ?? 0}
+                      total={total}
+                      onActivate={onActivate}
+                      onMenu={onMenu}
+                    />
+                  </div>
+                </div>
+              ) : item.type === "main" ? (
+                <div className="flex h-full items-center">
+                  <div className="min-w-0 flex-1">
+                    <MainListRowView
+                      id={item.id}
+                      row={item.row}
                       tokens={tokens}
                       active={item.id === activeKey}
                       now={now}

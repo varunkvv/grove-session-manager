@@ -1,6 +1,6 @@
 import type { SessionActionId, SessionKey } from "../../shared/ipc.ts";
 import { continuePrompt } from "../logic/background.ts";
-import { agentIdOf, sessionKeyOf, splitQuery } from "../logic/rows.ts";
+import { agentIdOf, MAIN_AGENT, sessionKeyOf, splitQuery } from "../logic/rows.ts";
 import { useStore } from "./store.ts";
 
 const api = () => window.grove;
@@ -46,13 +46,15 @@ export async function openCombo(name: string, sessionKey?: SessionKey): Promise<
  */
 export function openInspector(key?: SessionKey): void {
   const s = state();
-  // an agent a search landed on earlier is not what this asks for
+  // an agent a search landed on earlier is not what this asks for, and the keyboard's row of
+  // another session's list is not this one's
+  const same = !key || (s.activeKey !== null && sessionKeyOf(s.activeKey) === key);
   s.set({
     ...(key ? { activeKey: key } : {}),
     inspector: {
       view: "agents",
-      agent: s.inspector?.agent ?? null,
-      detail: s.inspector?.detail ?? null,
+      agent: same ? (s.inspector?.agent ?? null) : null,
+      detail: same ? (s.inspector?.detail ?? null) : null,
     },
   });
 }
@@ -63,9 +65,14 @@ export function openInspector(key?: SessionKey): void {
  */
 export function openConversation(key: SessionKey): void {
   const s = state();
+  const same = s.activeKey !== null && sessionKeyOf(s.activeKey) === key;
   s.set({
     activeKey: key,
-    inspector: { view: "conversation", agent: s.inspector?.agent ?? null, detail: null },
+    inspector: {
+      view: "conversation",
+      agent: same ? (s.inspector?.agent ?? null) : null,
+      detail: null,
+    },
   });
 }
 
@@ -96,6 +103,12 @@ export function openAgent(
   opts: { step?: number; focus?: boolean; find?: string; from?: "conversation" } = {},
 ): void {
   const s = state();
+  // the session's own row among its agents is its conversation
+  if (id === MAIN_AGENT) {
+    paneFocus.pending = opts.focus || focusInPane();
+    s.set({ inspector: { view: "conversation", agent: null, detail: null } });
+    return;
+  }
   const step = opts.step;
   const find = opts.find;
   const showing = s.inspector?.detail?.key === key && s.inspector.detail.id === id;

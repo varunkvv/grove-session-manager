@@ -1,12 +1,14 @@
+import { formatDuration } from "@grove/core/pure";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationView,
+  MainStats,
   SessionAction,
   SessionInspection,
   SessionKey,
   SessionRow,
 } from "../../shared/ipc.ts";
-import { conversationMeta, openLabel } from "../logic/conversation.ts";
+import { conversationMeta, openLabel, spanLabel } from "../logic/conversation.ts";
 import {
   type AgentListItem,
   agentDuration,
@@ -18,6 +20,9 @@ import {
   type FanOut,
   fanOut,
   laneGeometry,
+  MAIN_ID,
+  mainLine,
+  mainMeta,
   PANE_MIN,
   type PaneLayout,
   paneLayout,
@@ -55,7 +60,10 @@ const inspections = new Map<SessionKey, SessionInspection>();
  */
 function useInspection(row: SessionRow | undefined): SessionInspection | null {
   const key = row?.key ?? null;
-  const sig = agentsSignature(row?.agents);
+  // the session's own row moves with its transcript: what it is doing now is part of the look
+  const sig = row?.agents?.length
+    ? `${agentsSignature(row.agents)}|${row.activityMs}|${row.live?.state}`
+    : "";
   const [, bump] = useState(0);
   useEffect(() => {
     if (!key || !sig) return;
@@ -245,10 +253,17 @@ function InspectorBody() {
   // an agent's detail belongs to its session. moving to another row shows that row's list.
   const detail = useStore((s) => s.inspector?.detail ?? null);
   const set = useStore((s) => s.set);
+  // and the keyboard's row in the agents list is that session's too: another row starts at the top
+  const shownFor = useRef(activeKey);
   useEffect(() => {
     const inspector = useStore.getState().inspector;
-    if (inspector && detail && detail.key !== activeKey) {
+    const moved = shownFor.current !== activeKey;
+    shownFor.current = activeKey;
+    if (!inspector) return;
+    if (detail && detail.key !== activeKey) {
       set({ inspector: { ...inspector, agent: null, detail: null } });
+    } else if (moved && inspector.agent !== null && !detail) {
+      set({ inspector: { ...inspector, agent: null } });
     }
   }, [detail, activeKey, set]);
   // a session with no agents has only its conversation to show, whatever the arrows kept
@@ -419,11 +434,19 @@ function SessionAgents({
   const from = useStore((s) => s.inspector?.from);
   const set = useStore((s) => s.set);
   const [hovered, setHovered] = useState<string | null>(null);
+  const mainRunning = row.live?.state === "running";
   const items = useMemo(() => agentList(agents, inspection), [agents, inspection]);
-  const picture = useMemo(() => fanOut(agents, inspection, now), [agents, inspection, now]);
-  const ids = useMemo(() => items.flatMap((i) => (i.type === "agent" ? [i.id] : [])), [items]);
+  const picture = useMemo(
+    () => fanOut(agents, inspection, now, mainRunning),
+    [agents, inspection, now, mainRunning],
+  );
+  const ids = useMemo(
+    () => items.flatMap((i) => (i.type === "agent" || i.type === "main" ? [i.id] : [])),
+    [items],
+  );
   const active = inspectorAgent && ids.includes(inspectorAgent) ? inspectorAgent : null;
-  // the arrows move the keyboard's row. a click, Enter or a bar opens the agent.
+  // the arrows move the keyboard's row. a click, Enter or a bar opens the agent - or, for the
+  // session's own row, its conversation
   const move = (id: string) => set({ inspector: { view: "agents", agent: id, detail: null } });
   const open = (id: string) => openAgent(row.key, id);
 
@@ -457,6 +480,7 @@ function SessionAgents({
       </div>
       <AgentListView
         sessionKey={row.key}
+        row={row}
         items={items}
         ids={ids}
         inspection={inspection}
@@ -497,10 +521,45 @@ function FanOutView({
   onHover: (id: string | null) => void;
   onPick: (id: string) => void;
 }) {
-  const { pitch, bar } = laneGeometry(picture.lanes);
+  const lanes = picture.lanes + (picture.main ? 1 : 0);
+  const { pitch, bar } = laneGeometry(lanes);
+  const top = picture.main ? pitch : 0;
+  const mainLit = lit === MAIN_ID;
   return (
     <div className="mt-3.5" data-testid="fan-out" data-lanes={picture.lanes}>
-      <div className="relative" style={{ height: picture.lanes * pitch }}>
+      <div className="relative" style={{ height: lanes * pitch }}>
+        {picture.main && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Main conversation"
+            data-testid="fan-main"
+            data-running={picture.main.running || undefined}
+            onMouseEnter={() => onHover(MAIN_ID)}
+            onMouseLeave={() => onHover(null)}
+            onClick={() => onPick(MAIN_ID)}
+            className="absolute inset-x-0 top-0"
+            style={{ height: pitch }}
+          >
+            {picture.main.segments.map((g, i) => (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: a turn's place on the axis
+                key={i}
+                data-testid="fan-main-turn"
+                className={cx(
+                  "fade absolute rounded-full",
+                  mainLit ? "bg-fg-2" : picture.main?.running ? "bg-fg-3" : "bg-fg-4",
+                )}
+                style={{
+                  top: (pitch - bar) / 2,
+                  height: bar,
+                  left: `min(${g.left * 100}%, calc(100% - 3px))`,
+                  width: `max(3px, ${g.width * 100}%)`,
+                }}
+              />
+            ))}
+          </button>
+        )}
         {picture.bars.map((b) => (
           <button
             key={b.id}
@@ -514,7 +573,7 @@ function FanOutView({
             onClick={() => onPick(b.id)}
             className="absolute flex items-center"
             style={{
-              top: b.lane * pitch,
+              top: top + b.lane * pitch,
               height: pitch,
               left: `min(${b.left * 100}%, calc(100% - 6px))`,
               width: `max(6px, ${b.width * 100}%)`,
@@ -556,6 +615,7 @@ const SEEN_MS = 600;
 
 function AgentListView({
   sessionKey,
+  row,
   items,
   ids,
   inspection,
@@ -567,6 +627,7 @@ function AgentListView({
   onOpen,
 }: {
   sessionKey: SessionKey;
+  row: SessionRow;
   items: AgentListItem[];
   ids: string[];
   inspection: SessionInspection | null;
@@ -651,7 +712,21 @@ function AgentListView({
       }}
     >
       {items.map((item) =>
-        item.type === "workflow" ? (
+        item.type === "main" ? (
+          inspection?.main && (
+            <MainRowView
+              key={item.id}
+              main={inspection.main}
+              row={row}
+              now={now}
+              active={active === MAIN_ID}
+              focused={focused}
+              lit={lit === MAIN_ID}
+              onHover={onHover}
+              onPick={onOpen}
+            />
+          )
+        ) : item.type === "workflow" ? (
           <div
             key={item.id}
             role="presentation"
@@ -673,6 +748,71 @@ function AgentListView({
             onPick={onOpen}
           />
         ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * the session itself, as the first of its agents, in an agent row's typography: what it is,
+ * how long it has gone on (or, running, this turn), and what it is doing or said last
+ */
+function MainRowView({
+  main,
+  row,
+  now,
+  active,
+  focused,
+  lit,
+  onHover,
+  onPick,
+}: {
+  main: MainStats;
+  row: SessionRow;
+  now: number;
+  active: boolean;
+  focused: boolean;
+  lit: boolean;
+  onHover: (id: string | null) => void;
+  onPick: (id: string) => void;
+}) {
+  const running = row.live?.state === "running";
+  const turnStart = row.live?.turnStart ?? row.live?.at;
+  const line = mainLine(main, running);
+  return (
+    <div
+      id={`agent-${MAIN_ID}`}
+      role="option"
+      aria-selected={active}
+      data-testid="main-row"
+      data-state={running ? "running" : "done"}
+      data-active={active || undefined}
+      onMouseEnter={() => onHover(MAIN_ID)}
+      onMouseLeave={() => onHover(null)}
+      onClick={() => onPick(MAIN_ID)}
+      className={cx(
+        "fade mx-2 flex flex-col rounded-md py-2 pr-3 pl-3",
+        active && focused ? "bg-active" : active || lit ? "bg-raised" : "hover:bg-raised",
+      )}
+    >
+      <div className="flex items-baseline gap-3">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">Main conversation</span>
+        {running && turnStart !== undefined ? (
+          <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
+            <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
+            {formatDuration(now - turnStart)}
+          </span>
+        ) : main.startedAt !== undefined && main.lastAt !== undefined ? (
+          <span className="shrink-0 text-sm tabular-nums text-fg-3">
+            {spanLabel(main.lastAt - main.startedAt)}
+          </span>
+        ) : null}
+      </div>
+      <div className="truncate text-sm text-fg-3">{mainMeta(main)}</div>
+      {line && (
+        <div className="truncate text-sm text-fg-4" data-testid="agent-line" title={line}>
+          {line}
+        </div>
       )}
     </div>
   );
