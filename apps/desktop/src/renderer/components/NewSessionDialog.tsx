@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   EFFORTS,
   MODELS,
@@ -42,17 +42,21 @@ export function NewSessionDialog() {
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
 
-  // on the combo, not the dialog object: a second cmd-T while open must not wipe what was typed
-  useEffect(() => {
+  // on the combo, not the dialog object: a second cmd-T while open must not wipe what was typed.
+  // before paint: the dialog stays mounted between opens, and a reset after paint shows the last
+  // session's name for a frame - and wipes whatever was typed into it in that frame
+  useLayoutEffect(() => {
     if (!open) return;
     setChoices(loadChoices(browserStorage(), comboName));
     setPrompt("");
     setName("");
     setError(null);
     setRunning(false);
-    // after the modal opened (a parent's effect runs after its children's), or it takes focus back
-    field.current?.focus();
   }, [open, comboName]);
+  // after the modal opened (a parent's effect runs after its children's), or it takes focus back
+  useEffect(() => {
+    if (open) field.current?.focus();
+  }, [open]);
 
   const where = choices.where;
   const cli = where !== "editor";
