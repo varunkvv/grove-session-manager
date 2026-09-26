@@ -1,6 +1,7 @@
-// dev only: lets the renderer run in a plain browser (`pnpm vite` + ?mock=empty|drift|agents) for
+// dev only: lets the renderer run in a plain browser (`pnpm vite` + ?mock=empty|drift|agents|conversation) for
 // visual work. never part of a production build - main.tsx only imports it when import.meta.env.DEV
 // is true.
+
 import type {
   AgentDetail,
   AgentStats,
@@ -13,6 +14,7 @@ import type {
   SessionRow,
   StepDetail,
 } from "../../shared/ipc.ts";
+import { mockConversations } from "./mockConversation.ts";
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -759,7 +761,18 @@ const boot: Bootstrap = {
   index: { phase: "idle", done: sessions.length, total: sessions.length },
 };
 
-if (variant === "agents") {
+if (variant === "conversation") {
+  // the pane's own mock: the first row is the long conversation, still running
+  Object.assign(sessions[0] ?? {}, {
+    title: "Chat feature brainstorm",
+    comboName: "chat-features",
+    cwdBase: "chat-features",
+    gitBranch: "chat-view",
+    firstPrompt: "some feedback from using: clicking on a session should not open vs-code",
+  });
+}
+
+if (variant === "agents" || variant === "conversation") {
   const give = (i: number, agents: SessionAgent[], extra: Partial<SessionRow> = {}) => {
     const row = sessions[i];
     if (!row) return;
@@ -779,7 +792,7 @@ if (variant === "agents") {
     live: { state: "running", at: NOW - 26 * MIN, lastEventAt: NOW - 2 * S },
   });
   give(3, nestedWorkflow, { title: "Derive BDS table names instead of accepting them" });
-  give(6, finished, { title: "Chat feature brainstorm" });
+  if (variant === "agents") give(6, finished, { title: "Chat feature brainstorm" });
 }
 
 const okv = <T>(value: T) => Promise.resolve({ ok: true as const, value });
@@ -828,6 +841,8 @@ function follow(key: string, a: SessionAgent, gen: number): void {
   }, 2000);
 }
 
+const convo = mockConversations(sessions, (channel, payload) => emit(channel, payload));
+
 const bridge: Bridge = {
   bootstrap: async () => boot,
   rescan: () => okv(undefined),
@@ -874,10 +889,9 @@ const bridge: Bridge = {
     return { gen, detail: { ...held, key } };
   },
   agentStep: async (_key, _agentId, stepId) => bodies.get(stepId) ?? null,
-  // a realistic long conversation arrives with the conversation view
-  followConversation: async () => null,
-  conversationSteps: async () => null,
-  conversationStep: async () => null,
+  followConversation: async (key, find) => convo.follow(key, find),
+  conversationSteps: async (key, n) => convo.steps(key, n),
+  conversationStep: async (_key, stepId) => convo.step(stepId),
   agentsSeen: async () => {},
   openExternal: () => okv(undefined),
   markSeen: async () => {},

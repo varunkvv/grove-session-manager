@@ -432,7 +432,7 @@ export class AgentInspector {
     };
     f.timer.unref?.();
     this.following = f;
-    const found = find ? findTurn(state, tokenize(find)) : undefined;
+    const found = find ? findTurn(state, tokenize(find), find) : undefined;
     return { gen, conversation, ...(found ? { found } : {}) };
   }
 

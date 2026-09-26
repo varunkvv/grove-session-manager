@@ -46,26 +46,26 @@ export async function openCombo(name: string, sessionKey?: SessionKey): Promise<
  */
 export function openInspector(key?: SessionKey): void {
   const s = state();
+  // an agent a search landed on earlier is not what this asks for
   s.set({
     ...(key ? { activeKey: key } : {}),
-    inspector: { agent: null, detail: null, ...s.inspector, view: "agents" },
+    inspector: {
+      view: "agents",
+      agent: s.inspector?.agent ?? null,
+      detail: s.inspector?.detail ?? null,
+    },
   });
 }
 
 /**
- * the pane on this session's own conversation: what a click on a row does. `find` is a search
- * that led here, and the conversation opens at the turn that matched it.
+ * the pane on this session's own conversation: what a click on a row does. a query in the search
+ * box is what the conversation opens at - the pane reads it, nothing here carries it.
  */
-export function openConversation(key: SessionKey, opts: { find?: string } = {}): void {
+export function openConversation(key: SessionKey): void {
   const s = state();
   s.set({
     activeKey: key,
-    inspector: {
-      view: "conversation",
-      agent: s.inspector?.agent ?? null,
-      detail: null,
-      ...(opts.find ? { find: opts.find } : {}),
-    },
+    inspector: { view: "conversation", agent: s.inspector?.agent ?? null, detail: null },
   });
 }
 

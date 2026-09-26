@@ -1,3 +1,4 @@
+import { highlightRanges } from "@grove/core/pure";
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef } from "react";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -388,3 +389,18 @@ export function Field({
 
 export const inputClass =
   "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4 focus:border-fg-3";
+
+/** text with the search's words marked, the same way everywhere a query is shown */
+export function Highlighted({ text, tokens }: { text: string; tokens: readonly string[] }) {
+  const ranges = highlightRanges(text, tokens);
+  if (ranges.length === 0) return <>{text}</>;
+  const out: ReactNode[] = [];
+  let at = 0;
+  for (const [start, end] of ranges) {
+    if (start > at) out.push(text.slice(at, start));
+    out.push(<mark key={start}>{text.slice(start, end)}</mark>);
+    at = end;
+  }
+  if (at < text.length) out.push(text.slice(at));
+  return <>{out}</>;
+}

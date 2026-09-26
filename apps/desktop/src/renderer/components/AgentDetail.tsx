@@ -1,16 +1,7 @@
 import { toolLabel } from "@grove/core/pure";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  type CSSProperties,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import type { AgentDetail, SessionAgent, SessionKey, StepDetail } from "../../shared/ipc.ts";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentDetail, SessionAgent, SessionKey } from "../../shared/ipc.ts";
 import {
   type DetailItem,
   detailItems,
@@ -20,29 +11,17 @@ import {
   offsetLabel,
   runOfStep,
   runTargets,
-  type ToolLine,
 } from "../logic/agentDetail.ts";
 import { activate, paneFocus } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Markdown } from "./Markdown.tsx";
+import { Folded, LINE, Line, remember, ToolItem } from "./Steps.tsx";
 import { cx, Icon } from "./ui.tsx";
 
 /** the last look at each agent, so going back to one draws it at once */
 const details = new Map<string, AgentDetail>();
-const steps = new Map<string, StepDetail>();
-const LINE = 20;
 /** an agent that died on an error: the only colour the detail has */
 const errorLine = "mt-1 line-clamp-2 text-sm text-accent";
-
-function remember<V>(map: Map<string, V>, key: string, value: V, max = 24): void {
-  map.delete(key);
-  map.set(key, value);
-  while (map.size > max) {
-    const oldest = map.keys().next().value;
-    if (oldest === undefined) break;
-    map.delete(oldest);
-  }
-}
 
 /**
  * the agent on screen, read in main and sent over as lines, never raw json. while it is here,
@@ -339,8 +318,10 @@ export function AgentDetailView({
         return (
           <ToolItem
             item={item}
-            sessionKey={sessionKey}
-            agentId={agentId}
+            body={(stepId) => ({
+              cacheKey: `${sessionKey}\0${agentId}\0${stepId}`,
+              load: () => window.grove.agentStep(sessionKey, agentId, stepId),
+            })}
             start={detail?.startedAt}
             live={running && item.step.durationMs === undefined}
             open={expanded.has(item.id)}
@@ -531,290 +512,5 @@ function Action({
     >
       {children}
     </button>
-  );
-}
-
-/**
- * a block folded to so many lines, with "more" under it when there is more. the fold state lives
- * with the caller: a virtual list forgets whatever scrolls away.
- */
-function Folded({
-  lines,
-  open,
-  onToggle,
-  children,
-}: {
-  lines: number;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  const box = useRef<HTMLDivElement>(null);
-  const [over, setOver] = useState(false);
-  const [cut, setCut] = useState<number | null>(null);
-  const max = lines * LINE;
-  useLayoutEffect(() => {
-    const el = box.current;
-    const inner = el?.firstElementChild;
-    if (!el || !inner) return;
-    // only a folded block can say whether it is cut. an open one keeps what it last knew.
-    const check = () => {
-      if (open) return;
-      const cutOff = el.scrollHeight > max + 2;
-      setOver(cutOff);
-      // end on the last whole block that fits - a paragraph under a table would otherwise be
-      // sliced through a line. when even the first block is too tall, the line clamp ends it.
-      let fits = 0;
-      for (const child of el.querySelector(".md")?.children ?? []) {
-        const bottom = (child as HTMLElement).offsetTop + (child as HTMLElement).offsetHeight;
-        if (bottom <= max) fits = Math.max(fits, bottom);
-      }
-      setCut(cutOff && fits >= max * 0.4 ? fits : null);
-    };
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(inner);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [open, max]);
-  return (
-    <div>
-      <div
-        ref={box}
-        className={cx("relative", !open && "fold")}
-        style={
-          {
-            "--fold-lines": lines,
-            ...(!open && cut !== null ? { maxHeight: cut } : {}),
-          } as CSSProperties
-        }
-      >
-        <div>{children}</div>
-      </div>
-      {over && (
-        <button
-          type="button"
-          data-testid="fold-toggle"
-          onClick={onToggle}
-          className="fade mt-1 text-sm text-fg-3 hover:text-fg-2"
-        >
-          {open ? "less" : "more"}
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** one step, one quiet line: the tool in a fixed mono column, what it was about, when */
-function Line({
-  name,
-  target,
-  offset,
-  failure,
-  live,
-  link,
-  chevron,
-  cursor,
-  focused,
-  nested,
-  onClick,
-  testId,
-  id,
-}: {
-  name: string;
-  target: ReactNode;
-  offset: string;
-  failure?: string;
-  live?: boolean;
-  link?: boolean;
-  chevron?: "open" | "closed";
-  cursor?: boolean;
-  focused?: boolean;
-  nested?: boolean;
-  onClick?: () => void;
-  testId?: string;
-  id?: string;
-}) {
-  return (
-    <div
-      id={id}
-      role="option"
-      aria-selected={!!cursor}
-      data-testid={testId}
-      data-cursor={cursor || undefined}
-      onClick={onClick}
-      className={cx(
-        "fade mx-2 flex h-[26px] items-center gap-3 rounded-md pr-3",
-        nested ? "pl-7" : "pl-3",
-        cursor && focused ? "bg-active" : cursor ? "bg-raised" : onClick && "hover:bg-raised",
-      )}
-    >
-      <span className="flex w-[72px] shrink-0 items-center gap-1 truncate font-mono text-meta text-fg-3">
-        {name}
-        {chevron && (
-          <Icon
-            name="chevron"
-            size={9}
-            className={cx("text-fg-4", chevron === "open" && "rotate-90")}
-          />
-        )}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-fg-2">{target}</span>
-      {link && <span className="shrink-0 text-sm text-fg-3">→</span>}
-      {failure && (
-        <span className="shrink-0 text-meta text-accent" data-testid="step-error">
-          {failure}
-        </span>
-      )}
-      {live && <span className="live-pulse size-1.5 shrink-0 rounded-full bg-fg-3" />}
-      <span className="shrink-0 font-mono text-meta tabular-nums text-fg-4">{offset}</span>
-    </div>
-  );
-}
-
-function ToolItem({
-  item,
-  sessionKey,
-  agentId,
-  start,
-  live,
-  open,
-  cursor,
-  focused,
-  onClick,
-  onCopy,
-}: {
-  item: Extract<DetailItem, { type: "tool" }>;
-  sessionKey: SessionKey;
-  agentId: string;
-  start: number | undefined;
-  live: boolean;
-  open: boolean;
-  cursor: boolean;
-  focused: boolean;
-  onClick: () => void;
-  onCopy: (text: string | undefined, what: string) => void;
-}) {
-  const s: ToolLine = item.step;
-  return (
-    <div data-testid="step" data-failed={s.failure ? true : undefined}>
-      <Line
-        id={`step-${item.id}`}
-        name={toolLabel(s.name)}
-        target={
-          FILE_TOOLS.has(s.name) && s.target.includes("/") ? (
-            <PathTarget path={s.target} />
-          ) : (
-            s.target || <span className="text-fg-4">{s.server ? "server tool" : ""}</span>
-          )
-        }
-        offset={offsetLabel(s.at, start)}
-        failure={s.failure}
-        live={live}
-        link={!!s.agentId}
-        nested={item.nested}
-        cursor={cursor}
-        focused={focused}
-        onClick={onClick}
-      />
-      {open && <StepBody sessionKey={sessionKey} agentId={agentId} stepId={s.id} onCopy={onCopy} />}
-    </div>
-  );
-}
-
-const FILE_TOOLS = new Set(["Read", "Write", "Edit", "MultiEdit", "NotebookEdit"]);
-
-/** a path that runs out of room loses its folders, never its file name */
-function PathTarget({ path }: { path: string }) {
-  const cut = path.lastIndexOf("/") + 1;
-  return (
-    <span className="flex min-w-0" title={path}>
-      <span className="truncate text-fg-3">{path.slice(0, cut)}</span>
-      <span className="shrink-0">{path.slice(cut)}</span>
-    </span>
-  );
-}
-
-/** a step opened in place: its whole input and what came back, read from disk on the way */
-function StepBody({
-  sessionKey,
-  agentId,
-  stepId,
-  onCopy,
-}: {
-  sessionKey: SessionKey;
-  agentId: string;
-  stepId: string;
-  onCopy: (text: string | undefined, what: string) => void;
-}) {
-  const cacheKey = `${sessionKey}\0${agentId}\0${stepId}`;
-  const [body, setBody] = useState<StepDetail | null | undefined>(steps.get(cacheKey));
-  const ref = useRef<HTMLDivElement>(null);
-  // opened near the bottom, it would unfold out of sight
-  useEffect(() => {
-    if (body !== undefined) ref.current?.scrollIntoView({ block: "nearest" });
-  }, [body]);
-  useEffect(() => {
-    if (steps.has(cacheKey)) return;
-    let cancelled = false;
-    void window.grove
-      .agentStep(sessionKey, agentId, stepId)
-      .then((value) => {
-        if (cancelled) return;
-        if (value) remember(steps, cacheKey, value, 48);
-        setBody(value);
-      })
-      .catch(() => !cancelled && setBody(null));
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionKey, agentId, stepId, cacheKey]);
-  return (
-    <div ref={ref} className="mr-5 mb-2 ml-8 border-l border-line pl-3" data-testid="step-body">
-      {body === undefined ? (
-        <p className="py-1 text-sm text-fg-3">Reading…</p>
-      ) : body === null ? (
-        <p className="py-1 text-sm text-fg-3">Nothing to show - the transcript has moved on.</p>
-      ) : (
-        <>
-          <Part label="Input" text={body.input} onCopy={() => onCopy(body.input, "Input")} />
-          {body.result !== undefined && (
-            <Part
-              label={body.isError ? "Result, an error" : "Result"}
-              text={body.result || "(empty)"}
-              onCopy={() => onCopy(body.result, "Result")}
-              testId="step-result"
-            />
-          )}
-          {body.truncated && <p className="pt-1 text-meta text-fg-4">Cut at 200,000 characters.</p>}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Part({
-  label,
-  text,
-  onCopy,
-  testId,
-}: {
-  label: string;
-  text: string;
-  onCopy: () => void;
-  testId?: string;
-}) {
-  return (
-    <div className="py-1" data-testid={testId}>
-      <div className="flex items-center justify-between text-meta text-fg-3">
-        <span>{label}</span>
-        <button type="button" onClick={onCopy} className="fade hover:text-fg-2">
-          Copy
-        </button>
-      </div>
-      <pre className="selectable mt-0.5 max-h-64 overflow-auto font-mono text-meta whitespace-pre-wrap break-words text-fg-2">
-        {text}
-      </pre>
-    </div>
   );
 }

@@ -341,6 +341,10 @@ dialog::backdrop {
   color: var(--color-fg);
   font-weight: 500;
 }
+/* the answer to a turn is what the conversation is for: full strength, where a report is quieter */
+.md-answer {
+  color: var(--color-fg);
+}
 .md .md-alt {
   color: var(--color-fg-3);
 }

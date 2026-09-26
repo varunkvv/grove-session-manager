@@ -213,16 +213,23 @@ function marksText(marks: readonly Mark[]): string {
 
 /**
  * where a search landed in a conversation: the first turn holding the most of its words - in what
- * is always in sight (the prompt, the answer, a plan...) or, failing that, in a step of its work
+ * is always in sight (the prompt, the answer, a plan...) or, failing that, in a step of its work.
+ * a long plan holds most words of most queries, so saying the query word for word counts double
  */
 export function findTurn(
   state: ConversationState,
   tokens: readonly string[],
+  /** the query as typed: a place that says it word for word beats one that only has its words */
+  phrase = "",
 ): { n: number; step?: number } | undefined {
   if (tokens.length === 0) return undefined;
+  const said = phrase.toLowerCase().replace(/\s+/g, " ").trim();
   const count = (hay: string) => {
     const lower = hay.toLowerCase();
-    return tokens.filter((t) => lower.includes(t)).length;
+    const words = tokens.filter((t) => lower.includes(t)).length;
+    return said.includes(" ") && lower.replace(/\s+/g, " ").includes(said)
+      ? words + tokens.length
+      : words;
   };
   let best: { n: number; step?: number } | undefined;
   let most = 0;

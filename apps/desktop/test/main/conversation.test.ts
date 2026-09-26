@@ -140,6 +140,13 @@ describe("a session's conversation, from main", () => {
     // a command no prompt or answer says lands inside the work
     const steps = await inspector.conversationSteps(key, turns.find((t) => t.tools > 5)?.n ?? -1);
     const bash = steps?.find((s) => s.kind === "tool" && s.name === "Bash" && s.target.length > 30);
+    // every word of it in a long plan earlier on, and word for word in a later prompt: the prompt
+    const later = turns
+      .filter((t) => t.prompt?.kind === "human" && t.prompt.text.length > 30)
+      .at(-1);
+    const exact = later?.prompt?.text.slice(0, 30) ?? "";
+    const phrase = await inspector.followConversation(key, exact);
+    expect(phrase?.found?.n).toBe(later?.n);
     const inWork = await inspector.followConversation(
       key,
       bash?.kind === "tool" ? bash.target.slice(0, 40) : "",

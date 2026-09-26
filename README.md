@@ -159,6 +159,18 @@ session Claude Code runs in the background opens where it runs (so the button sa
 takes the first way in. `⋯` beside the button has every other way in. The pane's first opening waits out a
 double-click, so the list moving under the pointer never turns a double-click into two things.
 
+The conversation reads as turns: what was asked, in a raised block exactly as it was typed (a slash command in mono, a
+background task finishing as one quiet line, pasted images as a count), then one quiet line for the work - how long,
+how many steps, files edited, agents started - and the answer. Open the work line for every step, drawn the way an
+agent's steps are. What is the conversation rather than the work stays in sight without opening anything: a plan it
+proposed and whether it was taken, a question it asked and what was picked, what you typed while it worked, a
+compaction, an interrupt, an error it ended on. Days get headers when a session spans more than one. It opens at the
+end; while the session runs its newest turn is open and follows what it writes, with **Jump to live** when you scroll
+away. `Tab` moves into it, `↑` `↓` step through prompts, work lines and open steps, `↵` opens and closes, `←` goes back
+to the list. With a search in the box it opens at the turn that said it, with the words marked. The transcript is
+folded in the main process and kept in `.grove/conversations.v1/` - the 107MB one on this machine opens in about a
+quarter of a second the first time and a tenth after that - and only the part appended since is ever read again.
+
 The header says where the session ran, its branch, the model of its last response, how long it went on and how many
 tools it called. A session with agents gets **Conversation · Agents** under it. The pane starts at half of what the
 rail leaves (at least 480px, at most 960px, and the list always keeps 420px); drag its left edge to change that - the

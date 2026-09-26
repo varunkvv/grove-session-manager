@@ -1,18 +1,13 @@
-import {
-  formatDuration,
-  formatRelativeTime,
-  highlightRanges,
-  type LiveStatus,
-} from "@grove/core/pure";
+import { formatDuration, formatRelativeTime, type LiveStatus } from "@grove/core/pure";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, type ReactNode, useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
 import { backgroundTooltip, interruptedTooltip } from "../logic/background.ts";
 import { agentName } from "../logic/inspector.ts";
 import { type ListItem, NEEDS_YOU } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
-import { cx, Icon, Mono } from "./ui.tsx";
+import { cx, Highlighted, Icon, Mono } from "./ui.tsx";
 
 const ROW = 56;
 const HEADER = 30;
@@ -21,20 +16,6 @@ export function optionId(key: SessionKey): string {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
   return `session-${(h >>> 0).toString(36)}`;
-}
-
-function Highlighted({ text, tokens }: { text: string; tokens: readonly string[] }) {
-  const ranges = highlightRanges(text, tokens);
-  if (ranges.length === 0) return <>{text}</>;
-  const out: ReactNode[] = [];
-  let at = 0;
-  for (const [start, end] of ranges) {
-    if (start > at) out.push(text.slice(at, start));
-    out.push(<mark key={start}>{text.slice(start, end)}</mark>);
-    at = end;
-  }
-  if (at < text.length) out.push(text.slice(at));
-  return <>{out}</>;
 }
 
 /**
@@ -129,8 +110,9 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
           {untitled ? "Untitled session" : <Highlighted text={row.title ?? ""} tokens={p.tokens} />}
         </span>
         {row.live && <LiveBadge live={row.live} />}
-        {/* the time keeps its room while the button sits over it, so nothing moves on hover */}
-        <span className="relative shrink-0">
+        {/* the time keeps its room while the button sits over it, so nothing moves on hover. the
+            room is at least the button's, or "now" would let it crowd what is beside it */}
+        <span className="relative min-w-9 shrink-0 text-right">
           <span
             className={cx(
               "text-sm tabular-nums",

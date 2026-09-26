@@ -158,8 +158,9 @@ export function Workspace() {
           data-view={view}
           style={{ width: layout.width }}
           className={cx(
-            "relative flex h-full min-h-0 shrink-0 flex-col border-l border-line bg-canvas",
-            layout.mode === "overlay" && "absolute top-0 right-0 bottom-0 z-20",
+            "flex h-full min-h-0 shrink-0 flex-col border-l border-line bg-canvas",
+            // over the list, not beside it: one position or the other, never both classes
+            layout.mode === "overlay" ? "absolute top-0 right-0 bottom-0 z-20" : "relative",
           )}
         >
           {layout.mode === "side" && (
@@ -261,25 +262,42 @@ function InspectorBody() {
     query || undefined,
   );
 
+  // thinking is hidden until asked for, like in an agent's detail. it stays asked for across rows.
+  const [thinking, setThinking] = useState(false);
+  const busy = row?.live?.state === "running";
+
   return (
     <>
       <PaneHeader row={row} head={conversation.view ?? lastConversation(row?.key)} />
-      {row && activeKey && agentCount > 0 && (
-        <div className="flex shrink-0 items-center gap-3 px-5 pt-3">
-          <Segmented
-            label="Show"
-            value={shown}
-            onChange={(v) => {
-              const inspector = useStore.getState().inspector;
-              if (inspector) set({ inspector: { ...inspector, view: v, detail: null } });
-              // like the scope switch: the keyboard stays with the list, and Tab goes into the pane
-              focusSearch(false);
-            }}
-            options={[
-              { value: "conversation", label: "Conversation", testId: "view-conversation" },
-              { value: "agents", label: `Agents ${agentCount}`, testId: "view-agents" },
-            ]}
-          />
+      {row && activeKey && (agentCount > 0 || shown === "conversation") && (
+        <div className="flex h-10 shrink-0 items-center gap-3 px-5 pt-2" data-testid="pane-toolbar">
+          {agentCount > 0 && (
+            <Segmented
+              label="Show"
+              value={shown}
+              onChange={(v) => {
+                const inspector = useStore.getState().inspector;
+                if (inspector) set({ inspector: { ...inspector, view: v, detail: null } });
+                // like the scope switch: the keyboard stays with the list, and Tab goes into the pane
+                focusSearch(false);
+              }}
+              options={[
+                { value: "conversation", label: "Conversation", testId: "view-conversation" },
+                { value: "agents", label: `Agents ${agentCount}`, testId: "view-agents" },
+              ]}
+            />
+          )}
+          {shown === "conversation" && (
+            <button
+              type="button"
+              data-testid="toggle-thinking"
+              aria-pressed={thinking}
+              onClick={() => setThinking((t) => !t)}
+              className="fade ml-auto text-sm text-fg-3 hover:text-fg-2"
+            >
+              {thinking ? "hide thinking" : "show thinking"}
+            </button>
+          )}
         </div>
       )}
       {!row || !activeKey ? (
@@ -287,7 +305,15 @@ function InspectorBody() {
       ) : shown === "agents" ? (
         <SessionAgents key={activeKey} row={row} inspection={inspection} now={clock} />
       ) : (
-        <ConversationPane key={activeKey} view={conversation.view} missing={conversation.missing} />
+        <ConversationPane
+          key={activeKey}
+          sessionKey={activeKey}
+          view={conversation.view}
+          missing={conversation.missing}
+          found={conversation.found}
+          running={busy}
+          thinking={thinking}
+        />
       )}
     </>
   );
