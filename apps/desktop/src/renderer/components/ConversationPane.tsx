@@ -1,5 +1,5 @@
 import { tokenize, toolLabel } from "@grove/core/pure";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationTurn,
@@ -28,6 +28,24 @@ const conversations = new Map<SessionKey, ConversationView>();
 /** a turn's work, once opened: a finished turn never changes */
 const turnSteps = new Map<string, DetailStep[]>();
 const MEMORY = 8;
+
+/**
+ * where the conversation was when an Agent step took the pane to that agent: what was open, the
+ * keyboard's line, and the list's own measurements, so back lands on the same pixel
+ */
+interface PaneMemory {
+  key: SessionKey;
+  open: ReadonlySet<number>;
+  closedLive: boolean;
+  openRuns: ReadonlySet<string>;
+  expanded: ReadonlySet<string>;
+  unfolded: ReadonlySet<string>;
+  cursor: string | null;
+  atEnd: boolean;
+  snapshot: VirtualItem[];
+  offset: number;
+}
+let leftAt: PaneMemory | null = null;
 
 /** the last reading of a session's conversation, if it has been on screen: the header's numbers */
 export function lastConversation(key: SessionKey | null | undefined): ConversationView | null {
@@ -146,18 +164,26 @@ export function ConversationPane({
   const now = useStore((s) => s.now);
   const toast = useStore((s) => s.toast);
   const query = useStore((s) => s.query);
+  const cwd = useStore((s) => s.sessions.find((r) => r.key === sessionKey)?.cwd);
   const tokens = useMemo(() => tokenize(query), [query]);
-  const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
-  const [closedLive, setClosedLive] = useState(false);
-  const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(new Set());
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
+  // back from an agent this conversation sent the pane to: everything as it was left
+  const [back] = useState(() => {
+    const restore = useStore.getState().inspector?.restore;
+    const memory = restore && leftAt?.key === sessionKey ? leftAt : null;
+    leftAt = null;
+    return memory;
+  });
+  const [open, setOpen] = useState<ReadonlySet<number>>(back?.open ?? new Set());
+  const [closedLive, setClosedLive] = useState(back?.closedLive ?? false);
+  const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(back?.openRuns ?? new Set());
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(back?.expanded ?? new Set());
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(back?.unfolded ?? new Set());
   const [loaded, setLoaded] = useState(0);
-  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | null>(back?.cursor ?? null);
   const [landedOn, setLandedOn] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
   // at the end, the list follows what the session writes. scrolling up stops that.
-  const [atEnd, setAtEnd] = useState(true);
+  const [atEnd, setAtEnd] = useState(back?.atEnd ?? true);
   const [tick, setTick] = useState(Date.now());
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -226,7 +252,15 @@ export function ConversationPane({
     estimateSize: (i) => estimate(lines[i]),
     getItemKey: (i) => lines[i]?.id ?? i,
     overscan: 8,
+    ...(back ? { initialMeasurementsCache: back.snapshot, initialOffset: back.offset } : {}),
   });
+
+  // the flag has done its work once the memory is read: a later mount starts at the end again
+  useEffect(() => {
+    const inspector = useStore.getState().inspector;
+    if (inspector?.restore)
+      useStore.getState().set({ inspector: { ...inspector, restore: false } });
+  }, []);
 
   useEffect(() => {
     if (paneFocus.pending) {
@@ -240,9 +274,22 @@ export function ConversationPane({
     if (landAt) setAtEnd(true);
   }, [landAt]);
 
-  // opened at the end, like a chat: the newest turn is where the session is now
+  // opened at the end, like a chat: the newest turn is where the session is now. put back as it
+  // was left, the first pass keeps the offset it was given - it is already exactly right
+  const restored = useRef(!!back);
   useEffect(() => {
-    if (atEnd && lines.length > 0) virtualizer.scrollToIndex(lines.length - 1, { align: "end" });
+    if (restored.current) {
+      restored.current = false;
+      return;
+    }
+    if (!atEnd || lines.length === 0) return;
+    virtualizer.scrollToIndex(lines.length - 1, { align: "end" });
+    // the index ends at the last line; the end is below its padding, where a scroll by hand ends
+    const frame = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [atEnd, lines, virtualizer]);
 
   // a search landed here: open the work it is in, then bring it into view
@@ -301,9 +348,22 @@ export function ConversationPane({
     if (line.type === "work") toggleWork(line.turn);
     else if (line.type === "run") flip(setOpenRuns, line.id);
     else if (line.type === "tool") {
-      // an Agent call goes to the agent it started, in the Agents view
-      if (line.step.agentId) openAgent(sessionKey, line.step.agentId, { focus: focused });
-      else if (!line.step.server) flip(setExpanded, line.id);
+      // an Agent call goes to the agent it started, and back comes back here
+      if (line.step.agentId) {
+        leftAt = {
+          key: sessionKey,
+          open,
+          closedLive,
+          openRuns,
+          expanded,
+          unfolded,
+          cursor: line.id,
+          atEnd,
+          snapshot: virtualizer.takeSnapshot(),
+          offset: virtualizer.scrollOffset ?? 0,
+        };
+        openAgent(sessionKey, line.step.agentId, { focus: focused, from: "conversation" });
+      } else if (!line.step.server) flip(setExpanded, line.id);
     } else if (line.type === "prompt") flip(setUnfolded, line.id);
   };
 
@@ -395,6 +455,7 @@ export function ConversationPane({
               body={(stepId) => ({
                 cacheKey: `${sessionKey}\0${stepId}`,
                 load: () => window.grove.conversationStep(sessionKey, stepId),
+                cwd,
               })}
               start={line.turn.startedAt}
               live={line.turn.n === live && line.step.durationMs === undefined}
@@ -605,15 +666,19 @@ export function ConversationPane({
  * prompts and answers end on the same edge because of it.
  */
 function Gutter({ children }: { children?: ReactNode }) {
-  return <div className="flex w-11 shrink-0 flex-col items-end gap-1 pt-0.5">{children}</div>;
+  return <div className="relative w-11 shrink-0 self-stretch pt-0.5">{children}</div>;
 }
 
-function CopyButton({ onClick }: { onClick: () => void }) {
+/** shown on hover, laid over the gutter: a block must not grow when the pointer passes over it */
+function CopyButton({ onClick, below = false }: { onClick: () => void; below?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="fade hidden rounded-sm px-1 text-meta text-fg-3 group-hover:block hover:bg-raised hover:text-fg-2"
+      className={cx(
+        "fade invisible absolute right-0 rounded-sm px-1 text-meta text-fg-3 group-hover:visible hover:bg-raised hover:text-fg-2",
+        below ? "top-6" : "top-0",
+      )}
     >
       Copy
     </button>
@@ -712,9 +777,9 @@ function PromptBlock({
           </div>
         )}
       </div>
-      <div className="flex w-11 shrink-0 flex-col items-end gap-1 pt-2">
+      <div className="relative w-11 shrink-0 self-stretch pt-2 text-right">
         <span className="font-mono text-meta tabular-nums text-fg-4">{timeOf(prompt.at)}</span>
-        <CopyButton onClick={onCopy} />
+        <CopyButton onClick={onCopy} below />
       </div>
     </div>
   );

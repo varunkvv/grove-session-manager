@@ -416,6 +416,7 @@ function SessionAgents({
   const detail = useStore((s) => s.inspector?.detail ?? null);
   const wantedStep = useStore((s) => s.inspector?.step);
   const find = useStore((s) => s.inspector?.find);
+  const from = useStore((s) => s.inspector?.from);
   const set = useStore((s) => s.set);
   const [hovered, setHovered] = useState<string | null>(null);
   const items = useMemo(() => agentList(agents, inspection), [agents, inspection]);
@@ -436,6 +437,7 @@ function SessionAgents({
         agentId={detail.id}
         agent={agents.find((a) => a.id === detail.id)}
         count={agents.length}
+        fromConversation={from === "conversation"}
         now={now}
         {...(wantedStep !== undefined ? { step: wantedStep } : {})}
         {...(find ? { find } : {})}

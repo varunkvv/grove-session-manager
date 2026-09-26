@@ -183,6 +183,13 @@ to the list. With a search in the box it opens at the turn that said it, with th
 folded in the main process and kept in `.grove/conversations.v1/` - the 107MB one on this machine opens in about a
 quarter of a second the first time and a tenth after that - and only the part appended since is ever read again.
 
+An opened step shows what the tool did rather than its JSON: an edit or a new file as a diff (line numbers, added and
+removed lines on a faint tint - taken from Claude Code's own patch, never from the file), a command as `$ command`
+with its output and its stderr apart, a todo list as a checklist, a question with every option and the one picked, a
+plan in full. A result too big for the transcript says where Claude Code saved it, without reading it. The JSON input
+is one quiet click away on every step, and an agent's detail draws its steps the same way. An `Agent` step goes to that
+agent's detail, and back (or `Esc`) returns to the conversation exactly where it was, open steps and all.
+
 The header says where the session ran, its branch, the model of its last response, how long it went on and how many
 tools it called. A session with agents gets **Conversation · Agents** under it. The pane starts at half of what the
 rail leaves (at least 480px, at most 960px, and the list always keeps 420px); drag its left edge to change that - the

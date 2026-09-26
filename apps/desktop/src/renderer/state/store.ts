@@ -63,6 +63,10 @@ export interface InspectorState {
   find?: string;
   /** a notification click landed here, at this time: the conversation goes to its end */
   landAt?: number;
+  /** the agent's detail was opened from the conversation: back goes back there */
+  from?: "conversation";
+  /** the conversation comes back where it was left, not at its end */
+  restore?: boolean;
 }
 
 interface State {

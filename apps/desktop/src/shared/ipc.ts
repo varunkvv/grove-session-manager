@@ -187,6 +187,7 @@ export interface StepDetail {
   diffs?: Array<{ path: string; hunks: DiffHunk[]; created?: boolean }>;
   /** a Bash call's streams, apart */
   bash?: {
+    command?: string;
     stdout: string;
     stderr: string;
     interrupted: boolean;
@@ -199,6 +200,10 @@ export interface StepDetail {
   questions?: Question[];
   /** an ExitPlanMode's plan, whole. markdown, untrusted. */
   plan?: string;
+  /** a TodoWrite's list */
+  todos?: Array<{ content: string; status: string }>;
+  /** where Claude Code put a result too big for the transcript. said, never read. */
+  persisted?: string;
 }
 
 /**

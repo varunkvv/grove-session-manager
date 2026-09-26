@@ -90,6 +90,7 @@ export function AgentDetailView({
   agentId,
   agent,
   count,
+  fromConversation,
   now,
   step,
   find,
@@ -101,6 +102,8 @@ export function AgentDetailView({
   agent: SessionAgent | undefined;
   /** how many agents the session has: the way back says so */
   count: number;
+  /** it was opened from the conversation, and back goes there */
+  fromConversation?: boolean;
   now: number;
   /** a step to bring into view once it is there */
   step?: number;
@@ -113,6 +116,7 @@ export function AgentDetailView({
   const { detail, missing, found } = useFollowedAgent(sessionKey, agentId, find);
   const wanted = step ?? found;
   const toast = useStore((s) => s.toast);
+  const cwd = useStore((s) => s.sessions.find((r) => r.key === sessionKey)?.cwd);
   const [thinking, setThinking] = useState(false);
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -321,6 +325,7 @@ export function AgentDetailView({
             body={(stepId) => ({
               cacheKey: `${sessionKey}\0${agentId}\0${stepId}`,
               load: () => window.grove.agentStep(sessionKey, agentId, stepId),
+              cwd,
             })}
             start={detail?.startedAt}
             live={running && item.step.durationMs === undefined}
@@ -354,7 +359,7 @@ export function AgentDetailView({
           className="fade flex items-center gap-1 rounded-md px-2 py-1 text-sm text-fg-3 hover:bg-raised hover:text-fg-2"
         >
           <Icon name="chevron" size={11} className="rotate-180" />
-          {count} {count === 1 ? "agent" : "agents"}
+          {fromConversation ? "Conversation" : `${count} ${count === 1 ? "agent" : "agents"}`}
         </button>
       </div>
       {/* who it is and what it is doing stay in sight, wherever the steps are scrolled to */}

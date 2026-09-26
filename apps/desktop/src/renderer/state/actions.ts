@@ -93,7 +93,7 @@ const focusInPane = () =>
 export function openAgent(
   key: SessionKey,
   id: string,
-  opts: { step?: number; focus?: boolean; find?: string } = {},
+  opts: { step?: number; focus?: boolean; find?: string; from?: "conversation" } = {},
 ): void {
   const s = state();
   const step = opts.step;
@@ -109,6 +109,7 @@ export function openAgent(
       detail: { key, id },
       ...(step !== undefined ? { step } : {}),
       ...(find ? { find } : {}),
+      ...(opts.from ? { from: opts.from } : {}),
     },
   });
 }
@@ -124,12 +125,19 @@ export function agentHit(key: SessionKey): { agent: string; find: string } | nul
   return hit?.agent ? { agent: hit.agent, find: text } : null;
 }
 
-/** back from an agent to the list, with the row it came from still the one the keyboard is on */
+/**
+ * back from an agent: to the conversation it was opened from, where it was left, or to the list,
+ * with the row it came from still the one the keyboard is on
+ */
 export function closeAgent(): void {
   const s = state();
   const detail = s.inspector?.detail;
   if (!detail) return;
   paneFocus.pending = focusInPane();
+  if (s.inspector?.from === "conversation") {
+    s.set({ inspector: { view: "conversation", agent: null, detail: null, restore: true } });
+    return;
+  }
   s.set({ inspector: { view: "agents", agent: detail.id, detail: null } });
 }
 

@@ -549,6 +549,7 @@ describe("a step of the conversation, opened", () => {
     const state = await readConversation(file);
     const detail = await readToolDetail(file, toolSteps(state)[0]!);
     expect(detail?.bash).toEqual({
+      command: "pnpm test",
       stdout: "FAIL src/a.test.ts",
       stderr: "npm ERR! test failed",
       interrupted: false,
@@ -556,6 +557,48 @@ describe("a step of the conversation, opened", () => {
       exit: "Tests failed",
     });
     expect(detail?.isError).toBe(true);
+    expect(detail?.persisted).toBe("/work/api/.claude/tool-results/b1.txt");
+  });
+
+  it("an agent's Bash has one stream, a big result says where it went, a todo list is a list", async () => {
+    const file = sandboxFile(
+      jsonl([
+        prompt("go", 0),
+        says("m1", call("b1", "Bash", { command: "ls" }), 1),
+        result("b1", "a.ts\nb.ts", 2),
+        says("m2", call("g1", "Grep", { pattern: "x" }), 3),
+        result(
+          "g1",
+          "<persisted-output>\nOutput too large (42.6KB). Full output saved to: /work/.claude/tool-results/g1.txt\n\nPreview (first 2KB):\nx",
+          4,
+        ),
+        says(
+          "m3",
+          call("t1", "TodoWrite", {
+            todos: [
+              { content: "read the parser", status: "completed", activeForm: "Reading" },
+              { content: "make it faster", status: "in_progress", activeForm: "Making" },
+            ],
+          }),
+          5,
+        ),
+        result("t1", "Todos have been modified successfully", 6),
+      ]),
+    );
+    const [bash, grep, todo] = toolSteps(await readConversation(file));
+    expect((await readToolDetail(file, bash!))?.bash).toEqual({
+      command: "ls",
+      stdout: "a.ts\nb.ts",
+      stderr: "",
+      interrupted: false,
+    });
+    expect((await readToolDetail(file, grep!))?.persisted).toBe(
+      "/work/.claude/tool-results/g1.txt",
+    );
+    expect((await readToolDetail(file, todo!))?.todos).toEqual([
+      { content: "read the parser", status: "completed" },
+      { content: "make it faster", status: "in_progress" },
+    ]);
   });
 
   it("gives a question every option and its pick, and a plan whole", async () => {

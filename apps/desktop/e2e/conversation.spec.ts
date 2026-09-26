@@ -9,6 +9,7 @@ import {
   makeFixture,
   makePlainDir,
   readExecLog,
+  writeAgent,
   writeSession,
 } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
@@ -469,4 +470,152 @@ test("a running session's newest turn is open, and follows what it writes", asyn
   await shot(page, "27-conversation-live");
   await page.getByTestId("jump-live").click();
   await expect(conv.getByTestId("step").filter({ hasText: "src/g21.ts" })).toBeInViewport();
+});
+
+const BODIES = "eeeeeeee-0000-4000-8000-00000000000e";
+
+test("an opened step shows what the tool did, and an agent is a round trip", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const cwd = makePlainDir(fx, "report");
+  const src = `${cwd}/src`;
+  const patch = [
+    {
+      oldStart: 12,
+      oldLines: 4,
+      newStart: 12,
+      newLines: 5,
+      lines: [
+        "   const flow = useFlow();",
+        "-  return <Export page={flow.last} />;",
+        "+  // the first page is where people look for it",
+        "+  return <Export page={flow.first} />;",
+        " }",
+      ],
+    },
+  ];
+  const lines = [
+    t.prompt("move the export button and check it", 0),
+    t.says("m1", t.call("e1", "Edit", { file_path: `${src}/Flow.tsx` }), 2),
+    t.result("e1", "The file has been updated.", 3, {
+      told: {
+        filePath: `${src}/Flow.tsx`,
+        oldString: "a",
+        newString: "b",
+        originalFile: "the whole file, never read",
+        structuredPatch: patch,
+        userModified: false,
+        replaceAll: false,
+      },
+    }),
+    t.says("m2", t.call("w1", "Write", { file_path: `${src}/flag.ts` }), 4),
+    t.result("w1", "File created successfully", 5, {
+      told: {
+        type: "create",
+        filePath: `${src}/flag.ts`,
+        content: "export const OLD_BUTTON = true;\nexport const UNTIL = '0.6';\n",
+        structuredPatch: [],
+      },
+    }),
+    t.says("m3", t.call("b1", "Bash", { command: "pnpm test --filter report" }), 6),
+    t.result("b1", "Exit code 1\nFAIL report.test.ts", 30, {
+      isError: true,
+      told: {
+        stdout: "FAIL report.test.ts > the export button is on the first page",
+        stderr: "npm ERR! Test failed. See above for more details.",
+        interrupted: false,
+        isImage: false,
+        noOutputExpected: false,
+      },
+    }),
+    t.says(
+      "m4",
+      t.call("td", "TodoWrite", {
+        todos: [
+          { content: "move the button", status: "completed", activeForm: "Moving" },
+          { content: "fix the failing test", status: "in_progress", activeForm: "Fixing" },
+          { content: "remove the old one after 0.6", status: "pending", activeForm: "Removing" },
+        ],
+      }),
+      31,
+    ),
+    t.result("td", "Todos have been modified successfully", 31),
+    t.says(
+      "m5",
+      t.call("ag", "Agent", { description: "Find every export test", prompt: "find them" }),
+      32,
+    ),
+    t.result("ag", "Found two.", 60),
+    t.says("m6", t.text("Moved, flagged, and one test to fix."), 61),
+  ];
+  writeConversation(fx, { cwd, sessionId: BODIES, title: "Export button bodies", lines });
+  writeAgent(fx, {
+    cwd,
+    sessionId: BODIES,
+    id: "a5e0000000000001",
+    agentType: "Explore",
+    description: "Find every export test",
+    toolUseId: "ag",
+    prompt: "Find every test that touches the export button.",
+    startedAgoMs: 2 * 60_000,
+    steps: [{ tool: "Grep", input: { pattern: "Export" }, result: "a.test.ts\nb.test.ts", at: 2 }],
+    result: { text: "Found two: `a.test.ts` and `b.test.ts`.", at: 20 },
+  });
+  app = await launchApp(fx);
+  const { page } = app;
+  const row = page.getByTestId("session-row").filter({ hasText: "Export button bodies" });
+  await row.click();
+  const pane = page.getByTestId("inspector");
+  const conv = pane.getByTestId("conversation");
+  await conv.getByTestId("work-line").click();
+  const step = (target: string) => conv.getByTestId("step").filter({ hasText: target });
+
+  // an edit is its diff: numbered lines, added and removed on their tint, never the whole file
+  await step("Flow.tsx").click();
+  const diff = step("Flow.tsx").getByTestId("step-diff");
+  await expect(diff.locator('[data-diff="del"]')).toHaveCount(1);
+  await expect(diff.locator('[data-diff="add"]')).toHaveCount(2);
+  await expect(diff.locator('[data-diff="add"]').first()).toContainText("13");
+  await expect(step("Flow.tsx").getByTestId("step-body")).not.toContainText("never read");
+  // a new file is all of it, added
+  await step("flag.ts").click();
+  await expect(step("flag.ts").getByTestId("step-diff")).toContainText("new file");
+  await expect(step("flag.ts").locator('[data-diff="add"]')).toHaveCount(2);
+  await shot(page, "31-step-diff");
+
+  // a command, what it printed, and what it printed on stderr in the colour a failure takes
+  await step("pnpm test --filter report").click();
+  const bash = step("pnpm test --filter report").getByTestId("step-bash");
+  await expect(bash).toContainText("$ pnpm test --filter report");
+  await expect(bash.getByTestId("step-stdout")).toContainText("FAIL report.test.ts");
+  await expect(bash.getByTestId("step-stderr")).toHaveAttribute("data-error", "true");
+  // a todo list is a checklist
+  await step("3 todos").click();
+  const todos = step("3 todos").getByTestId("step-todos");
+  await expect(todos.locator('[data-status="completed"]')).toContainText("move the button");
+  await expect(todos.locator('[data-status="in_progress"]')).toContainText("fix the failing test");
+  // the json is still there, one quiet click away
+  await step("3 todos").getByTestId("step-raw").click();
+  await expect(step("3 todos").getByTestId("step-body")).toContainText('"activeForm"');
+  await shot(page, "31-step-bash-todos");
+  await step("3 todos").getByTestId("step-raw").click();
+
+  // an Agent call goes to the agent, and back comes back to the same place
+  const agentLine = step("Find every export test");
+  await agentLine.scrollIntoViewIfNeeded();
+  const before = await agentLine.boundingBox();
+  await agentLine.click();
+  await expect(pane.getByTestId("agent-title")).toHaveText("Find every export test");
+  await expect(pane.getByTestId("agent-back")).toHaveText("Conversation");
+  await pane.getByTestId("agent-back").click();
+  await expect(pane).toHaveAttribute("data-view", "conversation");
+  await expect(step("Find every export test")).toBeVisible();
+  // everything opened is still open, and the line is where it was
+  await expect(step("Flow.tsx").getByTestId("step-diff")).toBeVisible();
+  const after = await step("Find every export test").boundingBox();
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThan(2);
+  // Escape does the same
+  await step("Find every export test").click();
+  await expect(pane.getByTestId("agent-title")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pane).toHaveAttribute("data-view", "conversation");
 });

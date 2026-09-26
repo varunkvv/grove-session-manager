@@ -29,6 +29,10 @@
   --color-fg-4: light-dark(#949188, #6b6a65);
   --color-accent: light-dark(#b5502f, #d97757);
   --color-accent-soft: light-dark(rgb(181 80 47 / 0.14), rgb(217 119 87 / 0.16));
+  /* a diff's added and removed lines: the one place colour means something other than state.
+     low chroma, so a page of diff reads as text with a tint, not as a warning */
+  --color-diff-add: light-dark(rgb(70 140 90 / 0.11), rgb(110 180 125 / 0.13));
+  --color-diff-del: light-dark(rgb(190 95 75 / 0.1), rgb(225 125 105 / 0.12));
   /* the band behind what needs you: fainter than a pill, and a touch stronger on dark, where the
      same alpha reads as less */
   --color-accent-band: light-dark(rgb(181 80 47 / 0.055), rgb(217 119 87 / 0.075));

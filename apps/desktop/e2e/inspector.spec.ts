@@ -197,7 +197,10 @@ test("an agent's detail: the result first, then every step, and a step opened in
   await expect(failed).toHaveCount(1);
   await expect(failed.getByTestId("step-error")).toHaveText("exit 2");
   await failed.click();
-  await expect(failed.getByTestId("step-result")).toContainText("connection to server on socket");
+  // the same body a session's step has: the command, then what it printed
+  await expect(failed.getByTestId("step-bash")).toContainText("$ psql");
+  await expect(failed.getByTestId("step-stdout")).toContainText("connection to server on socket");
+  await failed.getByTestId("step-raw").click();
   await expect(failed.getByTestId("step-body")).toContainText('"command"');
   await shot(page, "20-agent-step-error");
 

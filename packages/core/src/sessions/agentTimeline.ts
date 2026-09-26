@@ -97,6 +97,8 @@ export interface ToolDetail {
   diffs?: Array<{ path: string; hunks: DiffHunk[]; created?: boolean }>;
   /** a Bash call's two streams, apart */
   bash?: {
+    /** what was run, as the model wrote it */
+    command?: string;
     stdout: string;
     stderr: string;
     interrupted: boolean;
@@ -111,6 +113,13 @@ export interface ToolDetail {
   questions?: Question[];
   /** an ExitPlanMode: the plan, whole */
   plan?: string;
+  /** a TodoWrite: the list as it was written */
+  todos?: Array<{ content: string; status: string }>;
+  /**
+   * a result too big for the transcript went to a file instead, and this is where Claude Code
+   * says it put it. said, never read.
+   */
+  persisted?: string;
 }
 
 /**
@@ -189,6 +198,23 @@ function structured(
   const told = line?.toolUseResult;
   const name = call.name;
   const input = call.input;
+  const saved = detail.result?.startsWith("<persisted-output>")
+    ? /Full output saved to:\s*(\S+)/.exec(detail.result)?.[1]
+    : undefined;
+  if (saved) detail.persisted = saved;
+  if (name === "TodoWrite" && isObject(input) && Array.isArray(input.todos)) {
+    detail.todos = input.todos.flatMap((t) =>
+      isObject(t) && typeof t.content === "string"
+        ? [{ content: t.content, status: typeof t.status === "string" ? t.status : "pending" }]
+        : [],
+    );
+  }
+  const command = name === "Bash" && isObject(input) ? input.command : undefined;
+  // an agent's result line mostly carries no toolUseResult: its output is the result text, and
+  // the streams cannot be told apart
+  if (typeof command === "string" && !isObject(told) && detail.result !== undefined) {
+    detail.bash = { command, stdout: detail.result, stderr: "", interrupted: false };
+  }
   if (name === "ExitPlanMode" && isObject(input) && typeof input.plan === "string") {
     detail.plan = clip(input.plan).text;
   }
@@ -236,9 +262,16 @@ function structured(
     const out = clip(typeof told.stdout === "string" ? told.stdout : "");
     const err = clip(typeof told.stderr === "string" ? told.stderr : "");
     detail.truncated ||= out.truncated || err.truncated;
-    detail.bash = { stdout: out.text, stderr: err.text, interrupted: told.interrupted === true };
-    if (typeof told.persistedOutputPath === "string")
+    detail.bash = {
+      ...(typeof command === "string" ? { command } : {}),
+      stdout: out.text,
+      stderr: err.text,
+      interrupted: told.interrupted === true,
+    };
+    if (typeof told.persistedOutputPath === "string") {
       detail.bash.persisted = told.persistedOutputPath;
+      detail.persisted = told.persistedOutputPath;
+    }
     if (typeof told.returnCodeInterpretation === "string" && told.returnCodeInterpretation) {
       detail.bash.exit = told.returnCodeInterpretation;
     }
