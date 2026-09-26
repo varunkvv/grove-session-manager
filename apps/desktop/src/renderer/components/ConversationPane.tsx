@@ -131,6 +131,7 @@ export function ConversationPane({
   found,
   running,
   thinking,
+  landAt,
 }: {
   sessionKey: SessionKey;
   view: ConversationView | null;
@@ -139,6 +140,8 @@ export function ConversationPane({
   /** the session is in the middle of a turn: its last turn is live */
   running: boolean;
   thinking: boolean;
+  /** a notification click landed here: back to the end, where the question is */
+  landAt?: number | undefined;
 }) {
   const now = useStore((s) => s.now);
   const toast = useStore((s) => s.toast);
@@ -231,6 +234,11 @@ export function ConversationPane({
       scroller.current?.focus();
     }
   }, []);
+
+  // a landing on a session already on screen, scrolled somewhere else
+  useEffect(() => {
+    if (landAt) setAtEnd(true);
+  }, [landAt]);
 
   // opened at the end, like a chat: the newest turn is where the session is now
   useEffect(() => {

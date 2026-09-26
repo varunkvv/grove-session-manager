@@ -63,7 +63,12 @@ It is a default by instruction, not an enforcement: Claude still decides what co
 Run a few sessions at once and the slow part is noticing that one of them stopped: it wants permission for a
 command, or it finished its turn twenty minutes ago in a window you are not looking at. Grove pins those sessions to
 the top of the list under **Needs you**, badges the combo and the dock icon, and sends a notification when a session
-asks for permission or finishes a turn that ran for over a minute. Clicking the notification lands you on the session.
+asks for permission or finishes a turn that ran for over a minute. Clicking the notification brings Grove forward on
+that session: in the Inbox with the query cleared, its conversation open at the end where the question is - or, when a
+subagent is the one asking for permission, that agent's detail. Answering is one click from there, with the pane's open
+button (Terminal for a session running in the background). If it stopped waiting before the click, it lands in all
+sessions instead. Looking is not answering: nothing is marked seen. A click that starts the app lands the same way,
+once the page is up.
 Running sessions show a quiet "Running".
 
 **Inbox** (`⌘4`, first in the scope switch, with the count in the accent while anything waits) is the same set of

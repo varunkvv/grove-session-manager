@@ -923,6 +923,7 @@ const bridge: Bridge = {
   followConversation: async (key, find) => convo.follow(key, find),
   conversationSteps: async (key, n) => convo.steps(key, n),
   conversationStep: async (_key, stepId) => convo.step(stepId),
+  takeLanding: async () => null,
   lastWords: async () => "Want me to push the branch now, or wait until the review is done?",
   agentsSeen: async () => {},
   openExternal: () => okv(undefined),

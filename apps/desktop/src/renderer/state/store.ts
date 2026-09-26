@@ -13,6 +13,7 @@ import type {
   ToastMessage,
 } from "../../shared/ipc.ts";
 import type { Scope } from "../logic/rows.ts";
+import { takeLanding } from "./landing.ts";
 
 export type DialogState =
   | null
@@ -60,6 +61,8 @@ export interface InspectorState {
   step?: number;
   /** the search that led here: the detail lands on the step that matched it */
   find?: string;
+  /** a notification click landed here, at this time: the conversation goes to its end */
+  landAt?: number;
 }
 
 interface State {
@@ -179,6 +182,10 @@ export async function connect(): Promise<() => void> {
     ),
     window.grove.on("editor:status", (editor) => set({ editor })),
     window.grove.on("toast", (t) => toast(t)),
+    // a notification was clicked: take where it lands, now that the list is here to land in
+    window.grove.on("app:land", () => {
+      if (revs) void takeLanding();
+    }),
   ];
 
   const boot = await window.grove.bootstrap();
@@ -194,6 +201,8 @@ export async function connect(): Promise<() => void> {
   });
   revs = { ...boot.revs };
   for (const replay of buffered.splice(0)) replay();
+  // the click that started the app, or one that came while the page was loading
+  void takeLanding();
 
   return () => {
     for (const off of offs) off();

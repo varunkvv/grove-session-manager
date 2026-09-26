@@ -51,6 +51,7 @@ import {
   resumeScriptBody,
   resumeScriptPath,
 } from "./services/resumeScript.ts";
+import type { Reveals } from "./services/reveal.ts";
 import { daemonHeld, heldWhere, sessionActionList } from "./services/sessionActions.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { keptFolderToast } from "./services/views.ts";
@@ -67,6 +68,8 @@ export interface Deps {
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
   inspector: AgentInspector;
+  /** where a notification click is taking the page */
+  reveals?: Reveals;
   /** these agents of a session are on screen: a finished one gets its line, once */
   seen?: (key: SessionKey, agentIds: string[]) => void;
   editor: EditorService;
@@ -288,6 +291,10 @@ function buildHandlers(deps: Deps): Handlers {
     async conversationSteps(key, n) {
       if (typeof key !== "string" || !sessions.get(key) || !Number.isInteger(n)) return null;
       return deps.inspector.conversationSteps(key, n);
+    },
+
+    async takeLanding() {
+      return deps.reveals?.take() ?? null;
     },
 
     async lastWords(key) {
@@ -728,9 +735,6 @@ function buildHandlers(deps: Deps): Handlers {
   };
   return api;
 }
-
-/** the handlers, for the main process's own use (a notification that lands on a session) */
-export type AppHandlers = Handlers;
 
 export function registerIpc(deps: Deps): Handlers {
   const handlers = buildHandlers(deps);

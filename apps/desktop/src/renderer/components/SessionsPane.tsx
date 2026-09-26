@@ -19,6 +19,7 @@ import {
   openInspector,
   openMenu,
 } from "../state/actions.ts";
+import { landed } from "../state/landing.ts";
 import { useStore } from "../state/store.ts";
 import { Banner } from "./Chrome.tsx";
 import { optionId, SessionList } from "./SessionList.tsx";
@@ -239,7 +240,10 @@ export function SessionsPane() {
   useEffect(() => {
     const p = prev.current;
     const reset = p.query !== query || p.scope !== scope || p.combo !== selectedCombo;
-    const next = nextActiveKey(p.keys, model.keys, useStore.getState().activeKey, reset);
+    // a notification landed on a row: the new scope's first row is not the one to show
+    const keep = landed.key && model.keys.includes(landed.key) ? landed.key : null;
+    landed.key = null;
+    const next = keep ?? nextActiveKey(p.keys, model.keys, useStore.getState().activeKey, reset);
     prev.current = { keys: model.keys, query, scope, combo: selectedCombo };
     if (next !== useStore.getState().activeKey) set({ activeKey: next });
   }, [model, query, scope, selectedCombo, set]);

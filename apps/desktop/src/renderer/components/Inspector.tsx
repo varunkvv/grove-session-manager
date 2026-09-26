@@ -265,6 +265,7 @@ function InspectorBody() {
   // thinking is hidden until asked for, like in an agent's detail. it stays asked for across rows.
   const [thinking, setThinking] = useState(false);
   const busy = row?.live?.state === "running";
+  const landAt = useStore((s) => s.inspector?.landAt);
 
   return (
     <>
@@ -313,6 +314,7 @@ function InspectorBody() {
           found={conversation.found}
           running={busy}
           thinking={thinking}
+          landAt={landAt}
         />
       )}
     </>

@@ -11,7 +11,7 @@ import type { BrowserWindow } from "electron";
 import * as electron from "electron";
 import type { MenuCommandId } from "../shared/ipc.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
-import { type AppHandlers, registerIpc } from "./ipc.ts";
+import { registerIpc } from "./ipc.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import { OpQueue } from "./opQueue.ts";
@@ -27,6 +27,7 @@ import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
+import { Reveals } from "./services/reveal.ts";
 import { SessionService } from "./services/sessions.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
@@ -109,7 +110,23 @@ async function start(): Promise<void> {
     onFound: (key, id, line) => sessions.applyFound(key, id, line),
   });
 
-  let handlers: AppHandlers | null = null;
+  const reveals = new Reveals({
+    find: (sessionId) => sessions.byId(sessionId)[0],
+    needsYou,
+    raise: () => {
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    },
+    notify: () => pusher.send("app:land", {}),
+  });
+  // a test root lands the way a notification click does, without a notification to click
+  if (appEnv.customRoot) {
+    (globalThis as { groveTest?: unknown }).groveTest = {
+      reveal: (sessionId: string) => reveals.reveal(sessionId),
+    };
+  }
   const live = new LiveService({
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
@@ -130,21 +147,9 @@ async function start(): Promise<void> {
         body,
         silent: false,
       });
-      const toApp = () => {
-        win?.show();
-        win?.focus();
-      };
-      n.on("click", () => {
-        // the supervisor holds it: an editor's resume would be refused, so it opens where it runs
-        const held = sessions.byId(sessionId)[0]?.background?.held;
-        // the folder may be gone by now. then the app is the next best place to land.
-        void handlers
-          ?.runSessionAction(
-            row.key,
-            held ? "attach" : row.comboName ? "combo-land" : "folder-land",
-          )
-          .catch(toApp);
-      });
+      // into grove, on that session: the question is read there, and answering is one click
+      // away - the pane's open button knows where it runs, held in the background or not
+      n.on("click", () => reveals.reveal(sessionId));
       n.show();
     },
     onBackgroundMoved: () => void background.read(),
@@ -203,7 +208,7 @@ async function start(): Promise<void> {
   await archive.load();
   await sessions.loadCached(combos.list());
 
-  handlers = registerIpc({
+  registerIpc({
     env: appEnv,
     projectsDir,
     settings: () => settings,
@@ -225,6 +230,7 @@ async function start(): Promise<void> {
     archive,
     background,
     inspector,
+    reveals,
     seen: (key, ids) => {
       const snapshot = sessions.agentSnapshot(key);
       for (const id of ids) {

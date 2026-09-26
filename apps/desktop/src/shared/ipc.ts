@@ -279,6 +279,16 @@ export interface FrequentFolder {
   lastUsedMs: number;
 }
 
+/** where a notification click lands: a session, in the inbox while it still waits */
+export interface Landing {
+  key: SessionKey;
+  scope: "inbox" | "all";
+  /** a subagent is the one asking: its detail, not the conversation */
+  agentId?: string;
+  /** when the click came: a second click on the same session lands again */
+  at: number;
+}
+
 /** a row the instant filter could not find, found in its conversation instead */
 export interface SearchHit {
   key: SessionKey;
@@ -493,6 +503,8 @@ export interface Api {
    * for an inbox row whose hook's copy was cut short
    */
   lastWords(key: SessionKey): Promise<string | null>;
+  /** a notification click the page has not landed on yet. taken once. */
+  takeLanding(): Promise<Landing | null>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
   openExternal(url: string): Promise<Outcome>;
   /** takes sessions out of "needs you" until their next event */
@@ -564,6 +576,7 @@ export const INVOKE_CHANNELS = [
   "conversationSteps",
   "conversationStep",
   "lastWords",
+  "takeLanding",
   "agentsSeen",
   "openExternal",
   "markSeen",
@@ -638,6 +651,8 @@ export interface PushEvents {
   toast: ToastMessage;
   "agent:steps": AgentSteps;
   "conversation:turns": ConversationTurns;
+  /** a notification was clicked: `takeLanding` says where to go */
+  "app:land": Record<string, never>;
 }
 
 export const PUSH_CHANNELS = [
@@ -650,6 +665,7 @@ export const PUSH_CHANNELS = [
   "toast",
   "agent:steps",
   "conversation:turns",
+  "app:land",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 export interface Bridge extends Api {

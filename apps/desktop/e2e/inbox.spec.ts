@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { FANOUT, writeFanOut } from "./helpers/agents.ts";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
 import {
   type Fixture,
@@ -139,4 +140,77 @@ test("the inbox is what is waiting on you, what it waits for, and both ways out"
   await expect(page.getByTestId("list-empty")).toHaveText("Nothing is waiting for you.");
   await expect(scope.getByTestId("scope-count")).toHaveCount(0);
   await shot(page, "29-inbox-empty");
+});
+
+/** what a notification click runs in main. a test root has no notifications to click. */
+async function reveal(sessionId: string): Promise<void> {
+  await app.app.evaluate(
+    (_electron, sid) =>
+      (globalThis as unknown as { groveTest: { reveal(s: string): unknown } }).groveTest.reveal(
+        sid,
+      ),
+    sessionId,
+  );
+}
+
+test("a notification click lands in grove, on that session, where the question is", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const cwd = makePlainDir(fx, "platform");
+  writeFanOut(fx, cwd);
+  writeSession(fx, {
+    cwd,
+    sessionId: SID.turn,
+    title: "Move the export button",
+    prompt: "move the export button to the first page",
+    reply: QUESTION,
+    ageMs: 120_000,
+  });
+  writeSession(fx, { cwd, sessionId: SID.quiet, title: "Nothing asked", ageMs: 20_000 });
+  hookEvent(fx, SID.turn, "UserPromptSubmit", { prompt: "move it" });
+  hookEvent(fx, SID.turn, "Stop", { last_assistant_message: QUESTION });
+  app = await launchApp(fx);
+  const { page } = app;
+  await waitFor(async () => (await page.getByTestId("session-row").count()) === 3);
+
+  // somewhere else entirely: another scope, a query typed, the window minimised
+  await page.keyboard.press("Meta+3");
+  await page.getByTestId("search").fill("replica");
+  await app.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.minimize());
+  await reveal(SID.turn);
+  expect(
+    await app.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMinimized()),
+  ).toBe(false);
+  await expect(page.getByTestId("scope-inbox")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("search")).toHaveValue("");
+  const row = page.getByTestId("inbox-row").filter({ hasText: "Move the export button" });
+  await expect(row).toHaveAttribute("data-active", "true");
+  const pane = page.getByTestId("inspector");
+  await expect(pane).toHaveAttribute("data-view", "conversation");
+  await expect(pane.getByTestId("inspector-title")).toHaveText("Move the export button");
+  // at the end: the answer the turn stopped on is in sight
+  await expect(pane.getByTestId("answer").last()).toBeInViewport();
+  // looking is not answering
+  await expect(row).toHaveCount(1);
+  await shot(page, "30-notification-landing");
+
+  // a subagent asking for permission lands on that agent
+  hookEvent(fx, FANOUT.session, "UserPromptSubmit", { prompt: "go" });
+  hookEvent(fx, FANOUT.session, "PermissionRequest", {
+    tool_name: "Bash",
+    tool_input: { command: "psql replica -f replay.sql" },
+    agent_id: FANOUT.replay,
+  });
+  const asking = page.getByTestId("inbox-row").filter({ hasText: "Database CPU spike" });
+  await expect(asking.getByTestId("inbox-ask")).toContainText("psql replica -f replay.sql");
+  await reveal(FANOUT.session);
+  await expect(pane.getByTestId("agent-title")).toHaveText("Reproduce the spike against a replica");
+  await expect(asking).toHaveAttribute("data-active", "true");
+
+  // no longer waiting by the time of the click: every session instead
+  await reveal(SID.quiet);
+  await expect(page.getByTestId("scope-all")).toHaveAttribute("aria-checked", "true");
+  await expect(
+    page.getByTestId("session-row").filter({ hasText: "Nothing asked" }),
+  ).toHaveAttribute("data-active", "true");
+  await expect(pane.getByTestId("inspector-title")).toHaveText("Nothing asked");
 });
