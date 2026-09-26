@@ -89,6 +89,22 @@ export function focusInspector(): boolean {
  */
 export const paneFocus: { pending: boolean } = { pending: false };
 
+/** what a key asks of the conversation on screen: the outline of its turns, the next match */
+export type PaneCommand = "outline" | "find-next" | "find-previous";
+const paneListeners = new Set<(c: PaneCommand) => void>();
+
+/** nothing happens when no conversation is on screen to hear it */
+export function paneCommand(c: PaneCommand): void {
+  for (const f of paneListeners) f(c);
+}
+
+export function onPaneCommand(f: (c: PaneCommand) => void): () => void {
+  paneListeners.add(f);
+  return () => {
+    paneListeners.delete(f);
+  };
+}
+
 const focusInPane = () =>
   !!document.activeElement?.closest?.('[data-testid="inspector"]') &&
   document.activeElement !== document.body;

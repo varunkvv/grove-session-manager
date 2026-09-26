@@ -619,3 +619,139 @@ test("an opened step shows what the tool did, and an agent is a round trip", asy
   await page.keyboard.press("Escape");
   await expect(pane).toHaveAttribute("data-view", "conversation");
 });
+
+const MANY = "dddddddd-0000-4000-8000-00000000000d";
+/** runs where the flaky test came back: the only answers that say so */
+const FLAKY = new Set([5, 18, 33]);
+
+/** forty turns over a day and a bit: too many to scroll through looking for one */
+function manyTurns() {
+  return Array.from({ length: 40 }, (_, k) => {
+    const s = k * 45 * 60;
+    const asked =
+      k === 12
+        ? "rename the cache table\nit is called tmp_cache and nobody knows why"
+        : `look at run ${k} of the nightly job`;
+    const said = FLAKY.has(k)
+      ? `The flaky test showed up again in run ${k}.`
+      : `Run ${k} is clean, nothing to do.`;
+    return [t.prompt(asked, s), t.says(`a${k}`, t.text(said), s + 30)];
+  }).flat();
+}
+
+test("the turns outline goes to any prompt, and Escape closes only the outline", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const cwd = makePlainDir(fx, "nightly");
+  writeConversation(fx, { cwd, sessionId: MANY, title: "Nightly job runs", lines: manyTurns() });
+  app = await launchApp(fx);
+  const { page } = app;
+  await page.getByTestId("session-row").filter({ hasText: "Nightly job runs" }).click();
+  const pane = page.getByTestId("inspector");
+  const conv = pane.getByTestId("conversation");
+  await expect(conv.getByTestId("answer").last()).toContainText("Run 39 is clean");
+  // no query, nothing to step through: the keys do nothing
+  await page.keyboard.press("Meta+g");
+  await expect(pane.getByTestId("find-steps")).toHaveCount(0);
+  await expect(conv.getByTestId("answer").last()).toBeInViewport();
+
+  // every prompt's first line and time, newest at the bottom and picked
+  await pane.getByTestId("turns-button").click();
+  await expect(pane.getByTestId("turns-button")).toHaveText("40 turns");
+  const outline = pane.getByTestId("turn-outline");
+  const items = outline.getByTestId("outline-item");
+  await expect(items).toHaveCount(40);
+  await expect(outline.getByTestId("outline-filter")).toBeFocused();
+  await expect(items.last()).toHaveAttribute("data-selected", "true");
+  await expect(items.last()).toContainText("look at run 39 of the nightly job");
+  await expect(items.last()).toBeInViewport();
+  await expect(items.nth(12)).toHaveText(/^rename the cache table\d\d:\d\d$/);
+  await shot(page, "32-turn-outline");
+
+  // type to filter, Enter goes there and takes the keyboard with it
+  await page.keyboard.type("cache table");
+  await expect(items).toHaveCount(1);
+  await expect(items.first().locator("mark")).toHaveText(["cache", "table"]);
+  await shot(page, "33-turn-outline-filter");
+  await page.keyboard.press("Enter");
+  await expect(outline).toHaveCount(0);
+  const landed = conv.locator('[data-testid="prompt"][data-cursor]');
+  await expect(landed).toContainText("rename the cache table");
+  await expect(landed).toBeInViewport();
+  await expect(conv).toBeFocused();
+
+  // cmd-J opens it from the keyboard. Escape closes it, and the pane stays where it was
+  await page.keyboard.press("Meta+j");
+  await expect(outline.getByTestId("outline-filter")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(outline).toHaveCount(0);
+  await expect(pane).toBeVisible();
+  await expect(conv).toBeFocused();
+  await expect(landed).toContainText("rename the cache table");
+
+  // the arrows pick from the bottom up
+  await page.keyboard.press("Meta+j");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(outline.locator('[data-selected="true"]')).toContainText("run 37");
+  await page.keyboard.press("Enter");
+  await expect(landed).toContainText("look at run 37 of the nightly job");
+  await expect(landed).toBeInViewport();
+
+  // a click anywhere else closes it
+  await pane.getByTestId("turns-button").click();
+  await expect(outline).toBeVisible();
+  await pane.getByTestId("inspector-title").click();
+  await expect(outline).toHaveCount(0);
+});
+
+test("a query steps between the turns that say it, from the toolbar or with cmd-G", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const cwd = makePlainDir(fx, "nightly");
+  writeConversation(fx, { cwd, sessionId: MANY, title: "Nightly job runs", lines: manyTurns() });
+  app = await launchApp(fx);
+  const { page } = app;
+  await page.getByTestId("session-row").first().waitFor();
+  await page.getByTestId("search").fill("flaky");
+  await page.getByTestId("session-row").filter({ hasText: "Nightly job runs" }).click();
+  const pane = page.getByTestId("inspector");
+  const conv = pane.getByTestId("conversation");
+  const answer = (k: number) => conv.getByTestId("answer").filter({ hasText: `run ${k}.` });
+  // the search opened it at the first turn that said it
+  await expect(answer(5)).toBeInViewport();
+  const count = pane.getByTestId("find-count");
+  await expect(count).toHaveText("1 of 3");
+  await expect(answer(5).locator("mark")).toHaveText("flaky");
+
+  // the arrows in the toolbar leave the keyboard in the search field
+  await page.getByTestId("search").focus();
+  await pane.getByTestId("find-next").click();
+  await expect(count).toHaveText("2 of 3");
+  await expect(answer(18)).toBeInViewport();
+  await expect(page.getByTestId("search")).toBeFocused();
+  await shot(page, "34-find-steps");
+
+  // cmd-G is the next one, round the end, and shift goes back
+  await page.keyboard.press("Meta+g");
+  await expect(count).toHaveText("3 of 3");
+  await expect(answer(33)).toBeInViewport();
+  await page.keyboard.press("Meta+g");
+  await expect(count).toHaveText("1 of 3");
+  await expect(answer(5)).toBeInViewport();
+  await page.keyboard.press("Meta+Shift+KeyG");
+  await expect(count).toHaveText("3 of 3");
+  await pane.getByTestId("find-previous").click();
+  await expect(count).toHaveText("2 of 3");
+
+  // a turn picked from the outline is where the next step counts from
+  await pane.getByTestId("turns-button").click();
+  await page.keyboard.type("run 30 ");
+  await page.keyboard.press("Enter");
+  await expect(count).toHaveText("3 matches");
+  await page.keyboard.press("Meta+g");
+  await expect(count).toHaveText("3 of 3");
+
+  // words nobody said in a prompt or an answer
+  await page.getByTestId("search").fill("flaky nobody");
+  await expect(count).toHaveText("no matches");
+  await expect(pane.getByTestId("find-next")).toBeDisabled();
+});

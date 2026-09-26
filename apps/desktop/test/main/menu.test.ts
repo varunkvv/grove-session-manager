@@ -42,5 +42,24 @@ describe("the menu", () => {
     expect(inbox?.accelerator).toBe("CmdOrCtrl+4");
     (inbox?.click as (() => void) | undefined)?.();
     expect(sent).toEqual(["inspect", "scope-inbox"]);
+    const turns = submenu.find((i) => i.label === "Go to Turn…");
+    expect(turns?.accelerator).toBe("CmdOrCtrl+J");
+    expect(turns?.registerAccelerator).toBe(false);
+  });
+
+  it("shows cmd-G for the next match and leaves it to the page: a step taken twice skips one", () => {
+    const edit = buildMenuTemplate({
+      appName: "Grove",
+      isDev: false,
+      isMac: true,
+      send: () => {},
+    }).find((m) => m.label === "Edit");
+    const submenu = (edit?.submenu ?? []) as MenuItemConstructorOptions[];
+    const next = submenu.find((i) => i.label === "Find Next");
+    const previous = submenu.find((i) => i.label === "Find Previous");
+    expect(next?.accelerator).toBe("CmdOrCtrl+G");
+    expect(previous?.accelerator).toBe("CmdOrCtrl+Shift+G");
+    expect(next?.registerAccelerator).toBe(false);
+    expect(previous?.registerAccelerator).toBe(false);
   });
 });

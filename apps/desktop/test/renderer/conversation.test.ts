@@ -4,8 +4,14 @@ import {
   conversationLines,
   conversationMeta,
   dayLabel,
+  filterOutline,
+  matchingTurns,
+  matchLabel,
   openLabel,
+  outlineOf,
+  outlineRows,
   spanLabel,
+  stepMatch,
   workLine,
 } from "../../src/renderer/logic/conversation.ts";
 import type { ConversationTurn, ConversationView } from "../../src/shared/ipc.ts";
@@ -270,5 +276,101 @@ describe("the conversation, line by line", () => {
     expect(workLine(turn(1, { tools: 1, filesEdited: 1, startedAt: 0 }), 90_000, true)).toBe(
       "2m · 1 step · 1 file edited",
     );
+  });
+});
+
+describe("finding your way in a long one", () => {
+  const T = Date.parse("2026-09-25T10:00:00");
+  const DAY = 24 * HOUR;
+  const view: ConversationView = {
+    key: "k",
+    tools: 0,
+    turns: 5,
+    items: [
+      turn(0, {
+        prompt: {
+          kind: "human",
+          text: "\n  move the export button\nto the first page",
+          at: T - DAY,
+        },
+        answer: "Moved. The old button stays behind a flag.",
+      }),
+      turn(1, { prompt: { kind: "command", text: "/model opus", at: T - DAY + MIN } }),
+      { kind: "compact", n: 2, at: T - HOUR, summary: "the flag stays" },
+      // the work went on after the compaction with nobody asking
+      turn(3, { answer: "The second page reads the same flag." }),
+      turn(4, {
+        prompt: { kind: "human", text: "", images: 2, at: T },
+        marks: [
+          { kind: "plan", step: 0, at: T, text: "# plan\n- ship it", said: "not the flag yet" },
+          {
+            kind: "question",
+            step: 1,
+            at: T,
+            questions: [{ question: "Keep the flag?", options: ["Yes", "No"], picked: "Yes" }],
+          },
+        ],
+      }),
+      turn(5, {
+        prompt: { kind: "task", text: 'Background command "pnpm e2e" completed', at: T + MIN },
+      }),
+    ],
+  };
+
+  it("lists every prompt by its first line with words in it, oldest first", () => {
+    const items = outlineOf(view);
+    expect(items.map((i) => [i.n, i.kind, i.line])).toEqual([
+      [0, "human", "move the export button"],
+      [1, "command", "/model opus"],
+      [4, "human", "2 images"],
+      [5, "task", 'Background command "pnpm e2e" completed'],
+    ]);
+  });
+
+  it("filters on the whole prompt, every word, and heads the days when they differ", () => {
+    const items = outlineOf(view);
+    expect(filterOutline(items, ["first", "page"]).map((i) => i.n)).toEqual([0]);
+    expect(filterOutline(items, ["first", "opus"])).toEqual([]);
+    expect(filterOutline(items, [])).toHaveLength(4);
+    const rows = outlineRows(items, T);
+    expect(rows.map((r) => (r.type === "day" ? r.label : r.item.n))).toEqual([
+      "Yesterday",
+      0,
+      1,
+      "Today",
+      4,
+      5,
+    ]);
+    // one day: no headers
+    expect(outlineRows(items.slice(2), T).every((r) => r.type === "turn")).toBe(true);
+  });
+
+  it("matches a turn by what its skeleton says: prompt, answer, plans, questions", () => {
+    expect(matchingTurns(view, ["flag"])).toEqual([0, 3, 4]);
+    expect(matchingTurns(view, ["export", "flag"])).toEqual([0]);
+    // what was picked, and what was said back to a plan
+    expect(matchingTurns(view, ["keep", "yes"])).toEqual([4]);
+    expect(matchingTurns(view, ["not the flag"])).toEqual([4]);
+    // the compaction's summary is not a turn
+    expect(matchingTurns(view, ["stays"])).toEqual([0]);
+    expect(matchingTurns(view, [])).toEqual([]);
+  });
+
+  it("steps up and down between matches from where the pane is, round the ends", () => {
+    const m = [0, 3, 4];
+    // opened at the end: up is the newest match, down comes round to the first
+    expect(stepMatch(m, Number.POSITIVE_INFINITY, -1)).toBe(4);
+    expect(stepMatch(m, Number.POSITIVE_INFINITY, 1)).toBe(0);
+    expect(stepMatch(m, 3, -1)).toBe(0);
+    expect(stepMatch(m, 3, 1)).toBe(4);
+    expect(stepMatch(m, 0, -1)).toBe(4);
+    // a search landed between two matches, on a step of the work
+    expect(stepMatch(m, 1, 1)).toBe(3);
+    expect(stepMatch(m, 1, -1)).toBe(0);
+    expect(stepMatch([], 1, 1)).toBeUndefined();
+    expect(matchLabel(m, 3)).toBe("2 of 3");
+    expect(matchLabel(m, 1)).toBe("3 matches");
+    expect(matchLabel([2], 1)).toBe("1 match");
+    expect(matchLabel([], Number.POSITIVE_INFINITY)).toBe("no matches");
   });
 });

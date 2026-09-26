@@ -85,6 +85,22 @@ describe("keyboard model", () => {
     });
   });
 
+  it("cmd-G steps between the turns that say the query, and cmd-J lists the turns", () => {
+    expect(interpret(ctx(), key("g", { meta: true }))).toEqual({ type: "find-step", delta: 1 });
+    expect(interpret(ctx(), key("G", { meta: true, shift: true }))).toEqual({
+      type: "find-step",
+      delta: -1,
+    });
+    expect(interpret(ctx(), key("j", { meta: true }))).toEqual({ type: "turns" });
+    // from inside the pane, and from the outline's own filter field
+    const inPane = ctx({ inspector: true, inInspector: true, inSearch: false });
+    expect(interpret(inPane, key("g", { meta: true }))).toEqual({ type: "find-step", delta: 1 });
+    expect(interpret({ ...inPane, inOtherTextField: true }, key("j", { meta: true }))).toEqual({
+      type: "turns",
+    });
+    expect(interpret(ctx({ overlay: true }), key("g", { meta: true }))).toBeNull();
+  });
+
   it("IME composition is never interpreted", () => {
     expect(interpret(ctx(), key("Enter", { composing: true }))).toBeNull();
   });

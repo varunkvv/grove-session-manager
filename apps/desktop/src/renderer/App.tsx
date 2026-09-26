@@ -29,6 +29,7 @@ import {
   openConversation,
   openInspector,
   openMenu,
+  paneCommand,
   refresh,
   repairSelected,
 } from "./state/actions.ts";
@@ -92,6 +93,12 @@ function perform(intent: Intent): void {
       else openInspector();
       break;
     }
+    case "find-step":
+      paneCommand(intent.delta > 0 ? "find-next" : "find-previous");
+      break;
+    case "turns":
+      paneCommand("outline");
+      break;
     case "inspector-enter":
       focusInspector();
       break;
@@ -165,6 +172,9 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "scope-agents": { type: "scope", scope: "agents" },
   "scope-inbox": { type: "scope", scope: "inbox" },
   inspect: { type: "inspect" },
+  "find-next": { type: "find-step", delta: 1 },
+  "find-previous": { type: "find-step", delta: -1 },
+  turns: { type: "turns" },
   settings: { type: "settings" },
 };
 

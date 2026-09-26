@@ -190,6 +190,12 @@ plan in full. A result too big for the transcript says where Claude Code saved i
 is one quiet click away on every step, and an agent's detail draws its steps the same way. An `Agent` step goes to that
 agent's detail, and back (or `Esc`) returns to the conversation exactly where it was, open steps and all.
 
+A long one has two ways around it. **N turns** in the pane's toolbar (or `⌘J`) lists every prompt by its first line and
+time, newest at the bottom: type to filter (the whole prompt counts, not only the line on show), `↑` `↓` to pick, `↵`
+to go there. With a search in the box the toolbar says `3 of 12` with an up and a down arrow, and `⌘G` / `⌘⇧G` step
+between the turns whose prompt, answer, plans or questions say every word. The work's own text is not counted there -
+the search that opened the session already lands on the step that said it.
+
 The header says where the session ran, its branch, the model of its last response, how long it went on and how many
 tools it called. A session with agents gets **Conversation · Agents** under it. The pane starts at half of what the
 rail leaves (at least 480px, at most 960px, and the list always keeps 420px); drag its left edge to change that - the
@@ -295,6 +301,8 @@ Every shortcut carries a modifier.
 | `⌘⇧A` | archive the active session, or bring it back |
 | `⌘⇧C` | copy its resume command |
 | `⌘F` / `/` | search |
+| `⌘G` / `⌘⇧G` | the next / previous turn of the conversation that says the search |
+| `⌘J` | every prompt of the conversation in the pane, to filter and go to |
 | `Esc` | close what is open, then clear the query |
 | `⌘N` `⌘O` `⌘E` `⌘R` `⌘⇧R` `⌘,` | new / open / edit combo, refresh, repair, settings |
 

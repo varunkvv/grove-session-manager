@@ -16,6 +16,8 @@ export type Intent =
   | { type: "mark-all-seen" }
   | { type: "toggle-archive" }
   | { type: "inspect" }
+  | { type: "find-step"; delta: 1 | -1 }
+  | { type: "turns" }
   | { type: "inspector-enter" }
   | { type: "inspector-leave" }
   | { type: "inspector-close" }
@@ -100,6 +102,9 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     // plain cmd-A is select-all in the search field, and stays that way
     if (k === "a" && e.shift) return { type: "toggle-archive" };
     if (k === "i" && !e.shift) return { type: "inspect" };
+    // the mac's find-next keys step between the turns of the conversation that say the query
+    if (k === "g") return { type: "find-step", delta: e.shift ? -1 : 1 };
+    if (k === "j" && !e.shift) return { type: "turns" };
     if (e.key === "Enter") return { type: "activate-default" };
     if (e.key === "ArrowDown") return { type: "move-to", where: "last" };
     if (e.key === "ArrowUp") return { type: "move-to", where: "first" };

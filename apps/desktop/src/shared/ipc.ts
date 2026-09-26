@@ -643,6 +643,9 @@ export type MenuCommandId =
   | "scope-agents"
   | "scope-inbox"
   | "inspect"
+  | "find-next"
+  | "find-previous"
+  | "turns"
   | "settings";
 
 export interface ToastMessage {

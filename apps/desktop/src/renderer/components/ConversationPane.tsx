@@ -1,4 +1,4 @@
-import { tokenize, toolLabel } from "@grove/core/pure";
+import { toolLabel } from "@grove/core/pure";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -16,6 +16,7 @@ import {
   stepPrefix,
   workLine,
 } from "../logic/conversation.ts";
+import { splitQuery } from "../logic/rows.ts";
 import { itemOfStep, offsetLabel, runOfStep, runTargets } from "../logic/steps.ts";
 import { focusSearch, openAgent, paneFocus } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
@@ -46,6 +47,12 @@ interface PaneMemory {
   offset: number;
 }
 let leftAt: PaneMemory | null = null;
+
+/** what the toolbar asks of the conversation below it: go to a turn */
+export interface PaneHandle {
+  /** the turn's first line at the top, the keyboard's line on it. `focus` takes the keyboard too. */
+  jumpTo: (n: number, focus: boolean) => void;
+}
 
 /** the last reading of a session's conversation, if it has been on screen: the header's numbers */
 export function lastConversation(key: SessionKey | null | undefined): ConversationView | null {
@@ -150,6 +157,7 @@ export function ConversationPane({
   running,
   thinking,
   landAt,
+  handle,
 }: {
   sessionKey: SessionKey;
   view: ConversationView | null;
@@ -160,12 +168,14 @@ export function ConversationPane({
   thinking: boolean;
   /** a notification click landed here: back to the end, where the question is */
   landAt?: number | undefined;
+  handle?: { current: PaneHandle | null };
 }) {
   const now = useStore((s) => s.now);
   const toast = useStore((s) => s.toast);
   const query = useStore((s) => s.query);
   const cwd = useStore((s) => s.sessions.find((r) => r.key === sessionKey)?.cwd);
-  const tokens = useMemo(() => tokenize(query), [query]);
+  // the same words the toolbar counts matches by
+  const tokens = useMemo(() => splitQuery(query).tokens, [query]);
   // back from an agent this conversation sent the pane to: everything as it was left
   const [back] = useState(() => {
     const restore = useStore.getState().inspector?.restore;
@@ -326,6 +336,23 @@ export function ConversationPane({
     setLandedOn(id);
     virtualizer.scrollToIndex(at, { align: "start" });
   }, [found, view, lines, open, openRuns, live, virtualizer]);
+
+  // the outline and the find steps: the turn's first line at the top
+  const jumpTo = (n: number, focus: boolean) => {
+    const at = lines.findIndex((l) => l.type !== "day" && "turn" in l && l.turn.n === n);
+    if (at < 0) return;
+    setAtEnd(false);
+    setCursor(lines[at]?.id ?? null);
+    virtualizer.scrollToIndex(at, { align: "start" });
+    if (focus) scroller.current?.focus();
+  };
+  useEffect(() => {
+    if (!handle) return;
+    handle.current = { jumpTo };
+    return () => {
+      handle.current = null;
+    };
+  });
 
   const flip = useCallback(
     <T,>(set: (f: (s: ReadonlySet<T>) => ReadonlySet<T>) => void, v: T) =>

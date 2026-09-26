@@ -64,6 +64,11 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
       { role: "selectAll" },
       separator,
       command("Find", "CmdOrCtrl+F", "focus-search"),
+      // stepping is not idempotent: a press both the page and the menu acted on would step twice
+      command("Find Next", "CmdOrCtrl+G", "find-next", { registerAccelerator: false }),
+      command("Find Previous", "CmdOrCtrl+Shift+G", "find-previous", {
+        registerAccelerator: false,
+      }),
     ],
   };
 
@@ -78,6 +83,7 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
       // a toggle needs exactly one owner. the page takes the key already, and a press both the
       // page and the menu acted on would open the pane and close it again.
       command("Session Pane", "CmdOrCtrl+I", "inspect", { registerAccelerator: false }),
+      command("Go to Turn…", "CmdOrCtrl+J", "turns", { registerAccelerator: false }),
       separator,
       command("Refresh", "CmdOrCtrl+R", "refresh"),
       ...(o.isDev

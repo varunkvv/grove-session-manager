@@ -232,3 +232,116 @@ export function isStop(line: ConversationLine): boolean {
     line.type === "prompt" || line.type === "work" || line.type === "tool" || line.type === "run"
   );
 }
+
+/** a prompt in the turns outline: its first line and when */
+export interface OutlineItem {
+  n: number;
+  kind: "human" | "command" | "task";
+  /** the first line with words in it */
+  line: string;
+  /** the whole prompt: what the filter reads */
+  text: string;
+  at: number;
+}
+
+export type OutlineRow = { type: "day"; label: string } | { type: "turn"; item: OutlineItem };
+
+/** what a prompt of pasted images only says, in the outline's one line */
+function firstLine(text: string, images: number | undefined): string {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (line) return line;
+  return images ? `${images} ${images === 1 ? "image" : "images"}` : "";
+}
+
+/** every prompt, oldest first: the work that went on with nobody asking has no line of its own */
+export function outlineOf(view: ConversationView): OutlineItem[] {
+  const out: OutlineItem[] = [];
+  for (const e of view.items) {
+    if (e.kind !== "turn" || !e.prompt) continue;
+    const p = e.prompt;
+    out.push({ n: e.n, kind: p.kind, line: firstLine(p.text, p.images), text: p.text, at: p.at });
+  }
+  return out;
+}
+
+/**
+ * the prompts that say every word typed. the whole prompt counts, not only the line on show: a long
+ * paste often starts with "look at this" and says what it is about further down.
+ */
+export function filterOutline(
+  items: readonly OutlineItem[],
+  tokens: readonly string[],
+): OutlineItem[] {
+  if (tokens.length === 0) return [...items];
+  return items.filter((i) => {
+    const lower = i.text.toLowerCase();
+    return tokens.every((t) => lower.includes(t));
+  });
+}
+
+/** the outline's rows, a day header where the day changes when they span more than one */
+export function outlineRows(items: readonly OutlineItem[], now: number): OutlineRow[] {
+  const days = new Set(items.map((i) => dayKey(i.at)));
+  const rows: OutlineRow[] = [];
+  let day = "";
+  for (const item of items) {
+    if (days.size > 1 && dayKey(item.at) !== day) {
+      day = dayKey(item.at);
+      rows.push({ type: "day", label: dayLabel(item.at, now) });
+    }
+    rows.push({ type: "turn", item });
+  }
+  return rows;
+}
+
+/**
+ * what a turn says in the skeleton the pane draws closed: the prompt, the answer, a command's
+ * output, the plans, the questions and what was picked, and what was said while it worked. the
+ * work's own text is main's to search - it lands on a step.
+ */
+function skeletonText(turn: ConversationTurn): string {
+  const parts = [turn.prompt?.text ?? "", turn.answer ?? "", turn.output ?? ""];
+  for (const m of turn.marks) {
+    if (m.kind === "plan") parts.push(m.text, m.said ?? "");
+    else if (m.kind === "said") parts.push(m.text);
+    else for (const q of m.questions) parts.push(q.question, q.picked ?? "");
+  }
+  return parts.join("\n").toLowerCase();
+}
+
+/** the turns whose skeleton says every word of the query, oldest first */
+export function matchingTurns(view: ConversationView, tokens: readonly string[]): number[] {
+  if (tokens.length === 0) return [];
+  const out: number[] = [];
+  for (const e of view.items) {
+    if (e.kind !== "turn") continue;
+    const text = skeletonText(e);
+    if (tokens.every((t) => text.includes(t))) out.push(e.n);
+  }
+  return out;
+}
+
+/**
+ * the matching turn above (-1) or below (1) the one the pane is at, round the ends. `at` is
+ * Infinity at the end of the conversation, where a pane opens: up is the newest match.
+ */
+export function stepMatch(
+  matches: readonly number[],
+  at: number,
+  delta: 1 | -1,
+): number | undefined {
+  if (matches.length === 0) return undefined;
+  if (delta > 0) return matches.find((n) => n > at) ?? matches[0];
+  return [...matches].reverse().find((n) => n < at) ?? matches[matches.length - 1];
+}
+
+/** `3 of 12` on a match, `12 matches` between them */
+export function matchLabel(matches: readonly number[], at: number): string {
+  const i = matches.indexOf(at);
+  if (i >= 0) return `${i + 1} of ${matches.length}`;
+  if (matches.length === 0) return "no matches";
+  return `${matches.length} ${matches.length === 1 ? "match" : "matches"}`;
+}

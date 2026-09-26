@@ -1,5 +1,13 @@
 import { formatDuration } from "@grove/core/pure";
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   ConversationView,
   MainStats,
@@ -8,7 +16,14 @@ import type {
   SessionKey,
   SessionRow,
 } from "../../shared/ipc.ts";
-import { conversationMeta, openLabel, spanLabel } from "../logic/conversation.ts";
+import {
+  conversationMeta,
+  matchingTurns,
+  matchLabel,
+  openLabel,
+  spanLabel,
+  stepMatch,
+} from "../logic/conversation.ts";
 import {
   type AgentListItem,
   agentDuration,
@@ -36,8 +51,10 @@ import {
   closeAgent,
   closeInspector,
   focusSearch,
+  onPaneCommand,
   openAgent,
   openMenu,
+  type PaneCommand,
   paneFocus,
 } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
@@ -45,9 +62,11 @@ import { AgentDetailView } from "./AgentDetail.tsx";
 import {
   ConversationPane,
   lastConversation,
+  type PaneHandle,
   useFollowedConversation,
 } from "./ConversationPane.tsx";
 import { SessionsPane } from "./SessionsPane.tsx";
+import { TurnOutline } from "./TurnOutline.tsx";
 import { Button, cx, Icon, IconButton, Segmented } from "./ui.tsx";
 
 /** the last look at each session, so coming back to one draws its numbers at once */
@@ -271,11 +290,63 @@ function InspectorBody() {
   const agentCount = row?.agents?.length ?? 0;
   const shown = view === "agents" && agentCount > 0 ? "agents" : "conversation";
   // a search that led here: the conversation opens where it matched
-  const query = useStore((s) => splitQuery(s.query).text);
+  const rawQuery = useStore((s) => s.query);
+  const parsed = useMemo(() => splitQuery(rawQuery), [rawQuery]);
   const conversation = useFollowedConversation(
     shown === "conversation" && row ? row.key : null,
-    query || undefined,
+    parsed.text || undefined,
   );
+  const conv = conversation.view;
+
+  // the outline of its turns, and the steps between the turns that say the query. both go to a
+  // turn through the pane below.
+  const pane = useRef<PaneHandle | null>(null);
+  const [outline, setOutline] = useState(false);
+  const before = useRef<HTMLElement | null>(null);
+  // where the steps count from: the turn the pane went to last, or its end, where it opens
+  const [findAt, setFindAt] = useState(Number.POSITIVE_INFINITY);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: another session or view starts over
+  useEffect(() => {
+    setOutline(false);
+    setFindAt(Number.POSITIVE_INFINITY);
+  }, [activeKey, shown]);
+  useEffect(() => {
+    if (conversation.found) setFindAt(conversation.found.n);
+  }, [conversation.found]);
+  const matches = useMemo(
+    () => (conv && parsed.tokens.length > 0 ? matchingTurns(conv, parsed.tokens) : []),
+    [conv, parsed.tokens],
+  );
+  const go = (n: number, focus: boolean) => {
+    setFindAt(n);
+    pane.current?.jumpTo(n, focus);
+  };
+  const step = (delta: 1 | -1) => {
+    const n = stepMatch(matches, findAt, delta);
+    if (n !== undefined) go(n, false);
+  };
+  const openOutline = () => {
+    before.current = document.activeElement as HTMLElement | null;
+    setOutline(true);
+  };
+  // closed without going anywhere: the keyboard goes back where it was
+  const closeOutline = useCallback(() => {
+    setOutline(false);
+    const el = before.current;
+    before.current = null;
+    if (el?.isConnected && el !== document.body) el.focus();
+    else focusSearch(false);
+  }, []);
+  const canOutline = shown === "conversation" && !!conv && conv.turns > 0;
+  const command = useRef<(c: PaneCommand) => void>(() => {});
+  command.current = (c) => {
+    if (shown !== "conversation" || !conv) return;
+    if (c === "outline") {
+      if (outline) closeOutline();
+      else if (canOutline) openOutline();
+    } else if (parsed.tokens.length > 0) step(c === "find-next" ? 1 : -1);
+  };
+  useEffect(() => onPaneCommand((c) => command.current(c)), []);
 
   // thinking is hidden until asked for, like in an agent's detail. it stays asked for across rows.
   const [thinking, setThinking] = useState(false);
@@ -286,7 +357,10 @@ function InspectorBody() {
     <>
       <PaneHeader row={row} head={conversation.view ?? lastConversation(row?.key)} />
       {row && activeKey && (agentCount > 0 || shown === "conversation") && (
-        <div className="flex h-10 shrink-0 items-center gap-3 px-5 pt-2" data-testid="pane-toolbar">
+        <div
+          className="relative flex h-10 shrink-0 items-center gap-3 px-5 pt-2"
+          data-testid="pane-toolbar"
+        >
           {agentCount > 0 && (
             <Segmented
               label="Show"
@@ -304,15 +378,76 @@ function InspectorBody() {
             />
           )}
           {shown === "conversation" && (
-            <button
-              type="button"
-              data-testid="toggle-thinking"
-              aria-pressed={thinking}
-              onClick={() => setThinking((t) => !t)}
-              className="fade ml-auto text-sm text-fg-3 hover:text-fg-2"
-            >
-              {thinking ? "hide thinking" : "show thinking"}
-            </button>
+            <div className="ml-auto flex items-center gap-3">
+              {conv && parsed.tokens.length > 0 && (
+                <div
+                  className="flex items-center text-sm tabular-nums text-fg-3"
+                  data-testid="find-steps"
+                >
+                  <span className="mr-1" data-testid="find-count">
+                    {matchLabel(matches, findAt)}
+                  </span>
+                  {/* the keyboard stays in the search field, like a find bar */}
+                  <IconButton
+                    label="Previous match (⇧⌘G)"
+                    data-testid="find-previous"
+                    disabled={matches.length === 0}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => step(-1)}
+                    className="disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Icon name="chevron" className="-rotate-90" />
+                  </IconButton>
+                  <IconButton
+                    label="Next match (⌘G)"
+                    data-testid="find-next"
+                    disabled={matches.length === 0}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => step(1)}
+                    className="disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Icon name="chevron" className="rotate-90" />
+                  </IconButton>
+                </div>
+              )}
+              {canOutline && conv && (
+                <button
+                  type="button"
+                  data-testid="turns-button"
+                  data-outline-toggle
+                  aria-expanded={outline}
+                  title="Go to a turn (⌘J)"
+                  onClick={() => (outline ? closeOutline() : openOutline())}
+                  className={cx(
+                    "fade text-sm hover:text-fg-2",
+                    outline ? "text-fg-2" : "text-fg-3",
+                  )}
+                >
+                  {conv.turns} {conv.turns === 1 ? "turn" : "turns"}
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="toggle-thinking"
+                aria-pressed={thinking}
+                onClick={() => setThinking((t) => !t)}
+                className="fade text-sm text-fg-3 hover:text-fg-2"
+              >
+                {thinking ? "hide thinking" : "show thinking"}
+              </button>
+            </div>
+          )}
+          {outline && canOutline && conv && (
+            <TurnOutline
+              view={conv}
+              now={now}
+              onJump={(n) => {
+                setOutline(false);
+                before.current = null;
+                go(n, true);
+              }}
+              onClose={closeOutline}
+            />
           )}
         </div>
       )}
@@ -330,6 +465,7 @@ function InspectorBody() {
           running={busy}
           thinking={thinking}
           landAt={landAt}
+          handle={pane}
         />
       )}
     </>
