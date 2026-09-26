@@ -6,6 +6,7 @@ import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "../fs
 import { getStateDir } from "../paths.ts";
 import { squash } from "../transcript/title.ts";
 import type { AgentRun, Combo, Disposable, LiveState, LiveStatus, Warning } from "../types.ts";
+import { toolTarget } from "./timeline.ts";
 
 /**
  * which sessions need a person right now. a transcript cannot say it: "running a tool" and
@@ -209,6 +210,8 @@ export interface StatusEvent {
   notificationType?: string;
   message?: string;
   toolName?: string;
+  /** the command, the file, the pattern the tool was called with - a few words of its input */
+  toolTarget?: string;
   /** set when a subagent raised the event, not the session itself */
   agentId?: string;
   agentType?: string;
@@ -218,8 +221,17 @@ export interface StatusEvent {
  * a payload cut at EVENT_MAX_BYTES is no longer JSON. the short fields near its start still are
  * readable, which is all the status needs. free text (messages) is not trusted from a cut payload.
  */
-export function parseTruncatedEvent(text: string): Record<string, string> {
-  const out: Record<string, string> = {};
+export function parseTruncatedEvent(text: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const field = (key: string) => {
+    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,200})"`).exec(text);
+    if (!m?.[1]) return undefined;
+    try {
+      return JSON.parse(`"${m[1]}"`) as string;
+    } catch {
+      return m[1];
+    }
+  };
   for (const key of [
     "session_id",
     "hook_event_name",
@@ -227,11 +239,30 @@ export function parseTruncatedEvent(text: string): Record<string, string> {
     "notification_type",
     "agent_id",
     "agent_type",
+    "cwd",
   ]) {
-    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,200})"`).exec(text);
-    if (m?.[1]) out[key] = m[1];
+    const v = field(key);
+    if (v) out[key] = v;
   }
+  // an Edit or a Write asking for permission carries the whole file: its short fields survive
+  const input: Record<string, string> = {};
+  for (const key of ["command", "file_path", "notebook_path", "pattern", "url", "query"]) {
+    const v = field(key);
+    if (v) input[key] = v;
+  }
+  if (Object.keys(input).length) out.tool_input = input;
   return out;
+}
+
+/** a message's last paragraph, where a turn that ends by asking asks. cut from the front. */
+export function lastParagraph(message: string, max = 400): string {
+  const paragraphs = message
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const last = paragraphs.at(-1) ?? "";
+  const flat = last.replace(/\s+/g, " ");
+  return flat.length > max ? `…${flat.slice(flat.length - max + 1).trimStart()}` : flat;
 }
 
 export function parseStatusEvent(payload: unknown, at: number): StatusEvent | null {
@@ -250,6 +281,10 @@ export function parseStatusEvent(payload: unknown, at: number): StatusEvent | nu
   if (notificationType) ev.notificationType = notificationType;
   if (message) ev.message = message;
   if (toolName) ev.toolName = toolName;
+  if (toolName && isObject(payload.tool_input)) {
+    const target = toolTarget(toolName, payload.tool_input, str(payload.cwd));
+    if (target) ev.toolTarget = target;
+  }
   if (agentId) ev.agentId = agentId;
   if (agentType) ev.agentType = agentType;
   return ev;
@@ -284,7 +319,12 @@ export function reduceStatus(
     case "UserPromptSubmit":
       return next(undefined, ev, "running", { turnStart: ev.at });
     case "PermissionRequest":
-      return next(prev, ev, "permission", ev.toolName ? { detail: ev.toolName } : {});
+      return next(prev, ev, "permission", {
+        ...(ev.toolName ? { detail: ev.toolName } : {}),
+        ...(ev.toolTarget ? { target: ev.toolTarget } : {}),
+        // a subagent asking: the notification can land on it, not only on its session
+        ...(ev.agentId ? { agentId: ev.agentId } : {}),
+      });
     case "PostToolUse":
       if (ev.agentId && prev?.state !== "permission") return touched;
       // after a turn ended, a tool call means a new turn started without a prompt - a background
@@ -298,7 +338,10 @@ export function reduceStatus(
         ev.notificationType === "agent_needs_input"
       ) {
         if (prev?.state === "permission") return touched;
-        return next(prev, ev, "permission", ev.message ? { detail: ev.message } : {});
+        return next(prev, ev, "permission", {
+          ...(ev.message ? { detail: ev.message } : {}),
+          ...(ev.agentId ? { agentId: ev.agentId } : {}),
+        });
       }
       if (ev.notificationType === "idle_prompt" && prev?.state !== "waiting") {
         return next(prev, ev, "waiting");
@@ -309,7 +352,9 @@ export function reduceStatus(
       const turnMs = prev?.turnStart !== undefined ? ev.at - prev.turnStart : undefined;
       return next(undefined, ev, "waiting", {
         ...(turnMs !== undefined ? { turnMs } : {}),
-        ...(ev.message ? { detail: squash(ev.message, 160) } : {}),
+        ...(ev.message
+          ? { detail: squash(ev.message, 160), question: lastParagraph(ev.message) }
+          : {}),
       });
     }
     case "StopFailure":

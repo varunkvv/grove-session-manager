@@ -66,6 +66,13 @@ the top of the list under **Needs you**, badges the combo and the dock icon, and
 asks for permission or finishes a turn that ran for over a minute. Clicking the notification lands you on the session.
 Running sessions show a quiet "Running".
 
+**Inbox** (`⌘4`, first in the scope switch, with the count in the accent while anything waits) is the same set of
+sessions on its own, each saying what it waits for: the command or file a permission prompt is about (`Bash  pnpm
+test`), or the last paragraph of the message a turn stopped on - where the question almost always is (read from the end
+of the transcript when the hook's copy was cut short). Every row keeps both ways out in sight: a click reads it in the
+pane, and **Open in VS Code** (**Open in Terminal** for a session Claude Code runs in the background) goes to answer it,
+as a double-click or `↵` does. `⌘D` marks it seen and it leaves the inbox; opening it to answer counts as seeing it.
+
 The transcript cannot tell "running a tool" from "waiting on a permission prompt", so this comes from Claude Code
 hooks. Every combo's `.claude/settings.local.json` gets a few async hooks (`UserPromptSubmit`, `PermissionRequest`,
 `PostToolUse`, `Notification`, `Stop`, `StopFailure`, `SessionEnd`, `SubagentStart`, `SubagentStop`) that drop the
@@ -263,6 +270,7 @@ Every shortcut carries a modifier.
 | `↑` `↓` `PgUp` `PgDn` `⌘↑` `⌘↓` | move the active row |
 | `⌥↑` `⌥↓` | step through combos |
 | `⌘1` `⌘2` `⌘3` | this combo's sessions / all sessions / every agent |
+| `⌘4` | the inbox: everything waiting on you |
 | `⌘K` | the active row's actions |
 | `⌘I` | the pane: the active session's conversation, or what its agents did. `Tab` moves into it, `Esc` steps back out |
 | `⌘D` | mark the active row as seen |

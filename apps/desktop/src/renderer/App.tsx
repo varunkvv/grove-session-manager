@@ -52,7 +52,9 @@ function perform(intent: Intent): void {
       s.set({ activeKey: (intent.where === "first" ? keys[0] : keys[keys.length - 1]) ?? null });
       break;
     case "activate":
-      if (s.activeKey) void activate(s.activeKey);
+      // the inbox is there to be acted on: Enter goes where the row's open button goes
+      if (s.activeKey && s.scope === "inbox") void activateDefault(s.activeKey);
+      else if (s.activeKey) void activate(s.activeKey);
       break;
     case "activate-default":
       if (session) void activateDefault(session);
@@ -161,6 +163,7 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "scope-combo": { type: "scope", scope: "combo" },
   "scope-all": { type: "scope", scope: "all" },
   "scope-agents": { type: "scope", scope: "agents" },
+  "scope-inbox": { type: "scope", scope: "inbox" },
   inspect: { type: "inspect" },
   settings: { type: "settings" },
 };

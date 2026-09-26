@@ -56,8 +56,9 @@ test("first run with no combos, and the finder over real transcripts", async () 
   // the empty state explains the model in one sentence and offers exactly one button
   await expect(page.getByTestId("rail-empty")).toContainText("No combos yet");
   await expect(page.getByTestId("empty-new-combo")).toBeVisible();
-  // with no combos the scope toggle would be meaningless
-  await expect(page.getByTestId("scope-all")).toHaveCount(0);
+  // with no combos there is no combo to scope to - but the inbox is always there
+  await expect(page.getByTestId("scope-combo")).toHaveCount(0);
+  await expect(page.getByTestId("scope-inbox")).toBeVisible();
 
   await waitFor(async () => (await page.getByTestId("session-row").count()) === 3);
   const rows = page.getByTestId("session-row");

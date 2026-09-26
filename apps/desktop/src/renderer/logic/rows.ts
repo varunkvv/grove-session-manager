@@ -9,7 +9,7 @@ import {
 import { rowHaystack } from "../../shared/haystack.ts";
 import type { SearchHit, SessionKey, SessionRow } from "../../shared/ipc.ts";
 
-export type Scope = "combo" | "all" | "agents";
+export type Scope = "combo" | "all" | "agents" | "inbox";
 
 export type ListItem =
   | { type: "header"; id: string; label: DayBucket | typeof NEEDS_YOU | typeof RUNNING }
@@ -29,7 +29,9 @@ export type ListItem =
       agent: SessionAgent;
       /** what it said that matched, when its labels did not */
       match?: string;
-    };
+    }
+  /** a session asking for someone, in the Inbox: taller, and saying what it asks */
+  | { type: "inbox"; id: SessionKey; row: SessionRow };
 
 /**
  * an agent's row in the Agents scope. the list, the keyboard and the active row all work on keys,
@@ -136,6 +138,7 @@ export function buildList(
   },
 ): ListModel {
   if (opts.scope === "agents") return buildAgentList(rows, opts);
+  if (opts.scope === "inbox") return buildInbox(rows, opts);
   const { tokens, archivedOnly } = splitQuery(opts.query);
   const scoped = opts.scope === "combo" && opts.combo !== null;
   const items: ListItem[] = [];
@@ -267,12 +270,40 @@ export function buildAgentList(
   return { items, keys, tokens, elsewhere: 0, scoped: false, archivedHidden, archivedOnly };
 }
 
+/** how many sessions are asking for someone right now: the Inbox's count */
+export function inboxCount(rows: readonly SessionRow[]): number {
+  return rows.filter((r) => needsYou(r.live)).length;
+}
+
+/**
+ * everything asking for someone, and nothing else - the same rule as the dock badge and the
+ * pinned group, archive included (a prompt nobody sees is worse than a row nobody wanted). the
+ * newest ask first, like the pinned group. a query narrows it like any list.
+ */
+export function buildInbox(rows: readonly SessionRow[], opts: { query: string }): ListModel {
+  const { tokens, archivedOnly } = splitQuery(opts.query);
+  const asking = rows
+    .filter((r) => needsYou(r.live) && (tokens.length === 0 || matches(r, tokens)))
+    .sort((a, b) => (b.live?.at ?? 0) - (a.live?.at ?? 0));
+  return {
+    items: asking.map((row) => ({ type: "inbox", id: row.key, row })),
+    keys: asking.map((r) => r.key),
+    tokens,
+    elsewhere: 0,
+    scoped: false,
+    archivedHidden: 0,
+    archivedOnly,
+  };
+}
+
 /**
  * the rows on screen that are asking for someone. that is what "mark everything as seen" means:
  * the inbox you are looking at, scope and all, not every session on the machine.
  */
 export function needsYouKeys(model: ListModel): SessionKey[] {
-  return model.items.flatMap((i) => (i.type === "row" && needsYou(i.row.live) ? [i.id] : []));
+  return model.items.flatMap((i) =>
+    (i.type === "row" || i.type === "inbox") && needsYou(i.row.live) ? [i.id] : [],
+  );
 }
 
 /** which row is active after the list changed. tracked by key, so live inserts never move it. */

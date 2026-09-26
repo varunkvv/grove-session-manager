@@ -3,6 +3,7 @@ import type { SessionKey } from "../../shared/ipc.ts";
 import {
   ARCHIVED_FILTER,
   buildList,
+  inboxCount,
   type ListModel,
   nextActiveKey,
   splitQuery,
@@ -85,6 +86,14 @@ function HiddenMatches({ model }: { model: ListModel }) {
 function EmptyState({ model }: { model: ListModel }) {
   const { query, selectedCombo, sessions, env, editor, index, set, scope } = useStore();
   const label = editor?.label ?? "the editor";
+  if (scope === "inbox") {
+    const q = splitQuery(query).text.trim();
+    return (
+      <Empty title={q ? `Nothing waiting matches "${q}"` : "Nothing is waiting for you."} quiet>
+        {null}
+      </Empty>
+    );
+  }
   if (scope === "agents") {
     const q = splitQuery(query).text.trim();
     return (
@@ -157,13 +166,22 @@ function EmptyState({ model }: { model: ListModel }) {
   );
 }
 
-function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
+function Empty({
+  title,
+  children,
+  quiet,
+}: {
+  title: string;
+  children?: React.ReactNode;
+  /** one quiet line, not a headline: an empty inbox is the good news, not a problem */
+  quiet?: boolean;
+}) {
   return (
     <div
       className="flex flex-1 flex-col items-center justify-center px-10 text-center"
       data-testid="list-empty"
     >
-      <h2 className="text-hero font-semibold">{title}</h2>
+      <h2 className={quiet ? "text-fg-3" : "text-hero font-semibold"}>{title}</h2>
       <div className="mt-2 max-w-md text-fg-3">{children}</div>
     </div>
   );
@@ -265,6 +283,8 @@ export function SessionsPane() {
 
   const scanning = index.phase === "scanning" || index.phase === "cache";
   const anyAgents = useMemo(() => sessions.some((r) => (r.agents?.length ?? 0) > 0), [sessions]);
+  const waiting = useMemo(() => inboxCount(sessions), [sessions]);
+  const editorLabel = useStore((s) => s.editor?.label ?? "the editor");
   const noun = scope === "agents" ? "agent" : "session";
 
   return (
@@ -274,17 +294,23 @@ export function SessionsPane() {
     >
       {/* a container: with the inspector open beside it, the search field keeps its room */}
       <header className="drag @container flex h-[52px] shrink-0 items-center gap-3 border-b border-line px-4">
-        {(combos.length > 0 || anyAgents) && (
+        {
           <Segmented
             label="Scope"
             value={
-              scope === "agents" ? "agents" : scope === "combo" && selectedCombo ? "combo" : "all"
+              scope === "agents" || scope === "inbox"
+                ? scope
+                : scope === "combo" && selectedCombo
+                  ? "combo"
+                  : "all"
             }
             onChange={(v) => {
               setScope(v);
               focusSearch(false);
             }}
             options={[
+              // what is waiting on you comes first: the one list that asks something of you
+              { value: "inbox" as const, label: "Inbox", testId: "scope-inbox", count: waiting },
               ...(combos.length > 0
                 ? [
                     {
@@ -301,10 +327,12 @@ export function SessionsPane() {
                 short: "Sessions",
                 testId: "scope-all",
               },
-              { value: "agents" as const, label: "Agents", testId: "scope-agents" },
+              ...(anyAgents || scope === "agents"
+                ? [{ value: "agents" as const, label: "Agents", testId: "scope-agents" }]
+                : []),
             ]}
           />
-        )}
+        }
         <div className="no-drag relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-raised px-2.5 focus-within:bg-active">
           <Icon name="search" className="text-fg-3" />
           <input
@@ -316,7 +344,13 @@ export function SessionsPane() {
             aria-controls={LIST_ID}
             aria-autocomplete="list"
             aria-activedescendant={activeKey ? optionId(activeKey) : undefined}
-            aria-label={scope === "agents" ? "Search agents" : "Search sessions"}
+            aria-label={
+              scope === "agents"
+                ? "Search agents"
+                : scope === "inbox"
+                  ? "Search what is waiting"
+                  : "Search sessions"
+            }
             spellCheck={false}
             autoComplete="off"
             placeholder={
@@ -357,6 +391,7 @@ export function SessionsPane() {
             onMenu={onMenu}
             onInspect={onInspect}
             onPageSize={onPageSize}
+            editorLabel={editorLabel}
           />
           <HiddenMatches model={model} />
         </>

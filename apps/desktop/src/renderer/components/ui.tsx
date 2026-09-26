@@ -236,8 +236,18 @@ export function Segmented<T extends string>({
   label,
 }: {
   value: T;
-  /** `short` is what a header too narrow for `label` shows. it needs an @container around it. */
-  options: Array<{ value: T; label: string; short?: string; disabled?: boolean; testId?: string }>;
+  /**
+   * `short` is what a header too narrow for `label` shows. it needs an @container around it.
+   * `count` sits after the label, in the accent while something in it is waiting on a person.
+   */
+  options: Array<{
+    value: T;
+    label: string;
+    short?: string;
+    disabled?: boolean;
+    testId?: string;
+    count?: number;
+  }>;
   onChange: (v: T) => void;
   label: string;
 }) {
@@ -269,6 +279,11 @@ export function Segmented<T extends string>({
           ) : (
             o.label
           )}
+          {o.count ? (
+            <span className="ml-1.5 tabular-nums text-accent" data-testid="scope-count">
+              {o.count}
+            </span>
+          ) : null}
         </button>
       ))}
     </div>

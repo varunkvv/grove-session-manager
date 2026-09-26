@@ -4,6 +4,7 @@ import {
   agentIdOf,
   agentKey,
   buildList,
+  inboxCount,
   needsYouKeys,
   nextActiveKey,
   RUNNING,
@@ -409,5 +410,44 @@ describe("what agents found", () => {
     expect(m.items.flatMap((i) => (i.type === "agent" ? [[i.agent.id, i.match]] : []))).toEqual([
       ["x1", "…the retry is dropped when the lease expires…"],
     ]);
+  });
+});
+
+describe("the Inbox scope", () => {
+  const live = (
+    state: "permission" | "waiting" | "failed" | "running",
+    at: number,
+    seen = false,
+  ) => ({
+    state,
+    at,
+    lastEventAt: at,
+    ...(seen ? { seen: true } : {}),
+  });
+  const list = [
+    row("old", { title: "Asked an hour ago", live: live("waiting", NOW - H) }),
+    row("run", { title: "Still running", live: live("running", NOW) }),
+    row("perm", { title: "Wants to run the tests", live: live("permission", NOW - 60_000) }),
+    row("seen", { title: "Already looked at", live: live("waiting", NOW, true) }),
+    row("arch", {
+      title: "Archived but asking",
+      archived: true,
+      live: live("failed", NOW - 30_000),
+    }),
+    row("idle", { title: "Nothing going on" }),
+  ];
+
+  it("holds exactly what is asking for someone, the archive included, the newest ask first", () => {
+    const model = buildList(list, { scope: "inbox", combo: null, query: "", now: NOW });
+    expect(model.keys).toEqual(["arch", "perm", "old"]);
+    expect(model.items.every((i) => i.type === "inbox")).toBe(true);
+    expect(inboxCount(list)).toBe(3);
+    // cmd-shift-D in the inbox marks all of them seen
+    expect(needsYouKeys(model)).toEqual(["arch", "perm", "old"]);
+  });
+
+  it("a query narrows it like any list", () => {
+    const model = buildList(list, { scope: "inbox", combo: null, query: "tests", now: NOW });
+    expect(model.keys).toEqual(["perm"]);
   });
 });

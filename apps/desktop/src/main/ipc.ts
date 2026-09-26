@@ -6,9 +6,11 @@ import {
   classifyPath,
   isObject,
   isValidSessionId,
+  lastParagraph,
   needsYou,
   openInEditor,
   prepareFolderOpen,
+  readLastWords,
   runDetached,
   type Settings,
   samePath,
@@ -286,6 +288,13 @@ function buildHandlers(deps: Deps): Handlers {
     async conversationSteps(key, n) {
       if (typeof key !== "string" || !sessions.get(key) || !Number.isInteger(n)) return null;
       return deps.inspector.conversationSteps(key, n);
+    },
+
+    async lastWords(key) {
+      const row = typeof key === "string" ? sessions.get(key) : undefined;
+      if (!row) return null;
+      const said = await readLastWords(row.key);
+      return said ? lastParagraph(said) : null;
     },
 
     async conversationStep(key, stepId) {

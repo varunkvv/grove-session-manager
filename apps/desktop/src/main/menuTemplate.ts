@@ -73,10 +73,11 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
       command("This Combo's Sessions", "CmdOrCtrl+1", "scope-combo"),
       command("All Sessions", "CmdOrCtrl+2", "scope-all"),
       command("Agents", "CmdOrCtrl+3", "scope-agents"),
+      command("Inbox", "CmdOrCtrl+4", "scope-inbox"),
       separator,
       // a toggle needs exactly one owner. the page takes the key already, and a press both the
       // page and the menu acted on would open the pane and close it again.
-      command("Inspect Agents", "CmdOrCtrl+I", "inspect", { registerAccelerator: false }),
+      command("Session Pane", "CmdOrCtrl+I", "inspect", { registerAccelerator: false }),
       separator,
       command("Refresh", "CmdOrCtrl+R", "refresh"),
       ...(o.isDev

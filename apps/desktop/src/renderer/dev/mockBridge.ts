@@ -762,6 +762,37 @@ const boot: Bootstrap = {
 };
 
 if (variant === "conversation") {
+  // the inbox: a permission prompt with what it would run, a turn that ended on a question, and a
+  // background session blocked where it runs
+  Object.assign(sessions[1] ?? {}, {
+    live: {
+      state: "permission",
+      at: NOW - 3 * MIN,
+      lastEventAt: NOW - 3 * MIN,
+      detail: "Bash",
+      target: "pnpm test --filter webhooks -- --retries=0",
+    },
+  });
+  Object.assign(sessions[2] ?? {}, {
+    live: {
+      state: "waiting",
+      at: NOW - 12 * MIN,
+      lastEventAt: NOW - 12 * MIN,
+      detail: "Moved the export button to the first page of the report flow.",
+      question:
+        "The old button is still on the last page behind the flag. Want me to remove it now, or keep it for one release and open a follow-up card to take it out after the next deploy?",
+    },
+  });
+  Object.assign(sessions[4] ?? {}, {
+    background: { id: "d7b6bcc2", state: "blocked", held: true, waitingFor: "permission prompt" },
+    live: {
+      state: "permission",
+      at: NOW - 40 * MIN,
+      lastEventAt: NOW - 40 * MIN,
+      detail: "permission prompt",
+      source: "agents",
+    },
+  });
   // the pane's own mock: the first row is the long conversation, still running
   Object.assign(sessions[0] ?? {}, {
     title: "Chat feature brainstorm",
@@ -892,6 +923,7 @@ const bridge: Bridge = {
   followConversation: async (key, find) => convo.follow(key, find),
   conversationSteps: async (key, n) => convo.steps(key, n),
   conversationStep: async (_key, stepId) => convo.step(stepId),
+  lastWords: async () => "Want me to push the branch now, or wait until the review is done?",
   agentsSeen: async () => {},
   openExternal: () => okv(undefined),
   markSeen: async () => {},

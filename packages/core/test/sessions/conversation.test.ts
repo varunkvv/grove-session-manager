@@ -14,6 +14,7 @@ import {
 import {
   loadCachedConversation,
   readConversation,
+  readLastWords,
   saveCachedConversation,
 } from "../../src/sessions/conversationFile.ts";
 import type { ToolStep } from "../../src/sessions/timeline.ts";
@@ -587,5 +588,34 @@ describe("a step of the conversation, opened", () => {
     ]);
     // still waiting on the person: the plan is there before any answer is
     expect((await readToolDetail(file, plan!))?.plan).toBe("# plan\n\nstep one");
+  });
+});
+
+describe("the last words of a session, from the end of its transcript", () => {
+  it("every text block of the last response, when it ended on words", async () => {
+    const file = sandboxFile(
+      jsonl([
+        prompt("tidy it", 0),
+        says("m1", call("t1", "Bash", { command: "ls" }), 1),
+        result("t1", "a b", 2),
+        says("m2", text("Removed two files."), 3),
+        says("m2", text("Want me to commit it?"), 4),
+        hookNoise(5),
+        title("tidy"),
+      ]),
+    );
+    expect(await readLastWords(file)).toBe("Removed two files.\n\nWant me to commit it?");
+  });
+
+  it("nothing when the last response called a tool, or the file is gone", async () => {
+    const file = sandboxFile(
+      jsonl([
+        prompt("go", 0),
+        says("m1", text("Starting."), 1),
+        says("m1", call("t1", "Read", { file_path: "/a" }), 2),
+      ]),
+    );
+    expect(await readLastWords(file)).toBeNull();
+    expect(await readLastWords(`${file}.gone`)).toBeNull();
   });
 });

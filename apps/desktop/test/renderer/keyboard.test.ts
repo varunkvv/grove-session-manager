@@ -91,6 +91,7 @@ describe("keyboard model", () => {
 
   it("cmd-3 is the Agents scope, beside the combo's sessions and all of them", () => {
     expect(interpret(ctx(), key("3", { meta: true }))).toEqual({ type: "scope", scope: "agents" });
+    expect(interpret(ctx(), key("4", { meta: true }))).toEqual({ type: "scope", scope: "inbox" });
   });
 
   it("cmd-I opens and closes the inspector, and Escape leaves it one step at a time", () => {

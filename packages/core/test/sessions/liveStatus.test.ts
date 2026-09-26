@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   drainStatusEvents,
   EVENT_MAX_BYTES,
+  lastParagraph,
   needsYou,
+  parseStatusEvent,
+  parseTruncatedEvent,
   reduceAgentRuns,
   reduceStatus,
   STATUS_HOOK_EVENTS,
@@ -118,6 +121,63 @@ describe("session status from hook events", () => {
     });
     expect(reduceAgentRuns(runs, ev("SessionEnd", 40))).toBeUndefined();
     expect(reduceAgentRuns(runs, ev("Stop", 40))).toBe(runs);
+  });
+
+  it("says what a permission prompt would do, and which agent asked, while it asks", () => {
+    const ev = parseStatusEvent(
+      {
+        session_id: SID,
+        hook_event_name: "PermissionRequest",
+        tool_name: "Bash",
+        tool_input: { command: "cd /work/api && pnpm test --filter api" },
+        cwd: "/work/api",
+        agent_id: "a1",
+      },
+      1,
+    );
+    expect(ev).toMatchObject({ toolName: "Bash", toolTarget: "pnpm test --filter api" });
+    const asking = reduceStatus(undefined, ev!);
+    expect(asking).toMatchObject({
+      state: "permission",
+      detail: "Bash",
+      target: "pnpm test --filter api",
+      agentId: "a1",
+    });
+    // the notification that follows says nothing new, and keeps what the request said
+    const still = reduceStatus(asking, {
+      sessionId: SID,
+      event: "Notification",
+      notificationType: "permission_prompt",
+      message: "Claude needs your permission to use Bash",
+      at: 2,
+    });
+    expect(still).toMatchObject({ target: "pnpm test --filter api", agentId: "a1" });
+    // answered: running again, and the agent that asked is not asking any more
+    const answered = reduceStatus(still, { sessionId: SID, event: "PostToolUse", at: 3 });
+    expect(answered?.state).toBe("running");
+    expect(answered?.agentId).toBeUndefined();
+    expect(answered?.target).toBeUndefined();
+  });
+
+  it("keeps the end of the message a turn stopped on: the question is in its last paragraph", () => {
+    const message = `Pieces 1-3 are committed.\n\n- the fold skips duplicates\n- the view is virtual\n\nWant me to push the branch, or wait for the review?`;
+    const { s } = run([
+      { event: "UserPromptSubmit", at: 1 },
+      { event: "Stop", at: 2, message },
+    ]);
+    expect(s?.detail).toMatch(/^Pieces 1-3 are committed/);
+    expect(s?.question).toBe("Want me to push the branch, or wait for the review?");
+    expect(lastParagraph(`intro\n\n${"word ".repeat(200)}the end?`, 40)).toMatch(/^….*the end\?$/);
+    expect(lastParagraph(`intro\n\n${"word ".repeat(200)}the end?`, 40).length).toBeLessThanOrEqual(
+      40,
+    );
+  });
+
+  it("a payload cut short still says which command wanted permission", () => {
+    const cut = parseTruncatedEvent(
+      `{"session_id":"${SID}","hook_event_name":"PermissionRequest","cwd":"/work/api","tool_name":"Write","tool_input":{"file_path":"/work/api/src/a.ts","content":"aaaa`,
+    );
+    expect(parseStatusEvent(cut, 1)).toMatchObject({ toolName: "Write", toolTarget: "src/a.ts" });
   });
 
   it("an API error, the end of a session, and seen", () => {

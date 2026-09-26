@@ -31,11 +31,16 @@ describe("the menu", () => {
     });
     const view = template.find((m) => m.label === "View");
     const submenu = (view?.submenu ?? []) as MenuItemConstructorOptions[];
-    const inspect = submenu.find((i) => i.label === "Inspect Agents");
+    const inspect = submenu.find((i) => i.label === "Session Pane");
     expect(inspect?.accelerator).toBe("CmdOrCtrl+I");
     expect(inspect?.registerAccelerator).toBe(false);
     const click = inspect?.click as (() => void) | undefined;
     click?.();
     expect(sent).toEqual(["inspect"]);
+    // the inbox is the next free number, and 1-3 keep what they meant
+    const inbox = submenu.find((i) => i.label === "Inbox");
+    expect(inbox?.accelerator).toBe("CmdOrCtrl+4");
+    (inbox?.click as (() => void) | undefined)?.();
+    expect(sent).toEqual(["inspect", "scope-inbox"]);
   });
 });

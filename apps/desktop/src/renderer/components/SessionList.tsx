@@ -1,6 +1,6 @@
-import { formatDuration, formatRelativeTime, type LiveStatus } from "@grove/core/pure";
+import { formatDuration, formatRelativeTime, type LiveStatus, toolLabel } from "@grove/core/pure";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
 import { backgroundTooltip, interruptedTooltip } from "../logic/background.ts";
@@ -11,6 +11,8 @@ import { cx, Highlighted, Icon, Mono } from "./ui.tsx";
 
 const ROW = 56;
 const HEADER = 30;
+/** an inbox row says what it is waiting for, so it has a line more than a list row */
+const INBOX_ROW = 88;
 
 export function optionId(key: SessionKey): string {
   let h = 0;
@@ -327,6 +329,145 @@ const AgentRowView = memo(function AgentRowView(p: {
   );
 });
 
+/** what the inbox shows for a session that stopped on words, when the hook's copy was cut */
+const lastWords = new Map<string, string | null>();
+
+/** what a session is waiting on, in the words the inbox has room for */
+function useAsk(row: SessionRow): { tool?: string; text: string } {
+  const live = row.live;
+  const cacheKey = `${row.key}\0${live?.at}`;
+  const [fetched, setFetched] = useState<string | null | undefined>(lastWords.get(cacheKey));
+  const wants = live?.state === "waiting" && !live.question && !live.source;
+  useEffect(() => {
+    if (!wants || lastWords.has(cacheKey)) return;
+    let cancelled = false;
+    void window.grove
+      .lastWords(row.key)
+      .then((said) => {
+        lastWords.set(cacheKey, said);
+        if (!cancelled) setFetched(said);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [wants, cacheKey, row.key]);
+  if (!live) return { text: "" };
+  if (live.source === "agents") {
+    return { text: `Blocked in the background${live.detail ? ` · ${live.detail}` : ""}` };
+  }
+  if (live.state === "permission") {
+    // a tool and what it would act on, as a step line says it
+    if (live.detail && live.target) return { tool: toolLabel(live.detail), text: live.target };
+    return { text: live.detail ?? "Waiting for permission" };
+  }
+  if (live.state === "failed") return { text: live.detail ?? "Stopped on an API error" };
+  return { text: live.question ?? fetched ?? live.detail ?? "Finished its turn" };
+}
+
+/**
+ * a session asking for someone, in the Inbox: what it is waiting on, and both ways out always in
+ * sight - a click reads it in the pane, the button goes to answer it
+ */
+const InboxRowView = memo(function InboxRowView(p: {
+  row: SessionRow;
+  tokens: readonly string[];
+  active: boolean;
+  now: number;
+  index: number;
+  total: number;
+  openLabel: string;
+  onSelect: (key: SessionKey) => void;
+  onOpen: (key: SessionKey) => void;
+  onMenu: (key: SessionKey, el: HTMLElement) => void;
+}) {
+  const { row } = p;
+  const ask = useAsk(row);
+  const agent = row.live?.agentId ? row.agents?.find((a) => a.id === row.live?.agentId) : undefined;
+  return (
+    <div
+      id={optionId(row.key)}
+      role="option"
+      aria-selected={p.active}
+      aria-posinset={p.index + 1}
+      aria-setsize={p.total}
+      data-testid="inbox-row"
+      data-state={row.live?.state}
+      data-active={p.active || undefined}
+      onClick={(e) => {
+        if (e.detail < 2) p.onSelect(row.key);
+      }}
+      onDoubleClick={() => p.onOpen(row.key)}
+      onKeyDown={() => {}}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        p.onMenu(row.key, e.currentTarget);
+      }}
+      className={cx(
+        "fade @container mx-2 flex h-[80px] flex-col justify-center gap-0.5 rounded-md px-3",
+        p.active ? "bg-active" : "hover:bg-raised",
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">
+          {row.title ? (
+            <Highlighted text={row.title} tokens={p.tokens} />
+          ) : (
+            <span className="text-fg-3">Untitled session</span>
+          )}
+        </span>
+        {row.live && <LiveBadge live={row.live} />}
+        <span
+          className="shrink-0 text-sm tabular-nums text-fg-3"
+          title={row.live ? `Waiting since ${new Date(row.live.at).toLocaleString()}` : undefined}
+          data-testid="inbox-waited"
+        >
+          {row.live ? formatDuration(Math.max(0, p.now - row.live.at)) : ""}
+        </span>
+        <button
+          type="button"
+          tabIndex={-1}
+          data-testid="inbox-open"
+          onClick={(e) => {
+            e.stopPropagation();
+            p.onOpen(row.key);
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+          className="no-drag fade h-6 shrink-0 rounded-md border border-line-strong px-2 text-sm text-fg-2 hover:bg-raised hover:text-fg"
+        >
+          {p.openLabel}
+        </button>
+      </div>
+      <div className="flex items-end gap-3 text-sm">
+        <p
+          className="line-clamp-2 min-w-0 flex-1 text-fg-2"
+          data-testid="inbox-ask"
+          title={ask.text}
+        >
+          {agent && <span className="text-fg-3">{agentName(agent)} · </span>}
+          {ask.tool && <Mono className="mr-2 text-fg-3">{ask.tool}</Mono>}
+          <Highlighted text={ask.text} tokens={p.tokens} />
+        </p>
+        <span className="flex shrink-0 items-baseline gap-2.5 text-fg-3">
+          {row.gitBranch && (
+            <span className="flex max-w-40 items-center gap-1 self-center @max-lg:hidden">
+              <Icon name="branch" size={11} className="text-fg-4" />
+              <Mono className="truncate">{row.gitBranch}</Mono>
+            </span>
+          )}
+          {row.comboName ? (
+            <span className="max-w-40 truncate text-fg-2">{row.comboName}</span>
+          ) : (
+            <Mono className="max-w-40 truncate" title={row.cwd}>
+              {row.cwdBase ?? row.projectLabel}
+            </Mono>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+});
+
 export function SessionList({
   items,
   tokens,
@@ -340,6 +481,7 @@ export function SessionList({
   onMenu,
   onInspect,
   onPageSize,
+  editorLabel,
 }: {
   items: ListItem[];
   tokens: readonly string[];
@@ -353,12 +495,18 @@ export function SessionList({
   onMenu: (key: SessionKey, el: HTMLElement) => void;
   onInspect: (key: SessionKey, agent?: string) => void;
   onPageSize: (rows: number) => void;
+  /** where the first way in goes: the inbox's open button says it */
+  editorLabel: string;
 }) {
+  // a session Claude Code's supervisor holds is answered where it runs
+  const openLabelFor = (row: SessionRow) =>
+    row.background?.held ? "Open in Terminal" : `Open in ${editorLabel}`;
   const scroller = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scroller.current,
-    estimateSize: (i) => (items[i]?.type === "header" ? HEADER : ROW),
+    estimateSize: (i) =>
+      items[i]?.type === "header" ? HEADER : items[i]?.type === "inbox" ? INBOX_ROW : ROW,
     getItemKey: (i) => items[i]?.id ?? i,
     overscan: 12,
   });
@@ -433,6 +581,23 @@ export function SessionList({
                       index={positions.get(item.id) ?? 0}
                       total={total}
                       onActivate={onActivate}
+                      onMenu={onMenu}
+                    />
+                  </div>
+                </div>
+              ) : item.type === "inbox" ? (
+                <div className="flex h-full items-center">
+                  <div className="min-w-0 flex-1">
+                    <InboxRowView
+                      row={item.row}
+                      tokens={tokens}
+                      active={item.id === activeKey}
+                      now={now}
+                      index={positions.get(item.id) ?? 0}
+                      total={total}
+                      openLabel={openLabelFor(item.row)}
+                      onSelect={onSelect}
+                      onOpen={onOpen}
                       onMenu={onMenu}
                     />
                   </div>

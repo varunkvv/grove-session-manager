@@ -488,6 +488,11 @@ export interface Api {
   conversationSteps(key: SessionKey, n: number): Promise<DetailStep[] | null>;
   /** one step of the conversation opened, by its tool_use id */
   conversationStep(key: SessionKey, stepId: string): Promise<StepDetail | null>;
+  /**
+   * the last paragraph of the message a session stopped on, read from the end of its transcript:
+   * for an inbox row whose hook's copy was cut short
+   */
+  lastWords(key: SessionKey): Promise<string | null>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
   openExternal(url: string): Promise<Outcome>;
   /** takes sessions out of "needs you" until their next event */
@@ -558,6 +563,7 @@ export const INVOKE_CHANNELS = [
   "followConversation",
   "conversationSteps",
   "conversationStep",
+  "lastWords",
   "agentsSeen",
   "openExternal",
   "markSeen",
@@ -599,6 +605,7 @@ export type MenuCommandId =
   | "scope-combo"
   | "scope-all"
   | "scope-agents"
+  | "scope-inbox"
   | "inspect"
   | "settings";
 

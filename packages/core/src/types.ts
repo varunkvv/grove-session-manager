@@ -228,6 +228,15 @@ export interface LiveStatus {
   turnMs?: number;
   /** the tool asking for permission, or the notification's text */
   detail?: string;
+  /** what the tool asking for permission would act on: the command, the file */
+  target?: string;
+  /**
+   * the end of the message a finished turn ended on: the last paragraph, where the question to
+   * the person almost always is. `detail` keeps its start.
+   */
+  question?: string;
+  /** a subagent raised the permission prompt, not the session itself. only while it asks. */
+  agentId?: string;
   /** someone already looked. a new event clears it. */
   seen?: boolean;
   /**

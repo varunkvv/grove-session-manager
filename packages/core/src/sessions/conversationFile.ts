@@ -104,3 +104,63 @@ export async function saveCachedConversation(
   const entry: CachedConversation = { file: transcript, mark, state };
   await writeFileAtomic(cacheFileFor(dir, transcript), JSON.stringify(entry));
 }
+
+/** how far back from the end the last message is looked for: a message is rarely past this */
+const TAIL_BYTES = 256 << 10;
+
+/**
+ * the text of the last thing the session said, from the end of its transcript: the message a
+ * turn stopped on. for when the Stop hook's copy of it was cut short - never a fold of the file.
+ */
+export async function readLastWords(file: string): Promise<string | null> {
+  let fh: Awaited<ReturnType<typeof open>>;
+  try {
+    fh = await open(file, constants.O_RDONLY);
+  } catch {
+    return null;
+  }
+  try {
+    const size = (await fh.stat()).size;
+    const from = Math.max(0, size - TAIL_BYTES);
+    const buf = Buffer.alloc(size - from);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, from);
+    const lines = buf.toString("utf8", 0, bytesRead).split("\n");
+    // the first line may be cut: it is only read when nothing after it answers
+    let id: string | undefined;
+    const texts: string[] = [];
+    for (let i = lines.length - 1; i >= (from > 0 ? 1 : 0); i--) {
+      const line = lines[i];
+      if (!line?.startsWith("{")) continue;
+      let entry: unknown;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!isObject(entry) || entry.isSidechain === true) continue;
+      if (entry.type === "user" && id) break;
+      if (entry.type !== "assistant" || !isObject(entry.message)) continue;
+      const message = entry.message;
+      if (message.model === "<synthetic>") continue;
+      const mid = typeof message.id === "string" ? message.id : undefined;
+      if (id && mid !== id) break;
+      const content = Array.isArray(message.content) ? message.content : [];
+      const said = content
+        .flatMap((b) =>
+          isObject(b) && b.type === "text" && typeof b.text === "string" ? [b.text] : [],
+        )
+        .join("\n\n");
+      if (!said.trim()) {
+        if (id) continue;
+        // the last response called a tool: it did not stop on words
+        if (content.some((b) => isObject(b) && b.type === "tool_use")) return null;
+        continue;
+      }
+      id ??= mid ?? `line${i}`;
+      texts.unshift(said);
+    }
+    return texts.length ? texts.join("\n\n") : null;
+  } finally {
+    await fh.close();
+  }
+}

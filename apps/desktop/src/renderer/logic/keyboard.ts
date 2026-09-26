@@ -87,6 +87,8 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     if (k === "1") return { type: "scope", scope: "combo" };
     if (k === "2") return { type: "scope", scope: "all" };
     if (k === "3") return { type: "scope", scope: "agents" };
+    // the next free number: 1-3 keep what they meant
+    if (k === "4") return { type: "scope", scope: "inbox" };
     if (k === "n") return { type: "new-combo" };
     if (k === "o") return { type: "open-combo" };
     if (k === "e") return { type: "edit-combo" };
