@@ -20,7 +20,7 @@ import {
   whereHint,
 } from "../logic/newSession.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Field, inputClass, Modal, Segmented } from "./ui.tsx";
+import { Button, cx, Field, inputClass, Modal, Segmented, Select } from "./ui.tsx";
 
 /**
  * one way to start something in a combo: the editor on a new conversation, claude in Terminal, or
@@ -112,19 +112,14 @@ export function NewSessionDialog() {
     testId: string,
   ) => (
     <Field label={label}>
-      <select
-        className={inputClass}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        data-testid={testId}
-      >
+      <Select value={value} onChange={(e) => onChange(e.target.value)} data-testid={testId}>
         <option value="">Default</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </select>
+      </Select>
     </Field>
   );
 
@@ -193,8 +188,7 @@ export function NewSessionDialog() {
           />
         </Field>
         <Field label="Long work" hint={longWorkHint(where, choices.longWork)}>
-          <select
-            className={inputClass}
+          <Select
             value={choices.longWork}
             onChange={(e) => choose({ longWork: e.target.value as NewSessionChoices["longWork"] })}
             data-testid="ns-long-work"
@@ -204,7 +198,7 @@ export function NewSessionDialog() {
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         {cli ? (
           <>

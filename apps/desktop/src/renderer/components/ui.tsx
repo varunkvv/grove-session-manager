@@ -1,5 +1,11 @@
 import { highlightRanges } from "@grove/core/pure";
-import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  useEffect,
+  useRef,
+} from "react";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -404,6 +410,30 @@ export function Field({
 
 export const inputClass =
   "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4 focus:border-fg-3";
+
+/**
+ * a select the way the other fields look. `appearance: none` takes the platform's arrow away, and
+ * without one a select reads as a text field - so it gets the app's own chevron back.
+ */
+export function Select({
+  className,
+  wrapClassName,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { wrapClassName?: string }) {
+  return (
+    <div className={cx("relative", wrapClassName)}>
+      <select className={cx(inputClass, "pr-7", className)} {...rest}>
+        {children}
+      </select>
+      <Icon
+        name="chevron"
+        size={10}
+        className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rotate-90 text-fg-3"
+      />
+    </div>
+  );
+}
 
 /** text with the search's words marked, the same way everywhere a query is shown */
 export function Highlighted({ text, tokens }: { text: string; tokens: readonly string[] }) {

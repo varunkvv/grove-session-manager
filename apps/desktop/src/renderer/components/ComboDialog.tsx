@@ -12,6 +12,7 @@ import {
   Modal,
   Mono,
   Segmented,
+  Select,
   Spinner,
 } from "./ui.tsx";
 
@@ -174,8 +175,9 @@ function FolderCard({
             testId="branch-existing"
           >
             {card.branchKind === "existing" && (
-              <select
-                className={cx(inputClass, "mt-1.5 font-mono text-meta")}
+              <Select
+                wrapClassName="mt-1.5"
+                className="font-mono text-meta"
                 value={card.existingBranch}
                 onChange={(e) => onChange({ existingBranch: e.target.value })}
                 data-testid="existing-branch"
@@ -187,7 +189,7 @@ function FolderCard({
                     {b.checkedOutAt ? `  (checked out at ${b.checkedOutAt})` : ""}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </BranchOption>
         </div>

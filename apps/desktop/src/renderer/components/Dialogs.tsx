@@ -3,7 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
 import { runAction } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Field, Icon, inputClass, Modal, Mono, Spinner, Switch } from "./ui.tsx";
+import {
+  Button,
+  cx,
+  Field,
+  Icon,
+  inputClass,
+  Modal,
+  Mono,
+  Select,
+  Spinner,
+  Switch,
+} from "./ui.tsx";
 
 function baseName(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -497,8 +508,7 @@ export function SettingsDialog() {
           label="Appearance"
           hint="System follows macOS, including when it switches at sunset."
         >
-          <select
-            className={inputClass}
+          <Select
             value={draft.appearance}
             onChange={(e) =>
               setDraft({ ...draft, appearance: e.target.value as AppSettings["appearance"] })
@@ -508,11 +518,10 @@ export function SettingsDialog() {
             <option value="system">System</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Editor">
-          <select
-            className={inputClass}
+          <Select
             value={draft.editor}
             onChange={(e) =>
               setDraft({ ...draft, editor: e.target.value as AppSettings["editor"] })
@@ -521,7 +530,7 @@ export function SettingsDialog() {
           >
             <option value="vscode">VS Code</option>
             <option value="cursor">Cursor</option>
-          </select>
+          </Select>
         </Field>
         <Field
           label="Editor command"
