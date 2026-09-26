@@ -246,6 +246,7 @@ async function start(): Promise<void> {
   win = await createMainWindow({
     preload: preloadFile,
     stateFile: path.join(electron.app.getPath("userData"), "window-state.json"),
+    fixedSize: !!appEnv.customRoot,
     url: entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance),
   });
   lockDown(win.webContents, (url) => isTrustedUrl(url, appEnv.devServerUrl));

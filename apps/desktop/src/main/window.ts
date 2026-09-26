@@ -6,6 +6,12 @@ export interface MainWindowOptions {
   preload: string;
   stateFile: string;
   url: string;
+  /**
+   * a test root's window keeps the size it asks for, even past the display. a CI runner's screen is
+   * narrower than a laptop's, and macOS would shrink the window to it - then the pane covers the
+   * list there and sits beside it here, and the same test means two different things
+   */
+  fixedSize?: boolean;
 }
 
 /** --color-canvas from app.css, in both appearances. the window is painted before the page loads. */
@@ -27,12 +33,13 @@ export async function createMainWindow(o: MainWindowOptions): Promise<BrowserWin
       .filter((d) => d.id !== primary.id)
       .map((d) => d.workArea),
   ];
-  const bounds = clampBounds(saved, displays);
+  const bounds = o.fixedSize ? clampBounds(saved, []) : clampBounds(saved, displays);
 
   const win = new electron.BrowserWindow({
     ...bounds,
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
+    ...(o.fixedSize ? { enableLargerThanScreen: true } : {}),
     show: false,
     backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors),
     titleBarStyle: "hiddenInset",

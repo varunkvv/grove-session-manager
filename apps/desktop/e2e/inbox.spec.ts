@@ -177,9 +177,12 @@ test("a notification click lands in grove, on that session, where the question i
   await page.getByTestId("search").fill("replica");
   await app.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.minimize());
   await reveal(SID.turn);
-  expect(
-    await app.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMinimized()),
-  ).toBe(false);
+  // restoring a window is the window server's to finish, not ours - it is not done on return
+  await expect
+    .poll(() =>
+      app.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMinimized()),
+    )
+    .toBe(false);
   await expect(page.getByTestId("scope-inbox")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("search")).toHaveValue("");
   const row = page.getByTestId("inbox-row").filter({ hasText: "Move the export button" });
