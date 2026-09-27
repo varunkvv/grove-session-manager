@@ -160,8 +160,9 @@ is where it gets answered.
 ### What is running inside a session
 
 A session grinding away alone and a session with five agents fanned out look the same from the outside. Rows show
-their subagents - how many, and for the running ones what kind and how long they have been at it. The row's tooltip
-says what each agent was asked to do and the last tool it picked up, and the inspector (below) has the rest.
+their subagents - which are still at it and which are done (`2 running · 3 done`, or `2 running` on a row made narrow
+by the pane), and once they have all finished just how many there were. The row's tooltip says what each agent was
+asked to do and the last tool it picked up, and the inspector (below) has the rest.
 
 It comes from `~/.claude/projects/<slug>/<sessionId>/subagents/`, where each agent writes its own transcript next to an
 `agent-<id>.meta.json` holding the label its parent gave it. Nothing there records when an agent ended, so the exact

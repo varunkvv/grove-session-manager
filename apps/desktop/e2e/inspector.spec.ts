@@ -160,13 +160,24 @@ test("the inspector shows what a session's agents did, and follows the selection
   await expect(pane).toHaveCount(0);
 });
 
-test("the chip and the action menu open it too, and a narrow window gets it over the list", async () => {
-  setup();
+test("the chip says which agents run, and it and the action menu open the pane; a narrow window gets it over the list", async () => {
+  const { cwd } = setup();
+  writeDerive(fx, cwd);
   app = await launchApp(fx);
   const { page } = app;
   const rows = page.getByTestId("session-row");
-  await waitFor(async () => (await rows.count()) === 2);
+  await waitFor(async () => (await rows.count()) === 3);
   hookEvent(fx, FANOUT.session, "UserPromptSubmit", { prompt: "go" });
+
+  // the chip says which are still at it. a session whose agents all finished says how many
+  const chip = (title: string) => rows.filter({ hasText: title }).getByTestId("row-agents");
+  await expect(chip("Database CPU spike").getByTestId("row-agents-wide")).toHaveText(
+    "2 running · 3 done",
+  );
+  await expect(chip("Database CPU spike").getByTestId("row-agents-wide")).toBeVisible();
+  await expect(chip("Derive BDS").getByTestId("row-agents-wide")).toHaveText("5 agents");
+  await expect(chip("Onboarding copy")).toHaveCount(0);
+  await shot(page, "35-agents-chip");
 
   // the menu says which key does the same thing
   await rows.first().click({ button: "right" });
@@ -178,9 +189,14 @@ test("the chip and the action menu open it too, and a narrow window gets it over
   await expect(pane).toHaveCount(0);
 
   // clicking the agents chip is the same as asking for the inspector, not opening the session
-  await rows.first().getByTestId("row-agents").click();
+  await chip("Database CPU spike").click();
   await expect(pane).toBeVisible();
   await expect(page.getByTestId("session-menu")).toHaveCount(0);
+  // with the pane beside it the row is narrow, and keeps the part that changes
+  await expect(chip("Database CPU spike").getByTestId("row-agents-narrow")).toBeVisible();
+  await expect(chip("Database CPU spike").getByTestId("row-agents-narrow")).toHaveText("2 running");
+  await expect(chip("Derive BDS").getByTestId("row-agents-narrow")).toHaveText("5 agents");
+  await shot(page, "35-agents-chip-narrow");
 
   // beside the list when there is room. a CI runner's display can be narrower than the window asks
   // for, and then the overlay is the right answer - so the layout is held to the rule at the width

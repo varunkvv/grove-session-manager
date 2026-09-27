@@ -1,21 +1,28 @@
-import { formatDuration, type SessionAgent } from "@grove/core/pure";
+import type { SessionAgent } from "@grove/core/pure";
 
-/** all a narrow row has room for. the inspector beside it has the rest. */
-export function agentsCount(agents: readonly SessionAgent[]): string {
-  return `${agents.length} agent${agents.length === 1 ? "" : "s"}`;
+function counted(n: number): string {
+  return `${n} agent${n === 1 ? "" : "s"}`;
 }
 
-/** the row has one line, so: how many there are, then the running ones and how long they have been at it. */
-export function agentsChip(agents: readonly SessionAgent[], now: number): string {
+/**
+ * all a narrow row has room for: how many are still running, else how many there were. the
+ * inspector beside it has the rest.
+ */
+export function agentsCount(agents: readonly SessionAgent[]): string {
+  const running = agents.filter((a) => a.state === "running").length;
+  return running > 0 ? `${running} running` : counted(agents.length);
+}
+
+/**
+ * the row has one line, so the one thing worth saying about its agents: which are still at it and
+ * which are done - `2 running · 3 done`. once they have all finished, only how many there were.
+ */
+export function agentsChip(agents: readonly SessionAgent[]): string {
   if (agents.length === 0) return "";
-  const running = agents.filter((a) => a.state === "running");
-  const count = `${agents.length} agent${agents.length === 1 ? "" : "s"}`;
-  const shown = running
-    .slice(0, 2)
-    .map((a) => `${a.agentType} ${formatDuration(Math.max(0, now - a.startedAt))}`);
-  const more = running.length - shown.length;
-  if (more > 0) shown.push(`+${more}`);
-  return shown.length ? `${count} · ${shown.join(" · ")}` : count;
+  const running = agents.filter((a) => a.state === "running").length;
+  if (running === 0) return counted(agents.length);
+  const done = agents.length - running;
+  return done > 0 ? `${running} running · ${done} done` : `${running} running`;
 }
 
 /** everything the chip had no room for: what each agent was asked to do, and what it did last */

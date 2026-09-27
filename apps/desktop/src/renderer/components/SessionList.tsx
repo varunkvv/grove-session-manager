@@ -227,8 +227,12 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
               }}
               onDoubleClick={(e) => e.stopPropagation()}
             >
-              <span className="@max-xl:hidden">{agentsChip(row.agents, p.now)}</span>
-              <span className="hidden @max-xl:inline">{agentsCount(row.agents)}</span>
+              <span className="@max-xl:hidden" data-testid="row-agents-wide">
+                {agentsChip(row.agents)}
+              </span>
+              <span className="hidden @max-xl:inline" data-testid="row-agents-narrow">
+                {agentsCount(row.agents)}
+              </span>
             </button>
           )}
           {row.usage && row.usage.length > 0 && (

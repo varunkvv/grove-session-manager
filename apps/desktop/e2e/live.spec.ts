@@ -84,9 +84,10 @@ test("a live session says what is running inside it", async () => {
   hookEvent(SID.a, "SubagentStart", { agent_id: "f00d", agent_type: "Explore" });
 
   const chip = rows.first().getByTestId("row-agents");
-  await expect(chip).toContainText("1 agent");
-  await expect(chip).toContainText("Explore");
-  // the row has one line, so what each agent was asked and what it last picked up sit in the tooltip
+  // the chip says it is still at it
+  await expect(chip).toHaveText("1 running", { useInnerText: true });
+  // the row has one line, so what kind each agent is, what it was asked and what it last picked
+  // up sit in the tooltip
   await expect(chip).toHaveAttribute("title", /Explore: Survey the repo/);
   await expect(chip).toHaveAttribute("title", /last tool: Grep/);
   await page.screenshot({
@@ -98,7 +99,7 @@ test("a live session says what is running inside it", async () => {
   await expect(rows.first().getByTestId("live-badge")).toHaveText("Your turn");
   // your turn is asking too: the same pill, not a quieter word
   await expect(rows.first().getByTestId("live-badge")).toHaveAttribute("data-needs-you", "true");
-  await expect(chip).toContainText("1 agent");
+  await expect(chip).toHaveText("1 running", { useInnerText: true });
 });
 
 test("a session nobody is running still says how many agents it had", async () => {
