@@ -89,8 +89,10 @@ export function fanOut(
   mainRunning = false,
 ): FanOut {
   const picture = agentsFanOut(agents, inspection, now);
-  const spans = inspection?.main?.spans;
-  if (!spans?.length || picture.bars.length === 0) return picture;
+  if (picture.bars.length === 0) return picture;
+  // the lane is there from the first frame, empty until the turns are read: drawing it only once
+  // they arrive grew the picture and pushed the agent list down under a click already on its way
+  const spans = inspection?.main?.spans ?? [];
   const span = Math.max(1000, picture.end - picture.start);
   const segments = spans.flatMap(([s, e], i) => {
     const end = mainRunning && i === spans.length - 1 ? now : e;

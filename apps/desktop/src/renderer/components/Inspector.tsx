@@ -979,10 +979,13 @@ function MainRowView({
         ) : null}
       </div>
       <div className="truncate text-sm text-fg-3">{main ? mainMeta(main) : "main"}</div>
-      {line && (
+      {line ? (
         <div className="truncate text-sm text-fg-4" data-testid="agent-line" title={line}>
           {line}
         </div>
+      ) : (
+        // its line is on the way: the row keeps the room, so the rows under it do not jump
+        !main && <Pending />
       )}
     </div>
   );
@@ -1037,7 +1040,7 @@ function AgentRowView({
         <AgentState {...state} />
       </div>
       <div className="truncate text-sm text-fg-3">{agentMeta(agent, stats)}</div>
-      {line && (
+      {line ? (
         <div
           // the word above carries the colour. the message under it only reads a step louder
           className={cx("truncate text-sm", line.tone === "error" ? "text-fg-3" : "text-fg-4")}
@@ -1046,7 +1049,18 @@ function AgentRowView({
         >
           {line.text}
         </div>
+      ) : (
+        !inspection && <Pending />
       )}
+    </div>
+  );
+}
+
+/** a row's third line before the transcript has been read: the same height, nothing in it */
+function Pending() {
+  return (
+    <div className="text-sm" aria-hidden>
+      {" "}
     </div>
   );
 }

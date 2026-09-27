@@ -320,4 +320,13 @@ describe("the session's own conversation, beside its agents", () => {
     expect(live.main?.segments.at(-1)).toEqual({ left: 35 / 45, width: 10 / 45 });
     expect(live.main?.running).toBe(true);
   });
+
+  it("keeps its lane from the first frame, so the list under the picture never moves", () => {
+    const one = agent("a", { startedAt: NOW - 45 * MIN, lastActivityAt: NOW - 20 * MIN });
+    const before = fanOut([one], inspection({}), NOW);
+    const after = fanOut([one], { ...inspection({}), main }, NOW);
+    expect(before.main?.segments).toEqual([]);
+    expect(before.lanes).toBe(after.lanes);
+    expect(fanOut([], { ...inspection({}), main }, NOW).main).toBeUndefined();
+  });
 });
