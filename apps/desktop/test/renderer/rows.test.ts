@@ -1,5 +1,6 @@
 import type { SessionAgent } from "@grove/core/pure";
 import { describe, expect, it } from "vitest";
+import { agentSecondLine } from "../../src/renderer/logic/inspector.ts";
 import {
   agentIdOf,
   agentKey,
@@ -329,16 +330,113 @@ describe("the Agents scope", () => {
     }),
   ];
 
-  it("lists every agent, running first and newest started first, then by day", () => {
+  /** the list as text: `[header]`, `main:<title>` for a tree's head, an agent's id under it */
+  const shape = (m: ReturnType<typeof buildList>) =>
+    m.items.map((i) =>
+      i.type === "header"
+        ? `[${i.label}]`
+        : i.type === "main"
+          ? `main:${i.row.title}`
+          : i.type === "agent"
+            ? `  ${i.agent.id}${i.last ? "." : ""}`
+            : "?",
+    );
+
+  it("one tree per session: its conversation heads it, running agents first, then finished", () => {
     const m = buildList(withAgents, { scope: "agents", combo: null, query: "", now: NOW });
-    expect(
-      m.items.map((i) =>
-        i.type === "header" ? `[${i.label}]` : i.type === "agent" ? i.agent.id : "?",
-      ),
-    ).toEqual([`[${RUNNING}]`, "b1", "a2", "[Today]", "a1", "[Yesterday]", "b2"]);
+    // both trees have something running. the one whose newest run started last comes first. the
+    // rail stops at each tree's last row
+    expect(shape(m)).toEqual([
+      `[${RUNNING}]`,
+      "main:Webhook retries",
+      "  b1",
+      "  b2.",
+      "main:Postgres CPU spike",
+      "  a2",
+      "  a1.",
+    ]);
     // the archive's rule holds: its agents are hidden, and counted
     expect(m.archivedHidden).toBe(1);
-    expect(m.keys).toHaveLength(4);
+    // every row is a stop, the heads too: a head opens its conversation
+    expect(m.keys).toHaveLength(6);
+    expect(agentIdOf(m.keys[0] ?? "")).toBe(MAIN_AGENT);
+    expect(m.firstMatch).toBeUndefined();
+  });
+
+  it("a finished tree sits under the day it last moved, its agents or itself, once", () => {
+    const list = [
+      // its agents ran two days ago, but the conversation went on this morning: today
+      row("/p/on.jsonl", {
+        title: "Went on talking",
+        activityMs: NOW - 2 * H,
+        agents: [
+          agent("o1", { lastActivityAt: NOW - 50 * H }),
+          agent("o2", { lastActivityAt: NOW - 49 * H }),
+        ],
+      }),
+      // quiet since its agent finished yesterday
+      row("/p/y.jsonl", {
+        title: "Yesterday's fan-out",
+        activityMs: NOW - 30 * H,
+        agents: [agent("y1", { lastActivityAt: NOW - 26 * H })],
+      }),
+      // an agent still running puts the whole tree under Running, finished ones and all
+      row("/p/bg.jsonl", {
+        title: "Background work",
+        activityMs: NOW - 3 * H,
+        agents: [
+          agent("g1", { lastActivityAt: NOW - 3 * H }),
+          agent("g2", { state: "running", startedAt: NOW - 20 * 60_000 }),
+        ],
+      }),
+    ];
+    const m = buildList(list, { scope: "agents", combo: null, query: "", now: NOW });
+    expect(shape(m)).toEqual([
+      `[${RUNNING}]`,
+      "main:Background work",
+      "  g2",
+      "  g1.",
+      "[Today]",
+      "main:Went on talking",
+      "  o2",
+      "  o1.",
+      "[Yesterday]",
+      "main:Yesterday's fan-out",
+      "  y1.",
+    ]);
+    // the head's time is when the tree last moved
+    expect(m.items.find((i) => i.type === "main" && i.row.key === "/p/y.jsonl")).toMatchObject({
+      at: NOW - 26 * H,
+    });
+  });
+
+  it("a search keeps a found agent's head, shows a head found alone, and lands on what it found", () => {
+    const find = (query: string) =>
+      buildList(withAgents, { scope: "agents", combo: null, query, now: NOW });
+    // the head says whose agent it is, even though it did not match
+    const replica = find("replica");
+    expect(shape(replica)).toEqual([`[${RUNNING}]`, "main:Postgres CPU spike", "  a2."]);
+    // the agent is the answer, so the selection starts there and not on its head
+    expect(replica.firstMatch).toBe(agentKey("/p/a.jsonl", "a2"));
+    expect(nextActiveKey([], replica.keys, null, true, replica.firstMatch)).toBe(
+      agentKey("/p/a.jsonl", "a2"),
+    );
+    // a head that matches with no agent that does shows alone, and is itself what was found
+    const main = find("main");
+    expect(shape(main)).toEqual([
+      `[${RUNNING}]`,
+      "main:Webhook retries",
+      "main:Postgres CPU spike",
+    ]);
+    expect(main.firstMatch).toBeUndefined();
+    // the session's words find the head and every agent in it
+    expect(shape(find("webhook"))).toEqual([
+      `[${RUNNING}]`,
+      "main:Webhook retries",
+      "  b1",
+      "  b2.",
+    ]);
+    expect(shape(find("old is:archived"))).toEqual(["[Today]", "main:Put away", "  d1."]);
   });
 
   it("an agent's key names its session and itself, and no path can be mistaken for one", () => {
@@ -348,7 +446,10 @@ describe("the Agents scope", () => {
     expect(sessionKeyOf("/p/a.jsonl")).toBe("/p/a.jsonl");
     expect(agentIdOf("/p/a.jsonl")).toBeNull();
     const m = buildList(withAgents, { scope: "agents", combo: null, query: "", now: NOW });
-    expect(m.keys[0]).toBe(agentKey("/p/b.jsonl", "b1"));
+    expect(m.keys.slice(0, 2)).toEqual([
+      agentKey("/p/b.jsonl", MAIN_AGENT),
+      agentKey("/p/b.jsonl", "b1"),
+    ]);
   });
 
   it("a search finds agents by what they were for, what they were asked, and their session", () => {
@@ -360,6 +461,22 @@ describe("the Agents scope", () => {
     expect(find("webhook")).toEqual(["b1", "b2"]);
     expect(find("review diff")).toEqual(["b2"]);
     expect(find("old is:archived")).toEqual(["d1"]);
+  });
+
+  it("an agent's second line is its kind and what it is doing or found, not its session", () => {
+    expect(agentSecondLine(agent("r", { state: "running", summary: "reading the queue" }))).toBe(
+      "Explore · reading the queue",
+    );
+    // a bare tool name says less than it seems to: just the kind
+    expect(agentSecondLine(agent("r", { state: "running", lastTool: "Grep" }))).toBe("Explore");
+    expect(agentSecondLine(agent("d", { found: "found the lease bug" }))).toBe(
+      "Explore · found the lease bug",
+    );
+    expect(agentSecondLine(agent("w", { agentType: "workflow-subagent" }))).toBe("workflow");
+    // found by what it said: that is the line worth reading
+    expect(agentSecondLine(agent("d", { found: "x" }), "…the lease expires…")).toBe(
+      "Explore · …the lease expires…",
+    );
   });
 });
 
@@ -390,7 +507,7 @@ describe("a running session among the agents at work", () => {
     row("/p/away.jsonl", { title: "Archived and busy", archived: true, live: running(NOW) }),
   ];
 
-  it("its own conversation shows under Running, newest first with the agents; a finished one does not", () => {
+  it("heads its own tree under Running, alone when it sent nothing out; a finished one with none is not here", () => {
     const m = buildList(list, { scope: "agents", combo: null, query: "", now: NOW });
     expect(
       m.items.map((i) =>
@@ -402,7 +519,7 @@ describe("a running session among the agents at work", () => {
               ? i.agent.id
               : "?",
       ),
-    ).toEqual(["[Running]", "main:No agents, but working", "x1", "main:Tidy the logs"]);
+    ).toEqual(["[Running]", "main:No agents, but working", "main:Tidy the logs", "x1"]);
     expect(agentIdOf(m.keys[0] ?? "")).toBe(MAIN_AGENT);
     expect(sessionKeyOf(m.keys[0] ?? "")).toBe("/p/solo.jsonl");
   });

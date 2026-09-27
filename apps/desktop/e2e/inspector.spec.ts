@@ -373,7 +373,7 @@ test("a running agent's steps arrive as it writes them, and scrolling up pauses 
   await expect(pane.getByTestId("jump-live")).toHaveCount(0);
 });
 
-test("the Agents scope lists every agent, running first, and selecting one opens it", async () => {
+test("the Agents scope is one tree per session, running first, and selecting a row opens it", async () => {
   const { cwd } = setup();
   writeDerive(fx, cwd);
   app = await launchApp(fx);
@@ -388,27 +388,54 @@ test("the Agents scope lists every agent, running first, and selecting one opens
   await page.keyboard.press("Meta+3");
   await expect(page.getByTestId("scope-agents")).toHaveAttribute("aria-checked", "true");
   const agents = page.getByTestId("agent-list-row");
-  await expect(agents).toHaveCount(11);
-  // what is working right now comes first, newest started on top: the session's own turn began
-  // with the prompt just now, then its two agents still running
+  // two sessions, each heading its own agents: 2 heads and 10 agents. the one without agents,
+  // not running, is not here - the Sessions scope has it
+  await expect(agents).toHaveCount(12);
+  // what is working right now comes first: the session in the middle of a turn heads its tree,
+  // its two agents still running under it, newest started first, then the ones that finished
   await expect(agents.nth(0)).toHaveAttribute("data-main", "true");
-  await expect(agents.nth(0)).toContainText("Main conversation");
+  await expect(agents.nth(0)).toContainText("Database CPU spike during the nightly job");
+  await expect(agents.nth(0).getByTestId("agent-list-second")).toHaveText("main · platform");
+  await expect(agents.nth(0).getByTestId("agent-state")).toHaveText(/^Running \d+s$/);
   await expect(agents.nth(1)).toHaveAttribute("data-state", "running");
   await expect(agents.nth(1)).toContainText("Plan the index change");
+  await expect(agents.nth(1).getByTestId("agent-state")).toHaveText(/^Running \d+m$/);
   await expect(agents.nth(2)).toContainText("Reproduce the spike against a replica");
   await expect(agents.nth(3)).toHaveAttribute("data-state", "done");
-  // each says which session it ran in
-  await expect(agents.nth(1)).toContainText("Database CPU spike during the nightly job");
+  await expect(agents.nth(3).getByTestId("agent-state")).toHaveText(/^Done \d+(s|m)$/);
+  // an agent's second line is its kind and what it is doing: its head already says whose it is
+  await expect(agents.nth(1).getByTestId("agent-list-second")).toHaveText(/^Plan( · |$)/);
+  await expect(agents.nth(1)).not.toContainText("Database CPU spike");
+  // the finished session is one tree under its day, listed once
+  await expect(agents.nth(6)).toHaveAttribute("data-main", "true");
+  await expect(agents.nth(6)).toContainText("Derive BDS table names instead of accepting them");
+  await expect(agents.nth(6)).toContainText("ago");
+  await expect(
+    agents.filter({ hasText: "Derive BDS table names instead of accepting them" }),
+  ).toHaveCount(1);
   // a workflow's agent has no label: the scan reads the start of its prompt instead
   await expect(
     agents.filter({ hasText: "You are implementing an approved plan in the kirby repo." }),
   ).toHaveCount(1);
+  // an agent sits a step in from its head, on the rail that runs down from under the head's title
+  const list = page.getByTestId("session-scroller");
+  await expect(list.getByTestId("tree-rail")).toHaveCount(10);
+  const headBox = await agents.nth(0).boundingBox();
+  const childBox = await agents.nth(1).boundingBox();
+  expect((childBox?.x ?? 0) - (headBox?.x ?? 0)).toBe(18);
+  // the count says agents, not rows
+  await expect(page.getByTestId("result-count")).toHaveText("10 agents");
 
-  // selecting a row opens the pane on it, and it follows the selection: the session's own row
-  // is its conversation
+  // selecting a row opens the pane on it, and it follows the selection: a head is its session's
+  // conversation
   const pane = page.getByTestId("inspector");
   await expect(pane).toHaveAttribute("data-view", "conversation");
   await expect(pane.getByTestId("conversation")).toContainText("the primary is pinned");
+  // the whole list, with the pane out of the way
+  await page.getByTestId("inspector-close").click();
+  await expect(pane).toHaveCount(0);
+  await shot(page, "22-agents-scope-list");
+  await page.getByTestId("search").focus();
   await page.keyboard.press("ArrowDown");
   await expect(pane.getByTestId("agent-title")).toHaveText("Plan the index change");
   await expect(pane.getByTestId("inspector-title")).toHaveText(
@@ -424,10 +451,13 @@ test("the Agents scope lists every agent, running first, and selecting one opens
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByTestId("search")).toBeFocused();
 
-  // the search narrows agents by what they were for, and by their session
+  // the search narrows agents by what they were for, and by their session. a found agent keeps its
+  // head, and the selection lands on the agent - the answer - not on the head
   await page.keyboard.type("writer");
-  await expect(agents).toHaveCount(1);
-  await expect(agents.first()).toContainText("Find every writer of big_query_table_name");
+  await expect(agents).toHaveCount(2);
+  await expect(agents.nth(0)).toHaveAttribute("data-main", "true");
+  await expect(agents.nth(1)).toContainText("Find every writer of big_query_table_name");
+  await expect(agents.nth(1)).toHaveAttribute("data-active", "true");
   await expect(pane.getByTestId("agent-title")).toHaveText(
     "Find every writer of big_query_table_name",
   );
@@ -473,12 +503,14 @@ test("search reaches what agents said, and opens the agent at the step that said
   await page.getByTestId("search").fill("918273");
   await expect(page.getByTestId("list-empty")).toBeVisible();
 
-  // the Agents scope finds the agent itself, and says what it said
+  // the Agents scope finds the agent itself under its session, and says what it said
   await page.keyboard.press("Meta+3");
   await page.getByTestId("search").fill("local database");
   const agents = page.getByTestId("agent-list-row");
-  await expect(agents).toHaveCount(1);
-  await expect(agents.first().getByTestId("agent-list-second")).toContainText("No local database");
+  await expect(agents).toHaveCount(2);
+  await expect(agents.nth(0)).toHaveAttribute("data-main", "true");
+  await expect(agents.nth(1).getByTestId("agent-list-second")).toContainText("No local database");
+  await expect(agents.nth(1)).toHaveAttribute("data-active", "true");
 });
 
 test("a finished agent someone looked at before keeps the line it was given, for nothing", async () => {

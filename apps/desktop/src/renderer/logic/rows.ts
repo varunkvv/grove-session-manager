@@ -31,6 +31,7 @@ export type ListItem =
       /** it sits in the band behind what needs you, the last one rounding it off */
       band?: "in" | "last";
     }
+  /** an agent in the Agents scope, under its session's own conversation */
   | {
       type: "agent";
       id: string;
@@ -38,11 +39,19 @@ export type ListItem =
       agent: SessionAgent;
       /** what it said that matched, when its labels did not */
       match?: string;
+      /** the last row of its tree: the rail stops here */
+      last: boolean;
     }
   /** a session asking for someone, in the Inbox: taller, and saying what it asks */
   | { type: "inbox"; id: SessionKey; row: SessionRow }
-  /** a running session's own conversation, among the agents at work */
-  | { type: "main"; id: string; row: SessionRow };
+  /** a session's own conversation, heading the tree of its agents in the Agents scope */
+  | {
+      type: "main";
+      id: string;
+      row: SessionRow;
+      /** its newest activity, agents' included: when the tree last moved */
+      at: number;
+    };
 
 /**
  * an agent's row in the Agents scope. the list, the keyboard and the active row all work on keys,
@@ -80,6 +89,11 @@ export interface ListModel {
   archivedHidden: number;
   /** `is:archived` was typed, so the archive is what is on screen */
   archivedOnly: boolean;
+  /**
+   * the first row a search really found, when it is not the first row: in the Agents scope a
+   * tree's head is on screen for the agent under it that matched, and that agent is the answer
+   */
+  firstMatch?: SessionKey;
 }
 
 export const NEEDS_YOU = "Needs you";
@@ -238,83 +252,120 @@ function agentMatches(a: SessionAgent, r: SessionRow, tokens: readonly string[])
 }
 
 /**
- * every agent on the machine, in one list: the running ones first, then by the day they last did
- * something, like sessions. across every session - an agent is found by what it did, not by
- * where it ran. the archive's rule holds here too: its agents are hidden, and counted.
+ * every agent on the machine, as one tree per session: its own conversation heads it, its agents
+ * under it, running first then finished, newest first each. a tree sits under Running while
+ * anything in it runs, otherwise under the day it last moved - a session is listed once. across
+ * every session: an agent is found by what it did, not by where it ran. a search keeps a found
+ * agent's head on screen, since the head says whose it is. the archive's rule holds here too: its
+ * agents are hidden, and counted.
  */
 export function buildAgentList(
   rows: readonly SessionRow[],
   opts: { query: string; now: number; deep?: ReadonlyMap<SessionKey, SearchHit> },
 ): ListModel {
   const { tokens, archivedOnly } = splitQuery(opts.query);
-  const found: Array<{ r: SessionRow; a: SessionAgent; match?: string }> = [];
+  type Kid = { a: SessionAgent; match?: string };
+  type Tree = {
+    r: SessionRow;
+    kids: Kid[];
+    /** the head itself matched the search, not only an agent under it */
+    head: boolean;
+    running: boolean;
+    /** the newest start of anything running in it: running trees sort by this, stable while they write */
+    start: number;
+    /** its newest activity: finished trees sort and group by this */
+    at: number;
+  };
+  const trees: Tree[] = [];
   let archivedHidden = 0;
   for (const r of rows) {
+    const agents = r.agents ?? [];
+    const busy = r.live?.state === "running";
+    // a session with no agents is here only while it works: Running answers what is working now
+    if (agents.length === 0 && !busy) continue;
     // what the agents said, from the search in main: an agent is found by what it found
     const said = new Map((opts.deep?.get(r.key)?.agents ?? []).map((h) => [h.id, h.snippet]));
-    for (const a of r.agents ?? []) {
+    const kids: Kid[] = [];
+    for (const a of agents) {
       const labelled = tokens.length === 0 || agentMatches(a, r, tokens);
       const match = labelled ? undefined : said.get(a.id);
       if (!labelled && match === undefined) continue;
-      if (archivedOnly) {
-        if (!r.archived) continue;
-      } else if (r.archived) {
-        archivedHidden++;
-        continue;
-      }
-      found.push({ r, a, ...(match !== undefined ? { match } : {}) });
+      kids.push({ a, ...(match !== undefined ? { match } : {}) });
     }
+    const head = tokens.length === 0 || mainMatches(r, tokens);
+    if (kids.length === 0 && !head) continue;
+    if (archivedOnly) {
+      if (!r.archived) continue;
+    } else if (r.archived) {
+      archivedHidden += kids.length;
+      continue;
+    }
+    // the tree's own state, not what the search left of it: a search narrows, it never moves one
+    const starts = agents.filter((a) => a.state === "running").map((a) => a.startedAt);
+    if (busy) starts.push(r.live?.turnStart ?? r.live?.at ?? 0);
+    const running = kids.filter(({ a }) => a.state === "running");
+    const done = kids.filter(({ a }) => a.state !== "running");
+    running.sort((x, y) => y.a.startedAt - x.a.startedAt);
+    done.sort((x, y) => y.a.lastActivityAt - x.a.lastActivityAt);
+    trees.push({
+      r,
+      kids: [...running, ...done],
+      head,
+      running: starts.length > 0,
+      start: Math.max(0, ...starts),
+      at: Math.max(r.activityMs, ...agents.map((a) => a.lastActivityAt)),
+    });
   }
-  const running = found.filter(({ a }) => a.state === "running");
-  const done = found.filter(({ a }) => a.state !== "running");
-  running.sort((x, y) => y.a.startedAt - x.a.startedAt);
-  done.sort((x, y) => y.a.lastActivityAt - x.a.lastActivityAt);
-  // a session at work is working too: "Running" answers what is working right now. a finished
-  // one is not listed - the Sessions scope already has it
-  const mains = rows.filter(
-    (r) =>
-      r.live?.state === "running" &&
-      (archivedOnly ? r.archived : !r.archived) &&
-      (tokens.length === 0 || mainMatches(r, tokens)),
-  );
 
   const items: ListItem[] = [];
   const keys: SessionKey[] = [];
-  const push = ({ r, a, match }: { r: SessionRow; a: SessionAgent; match?: string }) => {
-    const id = agentKey(r.key, a.id);
-    items.push({ type: "agent", id, row: r, agent: a, ...(match !== undefined ? { match } : {}) });
+  let firstMatch: SessionKey | undefined;
+  const push = (t: Tree) => {
+    const id = agentKey(t.r.key, MAIN_AGENT);
+    items.push({ type: "main", id, row: t.r, at: t.at });
     keys.push(id);
+    if (t.head) firstMatch ??= id;
+    t.kids.forEach(({ a, match }, i) => {
+      const kid = agentKey(t.r.key, a.id);
+      items.push({
+        type: "agent",
+        id: kid,
+        row: t.r,
+        agent: a,
+        ...(match !== undefined ? { match } : {}),
+        last: i === t.kids.length - 1,
+      });
+      keys.push(kid);
+      firstMatch ??= kid;
+    });
   };
-  if (running.length > 0 || mains.length > 0) {
+  const running = trees.filter((t) => t.running).sort((x, y) => y.start - x.start);
+  const rest = trees.filter((t) => !t.running).sort((x, y) => y.at - x.at);
+  if (running.length > 0) {
     items.push({ type: "header", id: "h:running", label: RUNNING });
-    // the running ones newest first, sessions and agents alike
-    type Working =
-      | { kind: "agent"; at: number; hit: { r: SessionRow; a: SessionAgent; match?: string } }
-      | { kind: "main"; at: number; r: SessionRow };
-    const both: Working[] = [
-      ...running.map((hit): Working => ({ kind: "agent", at: hit.a.startedAt, hit })),
-      ...mains.map((r): Working => ({ kind: "main", at: r.live?.turnStart ?? r.live?.at ?? 0, r })),
-    ].sort((x, y) => y.at - x.at);
-    for (const x of both) {
-      if (x.kind === "agent") {
-        push(x.hit);
-        continue;
-      }
-      const id = agentKey(x.r.key, MAIN_AGENT);
-      items.push({ type: "main", id, row: x.r });
-      keys.push(id);
-    }
+    for (const t of running) push(t);
   }
   let bucket: DayBucket | null = null;
-  for (const hit of done) {
-    const b = dayBucket(hit.a.lastActivityAt, opts.now);
+  for (const t of rest) {
+    const b = dayBucket(t.at, opts.now);
     if (b !== bucket) {
       bucket = b;
       items.push({ type: "header", id: `h:${b}`, label: b });
     }
-    push(hit);
+    push(t);
   }
-  return { items, keys, tokens, elsewhere: 0, scoped: false, archivedHidden, archivedOnly };
+  return {
+    items,
+    keys,
+    tokens,
+    elsewhere: 0,
+    scoped: false,
+    archivedHidden,
+    archivedOnly,
+    ...(tokens.length > 0 && firstMatch !== undefined && firstMatch !== keys[0]
+      ? { firstMatch }
+      : {}),
+  };
 }
 
 /** how many sessions are asking for someone right now: the Inbox's count */
@@ -353,15 +404,21 @@ export function needsYouKeys(model: ListModel): SessionKey[] {
   );
 }
 
-/** which row is active after the list changed. tracked by key, so live inserts never move it. */
+/**
+ * which row is active after the list changed. tracked by key, so live inserts never move it. a
+ * new query starts from the first row it found - the top, unless the list says otherwise.
+ */
 export function nextActiveKey(
   prevKeys: readonly SessionKey[],
   nextKeys: readonly SessionKey[],
   active: SessionKey | null,
   queryChanged: boolean,
+  firstMatch?: SessionKey,
 ): SessionKey | null {
   if (nextKeys.length === 0) return null;
-  if (queryChanged || active === null) return nextKeys[0] ?? null;
+  if (queryChanged || active === null) {
+    return firstMatch && nextKeys.includes(firstMatch) ? firstMatch : (nextKeys[0] ?? null);
+  }
   if (nextKeys.includes(active)) return active;
   const was = prevKeys.indexOf(active);
   return nextKeys[Math.min(Math.max(was, 0), nextKeys.length - 1)] ?? null;

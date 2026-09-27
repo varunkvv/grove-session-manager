@@ -4,10 +4,10 @@ import { memo, useEffect, useRef, useState } from "react";
 import type { SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { agentsChip, agentsCount, agentsTooltip } from "../logic/agents.ts";
 import { backgroundTooltip, interruptedTooltip } from "../logic/background.ts";
-import { agentName } from "../logic/inspector.ts";
+import { agentName, agentSecondLine, agentStatus } from "../logic/inspector.ts";
 import { type ListItem, NEEDS_YOU, needsYou } from "../logic/rows.ts";
 import { usageChip, usageTooltip } from "../logic/usage.ts";
-import { cx, Highlighted, Icon, Mono, NeedsPill } from "./ui.tsx";
+import { AgentState, cx, Highlighted, Icon, Mono, NeedsPill, TreeRail } from "./ui.tsx";
 
 const ROW = 56;
 const HEADER = 30;
@@ -270,9 +270,16 @@ const SessionRowView = memo(function SessionRowView(p: RowProps) {
   );
 });
 
+/** where a tree's head starts its title: the row's side margin (8) and its padding (12) */
+const RAIL_X = 20;
+/** how far an agent sits in from its session */
+const STEP = 18;
+/** a slot is taller than its row: the last rail stops level with the row's text, not the slot */
+const RAIL_END = (ROW - 52) / 2 + 8;
+
 /**
- * an agent in the Agents scope, in a session row's typography: what it was for and how long ago
- * (or, running, for how long), then the session it ran in and what kind of agent it is.
+ * an agent in the Agents scope, under its session: what it was for and how it stands, then its
+ * kind and what it is doing or found. its session is the head above it, so it does not repeat it.
  */
 const AgentRowView = memo(function AgentRowView(p: {
   item: Extract<ListItem, { type: "agent" }>;
@@ -284,8 +291,8 @@ const AgentRowView = memo(function AgentRowView(p: {
   onActivate: (key: SessionKey, el: HTMLElement) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
 }) {
-  const { agent: a, row } = p.item;
-  const running = a.state === "running";
+  const { agent: a } = p.item;
+  const state = agentStatus(a, undefined, p.now);
   return (
     <div
       id={optionId(p.item.id)}
@@ -311,44 +318,28 @@ const AgentRowView = memo(function AgentRowView(p: {
         <span className="min-w-0 flex-1 truncate font-medium text-fg">
           <Highlighted text={agentName(a)} tokens={p.tokens} />
         </span>
-        {running ? (
-          <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
-            <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
-            {formatDuration(p.now - a.startedAt)}
-          </span>
-        ) : (
-          <span
-            className="shrink-0 text-sm tabular-nums text-fg-3"
-            title={new Date(a.lastActivityAt).toLocaleString()}
-          >
-            {formatRelativeTime(a.lastActivityAt, p.now)}
-          </span>
-        )}
+        <AgentState
+          {...state}
+          title={`${state.status === "running" ? "Started" : "Last active"} ${new Date(
+            state.status === "running" ? a.startedAt : a.lastActivityAt,
+          ).toLocaleString()}`}
+        />
       </div>
-      <div className="flex items-baseline gap-3 text-sm text-fg-3">
-        <span className="min-w-0 flex-1 truncate" data-testid="agent-list-second">
-          {/* found by what it said: that is the line worth reading. its session is in the pane. */}
-          <Highlighted text={p.item.match ?? row.title ?? "Untitled session"} tokens={p.tokens} />
-        </span>
-        <span className="shrink-0 text-fg-4">
-          <Highlighted
-            text={a.agentType === "workflow-subagent" ? "workflow" : a.agentType}
-            tokens={p.tokens}
-          />
-          {!running && ` · ${formatDuration(a.lastActivityAt - a.startedAt)}`}
-        </span>
+      <div className="truncate text-sm text-fg-3" data-testid="agent-list-second">
+        {/* found by what it said: that is the line worth reading */}
+        <Highlighted text={agentSecondLine(a, p.item.match)} tokens={p.tokens} />
       </div>
     </div>
   );
 });
 
 /**
- * a running session's own conversation in the Agents scope, in an agent row's typography: working
- * right now, like the agents under the same header - its session is the second line
+ * a session's own conversation, heading its agents in the Agents scope, in a session row's
+ * typography: its title and how it stands (its turn running, or when the tree last moved), then
+ * that it is the main conversation and where it ran
  */
 const MainListRowView = memo(function MainListRowView(p: {
-  id: string;
-  row: SessionRow;
+  item: Extract<ListItem, { type: "main" }>;
   tokens: readonly string[];
   active: boolean;
   now: number;
@@ -357,24 +348,25 @@ const MainListRowView = memo(function MainListRowView(p: {
   onActivate: (key: SessionKey, el: HTMLElement) => void;
   onMenu: (key: SessionKey, el: HTMLElement) => void;
 }) {
-  const { row } = p;
+  const { row, at } = p.item;
+  const running = row.live?.state === "running";
   const since = row.live?.turnStart ?? row.live?.at;
   return (
     <div
-      id={optionId(p.id)}
+      id={optionId(p.item.id)}
       role="option"
       aria-selected={p.active}
       aria-posinset={p.index + 1}
       aria-setsize={p.total}
       data-testid="agent-list-row"
       data-main
-      data-state="running"
+      data-state={running ? "running" : "done"}
       data-active={p.active || undefined}
-      onClick={(e) => p.onActivate(p.id, e.currentTarget)}
+      onClick={(e) => p.onActivate(p.item.id, e.currentTarget)}
       onKeyDown={() => {}}
       onContextMenu={(e) => {
         e.preventDefault();
-        p.onMenu(p.id, e.currentTarget);
+        p.onMenu(p.item.id, e.currentTarget);
       }}
       className={cx(
         "fade mx-2 flex h-[52px] flex-col justify-center rounded-md px-3",
@@ -382,19 +374,31 @@ const MainListRowView = memo(function MainListRowView(p: {
       )}
     >
       <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 truncate font-medium text-fg">
-          <Highlighted text="Main conversation" tokens={p.tokens} />
+        <span
+          className={cx("min-w-0 flex-1 truncate font-medium", row.title ? "text-fg" : "text-fg-3")}
+        >
+          {row.title ? <Highlighted text={row.title} tokens={p.tokens} /> : "Untitled session"}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
-          <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
-          {since !== undefined ? formatDuration(p.now - since) : ""}
-        </span>
+        {/* its own turn, said like an agent's. idle, when anything in the tree last moved */}
+        {running && since !== undefined ? (
+          <AgentState status="running" word="Running" time={formatDuration(p.now - since)} />
+        ) : (
+          <span
+            className={cx(
+              "shrink-0 text-sm tabular-nums",
+              p.now - at < 60_000 ? "text-fg-2" : "text-fg-3",
+            )}
+            title={new Date(at).toLocaleString()}
+          >
+            {formatRelativeTime(at, p.now)}
+          </span>
+        )}
       </div>
-      <div className="flex items-baseline gap-3 text-sm text-fg-3">
-        <span className="min-w-0 flex-1 truncate" data-testid="agent-list-second">
-          <Highlighted text={row.title ?? "Untitled session"} tokens={p.tokens} />
-        </span>
-        <span className="shrink-0 text-fg-4">main</span>
+      <div className="truncate text-sm text-fg-3" data-testid="agent-list-second">
+        <Highlighted
+          text={`main · ${row.comboName ?? row.cwdBase ?? row.projectLabel}`}
+          tokens={p.tokens}
+        />
       </div>
     </div>
   );
@@ -653,8 +657,10 @@ export function SessionList({
                   {item.label}
                 </div>
               ) : item.type === "agent" ? (
-                <div className="flex h-full items-center">
-                  <div className="min-w-0 flex-1">
+                // under its session's head, on the rail that runs down from it
+                <div className="relative flex h-full items-center">
+                  <TreeRail x={RAIL_X} {...(item.last ? { end: RAIL_END } : {})} />
+                  <div className="min-w-0 flex-1" style={{ marginLeft: STEP }}>
                     <AgentRowView
                       item={item}
                       tokens={tokens}
@@ -671,8 +677,7 @@ export function SessionList({
                 <div className="flex h-full items-center">
                   <div className="min-w-0 flex-1">
                     <MainListRowView
-                      id={item.id}
-                      row={item.row}
+                      item={item}
                       tokens={tokens}
                       active={item.id === activeKey}
                       now={now}

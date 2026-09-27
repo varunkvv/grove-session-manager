@@ -258,12 +258,16 @@ its transcript appended since the last look is read, at most four times a second
 and the list follows the newest one. Scroll up and it stays where you put it, with **Jump to live** to get back. What
 it is doing now stays pinned under its name.
 
-**Agents** (`⌘3`, beside a combo's sessions and all of them) is every agent on the machine in one list: the ones still
-running first, then by the day they last did something, each with the session it ran in under its name. A session in
-the middle of a turn is listed under **Running** too, as its main conversation, so that group answers what is working
-right now; finished sessions are not, the Sessions scope already has them. Selecting one
-opens the inspector on it, so `↑` `↓` walk through what every agent did without opening a single session. A workflow's
-agents carry no label of their own, so they go by the first line of what they were asked.
+**Agents** (`⌘3`, beside a combo's sessions and all of them) is every agent on the machine, one tree per session: the
+session's own conversation heads it (its title, then `main` and where it ran), and its agents sit under it on the same
+hairline rail as the pane - running first, then finished, newest first each - with how each stands in words. A tree
+is under **Running** while its conversation or any of its agents runs, otherwise under the day it last moved, and a
+session is only ever listed once. A session in the middle of a turn with no agents is a tree of one, so Running answers
+what is working right now; finished sessions without agents are not listed, the Sessions scope already has them. Every
+row is a stop: selecting a head opens its conversation, selecting an agent opens it, so `↑` `↓` walk through what
+every agent did without opening a single session. A search keeps a found agent's head on screen, since that says whose
+it is, and lands on the agent that matched. A workflow's agents carry no label of their own, so they go by the first
+line of what they were asked.
 
 What an agent wrote is not trusted: a result quotes web pages and files. It is rendered as markdown without any HTML
 (a `<script>` in a result shows as text), images show their description, and only `http(s)` links open - in your

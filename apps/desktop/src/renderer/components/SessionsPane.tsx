@@ -243,7 +243,9 @@ export function SessionsPane() {
     // a notification landed on a row: the new scope's first row is not the one to show
     const keep = landed.key && model.keys.includes(landed.key) ? landed.key : null;
     landed.key = null;
-    const next = keep ?? nextActiveKey(p.keys, model.keys, useStore.getState().activeKey, reset);
+    const next =
+      keep ??
+      nextActiveKey(p.keys, model.keys, useStore.getState().activeKey, reset, model.firstMatch);
     prev.current = { keys: model.keys, query, scope, combo: selectedCombo };
     if (next !== useStore.getState().activeKey) set({ activeKey: next });
   }, [model, query, scope, selectedCombo, set]);
@@ -290,6 +292,12 @@ export function SessionsPane() {
   const waiting = useMemo(() => inboxCount(sessions), [sessions]);
   const editorLabel = useStore((s) => s.editor?.label ?? "the editor");
   const noun = scope === "agents" ? "agent" : "session";
+  // the Agents scope counts agents: a tree's head is its session, not one more agent
+  const count = useMemo(
+    () =>
+      scope === "agents" ? model.items.filter((i) => i.type === "agent").length : model.keys.length,
+    [scope, model],
+  );
 
   return (
     <section
@@ -373,7 +381,7 @@ export function SessionsPane() {
           aria-live="polite"
           data-testid="result-count"
         >
-          {model.keys.length} {model.keys.length === 1 ? noun : `${noun}s`}
+          {count} {count === 1 ? noun : `${noun}s`}
         </span>
       </header>
       <Banner />

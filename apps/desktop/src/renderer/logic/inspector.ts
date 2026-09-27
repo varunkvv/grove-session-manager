@@ -249,6 +249,17 @@ export function agentName(agent: SessionAgent): string {
   );
 }
 
+/**
+ * an agent's second line in the Agents scope, where its session heads the tree above it: its kind,
+ * then what it is doing or what it found - or what it said that the search found. a bare tool
+ * name is left out: `Plan · Read` reads like two kinds, and the pane has the step with its target
+ */
+export function agentSecondLine(agent: SessionAgent, match?: string): string {
+  const kind = agent.agentType === "workflow-subagent" ? "workflow" : agent.agentType;
+  const said = match ?? (agent.state === "running" ? agent.summary : agent.found);
+  return said ? `${kind} · ${said}` : kind;
+}
+
 /** `Explore · 26 tools · 71k tokens`. a workflow's agents all share one type, so they say their model. */
 export function agentMeta(agent: SessionAgent, stats: AgentStats | undefined): string {
   const kind =
