@@ -478,3 +478,53 @@ export function NeedsPill({
     </span>
   );
 }
+
+/**
+ * how an agent stands, in words, where a row keeps its time: `● Running 8m`, `Done 5m`. running is
+ * the one with a dot, a failed one the only colour (an error is what the accent is for).
+ */
+export function AgentState({
+  status,
+  word,
+  time,
+  title,
+}: {
+  status: "running" | "done" | "failed" | "interrupted";
+  word: string;
+  time?: string;
+  title?: string;
+}) {
+  return (
+    <span
+      data-testid="agent-state"
+      data-status={status}
+      title={title}
+      className={cx(
+        "flex shrink-0 items-center gap-1.5 text-sm tabular-nums",
+        status === "running" ? "text-fg-2" : "text-fg-3",
+      )}
+    >
+      {status === "running" && <span className="live-pulse size-1.5 rounded-full bg-fg-3" />}
+      <span>
+        <span className={cx(status === "failed" && "text-accent" /* an error */)}>{word}</span>
+        {time ? ` ${time}` : ""}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * the tree's one guide: a hairline down the indent, drawn by each row for its own height so a
+ * scrolled or virtualised list never loses a piece. no elbows, no dots - a thread's rail. the
+ * last row of a tree stops it level with its text.
+ */
+export function TreeRail({ x, end }: { x: number; end?: number }) {
+  return (
+    <span
+      aria-hidden
+      data-testid="tree-rail"
+      className="pointer-events-none absolute top-0 w-px bg-line"
+      style={{ left: x, bottom: end ?? 0 }}
+    />
+  );
+}

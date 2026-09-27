@@ -228,11 +228,16 @@ the list instead.
 session's agents did. It follows the selected row like a mail app's reading pane: open it once, then move through the
 list. At the top is one lane per agent, from its start to its end. The axis spans the agents' own window - first start
 to last end - so a session open for two days whose agents ran in a twenty-minute burst does not come out as slivers.
-Under it, one row per agent: what it was for and how long it ran, its type, tool calls and tokens, and what it came
-back with (while it runs, what it is doing). The session itself comes first, as **Main conversation** - its model and
-tool calls, and what it is doing now or the first sentence of its last answer - with its own lane on top of the
-picture, drawn from its turns inside the agents' window, so you can see it working, then waiting while its agents fan
-out. Clicking it goes back to the conversation. The summary line still counts agents only. An agent that died on an API error is the only colour in the pane.
+Under it, the agents as a tree under the conversation that sent them out. The session itself is the root, as **Main
+conversation** - its model and tool calls, and what it is doing now or the first sentence of its last answer - and
+every agent sits under it, indented, on one hairline rail. An agent's own agents sit a step further in, and a
+workflow's agents under its name. Each row says what the agent was for, its type, tool calls and tokens, and what it
+came back with (while it runs, what it is doing). Where its time goes, it says how it stands in words: `● Running 8m`,
+`Done 5m`, `Interrupted 4m`, or `Failed 1m` - an agent that died on an API error is the only colour in the pane. The
+root says `Running` while the session's own turn runs. The summary line counts them the same way (`2 running · 3
+done`, where done is everything not running). The main conversation also has its own lane on top of the picture,
+drawn from its turns inside the agents' window with a hairline under it, so you can see it working, then waiting while
+its agents fan out. Clicking it goes back to the conversation.
 `Tab` moves into the pane and the arrows move there, `Esc` steps back out, and the next `Esc` closes it. A window too
 narrow for both gets the pane over the list instead of a crushed list.
 

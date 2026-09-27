@@ -4,6 +4,7 @@ import {
   agentLine,
   agentList,
   agentMeta,
+  agentStatus,
   agentTitle,
   fanOut,
   LIST_MIN,
@@ -123,8 +124,18 @@ describe("the fan-out", () => {
   });
 });
 
+/** a tree as text: `@main`, then each row at its depth */
+const shape = (items: ReturnType<typeof agentList>) =>
+  items.map((i) =>
+    i.type === "agent"
+      ? `${i.id}:${i.depth}`
+      : i.type === "workflow"
+        ? `[${i.label}]:${i.depth}`
+        : i.id,
+  );
+
 describe("the list of agents", () => {
-  it("in the order they started, an agent's own agents under it", () => {
+  it("a tree under the session's own conversation, in the order they started", () => {
     const items = agentList(
       [
         agent("late", { startedAt: NOW - 5 * MIN }),
@@ -134,12 +145,17 @@ describe("the list of agents", () => {
       ],
       inspection({ child: { parentId: "parent" } }),
     );
-    expect(items.map((i) => (i.type === "agent" ? `${i.id}:${i.depth}` : i.id))).toEqual([
-      "first:0",
-      "parent:0",
-      "child:1",
-      "late:0",
-    ]);
+    // what the session sent out is one step in, an agent's own agents one more
+    expect(shape(items)).toEqual([MAIN_ID, "first:1", "parent:1", "child:2", "late:1"]);
+  });
+
+  it("the root is there before the numbers are: no row moves when they arrive", () => {
+    const agents = [agent("a"), agent("b", { startedAt: NOW - 10 * MIN })];
+    expect(shape(agentList(agents, null))).toEqual([MAIN_ID, "a:1", "b:1"]);
+    expect(shape(agentList(agents, inspection({})))).toEqual([MAIN_ID, "a:1", "b:1"]);
+    // nested, but the parent's transcript never said so: as deep as Claude Code counted
+    expect(shape(agentList([agent("n", { spawnDepth: 2 })], null))).toEqual([MAIN_ID, "n:2"]);
+    expect(agentList([], null)).toEqual([]);
   });
 
   it("a workflow's agents stay together under its name, even when another agent ran between", () => {
@@ -152,9 +168,16 @@ describe("the list of agents", () => {
       ],
       inspection({}, { wf_1: { name: "cdit-1249-derive" } }),
     );
-    expect(
-      items.map((i) => (i.type === "agent" ? i.id : i.type === "workflow" ? `[${i.label}]` : i.id)),
-    ).toEqual(["[cdit-1249-derive]", "w1", "w2", "solo", "[Workflow]", "x1"]);
+    // the header sits in the tree at the depth of its agents, like a day header in a list
+    expect(shape(items)).toEqual([
+      MAIN_ID,
+      "[cdit-1249-derive]:1",
+      "w1:1",
+      "w2:1",
+      "solo:1",
+      "[Workflow]:1",
+      "x1:1",
+    ]);
   });
 
   it("each row says what it was for, how big it got, and what came of it", () => {
@@ -190,15 +213,54 @@ describe("the list of agents", () => {
       text: "API Error: x",
       tone: "error",
     });
-    expect(agentLine(agent("d"), stats({ interrupted: true, outcome: "half" }))?.text).toBe(
-      "Interrupted",
-    );
+    // interrupted: the first line says so. what it was doing then beats its cut-off last words
+    expect(
+      agentLine(
+        agent("d"),
+        stats({ interrupted: true, outcome: "half", lastStep: "Bash pnpm test" }),
+      )?.text,
+    ).toBe("Bash pnpm test");
+    expect(agentLine(agent("d"), stats({ interrupted: true, outcome: "half" }))).toBeNull();
     expect(agentLine(agent("d"), stats({ gone: true }))?.text).toBe(
       "Claude Code deletes transcripts after 30 days",
     );
   });
 
-  it("the session's line adds up time and tokens across its agents", () => {
+  it("every row says how it stands in words: running, done, failed or interrupted", () => {
+    const stats = (s: Partial<AgentStats>): AgentStats => ({
+      id: "x",
+      toolCount: 1,
+      tokens: 1,
+      ...s,
+    });
+    const running = agent("r", { state: "running", startedAt: NOW - 8 * MIN });
+    expect(agentStatus(running, undefined, NOW)).toEqual({
+      status: "running",
+      word: "Running",
+      time: "8m",
+    });
+    // finished: how long it took, from its own transcript's times once they are known
+    expect(agentStatus(agent("d"), undefined, NOW)).toEqual({
+      status: "done",
+      word: "Done",
+      time: "10m",
+    });
+    expect(
+      agentStatus(agent("d"), stats({ startedAt: NOW - 30 * MIN, lastAt: NOW - 25 * MIN }), NOW),
+    ).toMatchObject({ word: "Done", time: "5m" });
+    expect(agentStatus(agent("d"), stats({ error: "API Error: x" }), NOW)).toMatchObject({
+      status: "failed",
+      word: "Failed",
+    });
+    expect(agentStatus(agent("d"), stats({ interrupted: true }), NOW)).toMatchObject({
+      status: "interrupted",
+      word: "Interrupted",
+    });
+    // an error wins over the scan's guess, like the bar's tone: it died, it is not running
+    expect(agentStatus(running, stats({ error: "API Error: x" }), NOW).status).toBe("failed");
+  });
+
+  it("the session's line says how many run and adds up time and tokens across its agents", () => {
     const agents = [agent("a"), agent("b", { state: "running", startedAt: NOW - 4 * MIN })];
     expect(
       sessionAgentSummary(
@@ -206,7 +268,15 @@ describe("the list of agents", () => {
         inspection({ a: { tokens: 800_000 }, b: { tokens: 400_000 } }),
         NOW,
       ),
-    ).toBe("2 agents · 14m of agent time · 1.2M tokens");
+    ).toBe("1 running · 1 done · 14m of agent time · 1.2M tokens");
+    // done is everything that is not running: a failed one counts there, its row says which
+    expect(
+      sessionAgentSummary([...agents, agent("c")], inspection({ c: { error: "API Error" } }), NOW),
+    ).toMatch(/^1 running · 2 done · /);
+    expect(sessionAgentSummary([agents[1] as SessionAgent], null, NOW)).toBe(
+      "1 running · 4m of agent time",
+    );
+    // none running: the count, as it always was
     expect(sessionAgentSummary([agent("a")], null, NOW)).toBe("1 agent · 10m of agent time");
   });
 });
@@ -227,10 +297,9 @@ describe("the session's own conversation, beside its agents", () => {
     ] as Array<[number, number]>,
   };
 
-  it("is the first row, and says what it is doing or what it said last", () => {
+  it("is the root, and says what it is doing or what it said last", () => {
     const items = agentList([agent("a", {})], { ...inspection({}), main });
     expect(items.map((i) => i.id)).toEqual([MAIN_ID, "a"]);
-    expect(agentList([agent("a", {})], inspection({})).map((i) => i.id)).toEqual(["a"]);
     expect(mainMeta(main)).toBe("main · opus 5 · 412 tools");
     expect(mainLine(main, true)).toBe("Bash pnpm test");
     expect(mainLine(main, false)).toBe("Pieces 1-3 are committed.");

@@ -71,7 +71,7 @@ test("the inspector shows what a session's agents did, and follows the selection
   await expect(pane.getByTestId("agent-row")).toHaveCount(5);
   await expect(pane.getByTestId("fan-bar")).toHaveCount(5);
   // the numbers come from each agent's own transcript, a moment after the scan draws the rows
-  await expect(pane.getByTestId("inspector-summary")).toContainText("5 agents");
+  await expect(pane.getByTestId("inspector-summary")).toContainText("2 running · 3 done");
   await expect(pane.getByTestId("inspector-summary")).toContainText("tokens");
   const guide = pane.getByTestId("agent-row").filter({ hasText: "pg_stat_statements" });
   await expect(guide.getByTestId("agent-line")).toContainText("API Error: Connection refused");
@@ -81,14 +81,43 @@ test("the inspector shows what a session's agents did, and follows the selection
   await expect(survey).toContainText("Explore · 7 tools");
   await expect(survey.getByTestId("agent-line")).toContainText("The job runs 14 queries");
 
-  // the session itself is the first row, above its agents, and its own lane tops the fan-out
+  // every agent says how it stands, in words where its time is. an error is the one colour
+  const state = (text: string) =>
+    pane.getByTestId("agent-row").filter({ hasText: text }).getByTestId("agent-state");
+  await expect(state("Survey the nightly job")).toHaveText(/^Done \d+m$/);
+  await expect(state("Survey the nightly job")).toHaveAttribute("data-status", "done");
+  await expect(state("pg_stat_statements")).toHaveText(/^Failed \d+(s|m)$/);
+  await expect(state("pg_stat_statements")).toHaveAttribute("data-status", "failed");
+  await expect(state("Reproduce the spike")).toHaveText(/^Running \d+m$/);
+  await expect(state("Plan the index change")).toHaveAttribute("data-status", "running");
+
+  // the session itself is the root, its agents under it on one rail, and its own lane tops the
+  // fan-out with a hairline between it and theirs
   const main = pane.getByTestId("main-row");
   await expect(main).toContainText("Main conversation");
   await expect(main).toContainText("main · opus 5 · 0 tools");
   await expect(main).toHaveAttribute("data-state", "running");
+  await expect(main.getByTestId("agent-state")).toHaveText(/^Running \d+s$/);
   await expect(pane.getByTestId("fan-main")).toHaveAttribute("data-running", "true");
-  // the summary still counts agents only
-  await expect(pane.getByTestId("inspector-summary")).toContainText("5 agents");
+  await expect(pane.getByTestId("fan-main-gap")).toHaveCount(1);
+  await expect(pane.getByTestId("tree-rail")).toHaveCount(5);
+  const mainBox = await main.boundingBox();
+  const surveyBox = await survey.boundingBox();
+  expect((surveyBox?.x ?? 0) - (mainBox?.x ?? 0)).toBe(18);
+  // one rail from under the root to the last row, never past its text
+  const rails = await pane
+    .getByTestId("tree-rail")
+    .evaluateAll((els) =>
+      els
+        .map((el) => el.getBoundingClientRect())
+        .map((r) => ({ x: r.x, top: r.top, bottom: r.bottom })),
+    );
+  expect(new Set(rails.map((r) => r.x)).size).toBe(1);
+  expect(rails[0]?.top).toBeCloseTo(mainBox ? mainBox.y + mainBox.height : 0, 0);
+  for (let i = 1; i < rails.length; i++)
+    expect(rails[i]?.top).toBeCloseTo(rails[i - 1]?.bottom ?? 0, 0);
+  const lastBox = await pane.getByTestId("agent-row").last().boundingBox();
+  expect(rails.at(-1)?.bottom).toBeCloseTo(lastBox ? lastBox.y + lastBox.height - 8 : 0, 0);
   await shot(page, "19-inspector");
 
   // Tab goes into it and the arrows move there, not in the list of sessions
@@ -264,6 +293,18 @@ test("a workflow's agents sit under its name, and an agent's own agents are a cl
   );
   await expect(pane.getByTestId("workflow-header")).toHaveText("cdit-1249-derive-bds-table-name");
   await expect(pane.getByTestId("agent-row")).toHaveCount(5);
+  // an agent's own agents sit one step further in than it, on the same rail. a workflow's name
+  // sits in the tree like a day header, at its agents' depth
+  const left = async (text: string) =>
+    (await pane.getByTestId("agent-row").filter({ hasText: text }).boundingBox())?.x ?? 0;
+  const parentX = await left("Derive BDS table names on create");
+  expect((await left("Find every writer")) - parentX).toBe(18);
+  expect((await left("You are implementing an approved plan")) - parentX).toBe(0);
+  await expect(pane.locator('[data-depth="2"]')).toHaveCount(2);
+  await expect(
+    pane.locator('[data-depth="1"]').filter({ has: page.getByTestId("workflow-header") }),
+  ).toHaveCount(1);
+  await expect(pane.getByTestId("tree-rail")).toHaveCount(6);
   // nobody labelled a workflow's agents, so what they were asked stands in
   await expect(pane.getByTestId("agent-row").nth(3)).toContainText(
     "You are implementing an approved plan in the kirby repo.",

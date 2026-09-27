@@ -152,20 +152,27 @@ export function laneGeometry(lanes: number, max = 96): { pitch: number; bar: num
 /** the session's own conversation, as a row of its agents. no agent id can look like this. */
 export const MAIN_ID = "@main";
 
+/**
+ * one row of the agents tree. `depth` counts from the session's own conversation, the root at 0:
+ * what it sent out is 1, an agent's own agents 2. a workflow's name sits in the tree like a day
+ * header, at the depth of the agents under it.
+ */
 export type AgentListItem =
   | { type: "main"; id: typeof MAIN_ID }
-  | { type: "workflow"; id: string; label: string }
+  | { type: "workflow"; id: string; label: string; depth: number }
   | { type: "agent"; id: string; agent: SessionAgent; depth: number };
 
 /**
- * the agents in the order they started, so the list reads like the picture above it: the story
- * of what the session sent out, first to last. an agent another agent started sits under it, and
- * a workflow's agents sit under one small header, like a day.
+ * the agents as a tree under the conversation that sent them out, in the order they started, so
+ * the list reads like the picture above it: first to last. an agent another agent started sits
+ * under it, and a workflow's agents sit under one small header, like a day. the root is always
+ * there - it is what every other row hangs from, so it does not wait for the numbers.
  */
 export function agentList(
   agents: readonly SessionAgent[],
   inspection: SessionInspection | null | undefined,
 ): AgentListItem[] {
+  if (agents.length === 0) return [];
   const byStart = [...agents].sort(
     (a, b) =>
       (inspection?.agents[a.id]?.startedAt ?? a.startedAt) -
@@ -181,7 +188,7 @@ export function agentList(
     } else roots.push(a);
   }
   // the session itself first: what sent them all out
-  const items: AgentListItem[] = inspection?.main ? [{ type: "main", id: MAIN_ID }] : [];
+  const items: AgentListItem[] = [{ type: "main", id: MAIN_ID }];
   const seen = new Set<string>();
   const add = (a: SessionAgent, depth: number) => {
     if (seen.has(a.id)) return;
@@ -192,7 +199,8 @@ export function agentList(
   for (const a of roots) {
     if (seen.has(a.id)) continue;
     if (!a.workflow) {
-      add(a, Math.max(0, (a.spawnDepth ?? 1) - 1));
+      // nested, but its parent's transcript said nothing: as deep as Claude Code says it was
+      add(a, Math.max(1, a.spawnDepth ?? 1));
       continue;
     }
     // a workflow's agents stay together, where its first one started, even when others interleave
@@ -201,10 +209,30 @@ export function agentList(
       type: "workflow",
       id: `wf:${run}`,
       label: inspection?.workflows[run]?.name ?? "Workflow",
+      depth: 1,
     });
-    for (const w of roots) if (w.workflow === run) add(w, 0);
+    for (const w of roots) if (w.workflow === run) add(w, 1);
   }
   return items;
+}
+
+export type AgentStatus = "running" | "done" | "failed" | "interrupted";
+
+/**
+ * how an agent stands, in words: `Running 8m`, `Done 5m`, `Failed 1m`, `Interrupted 4m`. an error
+ * wins over everything, like the bar's tone - an agent that died on one is not running whatever
+ * the scan guessed. without its stats (the Agents scope) there is only running or done.
+ */
+export function agentStatus(
+  agent: SessionAgent,
+  stats: AgentStats | undefined,
+  now: number,
+): { status: AgentStatus; word: string; time: string } {
+  const time = agentDuration(agent, stats, now);
+  if (stats?.error) return { status: "failed", word: "Failed", time };
+  if (agent.state === "running") return { status: "running", word: "Running", time };
+  if (stats?.interrupted) return { status: "interrupted", word: "Interrupted", time };
+  return { status: "done", word: "Done", time };
 }
 
 /** what a row is called: what its parent said it was for, else what it was asked */
@@ -250,13 +278,21 @@ export function agentLine(
     const now = agent.summary ?? stats?.lastStep ?? agent.lastTool;
     return now ? { text: now, tone: "quiet" } : null;
   }
-  if (stats?.interrupted) return { text: "Interrupted", tone: "quiet" };
+  // the first line says it was interrupted. what it was doing then is the part worth reading -
+  // its last words were cut off mid-thought, so they are not the answer
+  if (stats?.interrupted) {
+    const then = agent.found ?? stats.lastStep ?? agent.lastTool;
+    return then ? { text: then, tone: "quiet" } : null;
+  }
   // the line a model wrote once someone looked says it better than the result's first sentence
   const done = agent.found ?? stats?.outcome;
   return done ? { text: done, tone: "quiet" } : null;
 }
 
-/** `3 agents · 44m of agent time · 1.2M tokens` */
+/**
+ * `2 running · 3 done · 44m of agent time · 1.2M tokens`, or `5 agents · …` once none runs. done
+ * is everything not running, failed and interrupted included: the rows say which.
+ */
 export function sessionAgentSummary(
   agents: readonly SessionAgent[],
   inspection: SessionInspection | null | undefined,
@@ -264,6 +300,15 @@ export function sessionAgentSummary(
 ): string {
   const n = `${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
   if (agents.length === 0) return n;
+  const running = agents.filter(
+    (a) => agentStatus(a, inspection?.agents[a.id], now).status === "running",
+  ).length;
+  const count =
+    running === 0
+      ? n
+      : running === agents.length
+        ? `${running} running`
+        : `${running} running · ${agents.length - running} done`;
   let time = 0;
   let tokens = 0;
   for (const a of agents) {
@@ -271,7 +316,7 @@ export function sessionAgentSummary(
     time += end - start;
     tokens += inspection?.agents[a.id]?.tokens ?? 0;
   }
-  const parts = [n, `${formatDuration(time)} of agent time`];
+  const parts = [count, `${formatDuration(time)} of agent time`];
   if (tokens > 0) parts.push(`${formatTokens(tokens)} tokens`);
   return parts.join(" · ");
 }

@@ -26,10 +26,10 @@ import {
 } from "../logic/conversation.ts";
 import {
   type AgentListItem,
-  agentDuration,
   agentLine,
   agentList,
   agentMeta,
+  agentStatus,
   agentsSignature,
   agentTitle,
   type FanOut,
@@ -67,7 +67,7 @@ import {
 } from "./ConversationPane.tsx";
 import { SessionsPane } from "./SessionsPane.tsx";
 import { TurnOutline } from "./TurnOutline.tsx";
-import { Button, cx, Icon, IconButton, Segmented } from "./ui.tsx";
+import { AgentState, Button, cx, Icon, IconButton, Segmented, TreeRail } from "./ui.tsx";
 
 /** the last look at each session, so coming back to one draws its numbers at once */
 const inspections = new Map<SessionKey, SessionInspection>();
@@ -642,6 +642,9 @@ const TONE_LIT: Record<string, string> = {
   error: "bg-accent",
 };
 
+/** the room between the main lane and the agents' lanes, a hairline across the middle of it */
+const MAIN_GAP = 7;
+
 /**
  * one lane per agent from its start to its end, on the agents' own clock. the only picture in the
  * app, so it stays quiet: no colour but state, no labels but three ticks.
@@ -659,11 +662,12 @@ function FanOutView({
 }) {
   const lanes = picture.lanes + (picture.main ? 1 : 0);
   const { pitch, bar } = laneGeometry(lanes);
-  const top = picture.main ? pitch : 0;
+  // the session's own lane, then a hairline, then what it sent out: the tree below, drawn sideways
+  const top = picture.main ? pitch + MAIN_GAP : 0;
   const mainLit = lit === MAIN_ID;
   return (
     <div className="mt-3.5" data-testid="fan-out" data-lanes={picture.lanes}>
-      <div className="relative" style={{ height: lanes * pitch }}>
+      <div className="relative" style={{ height: top + picture.lanes * pitch }}>
         {picture.main && (
           <button
             type="button"
@@ -695,6 +699,14 @@ function FanOutView({
               />
             ))}
           </button>
+        )}
+        {picture.main && (
+          <span
+            aria-hidden
+            data-testid="fan-main-gap"
+            className="absolute inset-x-0 h-px bg-line"
+            style={{ top: pitch + (MAIN_GAP - 1) / 2 }}
+          />
         )}
         {picture.bars.map((b) => (
           <button
@@ -847,12 +859,12 @@ function AgentListView({
         e.stopPropagation();
       }}
     >
-      {items.map((item) =>
-        item.type === "main" ? (
-          inspection?.main && (
+      {items.map((item, i) => {
+        if (item.type === "main") {
+          return (
             <MainRowView
               key={item.id}
-              main={inspection.main}
+              main={inspection?.main}
               row={row}
               now={now}
               active={active === MAIN_ID}
@@ -861,30 +873,53 @@ function AgentListView({
               onHover={onHover}
               onPick={onOpen}
             />
-          )
-        ) : item.type === "workflow" ? (
-          <div
-            key={item.id}
-            role="presentation"
-            data-testid="workflow-header"
-            className="flex h-[30px] items-end px-5 pb-1.5 text-meta font-medium tracking-wide text-fg-3"
-          >
-            <span className="truncate">{item.label}</span>
-          </div>
-        ) : (
-          <AgentRowView
-            key={item.id}
-            item={item}
-            inspection={inspection}
-            now={now}
-            active={item.id === active}
-            focused={focused}
-            lit={item.id === lit}
-            onHover={onHover}
-            onPick={onOpen}
-          />
-        ),
-      )}
+          );
+        }
+        const last = i === items.length - 1;
+        return (
+          <TreeRow key={item.id} depth={item.depth} last={last}>
+            {item.type === "workflow" ? (
+              <div
+                role="presentation"
+                data-testid="workflow-header"
+                className="flex h-[30px] items-end px-5 pb-1.5 text-meta font-medium tracking-wide text-fg-3"
+              >
+                <span className="truncate">{item.label}</span>
+              </div>
+            ) : (
+              <AgentRowView
+                item={item}
+                inspection={inspection}
+                now={now}
+                active={item.id === active}
+                focused={focused}
+                lit={item.id === lit}
+                onHover={onHover}
+                onPick={onOpen}
+              />
+            )}
+          </TreeRow>
+        );
+      })}
+    </div>
+  );
+}
+
+/** where the root's title starts: the row's side margin (8) and its padding (12) */
+const RAIL_X = 20;
+/** one level of the tree */
+const STEP = 18;
+
+/**
+ * a row under the session's own conversation: indented a step per level, with its piece of the
+ * rail at the root's title start. the rail stops level with the last row's text, the row's own
+ * bottom padding (8) short of its box.
+ */
+function TreeRow({ depth, last, children }: { depth: number; last: boolean; children: ReactNode }) {
+  return (
+    <div className="relative" data-depth={depth}>
+      <TreeRail x={RAIL_X} {...(last ? { end: 8 } : {})} />
+      <div style={{ marginLeft: STEP * depth }}>{children}</div>
     </div>
   );
 }
@@ -903,7 +938,8 @@ function MainRowView({
   onHover,
   onPick,
 }: {
-  main: MainStats;
+  /** absent until the inspection comes back: the row is there first, its numbers after */
+  main: MainStats | undefined;
   row: SessionRow;
   now: number;
   active: boolean;
@@ -914,7 +950,7 @@ function MainRowView({
 }) {
   const running = row.live?.state === "running";
   const turnStart = row.live?.turnStart ?? row.live?.at;
-  const line = mainLine(main, running);
+  const line = main ? mainLine(main, running) : null;
   return (
     <div
       id={`agent-${MAIN_ID}`}
@@ -933,18 +969,16 @@ function MainRowView({
     >
       <div className="flex items-baseline gap-3">
         <span className="min-w-0 flex-1 truncate font-medium text-fg">Main conversation</span>
+        {/* its own turn, said like an agent's. idle, it keeps how long the session went on */}
         {running && turnStart !== undefined ? (
-          <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
-            <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
-            {formatDuration(now - turnStart)}
-          </span>
-        ) : main.startedAt !== undefined && main.lastAt !== undefined ? (
+          <AgentState status="running" word="Running" time={formatDuration(now - turnStart)} />
+        ) : main?.startedAt !== undefined && main.lastAt !== undefined ? (
           <span className="shrink-0 text-sm tabular-nums text-fg-3">
             {spanLabel(main.lastAt - main.startedAt)}
           </span>
         ) : null}
       </div>
-      <div className="truncate text-sm text-fg-3">{mainMeta(main)}</div>
+      <div className="truncate text-sm text-fg-3">{main ? mainMeta(main) : "main"}</div>
       {line && (
         <div className="truncate text-sm text-fg-4" data-testid="agent-line" title={line}>
           {line}
@@ -974,10 +1008,10 @@ function AgentRowView({
   onHover: (id: string | null) => void;
   onPick: (id: string) => void;
 }) {
-  const { agent, depth } = item;
+  const { agent } = item;
   const stats = inspection?.agents[agent.id];
   const line = agentLine(agent, stats);
-  const running = agent.state === "running";
+  const state = agentStatus(agent, stats, now);
   return (
     <div
       id={`agent-${agent.id}`}
@@ -986,35 +1020,27 @@ function AgentRowView({
       aria-selected={active}
       data-testid="agent-row"
       data-state={agent.state}
+      data-status={state.status}
       data-active={active || undefined}
       onMouseEnter={() => onHover(agent.id)}
       onMouseLeave={() => onHover(null)}
       onClick={() => onPick(agent.id)}
       className={cx(
-        "fade mx-2 flex flex-col rounded-md py-2 pr-3",
+        "fade mx-2 flex flex-col rounded-md py-2 pr-3 pl-3",
         active && focused ? "bg-active" : active || lit ? "bg-raised" : "hover:bg-raised",
       )}
-      style={{ paddingLeft: 12 + depth * 16 }}
     >
       <div className="flex items-baseline gap-3">
         <span className="min-w-0 flex-1 truncate font-medium text-fg">
           {agentTitle(agent, stats)}
         </span>
-        {running ? (
-          <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums text-fg-2">
-            <span className="live-pulse size-1.5 rounded-full bg-fg-3" />
-            {agentDuration(agent, stats, now)}
-          </span>
-        ) : (
-          <span className="shrink-0 text-sm tabular-nums text-fg-3">
-            {agentDuration(agent, stats, now)}
-          </span>
-        )}
+        <AgentState {...state} />
       </div>
       <div className="truncate text-sm text-fg-3">{agentMeta(agent, stats)}</div>
       {line && (
         <div
-          className={cx("truncate text-sm", line.tone === "error" ? "text-accent" : "text-fg-4")}
+          // the word above carries the colour. the message under it only reads a step louder
+          className={cx("truncate text-sm", line.tone === "error" ? "text-fg-3" : "text-fg-4")}
           data-testid="agent-line"
           title={line.text}
         >
