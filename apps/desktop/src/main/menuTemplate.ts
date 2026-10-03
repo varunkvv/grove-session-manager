@@ -1,6 +1,7 @@
 // the menu as data. no electron import, so the accelerators can be checked in a unit test.
+import { KIND_WORD } from "@grove/core";
 import type { MenuItemConstructorOptions } from "electron";
-import type { MenuCommandId } from "../shared/ipc.ts";
+import type { InboxView, LandingTarget, MenuCommandId } from "../shared/ipc.ts";
 
 export interface MenuTemplateOptions {
   appName: string;
@@ -98,4 +99,40 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
   };
 
   return [...(o.isMac ? [appMenu] : []), fileMenu, editMenu, viewMenu, { role: "windowMenu" }];
+}
+
+export interface TrayActions {
+  land: (target: LandingTarget) => void;
+  showMain: () => void;
+}
+
+/** one line, cut with an ellipsis. not squash: the two spaces after the kind word are on purpose */
+function line(s: string, max: number): string {
+  const flat = s.replace(/\s*[\r\n\t]\s*/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * the menu bar item's menu: the first three inbox rows across every project (Asked and Stopped come
+ * first already), then Open Grove and Quit
+ */
+export function trayTemplate(inbox: InboxView, a: TrayActions): MenuItemConstructorOptions[] {
+  const rows = inbox.rows.slice(0, 3).map(
+    (r): MenuItemConstructorOptions => ({
+      label: line(`${KIND_WORD[r.kind]}  ${r.card ? `${r.card.id} ` : ""}${r.title}`, 60),
+      sublabel: line(r.summary ? `${r.projectName} · ${r.summary}` : r.projectName, 80),
+      click: () =>
+        a.land(
+          r.card
+            ? { view: "card", project: r.project, cardId: r.card.id, back: "inbox" }
+            : { view: "inbox", project: r.project, rowId: r.id },
+        ),
+    }),
+  );
+  return [
+    ...(rows.length > 0 ? rows : [{ label: "Nothing needs you", enabled: false }]),
+    { type: "separator" },
+    { label: "Open Grove", click: a.showMain },
+    { role: "quit" },
+  ];
 }

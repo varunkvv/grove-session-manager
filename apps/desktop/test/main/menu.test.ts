@@ -1,7 +1,7 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, it } from "vitest";
-import { buildMenuTemplate } from "../../src/main/menuTemplate.ts";
-import type { MenuCommandId } from "../../src/shared/ipc.ts";
+import { buildMenuTemplate, trayTemplate } from "../../src/main/menuTemplate.ts";
+import type { InboxRowView, LandingTarget, MenuCommandId } from "../../src/shared/ipc.ts";
 
 function items(): MenuItemConstructorOptions[] {
   const out: MenuItemConstructorOptions[] = [];
@@ -78,5 +78,102 @@ describe("the menu", () => {
     expect(item?.label).toBe("New Session…");
     (item?.click as (() => void) | undefined)?.();
     expect(sent).toEqual(["new-session"]);
+  });
+});
+
+describe("the tray menu", () => {
+  const row = (o: Partial<InboxRowView> & Pick<InboxRowView, "id" | "kind">): InboxRowView => ({
+    project: "chat",
+    projectName: "Chat features",
+    at: 0,
+    title: "",
+    summary: "",
+    reviewKeys: [],
+    ...o,
+  });
+  const ROWS: InboxRowView[] = [
+    row({
+      id: "asked:CHAT-4",
+      kind: "asked",
+      card: { id: "CHAT-4", title: "Fix the accrual rounding" },
+      title: "Fix the accrual rounding",
+      summary: "Round accrual to whole hours,\nor keep the half?",
+    }),
+    row({
+      id: "stopped:s9",
+      kind: "stopped",
+      project: "data",
+      projectName: "Data objects",
+      title: "load test",
+      summary: "Stopped mid-turn.",
+    }),
+    row({
+      id: "decided:D-12",
+      kind: "decided",
+      card: { id: "CHAT-7", title: "x".repeat(70) },
+      title: "x".repeat(70),
+      summary: `Use the policy's 8h day ${"y".repeat(80)}`,
+      conclusionId: "D-12",
+    }),
+    row({ id: "new:CHAT-8", kind: "new", title: "fourth" }),
+  ];
+  const menu = (rows: InboxRowView[]) => {
+    const landed: LandingTarget[] = [];
+    let shown = 0;
+    const items = trayTemplate(
+      { rows, tray: 2 },
+      { land: (t) => landed.push(t), showMain: () => shown++ },
+    );
+    const click = (i: number) => (items[i]?.click as (() => void) | undefined)?.();
+    return { items, landed, click, shown: () => shown };
+  };
+
+  it("the first three rows in the order the inbox gives, then Open Grove and Quit", () => {
+    const { items } = menu(ROWS);
+    expect(items.map((i) => i.label ?? i.type ?? i.role)).toEqual([
+      "Asked  CHAT-4 Fix the accrual rounding",
+      "Stopped  load test",
+      `Decided  CHAT-7 ${"x".repeat(43)}…`,
+      "separator",
+      "Open Grove",
+      "quit",
+    ]);
+    expect(items.map((i) => i.sublabel)).toEqual([
+      "Chat features · Round accrual to whole hours, or keep the half?",
+      "Data objects · Stopped mid-turn.",
+      `Chat features · Use the policy's 8h day ${"y".repeat(39)}…`,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(items[2]?.label).toHaveLength(60);
+    expect(items[2]?.sublabel).toHaveLength(80);
+  });
+
+  it("a card row lands on the card with the inbox behind it, a cardless one on its row", () => {
+    const { click, landed, shown } = menu(ROWS);
+    click(0);
+    click(1);
+    expect(landed).toEqual([
+      { view: "card", project: "chat", cardId: "CHAT-4", back: "inbox" },
+      { view: "inbox", project: "data", rowId: "stopped:s9" },
+    ]);
+    click(4);
+    expect(shown()).toBe(1);
+  });
+
+  it("nothing in the inbox: one disabled line", () => {
+    const { items } = menu([]);
+    expect(items).toEqual([
+      { label: "Nothing needs you", enabled: false },
+      { type: "separator" },
+      { label: "Open Grove", click: expect.any(Function) },
+      { role: "quit" },
+    ]);
+  });
+
+  it("a row with no summary is the project name alone", () => {
+    const { items } = menu([row({ id: "asked:session:s1", kind: "asked", title: "session" })]);
+    expect(items[0]?.sublabel).toBe("Chat features");
   });
 });

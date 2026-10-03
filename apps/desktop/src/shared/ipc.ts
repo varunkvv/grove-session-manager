@@ -1,24 +1,32 @@
 // the contract between the main process and the renderer. types only, plus the channel lists
 // the preload uses as its allowlist. nothing here may import node or electron.
 import type {
+  AgentRef,
+  AgentState,
   BranchSpec,
+  CardDisplayStatus,
   ComboRelation,
   FolderMode,
   FolderOutcome,
   FolderState,
+  InboxKind,
+  LiveState,
   LiveStatus,
   LongWorkMode,
   Mark,
   ModelUsage,
+  ProjectId,
   Prompt,
   Question,
+  Runtime,
   SessionAgent,
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
+import type { CardStatus, ConclusionKind } from "@grove/record/types";
 import type { NewSessionRequest, NewSessionResult } from "./newSession.ts";
 
-export type { Mark, Prompt, Question, SessionAgent };
+export type { Mark, ProjectId, Prompt, Question, SessionAgent };
 
 export type Outcome<T = void> =
   | { ok: true; value: T }
@@ -490,6 +498,250 @@ export interface OpenReport {
   landing: boolean;
   outcomes: FolderOutcome[];
   warnings: string[];
+}
+
+// the project manager's views, built in main. nothing sends them until the Api swaps over.
+
+export interface ProjectView {
+  /** basename(root). a rename never changes it */
+  id: ProjectId;
+  name: string;
+  root: string;
+  /** combo.note */
+  goal?: string;
+  prefix: string;
+  workspaceFile: string;
+  longWork: LongWorkMode;
+  folders: FolderView[];
+  /** the folder reconcile, as ComboView's */
+  status: "unknown" | "checking" | "known";
+  checkedAt?: number;
+  /** the root folder is there. no start buttons when it is not */
+  rootExists: boolean;
+  server: ServerCheck;
+  /** working copies whose own .mcp.json declares a server called grove */
+  shadowed: string[];
+  /** a file grove could not write, from the sync's warnings */
+  syncProblem?: string;
+  /** agents started from grove that have not claimed a card yet */
+  starting: PendingStart[];
+}
+
+export interface PendingStart {
+  id: string;
+  where: "editor" | "background";
+  cardId?: string;
+  at: number;
+}
+
+export interface CardHead {
+  id: string;
+  title: string;
+  status: CardDisplayStatus;
+  at: number;
+  lastActivity: number;
+  /** the holder only */
+  agent?: { ref: AgentRef; runtime: Runtime; state: AgentState; stateAt?: number };
+  /** changes whenever anything on the card does. the card page re-fetches on a change */
+  version: string;
+  problems: number;
+}
+
+export interface ConclusionView {
+  id: string;
+  kind: ConclusionKind;
+  what: string;
+  why: string;
+  by: "agent" | "person";
+  /** the session that recorded it. for by: person, the agent whose chat it was said in */
+  who?: AgentRef;
+  card?: { id: string; title?: string };
+  replaces?: string;
+  replacedBy: string[];
+  superseded: boolean;
+  related: string[];
+  changesPlan: boolean;
+  area?: string;
+  at: number;
+  /** it would enter the inbox: by an agent, a decision or verdict, or a finding that changes the plan */
+  needsReview: boolean;
+  reviewed: boolean;
+  sessionKey?: SessionKey;
+  open?: OpenPlan;
+  problems: number;
+}
+
+/** a record file that did not parse whole, relative to the project root */
+export interface RecordProblem {
+  file: string;
+  problems: string[];
+}
+
+export interface ProjectRecordView {
+  cards: CardHead[];
+  conclusions: ConclusionView[];
+  problems: RecordProblem[];
+  /** absent until the first read finished */
+  readAt?: number;
+}
+
+export interface InboxRowView {
+  /** InboxRow.id */
+  id: string;
+  project: ProjectId;
+  projectName: string;
+  kind: InboxKind;
+  at: number;
+  card?: { id: string; title: string };
+  conclusionId?: string;
+  title: string;
+  who?: AgentRef;
+  /** where `who` runs now */
+  runtime?: Runtime;
+  summary: string;
+  reviewKeys: string[];
+  sessionKey?: SessionKey;
+  open?: OpenPlan;
+}
+
+export interface InboxView {
+  /** every project, Asked and Stopped first, then newest first. the page filters by project */
+  rows: InboxRowView[];
+  /** trayCount over all rows */
+  tray: number;
+}
+
+export interface CardView {
+  project: ProjectId;
+  id: string;
+  title: string;
+  /** markdown, untrusted */
+  body: string;
+  status: CardDisplayStatus;
+  /** the record's own status. the card page's role keys on it with agent.holding */
+  recordStatus: CardStatus;
+  /** the holder, else the last agent that wrote a claim event */
+  agent?: AgentPanel;
+  /** oldest first */
+  thread: ThreadItem[];
+  artifacts: ArtifactView[];
+  /** the card's own links. no reverse links */
+  from?: string;
+  needs: string[];
+  /** the ones naming this card, newest first */
+  conclusions: ConclusionView[];
+  problems: RecordProblem[];
+  version: string;
+}
+
+export interface AgentPanel {
+  ref: AgentRef;
+  /** absent until grove indexes the transcript */
+  sessionKey?: SessionKey;
+  runtime: Runtime;
+  /** modelLabel(usage[0].model): "opus 5.5" */
+  model?: string;
+  state: AgentState;
+  stateAt?: number;
+  subagents: SubagentView[];
+  open: OpenPlan;
+  /** false when this is the last agent of a card nobody holds (done, canceled, released) */
+  holding: boolean;
+}
+
+export interface SubagentView {
+  id: string;
+  /** SessionAgent.agentType */
+  type: string;
+  /** description ?? asked ?? type */
+  label: string;
+  state: "running" | "done";
+  lastActivityAt: number;
+  lastTool?: string;
+}
+
+export type ThreadItem =
+  | {
+      kind: "comment" | "question" | "answer";
+      seq: number;
+      at: number;
+      who: AgentRef | "person";
+      /** markdown, untrusted */
+      text: string;
+      /** a question's: "person" or a card id */
+      to?: string;
+      /** a question's */
+      open?: boolean;
+      /** a question's */
+      answeredBy?: number[];
+      /** an answer's */
+      answers?: number;
+      artifacts: ArtifactView[];
+    }
+  | {
+      kind: "event";
+      seq: number;
+      at: number;
+      who: AgentRef | "person";
+      event: "claim" | "release" | "takeover" | "done" | "cancel" | string;
+      /** the done summary, the cancel reason, the release note. may be empty */
+      text: string;
+    };
+
+export interface ArtifactView {
+  type: "file" | "branch" | "pr" | "link";
+  ref: string;
+  at: number;
+  who?: AgentRef | "person";
+}
+
+/** one session found from the palette */
+export interface SessionHit {
+  key: SessionKey;
+  sessionId: string;
+  /** row.title ?? the first prompt squashed ?? "Untitled session" */
+  title: string;
+  project?: ProjectId;
+  /** the project name, else row.projectLabel */
+  where: string;
+  activityMs: number;
+  runtime: Runtime;
+  live?: LiveState;
+  /** only for a full-text match */
+  snippet?: string;
+  open: OpenPlan;
+}
+
+/** what Open in {editor} needs to know before it is pressed. one label for every case */
+export interface OpenPlan {
+  /** asked first: stopping a background agent that is working */
+  confirm?: { title: string; body: string; label: string };
+  /** the button is disabled, with this as its hint */
+  disabled?: string;
+}
+
+export interface StartAgentRequest {
+  project: ProjectId;
+  where: "editor" | "background";
+  cardId?: string;
+  /** background only: run it in Terminal, where the CLI's trust prompt is answered once */
+  throughTerminal?: boolean;
+}
+
+/** where a notification click, a tray row or a palette row takes the page */
+export type LandingTarget =
+  | { view: "inbox"; project?: ProjectId; rowId?: string }
+  | { view: "card"; project: ProjectId; cardId: string; back: "inbox" | "cards" }
+  | { view: "conclusions"; project: ProjectId; conclusionId?: string };
+
+/** was ComboDraft */
+export interface ProjectDraft {
+  name: string;
+  /** the goal */
+  note?: string;
+  /** create only. ignored on update */
+  prefix?: string;
+  folders: FolderDraft[];
 }
 
 /** request/response. every call resolves quickly or reports progress through the push events below. */
