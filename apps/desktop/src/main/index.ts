@@ -1,15 +1,14 @@
 import path from "node:path";
 import {
-  formatDuration,
-  type LiveStatus,
   loadSettings,
-  needsYou,
+  projectIdOf,
+  resolveEditor,
   type Settings,
   sessionsRegistryDir,
 } from "@grove/core";
-import type { BrowserWindow } from "electron";
+import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
-import type { MenuCommandId } from "../shared/ipc.ts";
+import type { InboxView, MenuCommandId } from "../shared/ipc.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
 import { log } from "./log.ts";
@@ -18,19 +17,21 @@ import { OpQueue } from "./opQueue.ts";
 import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer } from "./protocol.ts";
 import { Pusher } from "./push.ts";
-import { AgentInspector } from "./services/agentInspector.ts";
-import { AgentSummaries } from "./services/agentSummaries.ts";
-import { ArchiveService } from "./services/archive.ts";
 import { BackgroundService } from "./services/background.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
+import { Notifier } from "./services/notify.ts";
+import { ProjectRecordService } from "./services/projectRecord.ts";
+import { ProjectsService } from "./services/projects.ts";
 import { installRecordRuntime, recordInstallFor, recordPaths } from "./services/recordInstall.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
+import { ReviewedService } from "./services/reviewed.ts";
 import { ServerChecks } from "./services/serverCheck.ts";
 import { SessionService } from "./services/sessions.ts";
+import { createTray, updateTray } from "./tray.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
 const appEnv: AppEnv = resolveAppEnv();
@@ -53,15 +54,22 @@ registerAppScheme();
 electron.app.enableSandbox();
 
 let win: BrowserWindow | null = null;
+// a tray with no reference is collected and disappears
+let tray: Tray | null = null;
+let quitting = false;
+
+/** the window, wherever it was: hidden by its close button, minimised, or behind something */
+function showMain(): void {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
 
 if (!electron.app.requestSingleInstanceLock()) {
   electron.app.quit();
 } else {
-  electron.app.on("second-instance", () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  });
+  electron.app.on("second-instance", showMain);
   void start();
 }
 
@@ -70,6 +78,8 @@ async function start(): Promise<void> {
     () => ({ editor: "vscode" }) as Settings,
   );
   const projectsDir = resolveProjectsDir(settings);
+  // for tests, and for a login item later. nothing registers one yet
+  const startHidden = process.argv.includes("--hidden");
 
   const queue = new OpQueue<Lane>({ mutate: 1, read: 4 });
   const pusher = new Pusher(() => win?.webContents ?? null);
@@ -79,83 +89,60 @@ async function start(): Promise<void> {
     path.join(packageDir, "..", "..", "extension", "dist"),
   ]);
 
-  let summaries: AgentSummaries | null = null;
   const sessions = new SessionService({
     projectsDir,
     cacheDir: appEnv.stateDir,
     maxParsed: settings.maxParsedSessions,
-    emitPatch: (patch) =>
-      pusher.send("sessions:patch", { rev: pusher.nextRev("sessions"), ...patch }),
-    emitStatus: (status) => pusher.send("sessions:index", status),
-    onAgents: (key, snapshot) => summaries?.note(key, snapshot),
-  });
-  const inspector = new AgentInspector({
-    stateDir: appEnv.stateDir,
-    snapshot: (key) => sessions.agentSnapshot(key),
-    onSteps: (steps) => pusher.send("agent:steps", steps),
-    // the row's key is its transcript path, and only a row the index has names a file
-    transcript: (key) => sessions.get(key)?.key,
-    running: (key) => sessions.get(key)?.live?.state === "running",
-    onTurns: (turns) => pusher.send("conversation:turns", turns),
-  });
-  const archive = new ArchiveService({
-    appRoot: appEnv.appRoot,
-    onChange: (ids) => sessions.setArchived(ids),
-  });
-  summaries = new AgentSummaries({
-    stateDir: appEnv.stateDir,
-    claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
-    // a test root never spends anyone's Claude auth
-    enabled: () => settings.agentSummaries !== false && !appEnv.customRoot,
-    visible: () => !!win && win.isVisible() && !win.isMinimized(),
-    onSummary: (key, id, summary, at) => sessions.applySummary(key, id, summary, at),
-    onFound: (key, id, line) => sessions.applyFound(key, id, line),
+    onChange: () => projects.sessionsChanged(),
   });
 
-  const reveals = new Reveals({
-    find: (sessionId) => sessions.byId(sessionId)[0],
-    needsYou,
-    raise: () => {
-      if (!win) return;
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
+  const reveals = new Reveals({ raise: showMain, notify: () => pusher.send("app:land", {}) });
+
+  /** what a test root would have shown: it shows no notifications */
+  const noted: Array<{ title: string; body: string; at: number }> = [];
+  const notifier = new Notifier({
+    enabled: () =>
+      settings.notifications !== false &&
+      (!!appEnv.customRoot || electron.Notification.isSupported()),
+    focused: () => !!win?.isFocused(),
+    create: (n) => {
+      if (!appEnv.customRoot) return new electron.Notification({ ...n, silent: false });
+      noted.push({ ...n, at: Date.now() });
+      return { on: () => {}, show: () => {} };
     },
-    notify: () => pusher.send("app:land", {}),
+    land: (target) => reveals.land(target),
   });
-  // a test root lands the way a notification click does, without a notification to click
-  if (appEnv.customRoot) {
-    (globalThis as { groveTest?: unknown }).groveTest = {
-      reveal: (sessionId: string) => reveals.reveal(sessionId),
-    };
-  }
+  /**
+   * a click on a notification about a session: the card it holds, else its row in its project's
+   * inbox. a session in no project has no screen in grove, so it opens in the editor
+   */
+  const landOn = (sessionId: string, row: "asked" | "stopped") => {
+    const target = projects.landing(sessionId, row);
+    if (target) return void reveals.land(target);
+    const session = sessions.byId(sessionId)[0];
+    if (session) handlers.openSession(session.key).catch((e) => log.warn("open session:", e));
+  };
+
   const live = new LiveService({
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
     registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
-    onChange: (statuses, agentRuns, alive) => {
-      sessions.setLive(statuses, agentRuns, alive);
-      const count = [...statuses.values()].filter((s) => needsYou(s)).length;
-      electron.app.dock?.setBadge(count > 0 ? String(count) : "");
-    },
+    onChange: (statuses, agentRuns, alive) => sessions.setLive(statuses, agentRuns, alive),
     onNeedsYou: (sessionId, status) => {
-      if (settings.notifications === false || appEnv.customRoot) return;
-      if (win?.isFocused()) return;
       const row = sessions.byId(sessionId)[0];
-      const body = notificationBody(status);
-      if (!row || !body || !electron.Notification.isSupported()) return;
-      const n = new electron.Notification({
-        title: row.title ?? "Claude session",
-        body,
-        silent: false,
+      if (!row) return;
+      notifier.live(status, {
+        sessionId,
+        title: row.title,
+        project: projects.landing(sessionId, "asked")?.project,
+        click: () => landOn(sessionId, "asked"),
       });
-      // into grove, on that session: the question is read there, and answering is one click
-      // away - the pane's open button knows where it runs, held in the background or not
-      n.on("click", () => reveals.reveal(sessionId));
-      n.show();
     },
     onBackgroundMoved: () => void background.read(),
-    onInterrupted: (interrupted) => sessions.setInterrupted(interrupted),
+    onInterrupted: (interrupted) => {
+      sessions.setInterrupted(interrupted);
+      projects.interruptedChanged(interrupted);
+    },
   });
 
   // a background session keeps the environment it was dispatched with. Finder's is no good.
@@ -195,7 +182,21 @@ async function start(): Promise<void> {
       log.info("record runtime:", r);
     return r;
   };
-  // ponytail: results only go to the log until the project views carry them
+
+  /** the project list as the page has it. sent only when something in it moved */
+  let sentProjects = "";
+  const pushProjects = () => {
+    const { projects: list, problem } = projects.views();
+    const json = JSON.stringify([list, problem]);
+    if (json === sentProjects) return;
+    sentProjects = json;
+    pusher.send("projects:changed", {
+      rev: pusher.nextRev("projects"),
+      projects: list,
+      ...(problem ? { problem } : {}),
+    });
+  };
+
   const serverChecks = install
     ? new ServerChecks({
         ...recordPaths(appEnv.appRoot),
@@ -212,11 +213,14 @@ async function start(): Promise<void> {
               check.detail ?? "",
             );
           }
+          pushProjects();
         },
       })
     : null;
   // the first pass checks every project. after it, a project whose .mcp.json was just written is checked again
   let checkedOnce = false;
+  // projects.start() takes the stopped baseline, so nothing calls it before live.start() is through
+  let started = false;
 
   const combos = new ComboService({
     appRoot: appEnv.appRoot,
@@ -225,26 +229,83 @@ async function start(): Promise<void> {
       if (checkedOnce && (report.mcp === "created" || report.mcp === "written")) {
         void serverChecks?.run(combo);
       }
+      // a file grove could not write, or a working copy that shadows the server
+      pushProjects();
     },
     queue,
     gitPath: settings.gitPath,
-    onCombosChanged: (views, problem) =>
-      pusher.send("combos:changed", {
-        rev: pusher.nextRev("combos"),
-        combos: views,
-        ...(problem ? { problem } : {}),
-      }),
+    onCombosChanged: pushProjects,
     onFolders: (view) =>
-      pusher.send("combos:folders", {
-        rev: pusher.nextRev("combos"),
-        name: view.name,
+      pusher.send("projects:folders", {
+        rev: pusher.nextRev("projects"),
+        id: projectIdOf(view),
         status: view.status,
         ...(view.checkedAt !== undefined ? { checkedAt: view.checkedAt } : {}),
         folders: view.folders,
       }),
     onToast: (toast) => pusher.send("toast", toast),
-    onModelChanged: (list) => sessions.reattribute(list),
+    onModelChanged: (list) => {
+      sessions.reattribute(list);
+      if (started) projects.start();
+    },
   });
+
+  const reviewed = new ReviewedService(appEnv.appRoot);
+  const record = new ProjectRecordService({ onChange: (id) => projects.recordChanged(id) });
+
+  /** the last tray menu and title. kept so a test root can read and click them with no tray */
+  let trayMenu: MenuItemConstructorOptions[] = [];
+  let trayTitle = "";
+  const showInbox = (inbox: InboxView) => {
+    trayMenu = updateTray(tray, inbox, { land: (target) => void reveals.land(target), showMain });
+    trayTitle = inbox.tray > 0 ? String(inbox.tray) : "";
+    electron.app.dock?.setBadge(trayTitle);
+  };
+
+  const projects = new ProjectsService({
+    combos,
+    server: (root) => serverChecks?.results.get(root),
+    record,
+    sessions,
+    live,
+    reviewed,
+    onRecord: (project, patch) =>
+      pusher.send("record:changed", { rev: pusher.nextRev("record"), project, ...patch }),
+    onInbox: (inbox) => {
+      pusher.send("inbox:changed", { ...inbox, rev: pusher.nextRev("inbox") });
+      showInbox(inbox);
+    },
+    onProjects: pushProjects,
+    onQuestion: (q) =>
+      notifier.question({
+        ...q,
+        click: () =>
+          reveals.land({ view: "card", project: q.project, cardId: q.card, back: "inbox" }),
+      }),
+    onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId, "stopped") }),
+  });
+
+  // a test root lands the way a notification click or a tray row does, with neither to click
+  if (appEnv.customRoot) {
+    (globalThis as { groveTest?: unknown }).groveTest = {
+      reveal: (sessionId: string) =>
+        landOn(sessionId, live.interruptions().has(sessionId) ? "stopped" : "asked"),
+      trayTitle: () => trayTitle,
+      trayMenu: () =>
+        trayMenu.map(({ label, sublabel, enabled, role }) => ({ label, sublabel, enabled, role })),
+      trayClick: (i: number) => (trayMenu[i]?.click as (() => void) | undefined)?.(),
+      closeMain: () => win?.close(),
+      isMainVisible: () => !!win?.isVisible(),
+      notifications: () => noted,
+    };
+  }
+
+  const menu = (editorLabel: string) =>
+    installMenu({
+      isDev: appEnv.isDev,
+      editorLabel,
+      send: (id: MenuCommandId) => pusher.send("menu:command", { id }),
+    });
 
   await electron.app.whenReady();
   // this is what macOS draws the window frame and the native menus from. the page has its own
@@ -255,11 +316,11 @@ async function start(): Promise<void> {
 
   await combos.load();
   await combos.backfillPrefixes();
-  if (install) await installRuntime();
-  await archive.load();
+  await reviewed.load();
   await sessions.loadCached(combos.list());
+  if (install) await installRuntime();
 
-  registerIpc({
+  const handlers = registerIpc({
     env: appEnv,
     projectsDir,
     settings: () => settings,
@@ -272,23 +333,20 @@ async function start(): Promise<void> {
             pusher.send("toast", { level: "error", title: "Session status", body: String(e) }),
           );
       }
+      // File > Open Project in {editor} names it
+      if (s.editor !== settings.editor) menu(resolveEditor(s).label);
       settings = s;
       electron.nativeTheme.themeSource = s.appearance;
     },
     sessions,
     live,
     combos,
-    archive,
+    record,
+    projects,
+    serverChecks,
     background,
-    inspector,
     reveals,
-    seen: (key, ids) => {
-      const snapshot = sessions.agentSnapshot(key);
-      for (const id of ids) {
-        const agent = snapshot?.agents.find((a) => a.id === id);
-        if (agent) void summaries?.seen(key, agent, snapshot?.reads[id]);
-      }
-    },
+    notifier,
     editor,
     pusher,
     window: () => win,
@@ -299,33 +357,43 @@ async function start(): Promise<void> {
     stateFile: path.join(electron.app.getPath("userData"), "window-state.json"),
     fixedSize: !!appEnv.customRoot,
     url: entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance),
+    show: !startHidden,
   });
   lockDown(win.webContents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
-  installMenu({
-    isDev: appEnv.isDev,
-    send: (id: MenuCommandId) => pusher.send("menu:command", { id }),
-  });
+  menu(editor.current().label);
+  // no tray under a test root unless the test asks: its menu is still built, for groveTest
+  if (!appEnv.customRoot || process.env.GROVE_TRAY === "1") tray = createTray();
+  showInbox(projects.inbox());
 
+  // the close button hides: the app lives in the menu bar until it is quit
+  win.on("close", (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    win?.hide();
+  });
   win.on("closed", () => {
     win = null;
   });
-  // work that would only slow down the first paint
+  // work that would only slow down the first paint. it fires for a hidden window too
   win.webContents.once("did-finish-load", () => {
     void sessions.refresh();
     sessions.start();
     combos.watchFile();
     void combos.reconcileAll();
     void editor.status(true).then((status) => pusher.send("editor:status", status));
-    void live
-      .start()
-      .catch((e) => log.warn("session status:", e))
+    void (async () => {
+      await live.start().catch((e) => log.warn("session status:", e));
       // stopped and finished background sessions have no process, so the registry never says
-      .then(() => background.read());
-    // combos made before status tracking or the record existed get both without anyone opening them
-    void combos.syncAll().then(async () => {
+      void background.read();
+      // combos made before status tracking or the record existed get both without anyone opening them
+      await combos.syncAll();
+      // after live.start(), never beside it: the interruptions it found are the baseline, so
+      // what stopped while the app was closed shows in the inbox and does not notify
+      projects.start();
+      started = true;
       checkedOnce = true;
       await serverChecks?.runAll(combos.list());
-    });
+    })();
     if (settings.trackAllSessions) void live.trackAllSessions(true).catch((e) => log.warn(e));
   });
   win.on("focus", () => {
@@ -335,44 +403,31 @@ async function start(): Promise<void> {
     void combos.syncAll();
     void live.syncUserHooks();
     void background.read();
+    record.check();
   });
-  // nothing is summarised while the window is hidden, so coming back has to ask for it
-  const wake = () => summaries?.wake();
-  win.on("show", wake);
-  win.on("restore", wake);
-  win.on("focus", wake);
   // the page follows the media query on its own. this is only the frame behind it.
   electron.nativeTheme.on("updated", () => {
     win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors));
   });
-  electron.powerMonitor.on("resume", () => void sessions.refresh());
+  electron.powerMonitor.on("resume", () => {
+    void sessions.refresh();
+    record.check();
+  });
 
   electron.app.on("web-contents-created", (_event, contents) => {
     lockDown(contents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
   });
-  electron.app.on("activate", () => {
-    if (win) win.show();
-  });
+  electron.app.on("activate", showMain);
+  // only while quitting now: the close button hides the window
   electron.app.on("window-all-closed", () => electron.app.quit());
   electron.app.on("before-quit", () => {
+    quitting = true;
     combos.dispose();
     live.dispose();
-    inspector.dispose();
-    summaries?.dispose();
+    record.dispose();
+    projects.dispose();
     void sessions.dispose();
   });
-}
-
-/** only what is worth interrupting someone for. a short turn they are probably watching is not. */
-function notificationBody(s: LiveStatus): string | null {
-  if (s.state === "permission")
-    return s.detail ? `Needs permission: ${s.detail}` : "Needs permission";
-  if (s.state === "failed") return "Stopped on an API error";
-  if (s.state === "waiting" && (s.turnMs ?? 0) >= 60_000) {
-    const after = `Finished after ${formatDuration(s.turnMs ?? 0)}`;
-    return s.detail ? `${after}: ${s.detail}` : after;
-  }
-  return null;
 }
 
 process.on("unhandledRejection", (reason) => log.error("unhandled rejection:", reason));

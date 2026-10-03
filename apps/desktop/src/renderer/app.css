@@ -2,7 +2,7 @@
 
 /*
  * the theme is reset on purpose: only these tokens exist, so a stray bg-red-500 or a stock shadow
- * simply does not compile. one accent, used only for state that matters.
+ * simply does not compile. one accent, and one hue per meaning.
  *
  * every colour is light-dark(light, dark). which half applies is decided by the `color-scheme`
  * property below, so the appearance switches by changing one declaration rather than by
@@ -16,44 +16,37 @@
   --text-*: initial;
   --font-*: initial;
 
-  --color-rail: light-dark(#eeebe2, #1a1918);
-  --color-canvas: light-dark(#faf9f5, #1f1e1d);
-  --color-raised: light-dark(#edebe4, #262624);
-  --color-active: light-dark(#e3e0d7, #30302e);
-  --color-overlay: light-dark(#ffffff, #2b2a28);
-  --color-line: light-dark(rgb(0 0 0 / 0.09), rgb(255 255 255 / 0.07));
-  --color-line-strong: light-dark(rgb(0 0 0 / 0.17), rgb(255 255 255 / 0.14));
-  --color-fg: light-dark(#1f1e1d, #f5f4ef);
-  --color-fg-2: light-dark(#4b4944, #c2c0b6);
-  --color-fg-3: light-dark(#74726b, #8f8d86);
-  --color-fg-4: light-dark(#949188, #6b6a65);
-  --color-accent: light-dark(#b5502f, #d97757);
-  --color-accent-soft: light-dark(rgb(181 80 47 / 0.14), rgb(217 119 87 / 0.16));
-  /* a diff's added and removed lines: the one place colour means something other than state.
-     low chroma, so a page of diff reads as text with a tint, not as a warning */
-  --color-diff-add: light-dark(rgb(70 140 90 / 0.11), rgb(110 180 125 / 0.13));
-  --color-diff-del: light-dark(rgb(190 95 75 / 0.1), rgb(225 125 105 / 0.12));
-  /* the band behind what needs you: fainter than a pill, and a touch stronger on dark, where the
-     same alpha reads as less */
-  --color-accent-band: light-dark(rgb(181 80 47 / 0.055), rgb(217 119 87 / 0.075));
-  --color-destructive: light-dark(#c4292e, #e5484d);
-  --color-scrim: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.45));
-  --color-ring: light-dark(rgb(0 0 0 / 0.5), rgb(255 255 255 / 0.45));
-  --color-thumb: light-dark(rgb(0 0 0 / 0.16), rgb(255 255 255 / 0.1));
-  --color-thumb-hover: light-dark(rgb(0 0 0 / 0.28), rgb(255 255 255 / 0.2));
-  --color-transparent: transparent;
-
-  /* the project manager's tokens (ui.md 1.1), added beside today's. the swap gives the tokens above
-     their new values and removes the ones the new screens do not use */
+  /* grounds */
+  --color-canvas: light-dark(#ffffff, #17181b);
   --color-chrome: light-dark(#fafafb, #1b1c20);
+  --color-raised: light-dark(#f3f4f6, #25262b);
+  --color-active: light-dark(#ecedf0, #2d2f35);
+  --color-overlay: light-dark(#ffffff, #1f2024);
+
+  /* lines. dark ones are white with alpha so they show on every dark ground */
+  --color-line: light-dark(#ecedef, rgb(255 255 255 / 0.08));
+  --color-line-strong: light-dark(#e3e5e8, rgb(255 255 255 / 0.14));
+
+  /* text. fg-4 is the lightest grey that words may use: 4.5:1 on every ground */
+  --color-fg: light-dark(#1b1c1f, #edeef0);
+  --color-fg-2: light-dark(#3a3d42, #c9cbd1);
+  --color-fg-3: light-dark(#555a63, #a9adb5);
+  --color-fg-4: light-dark(#676c75, #969aa2);
   /* icons, rings and chevrons only. 3:1, never words */
   --color-faint: light-dark(#80858e, #747982);
+
+  /* the accent: the primary action, a link, focus, the not-reviewed dot */
+  --color-accent: light-dark(#6726e1, #a48bfa);
   --color-accent-solid: light-dark(#6726e1, #6e3ae6);
   --color-on-solid: light-dark(#ffffff, #ffffff);
+  --color-accent-soft: light-dark(rgb(103 38 225 / 0.1), rgb(164 139 250 / 0.18));
   --color-accent-line: light-dark(#b9a3ee, #5b3fb0);
+  --color-ring: light-dark(rgb(103 38 225 / 0.4), rgb(155 123 255 / 0.5));
+
   /* words that carry a state */
   --color-danger: light-dark(#c2263f, #f0647a);
   --color-waiting: light-dark(#b8490f, #f0854d);
+
   /* one hue per meaning. drawn only by ui.tsx (KindLabel, StatusIcon) */
   --color-hue-orange: light-dark(#dd5f1f, #f0854d);
   --color-hue-violet: light-dark(#7c5cfc, #9a82ff);
@@ -62,6 +55,7 @@
   --color-hue-green: light-dark(#1f8a5b, #35a873);
   --color-hue-red: light-dark(#d32f4c, #ec5a72);
   --color-hue-yellow: light-dark(#a87e00, #e0b32b);
+
   /* avatars. drawn only by ui.tsx (Avatar). the same in both appearances: they are mid-tones */
   --color-agent-1: light-dark(#0b817d, #0b817d);
   --color-agent-2: light-dark(#cb3682, #cb3682);
@@ -74,6 +68,11 @@
   --color-agent-9: light-dark(#bb4c72, #bb4c72);
   --color-agent-you: light-dark(#dadce0, #3a3c43);
 
+  --color-scrim: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.5));
+  --color-thumb: light-dark(rgb(0 0 0 / 0.16), rgb(255 255 255 / 0.1));
+  --color-thumb-hover: light-dark(rgb(0 0 0 / 0.28), rgb(255 255 255 / 0.2));
+  --color-transparent: transparent;
+
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
@@ -85,8 +84,6 @@
   --text-body--line-height: 20px;
   --text-title: 15px;
   --text-title--line-height: 22px;
-  --text-hero: 20px;
-  --text-hero--line-height: 28px;
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -100,7 +97,7 @@
   /* not a @theme shadow: tailwind inlines those at build time, so one could never switch */
   --shadow-overlay:
     0 8px 30px light-dark(rgb(0 0 0 / 0.13), rgb(0 0 0 / 0.5)),
-    0 0 0 1px light-dark(rgb(0 0 0 / 0.09), rgb(255 255 255 / 0.08));
+    0 0 0 1px light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.1));
 }
 
 /* set by the renderer when the Appearance setting pins it. also makes macOS draw its own
@@ -144,7 +141,7 @@ textarea {
 
 input[type="radio"],
 input[type="checkbox"] {
-  accent-color: var(--color-fg-2);
+  accent-color: var(--color-accent-solid);
   cursor: default;
 }
 
@@ -181,13 +178,33 @@ mark {
   outline-offset: 1px;
 }
 
-input:focus-visible {
-  outline: none;
+/* a field says focus with its border and a soft ring, not the ring a button gets */
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-accent-soft);
+  outline-offset: 0;
+  border-color: var(--color-accent-line);
+}
+input[type="radio"]:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
 }
 
 /* a list that holds focus says where the keyboard is with its active row, not a ring round it */
-[data-inspector-list]:focus-visible {
+[data-list]:focus-visible {
   outline: none;
+}
+
+/* the palette's field has no border to light up */
+[data-palette-input]:focus-visible {
+  outline: none;
+}
+
+/* a long list only lays out the rows near the window */
+.cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 57px;
 }
 
 ::-webkit-scrollbar {
@@ -267,7 +284,7 @@ dialog::backdrop {
 }
 
 /*
- * markdown an agent wrote, in the pane's own typography: no boxes, hairlines where a structure
+ * markdown an agent wrote, in the app's own typography: no boxes, hairlines where a structure
  * needs one, mono only for code. headings stay near body size - it is someone's report, not a page.
  */
 .md {
@@ -328,19 +345,23 @@ dialog::backdrop {
   color: var(--color-fg-4);
 }
 .md a {
-  color: var(--color-fg);
-  text-decoration: underline;
-  text-decoration-color: var(--color-line-strong);
-  text-underline-offset: 2px;
+  color: var(--color-accent);
+  text-decoration: none;
   cursor: pointer;
 }
 .md a:hover {
-  text-decoration-color: var(--color-fg-3);
+  text-decoration: underline;
 }
 .md code {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--color-fg);
+}
+.md :not(pre) > code {
+  background: var(--color-raised);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 12px;
 }
 .md pre {
   padding: 2px 0 2px 12px;
@@ -379,8 +400,8 @@ dialog::backdrop {
   color: var(--color-fg);
   font-weight: 500;
 }
-/* the answer to a turn is what the conversation is for: full strength, where a report is quieter */
-.md-answer {
+/* a card's body and its thread are what the page is for: full strength */
+.md-full {
   color: var(--color-fg);
 }
 .md .md-alt {
@@ -391,16 +412,4 @@ dialog::backdrop {
 }
 .md .md-alt::after {
   content: "]";
-}
-
-/*
- * a long block, folded. prose ends on an ellipsis at a whole line. the clamp cannot count the lines
- * of a table or a code block, so the height caps those.
- */
-.fold {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--fold-lines);
-  max-height: calc(var(--fold-lines) * 20px);
-  overflow: hidden;
 }

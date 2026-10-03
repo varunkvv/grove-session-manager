@@ -5,10 +5,25 @@ import {
   type ComboFolder,
   type FolderOutcome,
   type FolderStatus,
+  type LongWorkMode,
   longWorkMode,
   type TeardownOutcome,
 } from "@grove/core";
-import type { ComboView, FolderView, ToastMessage } from "../../shared/ipc.ts";
+import type { FolderView, ToastMessage } from "../../shared/ipc.ts";
+
+/** a combo and its folders' state, as main keeps it. the page gets it inside a ProjectView */
+export interface ComboView {
+  name: string;
+  root: string;
+  note?: string;
+  workspaceFile: string;
+  /** whether long autonomous work is handed to a background agent. can be flipped mid-session. */
+  longWork: LongWorkMode;
+  folders: FolderView[];
+  /** 'unknown' until the first reconcile lands, so nothing flashes drift it has not checked */
+  status: "unknown" | "checking" | "known";
+  checkedAt?: number;
+}
 
 export type Busy = NonNullable<FolderView["busy"]>;
 
@@ -130,9 +145,9 @@ export function statusFromOutcome(
 export type OutcomeContext = "create" | "update" | "open" | "ensure" | "repair";
 
 const REST: Record<OutcomeContext, string> = {
-  create: " The rest of the combo was created.",
-  update: " The rest of the combo was updated.",
-  open: " The combo opened without it.",
+  create: " The rest of the project was created.",
+  update: " The rest of the project was updated.",
+  open: " The project opened without it.",
   ensure: "",
   repair: "",
 };
@@ -211,7 +226,7 @@ export function keptFolderToast(outcome: TeardownOutcome): ToastMessage {
   }
   return {
     level: "error",
-    title: `${dir}: kept in the combo`,
+    title: `${dir}: kept in the project`,
     body,
     ...(outcome.git?.stderr ? { detail: outcome.git.stderr } : {}),
   };

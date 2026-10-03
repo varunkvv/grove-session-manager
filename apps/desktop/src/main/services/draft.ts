@@ -1,4 +1,4 @@
-// a ComboDraft is the one place the renderer hands main a path. nothing in it is believed
+// a ProjectDraft is the one place the renderer hands main a path. nothing in it is believed
 // until it has been checked here.
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -7,6 +7,8 @@ import { type BranchSpec, type ComboFolder, isObject, validateBranchName } from 
 export interface CleanDraft {
   name: string;
   note?: string;
+  /** upper-cased, held to the rules with the other projects' prefixes in problemsWithDraft. create only */
+  prefix?: string;
   folders: ComboFolder[];
 }
 
@@ -74,8 +76,15 @@ export async function parseDraft(
   const note =
     typeof raw.note === "string" ? raw.note.replace(/\s+/g, " ").trim() || undefined : undefined;
   if (note && note.length > 500) problems.push("Keep the goal under 500 characters.");
+  const prefix =
+    typeof raw.prefix === "string" ? raw.prefix.trim().toUpperCase() || undefined : undefined;
   return {
-    draft: { name: raw.name.trim(), ...(note ? { note } : {}), folders },
+    draft: {
+      name: raw.name.trim(),
+      ...(note ? { note } : {}),
+      ...(prefix ? { prefix } : {}),
+      folders,
+    },
     problems,
   };
 }

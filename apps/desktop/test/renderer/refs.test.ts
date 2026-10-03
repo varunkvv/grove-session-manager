@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rehypeRefs } from "../../src/renderer/logic/refs.ts";
+import { rehypeRefs, webLink } from "../../src/renderer/logic/refs.ts";
 
 // the trees react-markdown hands a rehype plugin, cut down to what the plugin reads
 type Node = {
@@ -84,5 +84,15 @@ describe("rehypeRefs", () => {
 
   it("takes only conclusion ids when the project has no prefix yet", () => {
     expect(run({ type: "root", children: [el("p", text("item-4 D-2"))] }, "")).toBe("item-4 [D-2]");
+  });
+});
+
+describe("a link in what an agent wrote", () => {
+  it("only a web link is a link", () => {
+    expect(webLink("https://example.com/x")).toBe("https://example.com/x");
+    expect(webLink("javascript:alert(1)")).toBeNull();
+    expect(webLink("file:///etc/passwd")).toBeNull();
+    expect(webLink("/relative")).toBeNull();
+    expect(webLink(undefined)).toBeNull();
   });
 });

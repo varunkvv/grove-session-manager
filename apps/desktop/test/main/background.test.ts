@@ -186,18 +186,6 @@ describe("stopping a background session", () => {
 });
 
 describe("handing a session to the supervisor", () => {
-  it("builds argv with the prompt after `--`, and no permission flags", async () => {
-    const { continueArgs } = await import("../../src/main/services/background.ts");
-    expect(continueArgs(SID.a, "--dangerously-skip-permissions")).toEqual([
-      "--resume",
-      SID.a,
-      "--bg",
-      "--",
-      "--dangerously-skip-permissions",
-    ]);
-    expect(continueArgs(SID.a, "x").join(" ")).not.toMatch(/permission|dangerously|skip/);
-  });
-
   it("reads the short id from the supervisor, and from the printed line when it has to", async () => {
     const { backgroundedId, isNotTrusted } = await import("../../src/main/services/background.ts");
     expect(backgroundedId("backgrounded · d7b6bcc2\n")).toBe("d7b6bcc2");
@@ -211,14 +199,16 @@ describe("handing a session to the supervisor", () => {
   });
 
   it("continues under the same id, in the session's folder, with the env it was given", async () => {
-    const { continueArgs } = await import("../../src/main/services/background.ts");
     const dir = sandbox();
     const fake = writeFakeClaude(dir, []);
     const { bg, seen } = service({ bin: fake.bin });
-    const res = await bg.dispatch(continueArgs(SID.a, "continue where you left off"), {
-      cwd: dir,
-      sessionId: SID.a,
-    });
+    const res = await bg.dispatch(
+      ["--resume", SID.a, "--bg", "--", "continue where you left off"],
+      {
+        cwd: dir,
+        sessionId: SID.a,
+      },
+    );
     expect(res).toMatchObject({ ok: true, id: "abcd1234" });
     const call = fakeClaudeCalls(fake).find((c) => c.argv.includes("--bg"));
     expect(call).toEqual({
@@ -232,12 +222,14 @@ describe("handing a session to the supervisor", () => {
   });
 
   it("a folder the CLI never trusted comes back as that, not as a failure to show raw", async () => {
-    const { continueArgs } = await import("../../src/main/services/background.ts");
     const dir = sandbox();
     const fake = writeFakeClaude(dir, []);
     setUntrusted(fake, true);
     const { bg } = service({ bin: fake.bin });
-    const res = await bg.dispatch(continueArgs(SID.a, "go"), { cwd: dir, sessionId: SID.a });
+    const res = await bg.dispatch(["--resume", SID.a, "--bg", "--", "go"], {
+      cwd: dir,
+      sessionId: SID.a,
+    });
     expect(res).toMatchObject({ ok: false, notTrusted: true });
     expect(bg.get(SID.a)).toBeUndefined();
   });

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { type Fixture, makeFixture, makePlainDir, writeSession } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
 
-const CANVAS = { dark: "rgb(31, 30, 29)", light: "rgb(250, 249, 245)" };
+const CANVAS = { dark: "rgb(23, 24, 27)", light: "rgb(255, 255, 255)" };
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -65,7 +65,8 @@ test("by default it follows the system, and switches with it", async () => {
 test("changing the setting takes effect without a restart, and is remembered", async () => {
   app = await launchApp(setup());
   const { page } = app;
-  await page.getByTestId("open-settings").click();
+  // the palette's Settings row comes with the palette. the key is the page's own
+  await page.keyboard.press("Meta+,");
   await page.getByTestId("setting-appearance").selectOption("light");
   await page.getByTestId("save-settings").click();
 

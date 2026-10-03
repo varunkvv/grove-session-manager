@@ -16,7 +16,9 @@ import {
   type LongWorkMode,
   loadCombos,
   type PrepareOptions,
+  type ProjectId,
   prepareComboOpen,
+  projectIdOf,
   type RecordInstall,
   reconcileCombo,
   repairCombo,
@@ -32,11 +34,12 @@ import {
   validateComboName,
   validateComboRoot,
   validateFolders,
+  validatePrefix,
   watchComboStatusHooks,
   workspaceFilePath,
 } from "@grove/core";
 import { readProject } from "@grove/record";
-import type { ComboView, ToastMessage } from "../../shared/ipc.ts";
+import type { ToastMessage } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { OpQueue } from "../opQueue.ts";
@@ -46,6 +49,7 @@ import {
   buildComboView,
   buildFolderViews,
   type ComboRuntime,
+  type ComboView,
   emptyRuntime,
   folderKey,
   isRemaining,
@@ -109,6 +113,13 @@ export class ComboService {
   find(name: string): Combo {
     const combo = this.combos.find((c) => c.name === name);
     if (!combo) throw new AppError("no-combo", `There is no combo called "${name}".`);
+    return combo;
+  }
+
+  /** a project by basename(root). the first of two that share one, as the project list shows */
+  byId(id: ProjectId): Combo {
+    const combo = this.combos.find((c) => projectIdOf(c) === id);
+    if (!combo) throw new AppError("no-project", `There is no project called "${id}".`);
     return combo;
   }
 
@@ -414,6 +425,9 @@ export class ComboService {
     };
     problems.push(...validateFolders(combo));
     problems.push(...validateComboRoot(combo, this.combos, this.opts.appRoot).problems);
+    // a prefix never changes once a project has cards, so only a new project's is looked at
+    const prefixProblem = !existing && draft.prefix && validatePrefix(draft.prefix, this.combos);
+    if (prefixProblem) problems.push(prefixProblem);
     return problems;
   }
 
@@ -432,9 +446,10 @@ export class ComboService {
       root,
       folders: draft.folders,
       ...(draft.note ? { note: draft.note } : {}),
+      ...(draft.prefix ? { prefix: draft.prefix } : {}),
     };
     await this.save((combos) => [...combos, combo]);
-    // the form's own prefix field comes with the new screens
+    // no prefix from the form: the one in the folder's project file, else derived
     await this.backfillPrefixes();
     return this.find(draft.name);
   }

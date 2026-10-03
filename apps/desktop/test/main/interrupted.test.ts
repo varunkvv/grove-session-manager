@@ -189,14 +189,4 @@ describe("the interrupted fact survives a restart", () => {
     expect(later.live.list().has(SID.cut)).toBe(false);
     expect([...later.seen().keys()]).toEqual([SID.cut]);
   });
-
-  it("grove handing it to the supervisor clears it", async () => {
-    const m = machine();
-    m.event(SID.cut, "UserPromptSubmit");
-    m.event(SID.cut, "SessionEnd");
-    const { live, seen } = await m.start();
-    expect(seen().has(SID.cut)).toBe(true);
-    live.clearInterrupted(SID.cut);
-    expect(seen().has(SID.cut)).toBe(false);
-  });
 });

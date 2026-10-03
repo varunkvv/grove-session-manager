@@ -1,103 +1,77 @@
 import { create } from "zustand";
 import type {
   AppSettings,
-  ComboView,
+  Bootstrap,
+  CardView,
   EditorStatus,
   EnvInfo,
-  IndexStatus,
+  InboxView,
+  ProjectId,
+  ProjectRecordView,
+  ProjectView,
   PushEvents,
-  SearchHit,
-  SessionAction,
-  SessionKey,
-  SessionRow,
   ToastMessage,
 } from "../../shared/ipc.ts";
-import type { Scope } from "../logic/rows.ts";
+import type { ConclusionControls } from "../logic/views.ts";
+import { switchProject } from "./actions.ts";
 import { takeLanding } from "./landing.ts";
+
+export type Section = "inbox" | "cards" | "conclusions";
+
+export type View =
+  | { name: "inbox" }
+  | { name: "cards" }
+  | { name: "card"; cardId: string }
+  | { name: "conclusions" }
+  | { name: "new-project" }
+  | { name: "edit-project" };
 
 export type DialogState =
   | null
-  | { kind: "combo"; editing?: string }
-  | { kind: "teardown"; name: string }
-  | { kind: "delete"; name: string }
   | { kind: "settings" }
-  /** an action that interrupts something, asked before it runs */
-  | { kind: "confirm"; key: SessionKey; action: SessionAction }
-  /** hand a session nothing is running to Claude Code's supervisor */
-  | {
-      kind: "background";
-      target: { kind: "continue"; key: SessionKey };
-      /** what the prompt starts as. the person can change it, and nothing goes without them. */
-      prompt: string;
-    }
-  /** a new session in a combo: the editor, Terminal or the background, with its own settings */
-  | { kind: "new-session"; combo: string };
-
-export type PaneView = "conversation" | "agents";
-
-export interface MenuState {
-  key: SessionKey;
-  actions: SessionAction[];
-  index: number;
-}
+  | { kind: "delete"; project: ProjectId }
+  /** one question before something that interrupts or costs. it carries its own words and what to run */
+  | { kind: "confirm"; title: string; body: string; label: string; run: () => void };
 
 export interface Toast extends ToastMessage {
   id: number;
 }
 
-/**
- * the pane beside the list. it has no session of its own: it shows whichever row is active, like
- * a mail app's reading pane - the session's conversation, or what its agents did.
- */
-export interface InspectorState {
-  /**
-   * what it shows of the session. the arrows keep it; a session with no agents shows its
-   * conversation whatever this says.
-   */
-  view: PaneView;
-  /** the agent the pane's keyboard is on */
-  agent: string | null;
-  /** the agent whose detail is showing in place of the list, and the session it belongs to */
-  detail: { key: SessionKey; id: string } | null;
-  /** a step to bring into view when the detail opens */
-  step?: number;
-  /** the search that led here: the detail lands on the step that matched it */
-  find?: string;
-  /** a notification click landed here, at this time: the conversation goes to its end */
-  landAt?: number;
-  /** the agent's detail was opened from the conversation: back goes back there */
-  from?: "conversation";
-  /** the conversation comes back where it was left, not at its end */
-  restore?: boolean;
-}
-
-interface State {
+export interface State {
   ready: boolean;
   env: EnvInfo | null;
   settings: AppSettings | null;
   editor: EditorStatus | null;
-  index: IndexStatus;
-  /** newest activity first */
-  sessions: SessionRow[];
-  combos: ComboView[];
-  combosProblem?: string;
-  selectedCombo: string | null;
-  scope: Scope;
-  query: string;
-  /** conversation matches for `query`, from the main process. stale ones are ignored. */
-  deep: { query: string; hits: Map<SessionKey, SearchHit> } | null;
-  activeKey: SessionKey | null;
-  menu: MenuState | null;
+  /** in combos.json order */
+  projects: ProjectView[];
+  projectsProblem?: string;
+  /** the project on screen. null only when there are no projects at all. */
+  project: ProjectId | null;
+  section: Section;
+  view: View;
+  /** what Back and Escape return to. a new screen from the nav, the palette or a project switch clears it. */
+  back: View[];
+  /** every project's inbox rows, Asked and Stopped first, and the tray count */
+  inbox: InboxView;
+  /** every project's cards and conclusions. `readAt` is absent until the first read */
+  records: Record<ProjectId, ProjectRecordView>;
+  /** the card on screen with its thread. null until `card()` has answered */
+  card: CardView | null;
+  /** the keyboard's row on each list screen, by id */
+  active: { inbox: string | null; cards: string | null; conclusions: string | null };
+  /** the keyboard moved last. while false no row looks active and only hover shows a row's buttons */
+  keys: boolean;
+  /** the Conclusions screen's controls. they outlive a trip to a card and back. */
+  conclusions: ConclusionControls;
+  /** a popover the global key handler must leave alone */
+  overlay: null | "palette" | "switcher";
   dialog: DialogState;
-  /** null while closed */
-  inspector: InspectorState | null;
   toasts: Toast[];
-  bannerDismissed: boolean;
+  /** the banner reason that was dismissed. it comes back when its reason changes */
+  bannerDismissed: string | null;
   now: number;
 
   set(patch: Partial<State>): void;
-  selectCombo(name: string | null): void;
-  setScope(scope: Scope): void;
   toast(t: ToastMessage): void;
   dismissToast(id: number): void;
 }
@@ -109,35 +83,78 @@ export const useStore = create<State>((set) => ({
   env: null,
   settings: null,
   editor: null,
-  index: { phase: "cache", done: 0, total: 0 },
-  sessions: [],
-  combos: [],
-  selectedCombo: null,
-  scope: "all",
-  query: "",
-  deep: null,
-  activeKey: null,
-  menu: null,
+  projects: [],
+  project: null,
+  section: "inbox",
+  view: { name: "inbox" },
+  back: [],
+  inbox: { rows: [], tray: 0 },
+  records: {},
+  card: null,
+  active: { inbox: null, cards: null, conclusions: null },
+  keys: false,
+  conclusions: { query: "", kind: "all", open: null },
+  overlay: null,
   dialog: null,
-  inspector: null,
   toasts: [],
-  bannerDismissed: false,
+  bannerDismissed: null,
   now: Date.now(),
 
   set: (patch) => set(patch),
-  selectCombo: (name) => set({ selectedCombo: name, scope: name ? "combo" : "all" }),
-  setScope: (scope) =>
-    set((s) => ({ scope: scope === "combo" && !s.selectedCombo ? "all" : scope })),
   toast: (t) => set((s) => ({ toasts: [...s.toasts.slice(-2), { ...t, id: ++toastId }] })),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));
 
-function applySessionPatch(rows: SessionRow[], p: PushEvents["sessions:patch"]): SessionRow[] {
-  const map = new Map<SessionKey, SessionRow>(p.replace ? [] : rows.map((r) => [r.key, r]));
-  for (const key of p.removes) map.delete(key);
-  for (const row of p.upserts) map.set(row.key, row);
-  // a few thousand rows sort in about a millisecond. not worth being clever.
-  return [...map.values()].sort((a, b) => b.activityMs - a.activityMs);
+/** the project on screen */
+export const currentProject = (s: State): ProjectView | undefined =>
+  s.projects.find((p) => p.id === s.project);
+
+const PROJECT_KEY = "grove.project";
+
+/** localStorage can throw. nothing here is worth failing for */
+export function rememberProject(id: ProjectId): void {
+  try {
+    localStorage.setItem(PROJECT_KEY, id);
+  } catch {}
+}
+
+function rememberedProject(): string | null {
+  try {
+    return localStorage.getItem(PROJECT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** one project's record after a push: changed heads are upserts unless `replace`, the rest comes whole */
+export function applyRecord(
+  had: ProjectRecordView | undefined,
+  p: Omit<PushEvents["record:changed"], "rev" | "project">,
+): ProjectRecordView {
+  const base = had ?? { cards: [], conclusions: [], problems: [] };
+  let cards = base.cards;
+  if (p.replace) cards = p.cards ?? [];
+  else if (p.cards || p.removedCards) {
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    for (const id of p.removedCards ?? []) byId.delete(id);
+    for (const c of p.cards ?? []) byId.set(c.id, c);
+    cards = [...byId.values()];
+  }
+  return {
+    cards,
+    conclusions: p.conclusions ?? base.conclusions,
+    problems: p.problems ?? base.problems,
+    readAt: p.readAt ?? base.readAt,
+  };
+}
+
+/** the project on screen left the list, or the first one arrived */
+function followProjects(projects: ProjectView[]): void {
+  const { project, set } = useStore.getState();
+  if (project !== null && projects.some((p) => p.id === project)) return;
+  const first = projects[0]?.id;
+  if (first) switchProject(first);
+  else set({ project: null });
 }
 
 /**
@@ -146,9 +163,10 @@ function applySessionPatch(rows: SessionRow[], p: PushEvents["sessions:patch"]):
  */
 export async function connect(): Promise<() => void> {
   const { set, toast } = useStore.getState();
-  let revs: { sessions: number; combos: number } | null = null;
+  type Domain = keyof Bootstrap["revs"];
+  let revs: Bootstrap["revs"] | null = null;
   const buffered: Array<() => void> = [];
-  const gate = (domain: "sessions" | "combos", rev: number, apply: () => void) => {
+  const gate = (domain: Domain, rev: number, apply: () => void) => {
     if (!revs) return void buffered.push(() => gate(domain, rev, apply));
     if (rev <= revs[domain]) return;
     revs[domain] = rev;
@@ -156,54 +174,54 @@ export async function connect(): Promise<() => void> {
   };
 
   const offs = [
-    window.grove.on("sessions:patch", (p) =>
-      gate("sessions", p.rev, () =>
-        set({ sessions: applySessionPatch(useStore.getState().sessions, p) }),
-      ),
-    ),
-    window.grove.on("sessions:index", (index) => set({ index })),
-    window.grove.on("combos:changed", (p) =>
-      gate("combos", p.rev, () => {
-        const { selectedCombo } = useStore.getState();
-        const gone = selectedCombo !== null && !p.combos.some((c) => c.name === selectedCombo);
-        set({
-          combos: p.combos,
-          combosProblem: p.problem,
-          ...(gone ? { selectedCombo: null, scope: "all" as Scope } : {}),
-        });
+    window.grove.on("projects:changed", (p) =>
+      gate("projects", p.rev, () => {
+        set({ projects: p.projects, projectsProblem: p.problem });
+        followProjects(p.projects);
       }),
     ),
-    window.grove.on("combos:folders", (p) =>
-      gate("combos", p.rev, () =>
+    window.grove.on("projects:folders", (p) =>
+      gate("projects", p.rev, () =>
         set({
-          combos: useStore
+          projects: useStore
             .getState()
-            .combos.map((c) =>
-              c.name === p.name
-                ? { ...c, status: p.status, checkedAt: p.checkedAt, folders: p.folders }
-                : c,
+            .projects.map((x) =>
+              x.id === p.id
+                ? { ...x, status: p.status, checkedAt: p.checkedAt, folders: p.folders }
+                : x,
             ),
         }),
       ),
     ),
+    window.grove.on("record:changed", (p) =>
+      gate("record", p.rev, () => {
+        const { records } = useStore.getState();
+        set({ records: { ...records, [p.project]: applyRecord(records[p.project], p) } });
+      }),
+    ),
+    window.grove.on("inbox:changed", (p) =>
+      gate("inbox", p.rev, () => set({ inbox: { rows: p.rows, tray: p.tray } })),
+    ),
     window.grove.on("editor:status", (editor) => set({ editor })),
     window.grove.on("toast", (t) => toast(t)),
-    // a notification was clicked: take where it lands, now that the list is here to land in
+    // a notification or a tray row was clicked: take where it lands, now that the page is here
     window.grove.on("app:land", () => {
       if (revs) void takeLanding();
     }),
   ];
 
   const boot = await window.grove.bootstrap();
+  const saved = rememberedProject();
   set({
     ready: true,
     env: boot.env,
     settings: boot.settings,
     editor: boot.editor,
-    index: boot.index,
-    combos: boot.combos,
-    combosProblem: boot.combosProblem,
-    sessions: [...boot.sessions].sort((a, b) => b.activityMs - a.activityMs),
+    projects: boot.projects,
+    projectsProblem: boot.projectsProblem,
+    records: boot.record,
+    inbox: boot.inbox,
+    project: boot.projects.some((p) => p.id === saved) ? saved : (boot.projects[0]?.id ?? null),
   });
   revs = { ...boot.revs };
   for (const replay of buffered.splice(0)) replay();
@@ -214,6 +232,3 @@ export async function connect(): Promise<() => void> {
     for (const off of offs) off();
   };
 }
-
-export const selectedComboView = (s: State): ComboView | undefined =>
-  s.combos.find((c) => c.name === s.selectedCombo);

@@ -51,3 +51,14 @@ export function rehypeRefs({ prefix }: { prefix: string }) {
   const re = new RegExp(`\\b(${card}[DFV]-[1-9]\\d{0,5})\\b`, "g");
   return (tree: HastNode) => walk(tree, re);
 }
+
+/** only http(s) links go anywhere, and they go to the browser through main */
+export function webLink(href: string | undefined): string | null {
+  if (!href) return null;
+  try {
+    const u = new URL(href);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}

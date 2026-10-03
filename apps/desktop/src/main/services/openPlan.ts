@@ -3,9 +3,6 @@
 import type { Runtime } from "@grove/core";
 import type { OpenPlan, SessionRow } from "../../shared/ipc.ts";
 
-// ponytail: re-exported until the swap moves them here and deletes sessionActions.ts
-export { daemonHeld, heldWhere } from "./sessionActions.ts";
-
 const STOP_CONFIRM = {
   title: "Stop it while it works?",
   body: "It is still working - stopping it interrupts the turn. The conversation is kept, and it opens where you left it.",

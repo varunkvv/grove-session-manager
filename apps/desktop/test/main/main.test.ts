@@ -165,10 +165,10 @@ describe("Pusher", () => {
       isDestroyed: () => destroyed,
       send: (channel, payload) => sent.push([channel, payload]),
     }));
-    expect(pusher.nextRev("sessions")).toBe(1);
-    expect(pusher.nextRev("sessions")).toBe(2);
-    expect(pusher.nextRev("combos")).toBe(1);
-    expect(pusher.currentRevs()).toEqual({ sessions: 2, combos: 1 });
+    expect(pusher.nextRev("record")).toBe(1);
+    expect(pusher.nextRev("record")).toBe(2);
+    expect(pusher.nextRev("inbox")).toBe(1);
+    expect(pusher.currentRevs()).toEqual({ projects: 0, record: 2, inbox: 1 });
     pusher.send("toast", { level: "info", title: "hi" });
     destroyed = true;
     pusher.send("toast", { level: "info", title: "gone" });
@@ -353,6 +353,14 @@ describe("drafts from the renderer", () => {
     expect((await goal("ab     ".repeat(150))).problems).toEqual([]);
   });
 
+  it("the form's prefix is carried upper-cased, and an empty one means none", async () => {
+    const prefix = async (p: unknown) =>
+      (await parseDraft({ name: "p", prefix: p, folders: [] })).draft?.prefix;
+    expect(await prefix(" dat2 ")).toBe("DAT2");
+    expect(await prefix("  ")).toBeUndefined();
+    expect(await prefix(42)).toBeUndefined();
+  });
+
   it("a worktree with no branch means detached, and a reference never carries one", async () => {
     const dir = sandbox();
     const { draft } = await parseDraft({
@@ -449,7 +457,7 @@ describe("combo views", () => {
       "create",
     );
     expect(collision?.title).toBe('api: branch "prod-debug" is already checked out');
-    expect(collision?.body).toBe("at /ws/other/api. The rest of the combo was created.");
+    expect(collision?.body).toBe("at /ws/other/api. The rest of the project was created.");
 
     const foreign = outcomeToast(
       {
@@ -461,7 +469,7 @@ describe("combo views", () => {
       "open",
     );
     expect(foreign?.body).toContain("left untouched");
-    expect(foreign?.body).toContain("The combo opened without it.");
+    expect(foreign?.body).toContain("The project opened without it.");
   });
 });
 

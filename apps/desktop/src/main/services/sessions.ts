@@ -20,13 +20,7 @@ import {
   watchProjects,
 } from "@grove/core";
 import { rowHaystack } from "../../shared/haystack.ts";
-import type {
-  BackgroundView,
-  IndexStatus,
-  SearchHit,
-  SessionKey,
-  SessionRow,
-} from "../../shared/ipc.ts";
+import type { BackgroundView, SessionKey, SessionRow } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { diffRows, PatchCoalescer } from "../patchCoalescer.ts";
 
@@ -39,10 +33,19 @@ export interface SessionServiceOptions {
   projectsDir: string;
   cacheDir: string;
   maxParsed?: number;
-  emitPatch: (patch: { upserts: SessionRow[]; removes: SessionKey[]; replace: boolean }) => void;
-  emitStatus: (status: IndexStatus) => void;
-  /** a fresh look at one session's subagents, for whoever wants to say more about them */
-  onAgents?: (key: SessionKey, snapshot: AgentSnapshot) => void;
+  /** the rows changed. at most one call per 150ms */
+  onChange: () => void;
+}
+
+/** a row the instant filter could not find, found in its conversation instead */
+export interface SearchHit {
+  key: SessionKey;
+  /** the part of the conversation that matched. `in Explore: …` when an agent's words did. */
+  snippet: string;
+  /** the match is in this agent's transcript, not in the session's own */
+  agent?: string;
+  /** every agent of the session whose own words hold the whole query, with the part that did */
+  agents?: Array<{ id: string; snippet: string }>;
 }
 
 function basename(p: string | undefined): string | undefined {
@@ -87,7 +90,6 @@ function toRow(
   labels: ReadonlyMap<string, string>,
   live: ReadonlyMap<string, LiveStatus>,
   agents: ReadonlyMap<SessionKey, AgentSnapshot>,
-  archived: ReadonlySet<string>,
   background: ReadonlyMap<string, BackgroundEntry>,
   interrupted: ReadonlyMap<string, { at: number }>,
 ): SessionRow {
@@ -118,8 +120,6 @@ function toRow(
   }
   if (record.entrypoint) row.entrypoint = record.entrypoint;
   if (record.usage) row.usage = record.usage;
-  // by session id, so the same conversation reads as archived wherever its transcript ended up
-  if (archived.has(record.sessionId)) row.archived = true;
   const status = live.get(record.sessionId);
   if (status) row.live = status;
   const bg = background.get(record.sessionId);
@@ -143,7 +143,6 @@ export class SessionService {
   private rows = new Map<SessionKey, SessionRow>();
   private combos: Combo[] = [];
   private live: ReadonlyMap<string, LiveStatus> = new Map();
-  private archived: ReadonlySet<string> = new Set();
   /** what the supervisor said last, by session id */
   private background: ReadonlyMap<string, BackgroundEntry> = new Map();
   /** sessions whose process went away mid-turn, by session id */
@@ -175,7 +174,7 @@ export class SessionService {
     this.patches = new PatchCoalescer<SessionRow>({
       intervalMs: PATCH_INTERVAL_MS,
       keyOf: (row) => row.key,
-      emit: (patch) => opts.emitPatch(patch),
+      emit: () => opts.onChange(),
     });
   }
 
@@ -226,22 +225,14 @@ export class SessionService {
   }
 
   private async runRefresh(): Promise<void> {
-    this.opts.emitStatus({ phase: "scanning", done: 0, total: this.rows.size });
     try {
-      const stats = await this.index.refresh({ onBatch: () => this.rebuild() });
+      await this.index.refresh({ onBatch: () => this.rebuild() });
       this.rebuild();
       // fs.watch coalesces and drops, so the periodic pass and window focus re-read them too
       await this.refreshAllAgents();
-      this.opts.emitStatus({
-        phase: this.index.health() === "degraded" ? "degraded" : "idle",
-        done: stats.files - stats.unparsed,
-        total: stats.files,
-        ...(stats.unparsed > 0 ? { message: `${stats.unparsed} not parsed yet` } : {}),
-      });
       this.scheduleFlush();
     } catch (e) {
       log.error("session refresh:", e);
-      this.opts.emitStatus({ phase: "error", done: 0, total: this.rows.size, message: String(e) });
     }
   }
 
@@ -257,12 +248,6 @@ export class SessionService {
     } catch (e) {
       log.warn("session refresh of", file, e);
     }
-  }
-
-  /** somebody archived or un-archived something, or hand-edited archived.json */
-  setArchived(ids: ReadonlySet<string>): void {
-    this.archived = new Set(ids);
-    this.rebuild();
   }
 
   /** a real answer from `claude agents --json`. an unknown one never gets here. */
@@ -381,43 +366,9 @@ export class SessionService {
         .then((rec) => rec && this.rebuild())
         .catch((e) => log.warn("agent usage of", key, e));
     }
-    if (snapshot.agents.length === 0) {
-      if (!this.agents.delete(key)) return false;
-      this.opts.onAgents?.(key, snapshot);
-      return true;
-    }
+    if (snapshot.agents.length === 0) return this.agents.delete(key);
     this.agents.set(key, snapshot);
-    this.opts.onAgents?.(key, snapshot);
     return true;
-  }
-
-  /** the last scan of one session's agents, with the file each one writes to */
-  agentSnapshot(key: SessionKey): AgentSnapshot | undefined {
-    return this.agents.get(key);
-  }
-
-  /** one agent's summary. dropped when the agent finished while the model was still thinking. */
-  applySummary(key: SessionKey, agentId: string, summary: string, at: number): void {
-    const snapshot = this.agents.get(key);
-    const agent = snapshot?.agents.find((a) => a.id === agentId);
-    if (!snapshot || !agent || agent.state !== "running") return;
-    this.agents.set(key, {
-      ...snapshot,
-      agents: snapshot.agents.map((a) => (a.id === agentId ? { ...a, summary, summaryAt: at } : a)),
-    });
-    this.rebuild();
-  }
-
-  /** a finished agent's line: what it found or did. kept across rescans like a summary. */
-  applyFound(key: SessionKey, agentId: string, line: string): void {
-    const snapshot = this.agents.get(key);
-    const agent = snapshot?.agents.find((a) => a.id === agentId);
-    if (!snapshot || !agent || agent.state !== "done" || agent.found === line) return;
-    this.agents.set(key, {
-      ...snapshot,
-      agents: snapshot.agents.map((a) => (a.id === agentId ? { ...a, found: line } : a)),
-    });
-    this.rebuild();
   }
 
   byId(sessionId: string): SessionRow[] {
@@ -474,21 +425,12 @@ export class SessionService {
     return this.rows.get(key);
   }
 
-  status(): IndexStatus {
-    const health = this.index.health();
-    return {
-      phase: health === "degraded" ? "degraded" : "idle",
-      done: this.rows.size,
-      total: this.rows.size,
-    };
-  }
-
   private rebuild(): void {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
     const next = views.map((v) =>
-      toRow(v, labels, this.live, this.agents, this.archived, this.background, this.interrupted),
+      toRow(v, labels, this.live, this.agents, this.background, this.interrupted),
     );
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;

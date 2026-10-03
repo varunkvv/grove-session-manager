@@ -1,199 +1,58 @@
 import { useEffect } from "react";
 import type { MenuCommandId } from "../shared/ipc.ts";
-import { Toasts } from "./components/Chrome.tsx";
-import { ComboDialog } from "./components/ComboDialog.tsx";
-import {
-  BackgroundDialog,
-  ConfirmDialog,
-  DeleteComboDialog,
-  SettingsDialog,
-  TeardownDialog,
-} from "./components/Dialogs.tsx";
-import { Workspace } from "./components/Inspector.tsx";
-import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
-import { Rail } from "./components/Rail.tsx";
-import { SessionActionMenu } from "./components/SessionActionMenu.tsx";
-import { listRef } from "./components/SessionsPane.tsx";
+import { CardPage } from "./components/CardPage.tsx";
+import { Cards } from "./components/Cards.tsx";
+import { Banner, Toasts } from "./components/Chrome.tsx";
+import { Conclusions } from "./components/Conclusions.tsx";
+import { ConfirmDialog, DeleteProjectDialog, SettingsDialog } from "./components/Dialogs.tsx";
+import { Inbox } from "./components/Inbox.tsx";
+import { Palette } from "./components/Palette.tsx";
+import { ProjectForm } from "./components/ProjectForm.tsx";
+import { TopBar } from "./components/TopBar.tsx";
 import { type Intent, interpret } from "./logic/keyboard.ts";
-import { agentIdOf, needsYouKeys, sessionKeyOf } from "./logic/rows.ts";
-import {
-  activate,
-  activateDefault,
-  agentHit,
-  archiveSessions,
-  closeAgent,
-  closeInspector,
-  focusInspector,
-  focusSearch,
-  openAgent,
-  openCombo,
-  openConversation,
-  openInspector,
-  openMenu,
-  paneCommand,
-  refresh,
-  repairSelected,
-} from "./state/actions.ts";
+import { focusScreen, perform } from "./state/actions.ts";
 import { applyAppearance } from "./state/appearance.ts";
 import { connect, useStore } from "./state/store.ts";
 
-function perform(intent: Intent): void {
-  const s = useStore.getState();
-  const keys = listRef.current.keys;
-  const at = s.activeKey ? keys.indexOf(s.activeKey) : -1;
-  // in the Agents scope the active row is an agent. what acts on a session acts on its session.
-  const session = s.activeKey ? sessionKeyOf(s.activeKey) : null;
-  switch (intent.type) {
-    case "move":
-      if (keys.length)
-        s.set({
-          activeKey: keys[Math.min(keys.length - 1, Math.max(0, at + intent.delta))] ?? null,
-        });
-      break;
-    case "move-to":
-      s.set({ activeKey: (intent.where === "first" ? keys[0] : keys[keys.length - 1]) ?? null });
-      break;
-    case "activate":
-      // the inbox is there to be acted on: Enter goes where the row's open button goes
-      if (s.activeKey && s.scope === "inbox") void activateDefault(s.activeKey);
-      else if (s.activeKey) void activate(s.activeKey);
-      break;
-    case "activate-default":
-      if (session) void activateDefault(session);
-      break;
-    case "menu":
-      if (s.activeKey) void openMenu(s.activeKey);
-      break;
-    case "copy-resume":
-      if (session)
-        void window.grove
-          .runSessionAction(session, "copy-command")
-          .then(() => s.toast({ level: "info", title: "Resume command copied" }));
-      break;
-    // both are no-ops on a row that is not asking for anything, and neither moves the selection
-    case "mark-seen":
-      if (session) void window.grove.markSeen([session]);
-      break;
-    case "mark-all-seen": {
-      const seen = needsYouKeys(listRef.current);
-      if (seen.length > 0) void window.grove.markSeen(seen);
-      break;
-    }
-    case "toggle-archive": {
-      const row = s.sessions.find((r) => r.key === session);
-      if (row) void archiveSessions([row.key], !row.archived);
-      break;
-    }
-    case "inspect": {
-      const hit = session ? agentHit(session) : null;
-      if (s.inspector) closeInspector();
-      else if (session && s.activeKey && agentIdOf(s.activeKey)) {
-        openAgent(session, agentIdOf(s.activeKey) ?? "");
-      } else if (session && hit) openAgent(session, hit.agent, { find: hit.find });
-      else if (session) openConversation(session);
-      else openInspector();
-      break;
-    }
-    case "find-step":
-      paneCommand(intent.delta > 0 ? "find-next" : "find-previous");
-      break;
-    case "turns":
-      paneCommand("outline");
-      break;
-    case "inspector-enter":
-      focusInspector();
-      break;
-    case "inspector-leave":
-      focusSearch(false);
-      break;
-    case "inspector-close":
-      closeInspector();
-      break;
-    case "inspector-back":
-      closeAgent();
-      break;
-    case "none":
-      break;
-    case "focus-search":
-    case "type-through":
-      focusSearch(intent.type === "focus-search");
-      break;
-    case "clear-query":
-      s.set({ query: "" });
-      focusSearch(false);
-      break;
-    case "close-overlay":
-      s.set({ menu: null, dialog: null });
-      focusSearch(false);
-      break;
-    case "scope":
-      s.setScope(intent.scope);
-      break;
-    case "combo-step": {
-      const names = s.combos.map((c) => c.name);
-      if (names.length === 0) break;
-      const i = s.selectedCombo
-        ? names.indexOf(s.selectedCombo)
-        : intent.delta > 0
-          ? -1
-          : names.length;
-      s.selectCombo(names[Math.min(names.length - 1, Math.max(0, i + intent.delta))] ?? null);
-      break;
-    }
-    case "new-combo":
-      s.set({ dialog: { kind: "combo" } });
-      break;
-    case "new-session":
-      // the menu's accelerator still fires under an open dialog. it must not reset one.
-      if (s.dialog) break;
-      if (s.selectedCombo) s.set({ dialog: { kind: "new-session", combo: s.selectedCombo } });
-      else
-        s.toast({
-          level: "info",
-          title: "Pick a combo first",
-          body: "A new session starts in one.",
-        });
-      break;
-    case "edit-combo":
-      if (s.selectedCombo) s.set({ dialog: { kind: "combo", editing: s.selectedCombo } });
-      break;
-    case "open-combo":
-      if (s.selectedCombo) void openCombo(s.selectedCombo);
-      break;
-    case "repair-combo":
-      void repairSelected();
-      break;
-    case "refresh":
-      void refresh();
-      break;
-    case "settings":
-      s.set({ dialog: { kind: "settings" } });
-      break;
-  }
-}
-
+// one table for the menu and the keys, so the two cannot disagree and compile
 const MENU_INTENTS: Record<MenuCommandId, Intent> = {
-  "new-combo": { type: "new-combo" },
-  "new-session": { type: "new-session" },
-  "open-combo": { type: "open-combo" },
-  "edit-combo": { type: "edit-combo" },
-  "repair-combo": { type: "repair-combo" },
-  refresh: { type: "refresh" },
+  "new-project": { type: "new-project" },
+  "open-project": { type: "open-project" },
+  "edit-project": { type: "edit-project" },
+  "go-inbox": { type: "go", section: "inbox" },
+  "go-cards": { type: "go", section: "cards" },
+  "go-conclusions": { type: "go", section: "conclusions" },
+  palette: { type: "palette" },
   "focus-search": { type: "focus-search" },
-  "scope-combo": { type: "scope", scope: "combo" },
-  "scope-all": { type: "scope", scope: "all" },
-  "scope-agents": { type: "scope", scope: "agents" },
-  "scope-inbox": { type: "scope", scope: "inbox" },
-  inspect: { type: "inspect" },
-  "find-next": { type: "find-step", delta: 1 },
-  "find-previous": { type: "find-step", delta: -1 },
-  turns: { type: "turns" },
+  refresh: { type: "refresh" },
   settings: { type: "settings" },
 };
+
+function Screen() {
+  const view = useStore((s) => s.view);
+  const project = useStore((s) => s.project);
+  // no projects at all: the form, whatever the view says
+  if (!project) return <ProjectForm mode="new" first />;
+  switch (view.name) {
+    case "inbox":
+      return <Inbox />;
+    case "cards":
+      return <Cards />;
+    case "card":
+      return <CardPage key={view.cardId} cardId={view.cardId} />;
+    case "conclusions":
+      return <Conclusions />;
+    case "new-project":
+      return <ProjectForm mode="new" />;
+    case "edit-project":
+      return <ProjectForm mode="edit" key={project} />;
+  }
+}
 
 export function App() {
   const ready = useStore((s) => s.ready);
   const appearance = useStore((s) => s.settings?.appearance);
+  const view = useStore((s) => s.view.name);
 
   useEffect(() => {
     applyAppearance(appearance);
@@ -207,7 +66,10 @@ export function App() {
       if (cancelled) o();
       else off = o;
     });
-    const offMenu = window.grove.on("menu:command", ({ id }) => perform(MENU_INTENTS[id]));
+    const offMenu = window.grove.on("menu:command", ({ id }) => {
+      // an accelerator still fires under an open dialog. it must not act behind one
+      if (!useStore.getState().dialog) perform(MENU_INTENTS[id]);
+    });
     return () => {
       cancelled = true;
       off?.();
@@ -219,26 +81,25 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
       const target = e.target as HTMLElement | null;
-      const inSearch = target?.id === "search";
-      const inInspector = !!target?.closest?.('[data-testid="inspector"]');
-      const inText =
-        !inSearch &&
-        (target?.tagName === "INPUT" ||
-          target?.tagName === "TEXTAREA" ||
-          target?.tagName === "SELECT");
       const intent = interpret(
         {
-          overlay: Boolean(s.menu || s.dialog),
-          query: s.query,
-          inOtherTextField: inText,
-          inSearch,
-          pageSize: listRef.pageSize,
-          inspector: s.inspector !== null,
-          inInspector,
-          inspectorDetail:
-            !!s.inspector?.detail &&
-            !!s.activeKey &&
-            s.inspector.detail.key === sessionKeyOf(s.activeKey),
+          overlay: Boolean(s.overlay || s.dialog),
+          view: s.view.name,
+          inText:
+            target?.tagName === "INPUT" ||
+            target?.tagName === "TEXTAREA" ||
+            target?.tagName === "SELECT",
+          inSearch: target?.id === "search",
+          inControl: !!target?.closest?.(
+            'button, a[href], [role="button"], [role="menuitem"], [role="menuitemradio"], [role="radio"]',
+          ),
+          query: s.conclusions.query,
+          expanded: s.conclusions.open !== null,
+          canGoBack: s.back.length > 0,
+          // the form says so itself, on any element: its fields are its own state
+          formDirty: !!document.querySelector("[data-form-dirty]"),
+          // ponytail: a guess at a row's height. measure the list if a page ever lands badly
+          pageSize: Math.floor(window.innerHeight / 48),
         },
         {
           key: e.key,
@@ -271,9 +132,9 @@ export function App() {
     };
     const onFocus = () => {
       tick();
-      // coming back after a while means "i am looking for something": put the cursor in search
+      // coming back after a while: the keyboard goes where the screen wants it
       const s = useStore.getState();
-      if (blurredAt && Date.now() - blurredAt > 30_000 && !s.menu && !s.dialog) focusSearch();
+      if (blurredAt && Date.now() - blurredAt > 30_000 && !s.overlay && !s.dialog) focusScreen();
     };
     const onCsp = (e: SecurityPolicyViolationEvent) =>
       void window.grove.reportCspViolation(`${e.violatedDirective} ${e.blockedURI}`);
@@ -293,17 +154,24 @@ export function App() {
   if (!ready) return <div className="drag h-full bg-canvas" />;
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden" data-testid="app-ready">
-      <Rail />
-      <Workspace />
-      <SessionActionMenu />
-      <ComboDialog />
-      <TeardownDialog />
-      <DeleteComboDialog />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="app-ready">
+      <TopBar />
+      <Banner />
+      <main
+        className="min-h-0 flex-1 overflow-hidden"
+        data-testid="screen"
+        data-view={view}
+        // the mouse moved: no row looks like the keyboard's until a key says so again
+        onPointerMove={() => {
+          if (useStore.getState().keys) useStore.getState().set({ keys: false });
+        }}
+      >
+        <Screen />
+      </main>
+      <Palette />
+      <DeleteProjectDialog />
       <SettingsDialog />
       <ConfirmDialog />
-      <BackgroundDialog />
-      <NewSessionDialog />
       <Toasts />
     </div>
   );

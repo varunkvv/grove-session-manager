@@ -59,8 +59,7 @@ function machine() {
   const service = new SessionService({
     projectsDir,
     cacheDir: path.join(dir, "state"),
-    emitPatch: () => {},
-    emitStatus: () => {},
+    onChange: () => {},
   });
   services.push(service);
   return service;
@@ -153,8 +152,7 @@ describe("search reaches what agents said", () => {
     const service = new SessionService({
       projectsDir,
       cacheDir: path.join(dir, "state"),
-      emitPatch: () => {},
-      emitStatus: () => {},
+      onChange: () => {},
     });
     services.push(service);
     await service.loadCached([]);

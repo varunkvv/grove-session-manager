@@ -5,6 +5,8 @@ import type { InboxView, LandingTarget, MenuCommandId } from "../shared/ipc.ts";
 
 export interface MenuTemplateOptions {
   appName: string;
+  /** VS Code or Cursor */
+  editorLabel: string;
   isDev: boolean;
   isMac: boolean;
   send: (id: MenuCommandId) => void;
@@ -44,12 +46,9 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
   const fileMenu: MenuItemConstructorOptions = {
     label: "File",
     submenu: [
-      command("New Combo…", "CmdOrCtrl+N", "new-combo"),
-      command("New Session…", "CmdOrCtrl+T", "new-session"),
-      command("Open Combo in Editor", "CmdOrCtrl+O", "open-combo"),
-      separator,
-      command("Edit Combo…", "CmdOrCtrl+E", "edit-combo"),
-      command("Repair Combo", "CmdOrCtrl+Shift+R", "repair-combo"),
+      command("New Project…", "CmdOrCtrl+N", "new-project"),
+      command(`Open Project in ${o.editorLabel}`, "CmdOrCtrl+O", "open-project"),
+      command("Edit Project…", "CmdOrCtrl+E", "edit-project"),
       ...(o.isMac ? [] : [separator, settings, separator, { role: "quit" } as const]),
     ],
   };
@@ -66,27 +65,19 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
       { role: "selectAll" },
       separator,
       command("Find", "CmdOrCtrl+F", "focus-search"),
-      // stepping is not idempotent: a press both the page and the menu acted on would step twice
-      command("Find Next", "CmdOrCtrl+G", "find-next", { registerAccelerator: false }),
-      command("Find Previous", "CmdOrCtrl+Shift+G", "find-previous", {
-        registerAccelerator: false,
-      }),
     ],
   };
 
   const viewMenu: MenuItemConstructorOptions = {
     label: "View",
     submenu: [
-      command("This Combo's Sessions", "CmdOrCtrl+1", "scope-combo"),
-      command("All Sessions", "CmdOrCtrl+2", "scope-all"),
-      command("Agents", "CmdOrCtrl+3", "scope-agents"),
-      command("Inbox", "CmdOrCtrl+4", "scope-inbox"),
+      command("Inbox", "CmdOrCtrl+1", "go-inbox"),
+      command("Cards", "CmdOrCtrl+2", "go-cards"),
+      command("Conclusions", "CmdOrCtrl+3", "go-conclusions"),
       separator,
-      // a toggle needs exactly one owner. the page takes the key already, and a press both the
-      // page and the menu acted on would open the pane and close it again.
-      command("Session Pane", "CmdOrCtrl+I", "inspect", { registerAccelerator: false }),
-      command("Go to Turn…", "CmdOrCtrl+J", "turns", { registerAccelerator: false }),
-      separator,
+      // the page owns cmd-K, so it works while a field has focus. a toggle the page and the menu
+      // both acted on would open the palette and close it again
+      command("Go to…", "CmdOrCtrl+K", "palette", { registerAccelerator: false }),
       command("Refresh", "CmdOrCtrl+R", "refresh"),
       ...(o.isDev
         ? [

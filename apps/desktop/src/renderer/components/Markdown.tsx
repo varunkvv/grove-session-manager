@@ -4,8 +4,10 @@
 import { memo, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { webLink } from "../logic/agentDetail.ts";
 import { rehypeMarkWords } from "../logic/markWords.ts";
+import { rehypeRefs, webLink } from "../logic/refs.ts";
+import { currentProject, useStore } from "../state/store.ts";
+import { CardChip, ConclusionChip } from "./ui.tsx";
 
 const components: Components = {
   a: ({ href, children }) => {
@@ -27,23 +29,39 @@ const components: Components = {
   },
   // remote images are blocked by the page's CSP anyway. a broken image says less than its words.
   img: ({ alt }) => (alt ? <span className="md-alt">{alt}</span> : null),
+  // an id rehypeRefs wrapped. a card prefix is never D, F or V, so the letter says which chip
+  span: ({ node: _node, children, ...props }) => {
+    const ref = (props as { "data-ref"?: string })["data-ref"];
+    if (!ref) return <span {...props}>{children}</span>;
+    return /^[DFV]-/.test(ref) ? <ConclusionChip id={ref} /> : <CardChip cardId={ref} />;
+  },
 };
 
 const plugins = [remarkGfm];
 const NONE: readonly string[] = [];
 
-/** markdown from an agent, as quiet as the rest of the pane */
+/** markdown from an agent, as quiet as the rest of the page */
 export const Markdown = memo(function Markdown({
   text,
   className,
   marks = NONE,
+  refs,
 }: {
   text: string;
   className?: string;
-  /** words to mark, the way the list marks a search */
+  /** words to mark, the way a list marks a search */
   marks?: readonly string[];
+  /** card and conclusion ids in the text become chips */
+  refs?: boolean;
 }) {
-  const rehype = useMemo(() => (marks.length ? [[rehypeMarkWords, marks] as const] : []), [marks]);
+  const prefix = useStore((s) => (refs ? (currentProject(s)?.prefix ?? "") : ""));
+  const rehype = useMemo(
+    () => [
+      ...(refs ? [[rehypeRefs, { prefix }] as const] : []),
+      ...(marks.length ? [[rehypeMarkWords, marks] as const] : []),
+    ],
+    [refs, prefix, marks],
+  );
   return (
     <div className={className ? `md ${className}` : "md"}>
       <ReactMarkdown

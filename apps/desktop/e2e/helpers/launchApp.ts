@@ -15,11 +15,13 @@ export interface LaunchedApp {
 export async function launchApp(
   fx: Fixture,
   extraEnv: Record<string, string> = {},
+  /** after the entry file: `--hidden` starts with the window made but not shown */
+  args: string[] = [],
 ): Promise<LaunchedApp> {
   // a terminal inside VS Code exports ELECTRON_RUN_AS_NODE=1, which would make the app boot as
   // plain node and never open a window
   const app = await _electron.launch({
-    args: [MAIN],
+    args: [MAIN, ...args],
     env: {
       HOME: os.homedir(),
       TMPDIR: os.tmpdir(),
@@ -46,7 +48,10 @@ export async function launchApp(
     page.on("console", (m) => process.stderr.write(`[page ${m.type()}] ${m.text()}\n`));
     page.on("pageerror", (e) => process.stderr.write(`[page error] ${e.message}\n`));
   }
-  await page.getByTestId("app-ready").waitFor({ timeout: 30_000 });
+  // a window that is not shown still loads its page, but nothing in it counts as visible
+  await page
+    .getByTestId("app-ready")
+    .waitFor({ timeout: 30_000, state: args.includes("--hidden") ? "attached" : "visible" });
   return {
     app,
     page,
@@ -62,6 +67,44 @@ export function api(page: Page) {
     bootstrap: () => page.evaluate(() => window.grove.bootstrap()) as Promise<Bootstrap>,
     call: <T>(fn: (grove: Window["grove"]) => Promise<T>) =>
       page.evaluate(fn as never, undefined as never) as Promise<T>,
+  };
+}
+
+/** main's own test hooks, installed only under GROVE_ROOT (main/index.ts) */
+interface GroveTest {
+  reveal(sessionId: string): void;
+  trayTitle(): string;
+  trayMenu(): Array<{ label?: string; sublabel?: string; enabled?: boolean; role?: string }>;
+  trayClick(i: number): void;
+  closeMain(): void;
+  isMainVisible(): boolean;
+  notifications(): Array<{ title: string; body: string; at: number }>;
+}
+
+type Main = { groveTest: GroveTest };
+
+/**
+ * what playwright cannot reach: a notification click, the native tray menu and the window's close
+ * button. each call runs in main.
+ */
+export function groveTest(app: ElectronApplication) {
+  return {
+    /** what a click on a notification about this session does */
+    reveal: (sessionId: string) =>
+      app.evaluate((_e, id) => (globalThis as unknown as Main).groveTest.reveal(id), sessionId),
+    trayTitle: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.trayTitle()),
+    /** the last tray menu main built, as labels */
+    trayMenu: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.trayMenu()),
+    /** runs item i's click, as a click in the real menu would */
+    trayClick: (i: number) =>
+      app.evaluate((_e, n) => (globalThis as unknown as Main).groveTest.trayClick(n), i),
+    /** the close button, which hides */
+    closeMain: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.closeMain()),
+    isMainVisible: () =>
+      app.evaluate(() => (globalThis as unknown as Main).groveTest.isMainVisible()),
+    /** what would have been shown. a test root shows no notifications */
+    notifications: () =>
+      app.evaluate(() => (globalThis as unknown as Main).groveTest.notifications()),
   };
 }
 

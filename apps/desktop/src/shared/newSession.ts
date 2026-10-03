@@ -52,10 +52,3 @@ export interface NewSessionRequest {
   /** background only: the same command in Terminal, where the CLI's one-time trust prompt is answered */
   throughTerminal?: boolean;
 }
-
-export interface NewSessionResult {
-  /** the short id `claude attach` takes, when it went to the background */
-  id?: string;
-  message: string;
-  body?: string;
-}

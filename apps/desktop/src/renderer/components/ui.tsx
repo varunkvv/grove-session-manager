@@ -16,7 +16,10 @@ import {
   useId,
   useRef,
 } from "react";
+import type { ArtifactView, ProjectId } from "../../shared/ipc.ts";
+import { artifactName, cardTitle } from "../logic/views.ts";
 import { agentHue, initials, type WhoView } from "../logic/who.ts";
+import { openArtifact, openCard, openConclusion } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -33,20 +36,11 @@ export type IconName =
   | "folder"
   | "plus"
   | "search"
-  | "more"
   | "chevron"
   | "x"
   | "external"
-  | "terminal"
-  | "copy"
-  | "reveal"
-  | "settings"
   | "warning"
-  | "check"
-  | "archive"
-  | "lanes"
-  | "stop"
-  | "moon";
+  | "check";
 
 const PATHS: Record<IconName, ReactNode> = {
   "arrow-left": <path d="M13 8H3M7 4 3 8l4 4" />,
@@ -91,55 +85,13 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m10.25 10.25 3 3" />
     </>
   ),
-  more: (
-    <>
-      <circle cx="3.5" cy="8" r="0.6" fill="currentColor" />
-      <circle cx="8" cy="8" r="0.6" fill="currentColor" />
-      <circle cx="12.5" cy="8" r="0.6" fill="currentColor" />
-    </>
-  ),
   chevron: <path d="m6 4 4 4-4 4" />,
   x: <path d="m4 4 8 8M12 4l-8 8" />,
   external: (
     <path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2.5" />
   ),
-  terminal: (
-    <>
-      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25" />
-      <path d="m4.5 6 2 2-2 2M8.5 10h3" />
-    </>
-  ),
-  copy: (
-    <>
-      <rect x="5.25" y="5.25" width="8" height="8" rx="1.25" />
-      <path d="M10.75 5.25V3.5c0-.7-.55-1.25-1.25-1.25H3.5c-.7 0-1.25.55-1.25 1.25v6c0 .7.55 1.25 1.25 1.25h1.75" />
-    </>
-  ),
-  reveal: (
-    <>
-      <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8Z" />
-      <circle cx="8" cy="8" r="1.75" />
-    </>
-  ),
-  settings: (
-    <>
-      <circle cx="8" cy="8" r="2" />
-      <path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05" />
-    </>
-  ),
   warning: <path d="M8 2.25 14.25 13H1.75L8 2.25ZM8 6.5v3M8 11.25v.01" />,
   check: <path d="m3.5 8.5 3 3 6-7" />,
-  archive: (
-    <>
-      <rect x="1.75" y="2.75" width="12.5" height="3.5" rx="1" />
-      <path d="M3.25 6.25v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6M6.5 9h3" />
-    </>
-  ),
-  // the inspector's own picture, small: agents as lanes on a clock
-  lanes: <path d="M2.25 4.5h5M5.25 8h8.5M3.75 11.5h5.5" />,
-  stop: <rect x="4" y="4" width="8" height="8" rx="1.5" />,
-  // background: the session keeps going while you look away
-  moon: <path d="M12.75 9.75A5.25 5.25 0 0 1 6.25 3.25a5.25 5.25 0 1 0 6.5 6.5Z" />,
 };
 
 export function Icon({
@@ -201,15 +153,24 @@ export function Spinner({ size = 12 }: { size?: number }) {
   );
 }
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "accent" | "destructive";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "quiet" | "link";
+type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  // the primary button is inverted neutral. the accent is kept for state, not for decoration.
-  primary: "bg-fg text-canvas hover:opacity-90",
-  secondary: "bg-raised text-fg border border-line-strong hover:bg-active",
+  // the accent: the one action a screen is for
+  primary: "bg-accent-solid text-on-solid font-medium hover:opacity-90",
+  // row actions
+  secondary: "border border-line-strong bg-canvas text-fg-2 hover:bg-raised hover:text-fg",
+  // Cancel, Start in the background
   ghost: "text-fg-2 hover:bg-raised hover:text-fg",
-  accent: "text-accent hover:bg-accent-soft",
-  destructive: "bg-destructive text-fg hover:opacity-90",
+  // Edit project, Add folder…
+  quiet: "text-fg-3 hover:bg-raised hover:text-fg",
+  link: "font-medium text-accent hover:underline focus-visible:underline",
+};
+const SIZES: Record<ButtonSize, string> = {
+  sm: "h-6 gap-1.5 px-2 text-sm",
+  md: "h-7 gap-1.5 px-3 text-body",
+  lg: "h-8 gap-1.5 px-3 text-body",
 };
 
 export function Button({
@@ -217,14 +178,17 @@ export function Button({
   size = "md",
   className,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: "sm" | "md" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
   return (
     <button
       type="button"
       {...rest}
       className={cx(
-        "no-drag fade inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium disabled:pointer-events-none disabled:opacity-40",
-        size === "sm" ? "h-6 px-2 text-sm" : "h-7 px-3 text-sm",
+        "no-drag fade disabled:pointer-events-none disabled:opacity-40",
+        // a link sits in a line of prose: no height, no padding
+        variant === "link"
+          ? "inline p-0 align-baseline"
+          : cx("inline-flex shrink-0 items-center justify-center rounded-md", SIZES[size]),
         VARIANTS[variant],
         className,
       )}
@@ -245,7 +209,7 @@ export function IconButton({
       title={label}
       {...rest}
       className={cx(
-        "no-drag fade inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-3 hover:bg-raised hover:text-fg",
+        "no-drag fade inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-4 hover:bg-raised hover:text-fg",
         className,
       )}
     >
@@ -284,58 +248,51 @@ export function Segmented<T extends string>({
   options,
   onChange,
   label,
+  size = "md",
+  disabled,
 }: {
   value: T;
-  /**
-   * `short` is what a header too narrow for `label` shows. it needs an @container around it.
-   * `count` sits after the label, in the accent while something in it is waiting on a person.
-   */
-  options: Array<{
-    value: T;
-    label: string;
-    short?: string;
-    disabled?: boolean;
-    testId?: string;
-    count?: number;
-  }>;
+  options: Array<{ value: T; label: string; disabled?: boolean; testId?: string }>;
   onChange: (v: T) => void;
   label: string;
+  size?: "sm" | "md";
+  /** the whole group */
+  disabled?: boolean;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className="no-drag inline-flex rounded-md bg-raised p-0.5"
+      aria-disabled={disabled || undefined}
+      className={cx(
+        "no-drag inline-flex rounded-md border border-line-strong bg-raised p-0.5 text-sm",
+        disabled && "opacity-60",
+      )}
     >
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={o.value === value}
-          disabled={o.disabled}
-          data-testid={o.testId}
-          onClick={() => onChange(o.value)}
-          className={cx(
-            "fade h-6 max-w-44 truncate rounded-sm px-2.5 text-sm disabled:opacity-40",
-            o.value === value ? "bg-active text-fg" : "text-fg-3 hover:text-fg-2",
-          )}
-        >
-          {o.short ? (
-            <>
-              <span className="@max-xl:hidden">{o.label}</span>
-              <span className="hidden @max-xl:inline">{o.short}</span>
-            </>
-          ) : (
-            o.label
-          )}
-          {o.count ? (
-            <span className="ml-1.5 tabular-nums text-accent" data-testid="scope-count">
-              {o.count}
-            </span>
-          ) : null}
-        </button>
-      ))}
+      {options.map((o) => {
+        const checked = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            disabled={disabled || o.disabled}
+            data-testid={o.testId}
+            onClick={() => onChange(o.value)}
+            className={cx(
+              "fade rounded-sm disabled:opacity-40",
+              size === "md" ? "h-[26px] px-3" : "h-[22px] px-2",
+              checked
+                ? "bg-canvas font-medium outline outline-1 outline-line-strong"
+                : !disabled && "hover:text-fg",
+              checked && !disabled ? "text-fg" : "text-fg-3",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -445,15 +402,15 @@ export function Field({
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: the control is passed in as children
     <label className="block">
-      <span className="mb-1 block text-sm text-fg-2">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-fg-2">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-meta text-fg-3">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-sm text-fg-4">{hint}</span>}
     </label>
   );
 }
 
 export const inputClass =
-  "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4 focus:border-fg-3";
+  "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4";
 
 /**
  * a select the way the other fields look. `appearance: none` takes the platform's arrow away, and
@@ -494,87 +451,8 @@ export function Highlighted({ text, tokens }: { text: string; tokens: readonly s
   return <>{out}</>;
 }
 
-/**
- * what asks for you, said the same way everywhere: accent words on the soft tint, with the dot.
- * the three states differ by the word, not the colour - all of them are asking.
- */
-export function NeedsPill({
-  children,
-  title,
-  testId,
-  state,
-}: {
-  children: ReactNode;
-  title?: string;
-  testId?: string;
-  state?: string;
-}) {
-  return (
-    <span
-      data-testid={testId}
-      data-state={state}
-      data-needs-you
-      title={title}
-      className="flex h-5 shrink-0 items-center gap-1.5 rounded-full bg-accent-soft px-2 text-sm text-accent tabular-nums"
-    >
-      <span className="size-1.5 rounded-full bg-accent" />
-      {children}
-    </span>
-  );
-}
-
-/**
- * how an agent stands, in words, where a row keeps its time: `● Running 8m`, `Done 5m`. running is
- * the one with a dot, a failed one the only colour (an error is what the accent is for).
- */
-export function AgentState({
-  status,
-  word,
-  time,
-  title,
-}: {
-  status: "running" | "done" | "failed" | "interrupted";
-  word: string;
-  time?: string;
-  title?: string;
-}) {
-  return (
-    <span
-      data-testid="agent-state"
-      data-status={status}
-      title={title}
-      className={cx(
-        "flex shrink-0 items-center gap-1.5 text-sm tabular-nums",
-        status === "running" ? "text-fg-2" : "text-fg-3",
-      )}
-    >
-      {status === "running" && <span className="live-pulse size-1.5 rounded-full bg-fg-3" />}
-      <span>
-        <span className={cx(status === "failed" && "text-accent" /* an error */)}>{word}</span>
-        {time ? ` ${time}` : ""}
-      </span>
-    </span>
-  );
-}
-
-/**
- * the tree's one guide: a hairline down the indent, drawn by each row for its own height so a
- * scrolled or virtualised list never loses a piece. no elbows, no dots - a thread's rail. the
- * last row of a tree stops it level with its text.
- */
-export function TreeRail({ x, end }: { x: number; end?: number }) {
-  return (
-    <span
-      aria-hidden
-      data-testid="tree-rail"
-      className="pointer-events-none absolute top-0 w-px bg-line"
-      style={{ left: x, bottom: end ?? 0 }}
-    />
-  );
-}
-
-// ---------- the project manager's primitives. a kind, a status and an avatar get their colour here
-// and nowhere else: a screen passes a kind or a status, never a colour.
+// ---------- a kind, a status and an avatar get their colour here and nowhere else: a screen passes
+// a kind or a status, never a colour.
 
 /** a tooltip-dated relative time: `3m ago`, core's words */
 export function Time({ at, className }: { at: number; className?: string }) {
@@ -886,3 +764,88 @@ export function Overlay({
 /** a row inside an Overlay. `data-active` is the keyboard's row */
 export const menuItemClass =
   "fade flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body text-fg-2 data-[active]:bg-raised data-[active]:text-fg";
+
+// ---------- chips: a button that sits in a line of prose. a click never reaches the row it is in
+
+const CHIP =
+  "no-drag fade mx-0.5 inline-flex h-5 max-w-full items-center gap-1 rounded-sm border border-line-strong bg-raised px-1.5 align-[-4px] text-sm leading-none text-fg hover:bg-active";
+
+/** a control inside a list row is not a tab stop. in a thread and the side panel it is */
+const chipProps = (inRow: boolean | undefined, run: () => void) => ({
+  type: "button" as const,
+  className: CHIP,
+  tabIndex: inRow ? -1 : undefined,
+  onClick: (e: { stopPropagation(): void }) => {
+    e.stopPropagation();
+    run();
+  },
+});
+
+/** an id the record does not have stays plain text */
+export function CardChip({
+  cardId,
+  withTitle,
+  inRow,
+}: {
+  cardId: string;
+  withTitle?: boolean;
+  inRow?: boolean;
+}) {
+  const card = useStore((s) =>
+    s.project ? s.records[s.project]?.cards.find((c) => c.id === cardId) : undefined,
+  );
+  if (!card) return <>{cardId}</>;
+  return (
+    <button
+      {...chipProps(inRow, () => openCard(card.id))}
+      title={`${card.id} ${card.title}`}
+      data-testid="card-chip"
+      data-id={card.id}
+    >
+      <StatusIcon status={card.status} size={11} />
+      <span className="min-w-0 truncate whitespace-nowrap font-medium tabular-nums">{card.id}</span>
+      {withTitle && <span className="truncate text-fg-3">{cardTitle(card)}</span>}
+    </button>
+  );
+}
+
+export function ConclusionChip({ id, inRow }: { id: string; inRow?: boolean }) {
+  const c = useStore((s) =>
+    s.project ? s.records[s.project]?.conclusions.find((x) => x.id === id) : undefined,
+  );
+  if (!c) return <>{id}</>;
+  return (
+    <button
+      {...chipProps(inRow, () => openConclusion(c.id))}
+      title={`${c.id} ${c.what}`}
+      data-testid="conclusion-chip"
+      data-id={c.id}
+    >
+      <span
+        className={cx("font-mono text-meta", c.superseded ? "text-fg-4 line-through" : "text-fg-2")}
+      >
+        {c.id}
+      </span>
+    </button>
+  );
+}
+
+const ARTIFACT_ICON: Record<ArtifactView["type"], IconName> = {
+  file: "file",
+  branch: "branch",
+  pr: "pr",
+  link: "external",
+};
+
+export function FileChip({ artifact, project }: { artifact: ArtifactView; project: ProjectId }) {
+  return (
+    <button
+      {...chipProps(false, () => void openArtifact(project, artifact))}
+      title={artifact.ref}
+      data-testid="file-chip"
+    >
+      <Icon name={ARTIFACT_ICON[artifact.type]} size={10} faint />
+      <span className="min-w-0 truncate">{artifactName(artifact)}</span>
+    </button>
+  );
+}

@@ -11,7 +11,8 @@ import {
   type RecordPatch,
   START_TTL_MS,
 } from "../../src/main/services/projects.ts";
-import type { InboxView, SearchHit, SessionRow } from "../../src/shared/ipc.ts";
+import type { SearchHit } from "../../src/main/services/sessions.ts";
+import type { InboxView, SessionRow } from "../../src/shared/ipc.ts";
 
 // the record honours the GROVE_RECORD_SESSION / _AGENT / _PID overrides only with this set
 process.env.GROVE_RECORD_TEST = "1";

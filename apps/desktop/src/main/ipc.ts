@@ -2,30 +2,29 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  buildResumeCommand,
+  type Combo,
   classifyPath,
-  isObject,
+  derivePrefix,
+  isInside,
   isValidSessionId,
-  lastParagraph,
-  needsYou,
   openInEditor,
   prepareFolderOpen,
-  readLastWords,
+  projectIdOf,
   runDetached,
   type Settings,
-  samePath,
   saveSettings,
-  targetDirFor,
+  validatePrefix,
 } from "@grove/core";
+import { CARD_ID, readProject } from "@grove/record";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
 import type {
   Api,
   AppSettings,
   Bootstrap,
+  OpenReport,
   Outcome,
   PathInfoView,
-  SessionAction,
   SessionKey,
   SessionRow,
 } from "../shared/ipc.ts";
@@ -34,34 +33,28 @@ import { AppError, toOutcomeError } from "./errors.ts";
 import { log } from "./log.ts";
 import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
-import type { AgentInspector } from "./services/agentInspector.ts";
-import type { ArchiveService } from "./services/archive.ts";
-import { type BackgroundService, continueArgs } from "./services/background.ts";
+import type { BackgroundService } from "./services/background.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import { compareVersions, type EditorService } from "./services/editor.ts";
 import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
-import {
-  backgroundArgs,
-  editorPrompt,
-  NEW_CONVERSATION_COMPANION,
-  PROMPT_MAX,
-  parseNewSession,
-  terminalArgs,
-} from "./services/newSession.ts";
+import { backgroundArgs, NEW_CONVERSATION_COMPANION } from "./services/newSession.ts";
+import type { Notifier } from "./services/notify.ts";
+import type { ProjectRecordService } from "./services/projectRecord.ts";
+import type { ProjectsService } from "./services/projects.ts";
 import {
   claudeScriptBody,
   isResumeScriptName,
   isValidShortId,
   RESUME_SCRIPT_MAX_AGE_MS,
   resolveClaudeBin,
-  resumeScriptBody,
   resumeScriptPath,
 } from "./services/resumeScript.ts";
 import type { Reveals } from "./services/reveal.ts";
-import { daemonHeld, heldWhere, sessionActionList } from "./services/sessionActions.ts";
+import type { ServerChecks } from "./services/serverCheck.ts";
 import type { SessionService } from "./services/sessions.ts";
+import { parseStartAgent, startPrompt } from "./services/startAgent.ts";
 import { keptFolderToast } from "./services/views.ts";
 
 export interface Deps {
@@ -72,14 +65,15 @@ export interface Deps {
   sessions: SessionService;
   live: LiveService;
   combos: ComboService;
-  archive: ArchiveService;
+  record: ProjectRecordService;
+  projects: ProjectsService;
+  /** null in a dev build outside GROVE_ROOT, which installs no record runtime */
+  serverChecks: ServerChecks | null;
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
-  inspector: AgentInspector;
-  /** where a notification click is taking the page */
-  reveals?: Reveals;
-  /** these agents of a session are on screen: a finished one gets its line, once */
-  seen?: (key: SessionKey, agentIds: string[]) => void;
+  /** where a notification click or a tray row is taking the page */
+  reveals: Reveals;
+  notifier: Notifier;
   editor: EditorService;
   pusher: Pusher;
   window: () => BrowserWindow | null;
@@ -90,26 +84,20 @@ export interface Deps {
  * contract is an Outcome into `{ ok }`, so no handler has to remember to build one.
  */
 type Unwrap<T> = T extends Outcome<infer V> ? V : T;
-type Handlers = {
+export type Handlers = {
   [K in keyof Api]: (...args: Parameters<Api[K]>) => Promise<Unwrap<Awaited<ReturnType<Api[K]>>>>;
 };
 
 const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
-  "rescan",
-  "archiveSessions",
-  "runSessionAction",
-  "dispatchBackground",
-  "startSession",
-  "createCombo",
-  "updateCombo",
-  "deleteCombo",
-  "reconcile",
-  "ensureCombo",
-  "repairFolder",
-  "repairCombo",
-  "teardownCombo",
-  "forceRemoveFolder",
-  "openCombo",
+  "refresh",
+  "review",
+  "openSession",
+  "startAgent",
+  "createProject",
+  "updateProject",
+  "deleteProject",
+  "repairProject",
+  "openProject",
   "setLongWork",
   "installCompanion",
   "updateSettings",
@@ -132,17 +120,9 @@ async function isDirectory(p: string | undefined): Promise<boolean> {
 }
 
 function requireSession(deps: Deps, key: SessionKey): SessionRow {
-  const row = deps.sessions.get(key);
+  const row = typeof key === "string" ? deps.sessions.get(key) : undefined;
   if (!row) throw new AppError("no-session", "That session is no longer in the list.");
   return row;
-}
-
-/**
- * where a session's own folder is. for a session inside a combo that is the worktree it ran in,
- * which is what the Claude Code panel wants as workspaceFolders[0].
- */
-function folderForSession(row: SessionRow): string | undefined {
-  return row.cwd;
 }
 
 async function sweepResumeScripts(stateDir: string): Promise<void> {
@@ -158,15 +138,6 @@ async function sweepResumeScripts(stateDir: string): Promise<void> {
   } catch {
     // nothing written yet
   }
-}
-
-/** rows are keyed by transcript path, the archive by session id: one conversation, wherever it sits */
-function archiveByKey(deps: Deps, keys: SessionKey[], archived: boolean): Promise<void> {
-  const ids = keys.flatMap((k) => (typeof k === "string" ? [deps.sessions.get(k)?.sessionId] : []));
-  return deps.archive.set(
-    ids.filter((id): id is string => !!id),
-    archived,
-  );
 }
 
 function claudeBin(deps: Deps): Promise<string> {
@@ -213,11 +184,41 @@ function claudeFailure(what: string, out: { code: number | null; stderr: string;
 }
 
 function buildHandlers(deps: Deps): Handlers {
-  const { sessions, combos, editor, pusher, env } = deps;
+  const { sessions, combos, projects, editor, pusher, env } = deps;
   let lastPickedDir: string | undefined;
+
+  /** the project's window in the editor, on a session when one is given */
+  async function openWindow(combo: Combo, sessionId?: string): Promise<OpenReport> {
+    const report = await combos.open(combo, sessionId);
+    const launched = await openInEditor(report.workspaceFile, editor.current());
+    if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+    for (const warning of report.warnings) {
+      pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
+    }
+    return {
+      launched: true,
+      landing: Boolean(sessionId) && (await editor.companionInstalled()),
+      outcomes: report.outcomes,
+      warnings: report.warnings,
+    };
+  }
+
+  /** a clean draft, or every problem with it in one error */
+  async function cleanDraft(raw: unknown, self?: string) {
+    const { draft, problems } = await parseDraft(raw);
+    if (!draft) throw new AppError("invalid", problems.join(" "));
+    const all = [...problems, ...combos.problemsWithDraft(draft, self)];
+    if (all.length > 0) throw new AppError("invalid", all.join(" "));
+    return draft;
+  }
 
   const api: Handlers = {
     async bootstrap(): Promise<Bootstrap> {
+      const editorStatus = await editor.status();
+      // the views first: reading them can run a compute, which stamps revs of its own
+      const { projects: list, problem } = projects.views();
+      const record = projects.recordViews();
+      const inbox = projects.inbox();
       return {
         revs: pusher.currentRevs(),
         env: {
@@ -228,301 +229,123 @@ function buildHandlers(deps: Deps): Handlers {
           isDev: env.isDev,
         },
         settings: toAppSettings(deps.settings()),
-        editor: await editor.status(),
-        combos: combos.views(),
-        ...(combos.problemMessage() ? { combosProblem: combos.problemMessage() } : {}),
-        sessions: sessions.list(),
-        index: sessions.status(),
+        editor: editorStatus,
+        projects: list,
+        ...(problem ? { projectsProblem: problem } : {}),
+        record,
+        inbox,
       };
     },
 
-    async rescan() {
+    async refresh() {
       await Promise.all([
         sessions.refresh(),
-        // hand-editable, so a refresh is how an edit made outside the app lands
-        deps.archive.load(),
-        combos.load(true).then(() => combos.reconcileAll()),
+        (async () => {
+          // hand-editable, so a refresh is how an edit made outside the app lands
+          await combos.load(true);
+          await combos.backfillPrefixes();
+          await combos.syncAll();
+          deps.record.check();
+          await Promise.all([combos.reconcileAll(), deps.serverChecks?.runAll(combos.list())]);
+        })(),
       ]);
     },
 
-    async sessionActions(key): Promise<SessionAction[]> {
+    async card(project, cardId) {
+      const id = typeof cardId === "string" ? cardId.toUpperCase() : "";
+      if (typeof project !== "string" || !CARD_ID.test(id)) return null;
+      return projects.card(project, id);
+    },
+
+    async review(project, keys, reviewed) {
+      await projects.review(project, keys, reviewed);
+    },
+
+    async openSession(key) {
       const row = requireSession(deps, key);
-      const holder = deps.live.holder(row.sessionId);
-      return sessionActionList({
-        row,
-        editorLabel: editor.current().label,
-        companion: await editor.companionInstalled(),
-        folderExists: await isDirectory(folderForSession(row)),
-        needsYou: needsYou(row.live),
-        ...(holder ? { holder } : {}),
-      });
-    },
-
-    async inspectSession(key) {
-      if (typeof key !== "string" || !sessions.get(key)) return null;
-      return deps.inspector.inspect(key);
-    },
-
-    async followAgent(key, agentId, find) {
-      if (agentId !== null && (typeof key !== "string" || !sessions.get(key))) return null;
-      // an agent on screen is one being looked at
-      if (typeof agentId === "string") deps.seen?.(key, [agentId]);
-      return deps.inspector.follow(
-        key,
-        agentId,
-        typeof find === "string" ? find.slice(0, 500) : "",
-      );
-    },
-
-    async agentsSeen(key, agentIds) {
-      if (typeof key !== "string" || !sessions.get(key) || !Array.isArray(agentIds)) return;
-      deps.seen?.(key, agentIds.filter((id): id is string => typeof id === "string").slice(0, 50));
-    },
-
-    async agentStep(key, agentId, stepId) {
-      if (typeof key !== "string" || !sessions.get(key)) return null;
-      return deps.inspector.step(key, agentId, stepId);
-    },
-
-    async followConversation(key, find) {
-      if (key === null) return deps.inspector.followConversation(null);
-      if (typeof key !== "string" || !sessions.get(key)) return null;
-      return deps.inspector.followConversation(
-        key,
-        typeof find === "string" ? find.slice(0, 500) : "",
-      );
-    },
-
-    async conversationSteps(key, n) {
-      if (typeof key !== "string" || !sessions.get(key) || !Number.isInteger(n)) return null;
-      return deps.inspector.conversationSteps(key, n);
-    },
-
-    async takeLanding() {
-      return deps.reveals?.take() ?? null;
-    },
-
-    async lastWords(key) {
-      const row = typeof key === "string" ? sessions.get(key) : undefined;
-      if (!row) return null;
-      const said = await readLastWords(row.key);
-      return said ? lastParagraph(said) : null;
-    },
-
-    async conversationStep(key, stepId) {
-      if (typeof key !== "string" || !sessions.get(key)) return null;
-      return deps.inspector.conversationStep(key, stepId);
-    },
-
-    async openExternal(url) {
-      const safe = externalUrl(url);
-      if (!safe) throw new AppError("bad-link", "Only web links open from here.");
-      await electron.shell.openExternal(safe);
-    },
-
-    async searchSessions(query) {
-      if (typeof query !== "string") throw new AppError("bad-query", "Nothing to search for.");
-      return { query, hits: await sessions.search(query.slice(0, 500)) };
-    },
-
-    async markSeen(keys) {
-      if (!Array.isArray(keys)) return;
-      const ids = keys.flatMap((k) =>
-        typeof k === "string" ? [deps.sessions.get(k)?.sessionId] : [],
-      );
-      deps.live.markSeen(ids.filter((id): id is string => !!id));
-    },
-
-    async archiveSessions(keys, archived) {
-      if (!Array.isArray(keys) || typeof archived !== "boolean") {
-        throw new AppError("invalid", "Nothing to archive.");
-      }
-      await archiveByKey(deps, keys, archived);
-    },
-
-    async runSessionAction(key, action) {
-      const row = requireSession(deps, key);
-      // landing on a session is looking at it
-      if (["combo-land", "folder-land", "attach", "stop-land"].includes(action)) {
-        deps.live.markSeen([row.sessionId]);
-      }
       if (!isValidSessionId(row.sessionId)) {
         throw new AppError("bad-session-id", "That session has no usable ID.");
       }
-      const folder = folderForSession(row);
-      if (action === "mark-seen") {
-        deps.live.markSeen([row.sessionId]);
-        return {};
+      const label = editor.current().label;
+      // again at call time: the plan the page showed may have moved since
+      const runtime = projects.runtimeFor(row.sessionId, row);
+      const combo = combos.list().find((c) => c.name === row.comboName);
+      if (runtime === "terminal" || runtime === "elsewhere") {
+        // a second process on a live conversation is a copy of it. the project opens, nothing lands
+        if (combo) await openWindow(combo);
+        return {
+          message:
+            runtime === "terminal"
+              ? `This agent is running in a terminal. Quit it there, then open it in ${label}.`
+              : `This agent is running outside ${label}, in claude -p or an SDK app. Open it here once it has finished.`,
+        };
       }
-      // the inspector and the prompt dialog are the renderer's own: nothing to do here
-      if (action === "inspect" || action === "continue-bg") return {};
-      if (action === "archive" || action === "unarchive") {
-        await archiveByKey(deps, [key], action === "archive");
-        return {};
-      }
-      const landFolder = async (): Promise<{ message?: string }> => {
-        if (!(await isDirectory(folder))) {
-          throw new AppError("cwd-missing", "That session's folder no longer exists.");
-        }
-        const prepared = await prepareFolderOpen(env.appRoot, folder as string, {
-          sessionId: row.sessionId,
-          source: "app",
-        });
-        if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
-        const launched = await openInEditor(folder as string, editor.current());
-        if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
-        return (await editor.companionInstalled())
-          ? {}
-          : {
-              message: `${editor.current().label} opened without landing: the companion extension is missing.`,
-            };
-      };
-      const landCombo = async (): Promise<{ message?: string }> => {
-        if (!row.comboName) throw new AppError("no-combo", "That session is not in a combo.");
-        await api.openCombo(row.comboName, key);
-        return {};
-      };
-      // the supervisor holds it: the editor's resume, or a terminal's, would be refused
-      const refuseHeld = () => {
-        if (daemonHeld({ row, holder: deps.live.holder(row.sessionId) })) {
+      if (runtime === "background") {
+        // the supervisor holds it: the editor's resume would be refused. `claude stop`, never
+        // `claude rm` - rm reasons about worktrees, and a project's working copies are ones
+        const id = shortIdOf(deps, row);
+        const out = await deps.background.stop(id);
+        if (out.code !== 0) throw claudeFailure(`claude stop ${id} failed`, out);
+        if (!(await deps.background.waitReleased(row.sessionId))) {
           throw new AppError(
-            "held",
-            "Claude Code is running this session in the background. Open it in Terminal (attach), or stop it first.",
+            "still-held",
+            `Stopped ${id}, but Claude Code still holds it. Try again in a moment.`,
           );
         }
+      }
+      // landing on a session is looking at it
+      deps.live.markSeen([row.sessionId]);
+      const missing = {
+        message: `${label} opened without landing: the companion extension is missing.`,
       };
-      switch (action) {
-        case "combo-land":
-          refuseHeld();
-          return landCombo();
-        case "folder-land":
-          refuseHeld();
-          return landFolder();
-        case "terminal": {
-          refuseHeld();
-          await openInTerminal(
-            deps,
-            row.sessionId,
-            resumeScriptBody({
-              sessionId: row.sessionId,
-              cwd: (await isDirectory(folder)) ? folder : undefined,
-              claudeBin: await claudeBin(deps),
-            }),
-          );
-          return {};
-        }
-        case "attach": {
-          await openInTerminal(
-            deps,
-            row.sessionId,
-            resumeScriptBody({
-              sessionId: row.sessionId,
-              claudeBin: await claudeBin(deps),
-              attach: shortIdOf(deps, row),
-            }),
-          );
-          return {};
-        }
-        case "stop":
-        case "stop-land": {
-          const id = shortIdOf(deps, row);
-          const out = await deps.background.stop(id);
-          if (out.code !== 0) throw claudeFailure(`claude stop ${id} failed`, out);
-          if (action === "stop") return { message: `Stopped ${id}` };
-          if (!(await deps.background.waitReleased(row.sessionId))) {
-            throw new AppError(
-              "still-held",
-              `Stopped ${id}, but Claude Code still holds it. Try again in a moment.`,
-            );
-          }
-          // not through combo-land's check: the registry can lag the supervisor by a beat
-          return row.comboName ? landCombo() : landFolder();
-        }
-        case "copy-command": {
-          const cwd = (await isDirectory(folder)) ? folder : undefined;
-          electron.clipboard.writeText(
-            buildResumeCommand(row.sessionId, cwd, await claudeBin(deps)),
-          );
-          return { message: "Resume command copied" };
-        }
-        case "copy-id":
-          electron.clipboard.writeText(row.sessionId);
-          return { message: "Session ID copied" };
-        case "reveal":
-          electron.shell.showItemInFolder(row.key);
-          return {};
+      if (combo && row.comboRelation === "root") {
+        return (await openWindow(combo, row.sessionId)).landing ? {} : missing;
       }
-    },
-
-    async dispatchBackground(req) {
-      if (!isObject(req) || req.kind !== "continue") {
-        throw new AppError("invalid", "Nothing to hand over.");
-      }
-      const prompt = typeof req.prompt === "string" ? req.prompt.trim() : "";
-      // a bare `--bg` with nothing to do would only sit there
-      if (!prompt) throw new AppError("empty-prompt", "Say what it should do first.");
-      if (prompt.length > PROMPT_MAX) {
-        throw new AppError("long-prompt", "That prompt is too long. Put it in a plan file.");
-      }
-      const bin = await claudeBin(deps);
-      const row = requireSession(deps, req.key);
-      if (!isValidSessionId(row.sessionId)) {
-        throw new AppError("bad-session-id", "That session has no usable ID.");
-      }
-      const cwd = folderForSession(row);
-      if (!cwd || !(await isDirectory(cwd))) {
+      // anywhere else, its own folder: what the Claude panel wants as workspaceFolders[0]
+      if (!(await isDirectory(row.cwd))) {
         throw new AppError("cwd-missing", "That session's folder no longer exists.");
       }
-      // a live process on the conversation: `--resume --bg` would start a copy, and say so
-      const holder = deps.live.holder(row.sessionId);
-      if (holder?.kind === "interactive") {
-        const where = heldWhere(holder.entrypoint, editor.current().label);
-        throw new AppError("held", `It is ${where}. Close it there first.`);
-      }
-      if (daemonHeld({ row, ...(holder ? { holder } : {}) })) {
-        throw new AppError("held", "Claude Code is already running it in the background.");
-      }
-      const args = continueArgs(row.sessionId, prompt);
-      if (req.terminal) {
-        await openInTerminal(deps, row.sessionId, claudeScriptBody({ cwd, claudeBin: bin, args }));
-        return { message: TERMINAL_MESSAGE };
-      }
-      const res = await deps.background.dispatch(args, { cwd, sessionId: row.sessionId });
-      if (!res.ok) {
-        throw res.notTrusted ? notTrusted(cwd) : claudeFailure("claude --bg failed", res.out);
-      }
-      deps.live.clearInterrupted(row.sessionId);
-      return {
-        ...(res.id ? { id: res.id } : {}),
-        message: res.id ? `continuing in background · ${res.id}` : "continuing in background",
-      };
+      const folder = row.cwd as string;
+      const prepared = await prepareFolderOpen(env.appRoot, folder, {
+        sessionId: row.sessionId,
+        source: "app",
+      });
+      if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
+      const launched = await openInEditor(folder, editor.current());
+      if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+      return (await editor.companionInstalled()) ? {} : missing;
     },
 
-    async startSession(raw) {
-      const req = parseNewSession(raw);
-      const combo = combos.find(req.combo);
-      if (!(await isDirectory(combo.root))) {
-        throw new AppError("cwd-missing", `${combo.root} does not exist.`);
-      }
+    async startAgent(raw) {
+      const req = parseStartAgent(raw);
+      const combo = combos.byId(req.project);
+      const prompt = startPrompt({
+        root: combo.root,
+        rootExists: await isDirectory(combo.root),
+        goal: combo.note,
+        ...(req.cardId
+          ? { cardId: req.cardId, card: projects.startCard(req.project, req.cardId) }
+          : {}),
+      });
       const label = editor.current().label;
 
       if (req.where === "editor") {
-        const prompt = editorPrompt(req.prompt, req.longWork);
         const { companionVersion } = await editor.status();
         // an older companion cannot start a conversation, and an unpinned link would go to
-        // whichever window has focus. the combo still opens; the prompt waits on the clipboard.
+        // whichever window has focus. the project still opens; the prompt waits on the clipboard.
         if (
           !companionVersion ||
           compareVersions(companionVersion, NEW_CONVERSATION_COMPANION) < 0
         ) {
-          await api.openCombo(combo.name);
-          if (prompt) electron.clipboard.writeText(prompt);
-          const why = companionVersion
-            ? `The Grove extension in ${label} is older than ${NEW_CONVERSATION_COMPANION}, so it cannot start the conversation.`
-            : `The Grove extension is not installed in ${label}, so it cannot start the conversation.`;
-          return prompt
-            ? { message: "Prompt copied - paste it into a new Claude conversation", body: why }
-            : { message: `Opened ${combo.name} in ${label}`, body: why };
+          await openWindow(combo);
+          electron.clipboard.writeText(prompt);
+          projects.addStart(req.project, "editor", req.cardId);
+          return {
+            message: "Prompt copied - paste it into a new Claude conversation",
+            body: companionVersion
+              ? `The Grove extension in ${label} is older than ${NEW_CONVERSATION_COMPANION}, so it cannot start the conversation.`
+              : `The Grove extension is not installed in ${label}, so it cannot start the conversation.`,
+          };
         }
         const report = await combos.open(combo, undefined, { newConversation: true, prompt });
         const launched = await openInEditor(report.workspaceFile, editor.current());
@@ -530,31 +353,23 @@ function buildHandlers(deps: Deps): Handlers {
         for (const warning of report.warnings) {
           pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
         }
-        return { message: `Opening ${combo.name} in ${label} on a new conversation` };
+        projects.addStart(req.project, "editor", req.cardId);
+        return {
+          message: `Opening ${combo.name} in ${label} on a new conversation`,
+          // the panel only fills the box
+          body: "The prompt is in the Claude panel. Send it to start the agent.",
+        };
       }
 
-      const bin = await claudeBin(deps);
-      if (req.where === "terminal") {
-        // the combo root as the cwd, so its CLAUDE.md and hooks load
-        await openInTerminal(
-          deps,
-          randomUUID(),
-          claudeScriptBody({
-            cwd: combo.root,
-            claudeBin: bin,
-            args: terminalArgs(req, req.prompt),
-          }),
-        );
-        return { message: `Opened a new session in Terminal, in ${combo.name}` };
-      }
-
-      const args = backgroundArgs(req, req.prompt);
+      // the project root as the cwd, so its CLAUDE.md, hooks and the record's server load
+      const args = backgroundArgs({}, prompt);
       if (req.throughTerminal) {
         await openInTerminal(
           deps,
           randomUUID(),
-          claudeScriptBody({ cwd: combo.root, claudeBin: bin, args }),
+          claudeScriptBody({ cwd: combo.root, claudeBin: await claudeBin(deps), args }),
         );
+        projects.addStart(req.project, "background", req.cardId);
         return { message: TERMINAL_MESSAGE };
       }
       const res = await deps.background.dispatch(args, { cwd: combo.root });
@@ -563,26 +378,45 @@ function buildHandlers(deps: Deps): Handlers {
           ? notTrusted(combo.root)
           : claudeFailure("claude --bg failed", res.out);
       }
-      return {
-        ...(res.id ? { id: res.id } : {}),
-        message: res.id ? `started in background · ${res.id}` : "started in background",
-      };
+      projects.addStart(req.project, "background", req.cardId);
+      return { message: res.id ? `started in background · ${res.id}` : "started in background" };
     },
 
-    async validateComboName(name, self) {
-      return combos.validateName(name, self);
+    async findSessions(query) {
+      return projects.findSessions(typeof query === "string" ? query : "");
     },
 
-    async validateDraft(raw, self) {
+    async takeLanding() {
+      return deps.reveals.take();
+    },
+
+    async setVisibleProject(id) {
+      deps.notifier.setVisibleProject(typeof id === "string" ? id : null);
+    },
+
+    async validateProjectName(name, self, prefix) {
+      const own = self ? combos.byId(self) : undefined;
+      const v = combos.validateName(String(name ?? ""), own?.name);
+      // the stored one never changes. else what the form says, what the folder's project file
+      // says (the record refuses a prefix change once there are cards), or one from the name
+      const given = typeof prefix === "string" ? prefix.trim().toUpperCase() : "";
+      const p =
+        own?.prefix ?? (given || readProject(v.root)?.prefix || derivePrefix(String(name ?? "")));
+      const prefixProblem = own ? undefined : validatePrefix(p, combos.list());
+      return { ...v, prefix: p, ...(prefixProblem ? { prefixProblem } : {}) };
+    },
+
+    async validateProjectDraft(raw, self) {
       const { draft, problems } = await parseDraft(raw);
       if (!draft) return { problems };
-      return { problems: [...problems, ...combos.problemsWithDraft(draft, self)] };
+      const own = self ? combos.byId(self).name : undefined;
+      return { problems: [...problems, ...combos.problemsWithDraft(draft, own)] };
     },
 
     async pickDirectories() {
       const win = deps.window();
       const options: OpenDialogOptions = {
-        title: "Add folders to this combo",
+        title: "Add folders to this project",
         // electron 43+ defaults to ~/Downloads when no defaultPath is given
         defaultPath: lastPickedDir ?? env.home,
         properties: ["openDirectory", "multiSelections", "createDirectory"],
@@ -636,93 +470,47 @@ function buildHandlers(deps: Deps): Handlers {
       };
     },
 
-    async createCombo(raw) {
-      const { draft, problems } = await parseDraft(raw);
-      if (!draft) throw new AppError("invalid", problems.join(" "));
-      const all = [...problems, ...combos.problemsWithDraft(draft)];
-      if (all.length > 0) throw new AppError("invalid", all.join(" "));
-      const combo = await combos.create(draft);
+    async createProject(raw) {
+      const combo = await combos.create(await cleanDraft(raw));
       // the folders appear as "not created yet" and fill in as git works
       void combos.ensure(combo, "create");
-      return { name: combo.name };
+      return { id: projectIdOf(combo) };
     },
 
-    async updateCombo(name, raw) {
-      const { draft, problems } = await parseDraft(raw);
-      if (!draft) throw new AppError("invalid", problems.join(" "));
-      const all = [...problems, ...combos.problemsWithDraft(draft, name)];
-      if (all.length > 0) throw new AppError("invalid", all.join(" "));
-      const { combo, kept } = await combos.update(name, draft);
+    async updateProject(id, raw) {
+      const before = combos.byId(id);
+      const { combo, kept } = await combos.update(before.name, await cleanDraft(raw, before.name));
       for (const outcome of kept) pusher.send("toast", keptFolderToast(outcome));
       void combos.ensure(combo, "update");
-      return { name: combo.name };
+      return { id: projectIdOf(combo) };
     },
 
-    async deleteCombo(name, trashRoot) {
-      const combo = combos.find(name);
-      const { remaining } = await combos.remove(name);
+    async deleteProject(id, trashRoot) {
+      const combo = combos.byId(id);
+      const { remaining } = await combos.remove(combo.name);
       if (remaining.length > 0) return { remaining };
       if (trashRoot) {
-        // the root holds the person's CLAUDE.md and .claude settings, so it goes to the Trash
+        // the root holds the person's CLAUDE.md, .claude settings and the record, so it goes to the Trash
         await electron.shell.trashItem(combo.root).catch((e: unknown) => {
-          log.warn("trash combo root:", e);
+          log.warn("trash project root:", e);
         });
       }
       return { remaining: [] };
     },
 
-    async reconcile(name, withDirty) {
-      if (name) await combos.reconcile(combos.find(name), withDirty ?? false);
-      else await combos.reconcileAll(withDirty ?? false);
+    async repairProject(id) {
+      return combos.repair(combos.byId(id));
     },
 
-    async ensureCombo(name) {
-      return combos.ensure(combos.find(name), "ensure");
+    async openProject(id) {
+      return openWindow(combos.byId(id));
     },
 
-    async repairFolder(name, folderPath) {
-      return combos.repair(combos.find(name), folderPath);
-    },
-
-    async repairCombo(name) {
-      return combos.repair(combos.find(name));
-    },
-
-    async teardownCombo(name) {
-      const outcomes = await combos.teardown(combos.find(name));
-      return outcomes.filter((o) => o.folder.mode === "worktree");
-    },
-
-    async forceRemoveFolder(name, folderPath) {
-      return combos.forceRemove(combos.find(name), folderPath);
-    },
-
-    async openCombo(name, sessionKey) {
-      const combo = combos.find(name);
-      let sessionId: string | undefined;
-      if (sessionKey) {
-        const row = requireSession(deps, sessionKey);
-        if (isValidSessionId(row.sessionId)) sessionId = row.sessionId;
-      }
-      const report = await combos.open(combo, sessionId);
-      const launched = await openInEditor(report.workspaceFile, editor.current());
-      if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
-      for (const warning of report.warnings) {
-        pusher.send("toast", { level: "error", title: `${name}: ${warning}` });
-      }
-      return {
-        launched: true,
-        landing: Boolean(sessionId) && (await editor.companionInstalled()),
-        outcomes: report.outcomes,
-        warnings: report.warnings,
-      };
-    },
-
-    async setLongWork(name, mode) {
+    async setLongWork(id, mode) {
       if (mode !== "background" && mode !== "foreground") {
         throw new AppError("invalid", "Long work is either background or foreground.");
       }
-      await combos.setLongWork(name, mode);
+      await combos.setLongWork(combos.byId(id).name, mode);
     },
 
     async editorStatus(refresh) {
@@ -736,10 +524,6 @@ function buildHandlers(deps: Deps): Handlers {
       pusher.send("editor:status", await editor.status(true));
     },
 
-    async getSettings() {
-      return toAppSettings(deps.settings());
-    },
-
     async updateSettings(patch) {
       const next = await saveSettings(env.appRoot, patch as Partial<Settings>);
       deps.setSettings(next);
@@ -748,30 +532,25 @@ function buildHandlers(deps: Deps): Handlers {
       return toAppSettings(next);
     },
 
-    async reveal(target) {
-      if (target.kind === "session") {
-        electron.shell.showItemInFolder(requireSession(deps, target.key).key);
-        return;
+    async reveal(project, relative) {
+      const { root } = combos.byId(project);
+      const file = typeof relative === "string" && relative ? path.resolve(root, relative) : "";
+      // an agent wrote the path. Finder shows it, and only when it is inside the project
+      if (!file || !isInside(file, root)) {
+        throw new AppError("bad-path", "That file is not inside the project folder.");
       }
-      if (target.kind === "agent") {
-        requireSession(deps, target.key);
-        const file = deps.inspector.agentFile(target.key, target.agentId);
-        if (!file) throw new AppError("no-agent", "That agent's transcript is gone.");
-        electron.shell.showItemInFolder(file);
-        return;
-      }
-      const combo = combos.find(target.name);
-      if (target.kind === "combo") {
-        electron.shell.showItemInFolder(combo.root);
-        return;
-      }
-      const folder = combo.folders.find((f) => samePath(f.path, target.folderPath));
-      electron.shell.showItemInFolder(folder ? targetDirFor(combo, folder) : combo.root);
+      electron.shell.showItemInFolder(file);
     },
 
     async copyText(text) {
       if (typeof text !== "string") throw new AppError("bad-text", "Nothing to copy.");
       electron.clipboard.writeText(text);
+    },
+
+    async openExternal(url) {
+      const safe = externalUrl(url);
+      if (!safe) throw new AppError("bad-link", "Only web links open from here.");
+      await electron.shell.openExternal(safe);
     },
 
     async reportCspViolation(detail) {

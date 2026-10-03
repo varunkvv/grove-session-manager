@@ -12,10 +12,12 @@ export interface MainWindowOptions {
    * list there and sits beside it here, and the same test means two different things
    */
   fixedSize?: boolean;
+  /** false: made hidden (`--hidden`). the page still loads */
+  show?: boolean;
 }
 
 /** --color-canvas from app.css, in both appearances. the window is painted before the page loads. */
-const CANVAS = { dark: "#1F1E1D", light: "#FAF9F5" } as const;
+const CANVAS = { dark: "#17181B", light: "#FFFFFF" } as const;
 
 export function canvasColor(dark: boolean): string {
   return dark ? CANVAS.dark : CANVAS.light;
@@ -43,7 +45,7 @@ export async function createMainWindow(o: MainWindowOptions): Promise<BrowserWin
     show: false,
     backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors),
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 18 },
+    trafficLightPosition: { x: 16, y: 14 },
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -54,7 +56,9 @@ export async function createMainWindow(o: MainWindowOptions): Promise<BrowserWin
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    if (o.show !== false) win.show();
+  });
 
   let timer: NodeJS.Timeout | null = null;
   const save = () => {

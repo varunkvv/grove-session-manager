@@ -224,11 +224,6 @@ export class LiveService {
     return changed;
   }
 
-  /** grove just handed it to Claude Code's supervisor: not interrupted any more */
-  clearInterrupted(sessionId: string): void {
-    if (this.resume([sessionId])) this.changed();
-  }
-
   /**
    * the live process holding a session, if any: an `interactive` one is a panel or a terminal,
    * a `bg` one is Claude Code's supervisor. from the last registry read, so a moment old.

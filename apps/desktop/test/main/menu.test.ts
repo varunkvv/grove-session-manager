@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildMenuTemplate, trayTemplate } from "../../src/main/menuTemplate.ts";
 import type { InboxRowView, LandingTarget, MenuCommandId } from "../../src/shared/ipc.ts";
 
-function items(): MenuItemConstructorOptions[] {
+function items(sent: MenuCommandId[] = []): MenuItemConstructorOptions[] {
   const out: MenuItemConstructorOptions[] = [];
   const walk = (list: MenuItemConstructorOptions[]) => {
     for (const item of list) {
@@ -11,7 +11,15 @@ function items(): MenuItemConstructorOptions[] {
       if (Array.isArray(item.submenu)) walk(item.submenu);
     }
   };
-  walk(buildMenuTemplate({ appName: "Grove", isDev: false, isMac: true, send: () => {} }));
+  walk(
+    buildMenuTemplate({
+      appName: "Grove",
+      editorLabel: "VS Code",
+      isDev: false,
+      isMac: true,
+      send: (id) => sent.push(id),
+    }),
+  );
   return out;
 }
 
@@ -21,63 +29,40 @@ describe("the menu", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("shows cmd-I for the inspector but leaves the key to the page, which toggles it", () => {
+  it("every command, with its key, as app.md 3.9 lists them", () => {
     const sent: MenuCommandId[] = [];
-    const template = buildMenuTemplate({
-      appName: "Grove",
-      isDev: false,
-      isMac: true,
-      send: (id) => sent.push(id),
-    });
-    const view = template.find((m) => m.label === "View");
-    const submenu = (view?.submenu ?? []) as MenuItemConstructorOptions[];
-    const inspect = submenu.find((i) => i.label === "Session Pane");
-    expect(inspect?.accelerator).toBe("CmdOrCtrl+I");
-    expect(inspect?.registerAccelerator).toBe(false);
-    const click = inspect?.click as (() => void) | undefined;
-    click?.();
-    expect(sent).toEqual(["inspect"]);
-    // the inbox is the next free number, and 1-3 keep what they meant
-    const inbox = submenu.find((i) => i.label === "Inbox");
-    expect(inbox?.accelerator).toBe("CmdOrCtrl+4");
-    (inbox?.click as (() => void) | undefined)?.();
-    expect(sent).toEqual(["inspect", "scope-inbox"]);
-    const turns = submenu.find((i) => i.label === "Go to Turn…");
-    expect(turns?.accelerator).toBe("CmdOrCtrl+J");
-    expect(turns?.registerAccelerator).toBe(false);
+    const commands = items(sent).filter((i) => i.click);
+    expect(commands.map((i) => [i.label, i.accelerator])).toEqual([
+      ["Settings…", "CmdOrCtrl+,"],
+      ["New Project…", "CmdOrCtrl+N"],
+      ["Open Project in VS Code", "CmdOrCtrl+O"],
+      ["Edit Project…", "CmdOrCtrl+E"],
+      ["Find", "CmdOrCtrl+F"],
+      ["Inbox", "CmdOrCtrl+1"],
+      ["Cards", "CmdOrCtrl+2"],
+      ["Conclusions", "CmdOrCtrl+3"],
+      ["Go to…", "CmdOrCtrl+K"],
+      ["Refresh", "CmdOrCtrl+R"],
+    ]);
+    for (const i of commands) (i.click as () => void)();
+    expect(sent).toEqual([
+      "settings",
+      "new-project",
+      "open-project",
+      "edit-project",
+      "focus-search",
+      "go-inbox",
+      "go-cards",
+      "go-conclusions",
+      "palette",
+      "refresh",
+    ]);
   });
 
-  it("shows cmd-G for the next match and leaves it to the page: a step taken twice skips one", () => {
-    const edit = buildMenuTemplate({
-      appName: "Grove",
-      isDev: false,
-      isMac: true,
-      send: () => {},
-    }).find((m) => m.label === "Edit");
-    const submenu = (edit?.submenu ?? []) as MenuItemConstructorOptions[];
-    const next = submenu.find((i) => i.label === "Find Next");
-    const previous = submenu.find((i) => i.label === "Find Previous");
-    expect(next?.accelerator).toBe("CmdOrCtrl+G");
-    expect(previous?.accelerator).toBe("CmdOrCtrl+Shift+G");
-    expect(next?.registerAccelerator).toBe(false);
-    expect(previous?.registerAccelerator).toBe(false);
-  });
-
-  it("cmd-T starts a new session, from the File menu", () => {
-    const sent: MenuCommandId[] = [];
-    const template = buildMenuTemplate({
-      appName: "Grove",
-      isDev: false,
-      isMac: true,
-      send: (id) => sent.push(id),
-    });
-    const file = template.find((m) => m.label === "File");
-    const item = ((file?.submenu ?? []) as MenuItemConstructorOptions[]).find(
-      (i) => i.accelerator === "CmdOrCtrl+T",
-    );
-    expect(item?.label).toBe("New Session…");
-    (item?.click as (() => void) | undefined)?.();
-    expect(sent).toEqual(["new-session"]);
+  it("shows cmd-K but leaves the key to the page, so the palette opens while a field has focus", () => {
+    const palette = items().find((i) => i.label === "Go to…");
+    expect(palette?.registerAccelerator).toBe(false);
+    expect(items().filter((i) => i.registerAccelerator === false)).toHaveLength(1);
   });
 });
 

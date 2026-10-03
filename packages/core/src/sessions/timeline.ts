@@ -1,5 +1,5 @@
 // what one agent did, folded out of its transcript line by line. no node: imports - the types and
-// the wording helpers are the renderer's too. reading the file is agentTimeline.ts.
+// the wording helpers are the renderer's too.
 import { squash } from "../transcript/title.ts";
 
 /** bumped when the folded shape changes, so a cached timeline from an older build is not trusted */

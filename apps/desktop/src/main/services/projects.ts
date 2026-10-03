@@ -52,8 +52,9 @@ import type { LiveService } from "./live.ts";
 import { openPlanOf } from "./openPlan.ts";
 import type { ProjectRecordService } from "./projectRecord.ts";
 import type { SessionService } from "./sessions.ts";
+import type { StartCard } from "./startAgent.ts";
 
-/** the person's review marks: `<PREFIX>/<key>` in reviewed.json (ReviewedService after the swap) */
+/** the person's review marks: `<PREFIX>/<key>` in reviewed.json (ReviewedService) */
 export interface ReviewMarks {
   /** the marks under `<prefix>/`, with it taken off */
   keys(prefix: string): ReadonlySet<string>;
@@ -358,6 +359,28 @@ export class ProjectsService {
     };
   }
 
+  /** a card as startPrompt wants it: its holder joined with where it runs (app.md 5.4) */
+  startCard(project: ProjectId, cardId: string): StartCard | undefined {
+    const c = this.o.record.snapshot(project)?.cards.get(cardId);
+    if (!c) return undefined;
+    const index = this.index(this.list().projects);
+    const f = c.holder && this.facts(c.holder.session, index);
+    return {
+      id: c.id,
+      title: c.title,
+      status: c.status,
+      ...(c.holder && f
+        ? {
+            holder: {
+              name: refOf({ session: c.holder.session, agent: c.holder.agent }, index).name,
+              runtime: f.runtime,
+              interrupted: !!f.interrupted,
+            },
+          }
+        : {}),
+    };
+  }
+
   /** an agent grove started that has not claimed anything yet (app.md 5.4) */
   addStart(project: ProjectId, where: PendingStart["where"], cardId?: string): PendingStart {
     const s: PendingStart = {
@@ -619,7 +642,8 @@ export class ProjectsService {
     return best;
   }
 
-  private runtimeFor(id: string, row?: SessionRow): Runtime {
+  /** where a session's process is right now. openSession asks again at call time */
+  runtimeFor(id: string, row?: SessionRow): Runtime {
     return runtimeOf({
       held: row?.background?.held,
       holder: this.o.live.holder(id),

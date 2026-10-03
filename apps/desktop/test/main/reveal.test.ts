@@ -1,51 +1,34 @@
-import type { LiveStatus } from "@grove/core";
-import { needsYou } from "@grove/core";
 import { describe, expect, it } from "vitest";
 import { Reveals } from "../../src/main/services/reveal.ts";
 
-const live = (state: LiveStatus["state"], extra: Partial<LiveStatus> = {}): LiveStatus => ({
-  state,
-  at: 1,
-  lastEventAt: 1,
-  ...extra,
-});
-
-function setup(rows: Record<string, LiveStatus | undefined>) {
+function setup() {
   const calls: string[] = [];
   const reveals = new Reveals({
-    find: (id) => (id in rows ? { key: `/p/${id}.jsonl`, live: rows[id] } : undefined),
-    needsYou,
     raise: () => calls.push("raise"),
     notify: () => calls.push("notify"),
   });
   return { reveals, calls };
 }
 
-describe("a notification click, landing in grove", () => {
-  it("lands in the inbox while the session still waits, and is held until the page takes it", () => {
-    const { reveals, calls } = setup({ a: live("waiting") });
-    expect(reveals.reveal("a")).toMatchObject({ key: "/p/a.jsonl", scope: "inbox" });
+describe("a landing, from a notification click or a tray row", () => {
+  it("raises the window, tells the page, and is held until the page takes it, once", () => {
+    const { reveals, calls } = setup();
+    const target = { view: "card", project: "auth-sso", cardId: "AUTH-4", back: "inbox" } as const;
+    expect(reveals.land(target)).toMatchObject({ target });
     expect(calls).toEqual(["raise", "notify"]);
     // the page was not listening yet: it takes the landing when it connects, and only once
-    expect(reveals.take()).toMatchObject({ key: "/p/a.jsonl" });
+    expect(reveals.take()).toMatchObject({ target });
     expect(reveals.take()).toBeNull();
   });
 
-  it("answered meanwhile: every session instead, and no agent", () => {
-    const { reveals } = setup({ a: live("waiting", { seen: true }), b: live("running") });
-    expect(reveals.reveal("a")).toMatchObject({ scope: "all" });
-    expect(reveals.reveal("b")?.agentId).toBeUndefined();
-  });
-
-  it("a subagent asking for permission: its detail, not the conversation", () => {
-    const { reveals } = setup({ a: live("permission", { agentId: "a7", detail: "Bash" }) });
-    expect(reveals.reveal("a")).toMatchObject({ scope: "inbox", agentId: "a7" });
-  });
-
-  it("a session gone from the list still brings the window forward, and lands nowhere", () => {
-    const { reveals, calls } = setup({});
-    expect(reveals.reveal("x")).toBeNull();
-    expect(calls).toEqual(["raise"]);
-    expect(reveals.take()).toBeNull();
+  it("the newest landing wins: two clicks before the page looks land on the second", () => {
+    const { reveals } = setup();
+    reveals.land({ view: "inbox", project: "auth-sso", rowId: "stopped:s1" });
+    reveals.land({ view: "conclusions", project: "auth-sso", conclusionId: "D-4" });
+    expect(reveals.take()?.target).toEqual({
+      view: "conclusions",
+      project: "auth-sso",
+      conclusionId: "D-4",
+    });
   });
 });

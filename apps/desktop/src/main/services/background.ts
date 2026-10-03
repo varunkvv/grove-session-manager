@@ -25,16 +25,6 @@ export function stopArgs(shortId: string): string[] {
 const DISPATCH_TIMEOUT_MS = 60_000;
 
 /**
- * hands a session nothing is running to the supervisor, under its own id and transcript. the
- * prompt comes after `--`, so typed text starting with a dash can never become a flag. no
- * permission mode and no skip-permissions: a session that stops on a prompt shows up as blocked,
- * and attach is how it gets answered.
- */
-export function continueArgs(sessionId: string, prompt: string): string[] {
-  return ["--resume", sessionId, "--bg", "--", prompt];
-}
-
-/**
  * since 2.1.281 a dispatch into a folder that never passed the CLI's trust prompt exits 1 with
  * "Workspace not trusted. Run `claude` in <dir> once and accept the trust prompt, then retry."
  * on stderr. a combo only ever used from VS Code has not.
