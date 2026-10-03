@@ -72,6 +72,49 @@ describe("combo roots", () => {
   });
 });
 
+describe("the words the project form shows", () => {
+  it("say project, not combo", () => {
+    expect(validateComboName(" ", []).problem).toBe("Give the project a name.");
+    expect(validateComboName("x", [combo("X")]).problem).toBe('"X" already uses that name.');
+    expect(validateComboRoot(combo("x", [], "rel"), [], app, home).problems).toEqual([
+      "The project folder must be an absolute path.",
+    ]);
+    expect(validateComboRoot(combo("x", [], home), [], app, home).problems).toEqual([
+      "The project folder cannot be your home folder.",
+    ]);
+    expect(
+      validateComboRoot(combo("x", [], path.join(home, ".claude", "ws")), [], app, home).problems,
+    ).toEqual(["The project folder cannot live inside ~/.claude."]);
+    const root = path.join(app, "p");
+    expect(
+      validateComboRoot(
+        combo("p", [{ path: path.join(root, "api"), mode: "reference" }]),
+        [],
+        app,
+        home,
+      ).problems,
+    ).toEqual([
+      `${path.join(root, "api")} is inside the project folder. Repos must live elsewhere.`,
+    ]);
+    expect(
+      validateComboRoot(combo("p", [{ path: app, mode: "reference" }]), [], app, home).problems,
+    ).toEqual([`The project folder is inside ${app}.`]);
+    expect(
+      validateComboRoot(combo("inner", [], path.join(root, "inner")), [combo("p")], app, home)
+        .problems,
+    ).toEqual(['The project folder overlaps with "p".']);
+    const other = combo("prod-debug", [{ path: "/Users/you/src/api", mode: "worktree" }]);
+    expect(validateComboRoot(combo("prod-debug-api"), [other], app, home).problems).toEqual([
+      `Claude Code would store this project's sessions in the same place as "prod-debug". Pick another name.`,
+    ]);
+    expect(
+      validateFolders(combo("c", [{ path: "/Users/you/src/cards", mode: "worktree" }])),
+    ).toEqual([
+      '"cards" is a name the project folder uses itself. Give that working copy another folder name.',
+    ]);
+  });
+});
+
 describe("folders", () => {
   it("two members with one basename need a folder name", () => {
     const c = combo("c", [

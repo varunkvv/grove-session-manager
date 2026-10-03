@@ -1,8 +1,10 @@
 import { type FSWatcher, watch } from "node:fs";
 import path from "node:path";
 import {
+  assignPrefixes,
   type Combo,
   type ComboFolder,
+  type ComboSyncReport,
   comboDirSlug,
   combosFilePath,
   type Disposable,
@@ -15,11 +17,13 @@ import {
   loadCombos,
   type PrepareOptions,
   prepareComboOpen,
+  type RecordInstall,
   reconcileCombo,
   repairCombo,
   repairFolder,
   samePath,
-  syncComboStatusHooks,
+  syncComboFiles,
+  syncComboSettings,
   syncLongWorkPolicy,
   type TeardownOutcome,
   targetDirFor,
@@ -31,6 +35,7 @@ import {
   watchComboStatusHooks,
   workspaceFilePath,
 } from "@grove/core";
+import { readProject } from "@grove/record";
 import type { ComboView, ToastMessage } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
@@ -63,6 +68,10 @@ export interface ComboServiceOptions {
   onToast: (toast: ToastMessage) => void;
   /** combos moved, so session -> combo has to be worked out again */
   onModelChanged: (combos: Combo[]) => void;
+  /** undefined in a dev build outside GROVE_ROOT: then no record file is written anywhere */
+  install?: RecordInstall;
+  /** every combo sync that ran, with what it wrote */
+  onSynced?: (combo: Combo, report: ComboSyncReport) => void;
 }
 
 export class ComboService {
@@ -76,6 +85,8 @@ export class ComboService {
   private hookWatchers = new Map<string, Disposable>();
   private debounce: NodeJS.Timeout | null = null;
   private selfWriteUntil = 0;
+  /** the last sync of each combo, by root. the self-check reads its config stage from here */
+  private reports = new Map<string, ComboSyncReport>();
 
   constructor(opts: ComboServiceOptions) {
     this.opts = opts;
@@ -136,9 +147,31 @@ export class ComboService {
 
   private async reloadFromDisk(): Promise<void> {
     await this.load(true);
+    await this.backfillPrefixes();
     // a combo added by hand reports its sessions without anyone opening it first
-    void this.syncStatusHooks();
+    void this.syncAll();
     void this.reconcileAll();
+  }
+
+  /**
+   * a card prefix for every combo that has none, in one write to combos.json. after load, never
+   * inside it: load never writes. the 0.5 app and the extension keep the key through their writes.
+   */
+  async backfillPrefixes(): Promise<void> {
+    const onDisk = new Map<string, string>();
+    for (const c of this.combos) {
+      const prefix = c.prefix ? undefined : readProject(c.root)?.prefix;
+      if (prefix) onDisk.set(c.root, prefix);
+    }
+    const assigned = assignPrefixes(this.combos, onDisk);
+    if (assigned.size === 0) return;
+    await this.save((combos) =>
+      combos.map((c) => (assigned.has(c.root) ? { ...c, prefix: assigned.get(c.root) } : c)),
+    ).catch((e) => log.warn("card prefixes:", e));
+  }
+
+  syncReport(root: string): ComboSyncReport | undefined {
+    return this.reports.get(root);
   }
 
   // --- reads -------------------------------------------------------------
@@ -199,12 +232,28 @@ export class ComboService {
     return this.opts.queue.run("mutate", run);
   }
 
-  /** every combo reports session status, including ones created before that existed */
-  async syncStatusHooks(): Promise<void> {
+  /** every combo reports session status and has the record's files, including ones made before either existed */
+  async syncAll(): Promise<void> {
     for (const combo of this.list()) {
-      await syncComboStatusHooks(this.opts.appRoot, combo).catch(() => undefined);
+      await this.sync(combo).catch((e) => log.warn("sync", combo.name, e));
     }
     this.watchStatusHooks();
+  }
+
+  private async sync(combo: Combo): Promise<void> {
+    const report = await syncComboFiles(
+      this.opts.appRoot,
+      combo,
+      combo.prefix ?? "",
+      this.installFor(combo),
+    );
+    this.reports.set(combo.root, report);
+    this.opts.onSynced?.(combo, report);
+  }
+
+  /** a combo assignPrefixes could not give a prefix gets status hooks only */
+  private installFor(combo: Combo): RecordInstall | undefined {
+    return combo.prefix ? this.opts.install : undefined;
   }
 
   /**
@@ -220,10 +269,14 @@ export class ComboService {
       }
     }
     for (const combo of this.combos) {
-      if (this.hookWatchers.has(combo.root)) continue;
+      // a missing root stays missing: the sync no longer recreates it
+      if (this.hookWatchers.has(combo.root) || this.reports.get(combo.root)?.skipped) continue;
       // null while the combo has no `.claude` dir yet. the next sync picks it up.
+      const install = this.installFor(combo);
       const w = watchComboStatusHooks(this.opts.appRoot, combo, {
         onError: (e) => log.warn("status hook watch:", e),
+        // a session writing its start-up copy back drops the record's keys too
+        ...(install ? { resync: () => syncComboSettings(this.opts.appRoot, combo, install) } : {}),
       });
       if (w) this.hookWatchers.set(combo.root, w);
     }
@@ -235,9 +288,9 @@ export class ComboService {
     this.setBusyAll(combo, "creating");
     return this.mutate(async () => {
       await ensureRoot(combo);
-      // there from the first session on, not only after the first "open"
-      await syncLongWorkPolicy(combo);
-      await syncComboStatusHooks(this.opts.appRoot, combo).catch(() => undefined);
+      // there from the first session on, not only after the first "open". an edited goal is in
+      // the project file before the next session starts
+      await this.sync(combo).catch((e) => log.warn("sync", combo.name, e));
       this.watchStatusHooks();
       try {
         const outcomes = await ensureWorktrees(combo, {
@@ -319,12 +372,14 @@ export class ComboService {
     return this.mutate(async () => {
       this.setBusyAll(combo, "creating");
       try {
+        const install = this.installFor(combo);
         const report = await prepareComboOpen(this.opts.appRoot, combo, {
           sessionId,
           ...land,
           gitPath: this.opts.gitPath,
           source: "app",
           onOutcome: (o) => this.applyOutcome(combo, o, "open"),
+          ...(install ? { record: { install, prefix: combo.prefix ?? "" } } : {}),
         });
         return {
           workspaceFile: report.workspaceFile,
@@ -379,6 +434,8 @@ export class ComboService {
       ...(draft.note ? { note: draft.note } : {}),
     };
     await this.save((combos) => [...combos, combo]);
+    // the form's own prefix field comes with the new screens
+    await this.backfillPrefixes();
     return this.find(draft.name);
   }
 

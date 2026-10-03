@@ -1,11 +1,26 @@
-// vite dev server for the renderer + esbuild watch for main and preload. electron restarts on
-// every rebuild, and quitting either side stops the other.
+// vite dev server for the renderer + esbuild watch for main, preload and the record bundle.
+// electron restarts on every rebuild, and quitting either side stops the other.
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { context } from "esbuild";
 import { createServer } from "vite";
-import { desktopDir, mainOptions, preloadOptions, viteConfigFile } from "./shared.mjs";
+import {
+  appVersion,
+  desktopDir,
+  mainOptions,
+  preloadOptions,
+  recordOptions,
+  viteConfigFile,
+} from "./shared.mjs";
+
+// even with --real-root a dev build writes no record files into real combos (main/index.ts)
+if (!process.env.GROVE_ROOT && !process.argv.includes("--real-root")) {
+  console.error(
+    "GROVE_ROOT is not set. A dev build next to the installed app takes its hook events (decision 28). Set GROVE_ROOT, or pass --real-root to use ~/claude-ws anyway.",
+  );
+  process.exit(1);
+}
 
 const electronBin = createRequire(import.meta.url)("electron");
 const entry = path.join(desktopDir, "out/main/index.cjs");
@@ -21,7 +36,7 @@ let child = null;
 let dying = null;
 let stopping = false;
 let restartTimer = null;
-const built = { main: false, preload: false };
+const built = { main: false, preload: false, record: false };
 
 function childEnv() {
   const env = { ...process.env, GROVE_DEV_SERVER_URL: devUrl };
@@ -42,7 +57,7 @@ function start() {
 }
 
 function restart() {
-  if (stopping || !built.main || !built.preload || dying) return;
+  if (stopping || !Object.values(built).every(Boolean) || dying) return;
   if (!child) return start();
   dying = child;
   child = null;
@@ -60,7 +75,8 @@ function respawnOnEnd(name) {
       build.onEnd((result) => {
         if (result.errors.length > 0) return;
         built[name] = true;
-        // main and preload usually finish together. one restart for both.
+        // they usually finish together, so one restart covers all three. the app installs a
+        // changed record bundle when it starts
         clearTimeout(restartTimer);
         restartTimer = setTimeout(restart, 120);
       });
@@ -71,6 +87,7 @@ function respawnOnEnd(name) {
 const contexts = await Promise.all([
   context({ ...mainOptions(), plugins: [respawnOnEnd("main")] }),
   context({ ...preloadOptions(), plugins: [respawnOnEnd("preload")] }),
+  context({ ...recordOptions(appVersion()), plugins: [respawnOnEnd("record")] }),
 ]);
 await Promise.all(contexts.map((c) => c.watch()));
 

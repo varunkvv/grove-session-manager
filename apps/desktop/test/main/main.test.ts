@@ -321,10 +321,36 @@ describe("drafts from the renderer", () => {
     expect(problems.join(" ")).toContain("does not exist");
   });
 
-  it("junk never becomes a combo", async () => {
+  it("junk never becomes a project", async () => {
     for (const junk of [null, 3, "x", {}, { name: "x" }, { folders: [] }]) {
-      expect((await parseDraft(junk)).draft).toBeNull();
+      expect(await parseDraft(junk)).toEqual({
+        draft: null,
+        problems: ["The project could not be read."],
+      });
     }
+  });
+
+  it("the messages say repo and project", async () => {
+    const dir = sandbox();
+    const { problems } = await parseDraft({
+      name: "p",
+      folders: [{ path: " " }, { path: "rel" }, { path: path.join(dir, "gone") }],
+    });
+    expect(problems).toEqual([
+      "A repo has no path.",
+      "rel is not an absolute path.",
+      `${path.join(dir, "gone")} does not exist or is not a folder.`,
+    ]);
+  });
+
+  it("the goal is one line, under 500 characters", async () => {
+    const goal = async (note: unknown) => parseDraft({ name: "p", note, folders: [] });
+    expect((await goal("  ship\n\n the\tthing  ")).draft?.note).toBe("ship the thing");
+    expect((await goal(" \n ")).draft?.note).toBeUndefined();
+    expect((await goal("x".repeat(500))).problems).toEqual([]);
+    expect((await goal("x".repeat(501))).problems).toEqual(["Keep the goal under 500 characters."]);
+    // the collapsed length counts: 300 words with runs of spaces fit
+    expect((await goal("ab     ".repeat(150))).problems).toEqual([]);
   });
 
   it("a worktree with no branch means detached, and a reference never carries one", async () => {

@@ -366,6 +366,18 @@ export interface ComboDraft {
   folders: FolderDraft[];
 }
 
+/** the start-up self-check of a project's record server, run through the real launcher */
+export type ServerCheck =
+  | { state: "unknown" }
+  | { state: "ok"; checkedAt: number; ms: number; tools: number }
+  | {
+      state: "failed";
+      checkedAt: number;
+      stage: "config" | "spawn" | "initialize" | "tools/list" | "record_state";
+      message: string;
+      detail?: string;
+    };
+
 export interface PathInfoView {
   path: string;
   exists: boolean;

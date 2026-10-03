@@ -13,7 +13,7 @@ export function validateComboName(
 ): { slug: string; problem?: string } {
   const trimmed = name.trim();
   const slug = comboDirSlug(trimmed);
-  if (!trimmed) return { slug, problem: "Give the combo a name." };
+  if (!trimmed) return { slug, problem: "Give the project a name." };
   if (!slug) return { slug, problem: "The name needs at least one letter or digit." };
   const clash = existing.find(
     (c) =>
@@ -46,7 +46,7 @@ export function validateFolders(combo: Combo): string[] {
     const lower = dirName.toLowerCase();
     if (COMBO_RESERVED_NAMES.has(lower) || lower === workspaceFile)
       problems.push(
-        `"${dirName}" is a name the combo folder uses itself. Give that working copy another folder name.`,
+        `"${dirName}" is a name the project folder uses itself. Give that working copy another folder name.`,
       );
     const other = targets.get(lower);
     if (other)
@@ -71,7 +71,7 @@ export function validateComboRoot(
   const problems: string[] = [];
   const warnings: string[] = [];
   if (!path.isAbsolute(combo.root))
-    return { problems: ["The combo folder must be an absolute path."], warnings };
+    return { problems: ["The project folder must be an absolute path."], warnings };
   const root = realpathLoose(combo.root);
   const slug = claudeProjectSlug(root);
 
@@ -80,22 +80,22 @@ export function validateComboRoot(
     [home, "your home folder"],
     [appRoot, "the app folder itself"],
   ] as const) {
-    if (root === realpathLoose(p)) problems.push(`The combo folder cannot be ${label}.`);
+    if (root === realpathLoose(p)) problems.push(`The project folder cannot be ${label}.`);
   }
   if (pathRelation(root, path.join(home, ".claude")))
-    problems.push("The combo folder cannot live inside ~/.claude.");
+    problems.push("The project folder cannot live inside ~/.claude.");
 
   for (const f of combo.folders) {
     const rel = pathRelation(f.path, root);
-    if (rel) problems.push(`${f.path} is inside the combo folder. Members must live elsewhere.`);
-    else if (pathRelation(root, f.path)) problems.push(`The combo folder is inside ${f.path}.`);
+    if (rel) problems.push(`${f.path} is inside the project folder. Repos must live elsewhere.`);
+    else if (pathRelation(root, f.path)) problems.push(`The project folder is inside ${f.path}.`);
   }
 
   for (const o of others) {
     if (o.name === combo.name) continue;
     const otherRoot = realpathLoose(o.root);
     if (pathRelation(root, otherRoot) || pathRelation(otherRoot, root)) {
-      problems.push(`The combo folder overlaps with "${o.name}".`);
+      problems.push(`The project folder overlaps with "${o.name}".`);
       continue;
     }
     const otherSlugs = [
@@ -106,7 +106,7 @@ export function validateComboRoot(
     ];
     if (otherSlugs.some((p) => claudeProjectSlug(p) === slug)) {
       problems.push(
-        `Claude Code would store this combo's sessions in the same place as "${o.name}". Pick another name.`,
+        `Claude Code would store this project's sessions in the same place as "${o.name}". Pick another name.`,
       );
     }
   }

@@ -26,8 +26,10 @@ import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
+import { installRecordRuntime, recordInstallFor, recordPaths } from "./services/recordInstall.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
+import { ServerChecks } from "./services/serverCheck.ts";
 import { SessionService } from "./services/sessions.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
@@ -175,8 +177,55 @@ async function start(): Promise<void> {
     },
   });
 
+  // packaged, or under GROVE_ROOT. a dev build next to the installed app writes no record file
+  const install = recordInstallFor({
+    isPackaged: electron.app.isPackaged,
+    customRoot: appEnv.customRoot,
+    appRoot: appEnv.appRoot,
+  });
+  const installRuntime = async () => {
+    const r = await installRecordRuntime({
+      appRoot: appEnv.appRoot,
+      execPath: process.execPath,
+      source: path.join(outDir, "record", "record.cjs"),
+      appVersion: electron.app.getVersion(),
+    });
+    if (r.error) log.warn("record runtime:", r.error);
+    else if (r.launcherChanged || r.bundleChanged || r.newerInstalled)
+      log.info("record runtime:", r);
+    return r;
+  };
+  // ponytail: results only go to the log until the project views carry them
+  const serverChecks = install
+    ? new ServerChecks({
+        ...recordPaths(appEnv.appRoot),
+        appVersion: electron.app.getVersion(),
+        claudeConfigDir: path.dirname(projectsDir),
+        report: (root) => combos.syncReport(root),
+        repair: installRuntime,
+        onResult: (combo, check) => {
+          if (check.state === "ok") {
+            log.info(`record check ${combo.name}: ok in ${check.ms}ms, ${check.tools} tools`);
+          } else if (check.state === "failed") {
+            log.warn(
+              `record check ${combo.name}: ${check.stage}: ${check.message}`,
+              check.detail ?? "",
+            );
+          }
+        },
+      })
+    : null;
+  // the first pass checks every project. after it, a project whose .mcp.json was just written is checked again
+  let checkedOnce = false;
+
   const combos = new ComboService({
     appRoot: appEnv.appRoot,
+    install,
+    onSynced: (combo, report) => {
+      if (checkedOnce && (report.mcp === "created" || report.mcp === "written")) {
+        void serverChecks?.run(combo);
+      }
+    },
     queue,
     gitPath: settings.gitPath,
     onCombosChanged: (views, problem) =>
@@ -205,6 +254,8 @@ async function start(): Promise<void> {
   denyAllPermissions();
 
   await combos.load();
+  await combos.backfillPrefixes();
+  if (install) await installRuntime();
   await archive.load();
   await sessions.loadCached(combos.list());
 
@@ -270,15 +321,18 @@ async function start(): Promise<void> {
       .catch((e) => log.warn("session status:", e))
       // stopped and finished background sessions have no process, so the registry never says
       .then(() => background.read());
-    // combos made before status tracking existed get their hooks without anyone opening them
-    void combos.syncStatusHooks();
+    // combos made before status tracking or the record existed get both without anyone opening them
+    void combos.syncAll().then(async () => {
+      checkedOnce = true;
+      await serverChecks?.runAll(combos.list());
+    });
     if (settings.trackAllSessions) void live.trackAllSessions(true).catch((e) => log.warn(e));
   });
   win.on("focus", () => {
     sessions.refreshThrottled();
     combos.reconcileOnFocus();
     // catches a settings file a session put back while the app was closed. the watch has the rest.
-    void combos.syncStatusHooks();
+    void combos.syncAll();
     void live.syncUserHooks();
     void background.read();
   });

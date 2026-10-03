@@ -38,18 +38,18 @@ async function isDirectory(p: string): Promise<boolean> {
   }
 }
 
-/** shape, absolute paths, and that every folder exists. the combo-level rules live in core. */
+/** shape, absolute paths, that every folder exists, and the goal's length. the project-level rules live in core. */
 export async function parseDraft(
   raw: unknown,
 ): Promise<{ draft: CleanDraft | null; problems: string[] }> {
   const problems: string[] = [];
   if (!isObject(raw) || typeof raw.name !== "string" || !Array.isArray(raw.folders)) {
-    return { draft: null, problems: ["The combo could not be read."] };
+    return { draft: null, problems: ["The project could not be read."] };
   }
   const folders: ComboFolder[] = [];
   for (const item of raw.folders as unknown[]) {
     if (!isObject(item) || typeof item.path !== "string" || !item.path.trim()) {
-      problems.push("A folder has no path.");
+      problems.push("A repo has no path.");
       continue;
     }
     const given = item.path.trim();
@@ -70,7 +70,10 @@ export async function parseDraft(
     }
     folders.push(folder);
   }
-  const note = typeof raw.note === "string" && raw.note.trim() ? raw.note.trim() : undefined;
+  // the goal is the note. agents read it as one line in the project file and the CLAUDE.md stub
+  const note =
+    typeof raw.note === "string" ? raw.note.replace(/\s+/g, " ").trim() || undefined : undefined;
+  if (note && note.length > 500) problems.push("Keep the goal under 500 characters.");
   return {
     draft: { name: raw.name.trim(), ...(note ? { note } : {}), folders },
     problems,
