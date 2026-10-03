@@ -290,9 +290,7 @@ test("a project that has no repos can still be given a goal", async () => {
   expect(combos()[0]).toMatchObject({ note: "keep the notes in one place", folders: [] });
 });
 
-// main refuses every rename today: `problemsWithDraft` hands `validateComboRoot` the project's own
-// entry under its old name, so the draft "overlaps" with itself (main/services/combos.ts). the
-// form shows that as a problem. passes once main leaves the project out of `others`
+// the root check must leave the project's own entry out, or a rename "overlaps" with itself
 test("a rename keeps the folder, the id and the prefix", async () => {
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
