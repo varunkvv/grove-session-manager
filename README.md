@@ -327,10 +327,10 @@ Hooks only cover the sessions that have them. Every live Claude Code process als
 agent runs, and to notice a process that is gone. Anything a hook said wins: a permission prompt is something only a
 hook can see.
 
-Sessions outside every project report only when `"trackAllSessions": true` is in `~/claude-ws/settings.json`. Grove
-then adds the same status hooks to Claude Code's own `settings.json` at its next start, and watches and repairs that
-file the same way. 0.10 has no switch for this in Settings, and setting it back to `false` does not take the hooks out
-again: remove the groups marked `# grove-status` from `~/.claude/settings.json` by hand.
+Sessions outside every project report only when **Track sessions outside projects** is on in Settings. Grove then adds
+the same status hooks to Claude Code's own `settings.json`, and watches and repairs that file the same way. Turning the
+switch off takes them out again. Use the switch: setting `trackAllSessions` to `false` by hand in
+`~/claude-ws/settings.json` leaves the hooks (the groups marked `# grove-status`) where they are.
 
 ## The screens
 
@@ -523,7 +523,6 @@ What is gone:
 - **New session...** with its model, permission mode and effort settings, and **Continue in background...**. Starting
   an agent takes no settings: the project's own decide
 - attaching to a background session in Terminal. Open stops it and lands in the editor
-- the **Track sessions outside combos** switch in Settings (see the hooks section above)
 
 `.grove/conversations.v1`, `.grove/agent-timelines.v2` and `.grove/agent-lines.v1.json` are caches of the removed
 screens. Nothing reads them any more, and they can be deleted.

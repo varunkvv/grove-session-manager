@@ -493,6 +493,11 @@ for (const scheme of ["light", "dark"]) {
     await shot("palette-search");
     await page.keyboard.press("Escape");
 
+    await page.keyboard.press("Meta+,");
+    await page.getByTestId("settings-dialog").waitFor();
+    await shot("settings");
+    await page.keyboard.press("Escape");
+
     await page.getByTestId("nav-cards").click();
     await page.getByTestId("edit-project").click();
     await page.getByTestId("repo-row").getByRole("radiogroup").nth(2).waitFor();

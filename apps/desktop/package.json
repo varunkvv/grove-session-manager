@@ -4,7 +4,7 @@
   "version": "0.10.0",
   "private": true,
   "type": "module",
-  "description": "Multi-repo workspaces and a session finder for Claude Code",
+  "description": "A project manager for Claude Code agents",
   "author": "Varun Vijayaraghavan",
   "main": "out/main/index.cjs",
   "scripts": {

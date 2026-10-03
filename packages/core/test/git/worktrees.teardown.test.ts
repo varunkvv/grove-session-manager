@@ -4,7 +4,6 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   clearGitLog,
   ensureWorktrees,
-  forceRemoveWorktree,
   gitLog,
   reconcileCombo,
   teardownCombo,
@@ -21,7 +20,7 @@ import {
 } from "../helpers/git.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
-describe("teardownCombo and forceRemoveWorktree", () => {
+describe("teardownCombo", () => {
   const base = makeSandbox("grove-wt-teardown-");
   const api = path.join(base, "src", "api");
   const web = path.join(base, "src", "web");
@@ -87,12 +86,13 @@ describe("teardownCombo and forceRemoveWorktree", () => {
     ]);
   });
 
-  it("forceRemoveWorktree takes the dirty one, with a single --force", async () => {
+  it("once the change is gone the worktree goes too, and its branch stays", async () => {
+    rmSync(path.join(webTree!, "scratch.txt"));
     clearGitLog();
-    const outcome = await forceRemoveWorktree(alpha, web);
+    const outcomes = await teardownCombo(alpha);
 
-    expect(outcome).toMatchObject({ target: webTree, action: "removed" });
-    expect(gitLog).toEqual([["worktree", "remove", "--force", webTree]]);
+    expect(outcomes[1]).toMatchObject({ target: webTree, action: "removed" });
+    expect(gitLog).toEqual([["worktree", "remove", webTree]]);
     expect(existsSync(webTree!)).toBe(false);
     // the combo root is ours to keep even when it holds no worktree any more
     expect(existsSync(path.join(root, "CLAUDE.md"))).toBe(true);
@@ -132,8 +132,13 @@ describe("teardownCombo and forceRemoveWorktree", () => {
     expect(outcomes[1]!.dirtyPaths).toEqual(["README.rst"]);
     expect(outcomes[2]!.dirtyPaths).toEqual(["README.md"]);
 
-    for (const origin of [api, web, lib]) {
-      expect(await forceRemoveWorktree(alpha, origin)).toMatchObject({ action: "removed" });
+    // the test's own cleanup. nothing in core passes --force
+    for (const [origin, tree] of [
+      [api, apiTree],
+      [web, webTree],
+      [lib, libTree],
+    ] as const) {
+      await git(origin, "worktree", "remove", "--force", tree!);
     }
     expect((await reconcileCombo(alpha)).map((s) => s.state)).toEqual([
       "absent",
@@ -143,7 +148,7 @@ describe("teardownCombo and forceRemoveWorktree", () => {
     ]);
   });
 
-  it("forceRemoveWorktree refuses a foreign directory and leaves it alone", async () => {
+  it("a foreign directory at the target is left alone", async () => {
     const foreignRoot = path.join(base, "ws", "foreign");
     const combo = makeCombo(foreignRoot, [worktree(api), reference(notes)]);
     const squatter = path.join(foreignRoot, "api");
@@ -151,36 +156,29 @@ describe("teardownCombo and forceRemoveWorktree", () => {
     writeFileSync(path.join(squatter, "thesis.txt"), "years of work\n");
 
     clearGitLog();
-    expect(await forceRemoveWorktree(combo, api)).toMatchObject({
-      target: squatter,
-      action: "failed",
-    });
     expect(await teardownCombo(combo)).toMatchObject([
-      { action: "untouched" },
+      { target: squatter, action: "untouched" },
       { action: "untouched" },
     ]);
-    // not a worktree at all, not in the combo at all: same answer, same nothing
-    expect(await forceRemoveWorktree(combo, notes)).toMatchObject({ action: "failed" });
-    expect(await forceRemoveWorktree(combo, web)).toMatchObject({ action: "failed" });
 
     expect(gitLog).toEqual([]);
     expect(readFileSync(path.join(squatter, "thesis.txt"), "utf8")).toBe("years of work\n");
     expect(readFileSync(path.join(notes, "todo.md"), "utf8")).toBe("- ship it\n");
   });
 
-  it("a full clone at the target is not force-removed either", async () => {
+  it("a full clone at the target is left alone too", async () => {
     const cloneRoot = path.join(base, "ws", "clone");
     const combo = makeCombo(cloneRoot, [worktree(api)]);
     mkdirSync(cloneRoot, { recursive: true });
     await git(base, "clone", "-q", api, path.join(cloneRoot, "api"));
 
     clearGitLog();
-    expect(await forceRemoveWorktree(combo, api)).toMatchObject({ action: "failed" });
+    expect(await teardownCombo(combo)).toMatchObject([{ action: "untouched" }]);
     expect(gitLog).toEqual([]);
     expect(await git(path.join(cloneRoot, "api"), "rev-parse", "HEAD")).toBe(before.get(api)!.head);
   });
 
-  it("a locked worktree is `skipped-locked`, by teardown and by force alike: --force is never doubled", async () => {
+  it("a locked worktree is `skipped-locked`", async () => {
     const lockedRoot = path.join(base, "ws", "locked");
     const combo = makeCombo(lockedRoot, [worktree(api)]);
     const tree = path.join(lockedRoot, "api");
@@ -189,11 +187,7 @@ describe("teardownCombo and forceRemoveWorktree", () => {
 
     clearGitLog();
     expect(await teardownCombo(combo)).toMatchObject([{ action: "skipped-locked" }]);
-    expect(await forceRemoveWorktree(combo, api)).toMatchObject({ action: "skipped-locked" });
-    expect(gitLog).toEqual([
-      ["worktree", "remove", tree],
-      ["worktree", "remove", "--force", tree],
-    ]);
+    expect(gitLog).toEqual([["worktree", "remove", tree]]);
     expect(existsSync(path.join(tree, "README.md"))).toBe(true);
 
     await git(api, "worktree", "unlock", tree);
@@ -206,9 +200,6 @@ describe("teardownCombo and forceRemoveWorktree", () => {
     await ensureWorktrees(combo);
     rmSync(path.join(staleRoot, "web"), { recursive: true, force: true });
     expect(await reconcileCombo(combo)).toMatchObject([{ state: "stale" }]);
-
-    // force is for a healthy worktree that git refused, not for this
-    expect(await forceRemoveWorktree(combo, web)).toMatchObject({ action: "failed" });
 
     clearGitLog();
     expect(await teardownCombo(combo)).toMatchObject([{ action: "removed" }]);

@@ -201,7 +201,8 @@ export function SettingsDialog() {
         </>
       }
     >
-      <div className="space-y-4">
+      {/* 3.5, not 4: with both switches the dialog still fits a window of the default height */}
+      <div className="space-y-3.5">
         <Field
           label="Appearance"
           hint="System follows macOS, including when it switches at sunset."
@@ -239,21 +240,38 @@ export function SettingsDialog() {
         <Field label="git">{text("gitPath", "auto-detect")}</Field>
         <Field label="claude">{text("claudePath", "auto-detect")}</Field>
         <Field label="Claude Code config folder">{text("claudeConfigDir", "~/.claude")}</Field>
-        {/* not a Field: that is a <label>, and a click on the words would flip the switch */}
+        {/* not a Field: that is a <label>, and a click on either line would flip the first switch */}
         <div>
           <span className="mb-1.5 block text-sm font-medium text-fg-2">Notifications</span>
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 text-sm text-fg-2">
-              Notify when an agent asks you something, needs permission, stops mid-turn or finishes
-              a long turn
-            </span>
-            <Switch
-              checked={draft.notifications !== false}
-              onChange={(v) => setDraft({ ...draft, notifications: v })}
-              label="Notifications"
-              testId="setting-notifications"
-            />
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Notify when an agent asks you something, needs permission, stops mid-turn or
+                finishes a long turn
+              </span>
+              <Switch
+                checked={draft.notifications !== false}
+                onChange={(v) => setDraft({ ...draft, notifications: v })}
+                label="Notifications"
+                testId="setting-notifications"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Track sessions outside projects too
+              </span>
+              <Switch
+                checked={draft.trackAllSessions === true}
+                onChange={(v) => setDraft({ ...draft, trackAllSessions: v })}
+                label="Track sessions outside projects"
+                testId="setting-track-all"
+              />
+            </div>
           </div>
+          <span className="mt-1 block text-meta text-fg-3">
+            Projects report this on their own. Outside projects it takes a few hooks in Claude
+            Code's own settings.json, which Grove otherwise never touches.
+          </span>
         </div>
         {error && <p className="text-danger">{error}</p>}
       </div>

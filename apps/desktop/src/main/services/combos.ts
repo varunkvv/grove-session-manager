@@ -12,7 +12,6 @@ import {
   ensureWorktrees,
   type FolderOutcome,
   type FolderStatus,
-  forceRemoveWorktree,
   type LongWorkMode,
   loadCombos,
   type PrepareOptions,
@@ -221,18 +220,6 @@ export class ComboService {
     void this.reconcileAll(false);
   }
 
-  statusesOf(combo: Combo): FolderStatus[] {
-    const runtime = this.runtimes.get(combo.root);
-    return combo.folders.map(
-      (f) =>
-        runtime?.statuses.get(folderKey(f)) ?? {
-          folder: f,
-          target: targetDirFor(combo, f),
-          state: "absent",
-        },
-    );
-  }
-
   // --- mutations ---------------------------------------------------------
 
   /**
@@ -351,22 +338,6 @@ export class ComboService {
     return this.mutate(async () => {
       try {
         return await teardownCombo(combo, { gitPath: this.opts.gitPath });
-      } finally {
-        this.clearBusy(combo);
-        void this.reconcile(combo, true);
-      }
-    });
-  }
-
-  forceRemove(combo: Combo, folderPath: string): Promise<TeardownOutcome> {
-    return this.mutate(async () => {
-      const folder = combo.folders.find(
-        (f) => samePath(f.path, folderPath) || samePath(targetDirFor(combo, f), folderPath),
-      );
-      if (folder) this.setBusy(combo, folder, "removing");
-      this.pushFolders(combo);
-      try {
-        return await forceRemoveWorktree(combo, folderPath, { gitPath: this.opts.gitPath });
       } finally {
         this.clearBusy(combo);
         void this.reconcile(combo, true);

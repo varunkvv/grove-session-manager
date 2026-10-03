@@ -1,7 +1,7 @@
 # Grove Companion
 
-The in-editor half of Grove. The desktop app owns combos, worktrees and the session
-finder. This extension does the few things that can only happen from inside VS Code:
+The in-editor half of Grove. The desktop app owns projects, the inbox, cards and conclusions.
+This extension does the few things that can only happen from inside VS Code:
 
 - lands the window on the Claude Code session the app handed over, or starts a new conversation there with the
   app's prompt waiting in the input box (0.3.0 and later)

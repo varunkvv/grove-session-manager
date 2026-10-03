@@ -506,7 +506,6 @@ async function removeFolder(
   combo: Combo,
   looked: Looked,
   opts: TeardownOptions,
-  force: boolean,
 ): Promise<TeardownOutcome> {
   const { folder, target } = looked.status;
   const say = (action: TeardownAction, extra: Partial<TeardownOutcome> = {}): TeardownOutcome => ({
@@ -515,20 +514,18 @@ async function removeFolder(
     action,
     ...extra,
   });
-  const leave = (status: FolderStatus): TeardownOutcome => {
-    // force is for a healthy worktree that git refused. anything else is not ours to delete.
-    if (!force) return say("untouched", status.message ? { message: status.message } : {});
-    return say("failed", { message: `not force-removing a folder that is ${status.state}` });
-  };
+  // only a healthy or a stale worktree is ours to remove
+  const leave = (status: FolderStatus): TeardownOutcome =>
+    say("untouched", status.message ? { message: status.message } : {});
   const run: RunIn = { cwd: folder.path, gitPath: opts.gitPath };
 
   const first = looked.status;
-  const actionable = first.state === "ok" || (first.state === "stale" && !force);
+  const actionable = first.state === "ok" || first.state === "stale";
   if (!looked.origin || !actionable) return leave(first);
 
   return withRepoLock(looked.origin.commonDir, async () => {
     const now = (await lookAtFolder(combo, folder, undefined, opts)).status;
-    if (now.state === "stale" && !force) {
+    if (now.state === "stale") {
       const pruned = await mutate(["worktree", "prune"], run, REMOVE_TIMEOUT_MS);
       const git = toTrace(pruned);
       if (!pruned.ok) return say("failed", { message: gitMessage(pruned), git });
@@ -541,13 +538,12 @@ async function removeFolder(
     if (now.state !== "ok") return leave(now);
 
     const dest = path.resolve(target);
-    const args = force ? ["worktree", "remove", "--force", dest] : ["worktree", "remove", dest];
-    const removed = await mutate(args, run, REMOVE_TIMEOUT_MS);
+    const removed = await mutate(["worktree", "remove", dest], run, REMOVE_TIMEOUT_MS);
     const git = toTrace(removed);
     if (removed.ok) return say("removed", { git });
     // from here on we only put a name on git's refusal. nothing else is attempted.
     if (now.locked) return say("skipped-locked", { message: "the worktree is locked", git });
-    const dirtyPaths = force ? [] : await dirtyPathsOf(dest, opts.gitPath);
+    const dirtyPaths = await dirtyPathsOf(dest, opts.gitPath);
     if (dirtyPaths.length) {
       return say("skipped-dirty", {
         message: "the worktree has uncommitted changes",
@@ -563,11 +559,10 @@ async function removeSafely(
   combo: Combo,
   looked: Looked,
   opts: TeardownOptions,
-  force: boolean,
 ): Promise<TeardownOutcome> {
   let outcome: TeardownOutcome;
   try {
-    outcome = await removeFolder(combo, looked, opts, force);
+    outcome = await removeFolder(combo, looked, opts);
   } catch (e) {
     const { folder, target } = looked.status;
     outcome = { folder, target, action: "failed", message: String(e) };
@@ -587,27 +582,7 @@ export async function teardownCombo(
 ): Promise<TeardownOutcome[]> {
   const outcomes: TeardownOutcome[] = [];
   for (const looked of await look(combo, opts)) {
-    outcomes.push(await removeSafely(combo, looked, opts, false));
+    outcomes.push(await removeSafely(combo, looked, opts));
   }
   return outcomes;
-}
-
-/** one folder per call, and only one that reconciles as `ok`. `--force` is passed once, so a locked worktree stays. */
-export async function forceRemoveWorktree(
-  combo: Combo,
-  folderPath: string,
-  opts: TeardownOptions = {},
-): Promise<TeardownOutcome> {
-  const folder = findFolder(combo, folderPath);
-  if (!folder) {
-    const outcome: TeardownOutcome = {
-      folder: { path: folderPath, mode: "worktree" },
-      target: folderPath,
-      action: "failed",
-      message: `this combo has no folder at ${folderPath}`,
-    };
-    report(opts.onOutcome, outcome);
-    return outcome;
-  }
-  return removeSafely(combo, await lookAtFolder(combo, folder, undefined, opts), opts, true);
 }

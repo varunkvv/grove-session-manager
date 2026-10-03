@@ -21,7 +21,7 @@ import {
   claudeBinCandidates,
   claudeScriptBody,
   isResumeScriptName,
-  resumeScriptBody,
+  isValidShortId,
   resumeScriptPath,
 } from "../../src/main/services/resumeScript.ts";
 import {
@@ -227,38 +227,12 @@ describe("what the renderer is allowed to be", () => {
 });
 
 describe("the resume script", () => {
-  it("quotes a hostile folder name and refuses anything but a session id", () => {
-    const body = resumeScriptBody({
-      sessionId: "aaaaaaaa-0000-4000-8000-000000000001",
-      cwd: "/tmp/it's here; rm -rf ~",
-      claudeBin: "/Users/you/.local/bin/claude",
-    });
-    expect(body).toBe(
-      "#!/bin/zsh\ncd '/tmp/it'\\''s here; rm -rf ~' 2>/dev/null || cd ~\n" +
-        "exec '/Users/you/.local/bin/claude' --resume aaaaaaaa-0000-4000-8000-000000000001\n",
-    );
-    expect(() => resumeScriptBody({ sessionId: "x; rm -rf ~", claudeBin: "claude" })).toThrow();
+  it("the path refuses anything but a session id, and a background id is held to a plain token", () => {
+    expect(() => resumeScriptPath("/state", "x; rm -rf ~")).toThrow();
     expect(() => resumeScriptPath("/state", "../../etc/passwd")).toThrow();
-  });
-
-  it("a session the supervisor holds opens with attach, its id quoted and held to a plain token", () => {
-    const body = resumeScriptBody({
-      sessionId: "aaaaaaaa-0000-4000-8000-000000000001",
-      cwd: "/tmp/ignored",
-      claudeBin: "/Users/you/.local/bin/claude",
-      attach: "d7b6bcc2",
-    });
-    expect(body).toBe("#!/bin/zsh\ncd ~\nexec '/Users/you/.local/bin/claude' attach 'd7b6bcc2'\n");
+    expect(isValidShortId("d7b6bcc2")).toBe(true);
     for (const bad of ["x; rm -rf ~", "", "$(id)", "a b", "d7b6bcc2\n"]) {
-      expect(
-        () =>
-          resumeScriptBody({
-            sessionId: "aaaaaaaa-0000-4000-8000-000000000001",
-            claudeBin: "claude",
-            attach: bad,
-          }),
-        JSON.stringify(bad),
-      ).toThrow();
+      expect(isValidShortId(bad), JSON.stringify(bad)).toBe(false);
     }
   });
 
@@ -279,14 +253,6 @@ describe("the resume script", () => {
         "exec '/Users/you/.local/bin/claude' '--resume' 'aaaaaaaa-0000-4000-8000-000000000001' '--bg' '--' " +
         "'fix it; rm -rf ~ '\\''now'\\'' $(id)'\n",
     );
-  });
-
-  it("a missing folder still resumes, from home", () => {
-    const body = resumeScriptBody({
-      sessionId: "aaaaaaaa-0000-4000-8000-000000000001",
-      claudeBin: "claude",
-    });
-    expect(body).toContain("cd ~\nexec claude --resume");
   });
 
   it("only our own files are swept out of the run directory", () => {
