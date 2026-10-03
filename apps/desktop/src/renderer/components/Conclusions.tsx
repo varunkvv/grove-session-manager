@@ -1,3 +1,4 @@
+import { oneLine } from "@grove/core/pure";
 import { useEffect, useMemo, useRef } from "react";
 import type { ConclusionView } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
@@ -169,7 +170,7 @@ function ConclusionRow({ c, open, active }: { c: ConclusionView; open: boolean; 
           title={c.what}
           data-testid="conclusion-what"
         >
-          {c.what}
+          {oneLine(c.what)}
         </p>
         {c.why && (
           <p
@@ -177,7 +178,7 @@ function ConclusionRow({ c, open, active }: { c: ConclusionView; open: boolean; 
             title={c.why}
             data-testid="conclusion-why"
           >
-            {c.why}
+            {oneLine(c.why)}
           </p>
         )}
       </div>

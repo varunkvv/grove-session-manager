@@ -1,4 +1,4 @@
-import { formatRelativeTime } from "@grove/core/pure";
+import { formatRelativeTime, oneLine } from "@grove/core/pure";
 import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import type { CardView, PendingStart, SubagentView } from "../../shared/ipc.ts";
 import {
@@ -420,7 +420,7 @@ export function CardPage({ cardId }: { cardId: string }) {
                             c.superseded ? "text-fg-4 line-through" : "text-fg",
                           )}
                         >
-                          {c.what}
+                          {oneLine(c.what)}
                         </span>
                       </button>
                     ))}

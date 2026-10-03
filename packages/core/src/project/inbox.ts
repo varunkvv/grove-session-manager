@@ -66,13 +66,16 @@ export function trayCount(rows: readonly InboxRow[]): number {
 }
 
 /**
- * markdown an agent wrote, as one line of words. a row draws no markdown, so the heading and bold
- * markers would show as typed. backticks stay: they say "this is code". a `**` in a glob or a power
- * is not bold, so the markers only go as a pair around words
+ * markdown an agent wrote, as one line of words. a row draws no markdown, so the heading, bold and
+ * code markers would show as typed. a `**` in a glob or a power is not bold, so the markers only go
+ * as a pair around words, and a backtick only with its pair on the same line
  */
-function oneLine(text: string, max: number): string {
+export function oneLine(text: string, max = Number.POSITIVE_INFINITY): string {
   return squash(
-    text.replace(/^#+\s+/gm, "").replace(/(?<![\w/*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\w/*])/g, "$1"),
+    text
+      .replace(/^#+\s+/gm, "")
+      .replace(/(?<![\w/*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\w/*])/g, "$1")
+      .replace(/`([^`\n]+)`/g, "$1"),
     max,
   );
 }
@@ -185,16 +188,17 @@ export function buildInbox(i: InboxInput): InboxRow[] {
     if (!kind) continue;
     const card = c.card ? cards.get(c.card) : undefined;
     const who = author(c);
+    const what = oneLine(c.what);
     add({
       id: `${kind}:${c.id}`,
       kind,
       at: ms(c.at),
       ...(card ? { card: cardOf(card) } : {}),
       conclusionId: c.id,
-      title: card?.title ?? c.what,
+      title: card?.title ?? what,
       who,
       sessionId: who?.sessionId,
-      summary: c.what,
+      summary: what,
       reviewKeys: [`conclusion:${c.id}`],
     });
   }

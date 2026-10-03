@@ -234,6 +234,9 @@ test("a Stop event from a session with no card makes an Asked row, and Reviewed 
   hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Done. Want me to open the PR?" });
   await expect(session).toHaveCount(1);
   await expect(session).toContainText("chat-features-35");
+  // its title is its own name, so the agent cell keeps the avatar and leaves the name out
+  await expect(session.getByText("chat-features-35", { exact: true })).toHaveCount(1);
+  await expect(session.getByTestId("avatar")).toHaveCount(1);
   await expect(session.getByTestId("inbox-summary")).toHaveText("Done. Want me to open the PR?");
 
   await reviewed(session);

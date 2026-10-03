@@ -98,7 +98,9 @@ export function canSubmit(i: {
 }): boolean {
   const { form } = i;
   if (i.running || !form.name.trim() || i.nameProblem) return false;
-  if (form.repos.length === 0 || form.repos.some((r) => !r.info || branchInvalid(r))) return false;
+  // a project that already has no repos can still be renamed or given a goal. a new one needs one
+  const none = form.repos.length === 0 && !(i.mode === "edit" && i.initial?.repos.length === 0);
+  if (none || form.repos.some((r) => !r.info || branchInvalid(r))) return false;
   if (i.mode === "edit") return !i.initial || changed(i.initial, form);
   return !i.prefixProblem;
 }

@@ -271,6 +271,25 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
   await expect(form).toHaveCount(0);
 });
 
+test("a project that has no repos can still be given a goal", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const { root } = writeProject(fx, { name: "notes", prefix: "NOTE" });
+
+  app = await launchApp(fx);
+  const { page } = app;
+  await page.getByTestId("nav-cards").click();
+  await page.getByTestId("edit-project").click();
+  await expect(page.getByTestId("repos-empty")).toHaveText("This project has no repos.");
+  const save = page.getByTestId("form-submit");
+  await expect(save).toBeDisabled();
+
+  await page.getByTestId("project-goal").fill("keep the notes in one place");
+  await expect(save).toBeEnabled();
+  await submit(page);
+  await waitFor(async () => readProject(root)?.goal === "keep the notes in one place", 30_000);
+  expect(combos()[0]).toMatchObject({ note: "keep the notes in one place", folders: [] });
+});
+
 // main refuses every rename today: `problemsWithDraft` hands `validateComboRoot` the project's own
 // entry under its old name, so the draft "overlaps" with itself (main/services/combos.ts). the
 // form shows that as a problem. passes once main leaves the project out of `others`

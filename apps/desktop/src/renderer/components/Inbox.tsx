@@ -42,7 +42,10 @@ function InboxRow({ row, active }: { row: InboxRowView; active: boolean }) {
             {who && (
               <>
                 <Avatar who={who} />
-                <span className="truncate text-fg-2">{who.name}</span>
+                {/* a session with no card is titled by its own name: the title already says it */}
+                {(row.card || who.name !== row.title) && (
+                  <span className="truncate text-fg-2">{who.name}</span>
+                )}
               </>
             )}
           </span>

@@ -1,7 +1,7 @@
 import type { Card, ClaimEvent, Conclusion, Question } from "@grove/record/types";
 import { describe, expect, it } from "vitest";
 import type { SessionFacts } from "../../src/project/derive.ts";
-import { buildInbox, type InboxRow, trayCount } from "../../src/project/inbox.ts";
+import { buildInbox, type InboxRow, oneLine, trayCount } from "../../src/project/inbox.ts";
 import type { LiveState, LiveStatus } from "../../src/types.ts";
 
 const T0 = Date.parse("2026-10-02T10:00:00.000Z");
@@ -270,7 +270,7 @@ describe("the inbox", () => {
     ]);
   });
 
-  it("a summary is the agent's markdown as one line of words: no heading or bold markers", () => {
+  it("a summary is the agent's markdown as one line of words: no heading, bold or code markers", () => {
     const done = (body: string) =>
       inbox({
         cards: [
@@ -285,10 +285,11 @@ describe("the inbox", () => {
     expect(done("## Summary\n\nOkta wants a **web** app. **Not done:** the secret.")).toBe(
       "Summary Okta wants a web app. Not done: the secret.",
     );
-    // code keeps its backticks, and a `**` that is not bold stays
-    expect(done("Ran `pnpm test` over src/**/*.ts and lib/**/*.ts, 2**10 cases")).toBe(
-      "Ran `pnpm test` over src/**/*.ts and lib/**/*.ts, 2**10 cases",
+    // a `**` that is not bold stays, and so does a backtick with no pair on its line
+    expect(done("Ran `pnpm test` over `src/**/*.ts` and lib/**/*.ts, 2**10 cases, a ` left")).toBe(
+      "Ran pnpm test over src/**/*.ts and lib/**/*.ts, 2**10 cases, a ` left",
     );
+    expect(oneLine("**Use** `redis` for sessions")).toBe("Use redis for sessions");
   });
 
   it("a new card is one an agent made, summed up by its first line", () => {

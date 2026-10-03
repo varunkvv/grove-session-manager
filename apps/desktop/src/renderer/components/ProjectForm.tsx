@@ -576,7 +576,9 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
                 className="mt-3 rounded-md border border-dashed border-line-strong p-3 text-sm text-fg-4"
                 data-testid="repos-empty"
               >
-                Add at least one repo.
+                {mode === "edit" && initial.repos.length === 0
+                  ? "This project has no repos."
+                  : "Add at least one repo."}
               </p>
             ) : (
               <div className="mt-3 rounded-md border border-line">

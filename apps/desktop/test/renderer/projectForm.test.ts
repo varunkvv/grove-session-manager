@@ -187,6 +187,16 @@ describe("canSubmit", () => {
     expect(canSubmit({ ...edit, form: renamed, nameProblem: "taken" })).toBe(false);
     expect(canSubmit({ ...edit, form: renamed, running: true })).toBe(false);
   });
+
+  it("edit: a project that already has no repos can be given a goal", () => {
+    const bare = { ...form, repos: [] };
+    const edit = { mode: "edit" as const, form: bare, initial: bare, running: false };
+    expect(canSubmit(edit)).toBe(false);
+    expect(canSubmit({ ...edit, form: { ...bare, goal: "ship sso" } })).toBe(true);
+    // a repo added to it is held to the same rules as any other
+    const adding = { ...bare, goal: "ship sso", repos: [repo({ info: undefined })] };
+    expect(canSubmit({ ...edit, form: adding })).toBe(false);
+  });
 });
 
 describe("repoNote", () => {
