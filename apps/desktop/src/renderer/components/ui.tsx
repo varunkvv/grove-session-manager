@@ -1,17 +1,34 @@
-import { highlightRanges } from "@grove/core/pure";
+import {
+  type CardDisplayStatus,
+  formatRelativeTime,
+  highlightRanges,
+  type InboxKind,
+  KIND_WORD,
+  type Runtime,
+} from "@grove/core/pure";
+import type { ConclusionKind } from "@grove/record/types";
 import {
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type ReactNode,
   type SelectHTMLAttributes,
   useEffect,
+  useId,
   useRef,
 } from "react";
+import { agentHue, initials, type WhoView } from "../logic/who.ts";
+import { useStore } from "../state/store.ts";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-type IconName =
+export type IconName =
+  | "arrow-left"
+  | "file"
+  | "pr"
+  | "split"
+  | "verdict"
   | "branch"
   | "folder"
   | "plus"
@@ -32,6 +49,30 @@ type IconName =
   | "moon";
 
 const PATHS: Record<IconName, ReactNode> = {
+  "arrow-left": <path d="M13 8H3M7 4 3 8l4 4" />,
+  file: (
+    <>
+      <path d="M4.25 1.75h5l3 3v8.5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1Z" />
+      <path d="M9.25 1.75v3h3M5.75 8.5h4.5M5.75 11h4.5" />
+    </>
+  ),
+  pr: (
+    <>
+      <circle cx="4.5" cy="3.5" r="1.5" />
+      <circle cx="4.5" cy="12.5" r="1.5" />
+      <circle cx="11.5" cy="12.5" r="1.5" />
+      <path d="M4.5 5v6M11.5 11V6.5a2 2 0 0 0-2-2h-2M9 3 7.5 4.5 9 6" />
+    </>
+  ),
+  // a decision: one way in, two ways out
+  split: <path d="M8 14V9.5L3.5 5M8 9.5 12.5 5M3.5 8.25V5h3.25M12.5 8.25V5H9.25" />,
+  // a verdict: something looked at and ruled on
+  verdict: (
+    <>
+      <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5" />
+      <path d="m5.25 8.25 2 2 3.5-4" />
+    </>
+  ),
   branch: (
     <>
       <circle cx="4.5" cy="3.5" r="1.5" />
@@ -105,10 +146,13 @@ export function Icon({
   name,
   size = 14,
   className,
+  faint,
 }: {
   name: IconName;
   size?: number;
   className?: string;
+  /** the icon grey: 3:1, never for words */
+  faint?: boolean;
 }) {
   return (
     <svg
@@ -120,7 +164,7 @@ export function Icon({
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cx("shrink-0", className)}
+      className={cx("shrink-0", faint && "text-faint", className)}
       aria-hidden="true"
     >
       {PATHS[name]}
@@ -212,7 +256,7 @@ export function IconButton({
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded-sm border border-line-strong px-1 font-sans text-meta text-fg-3">
+    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-sm border border-line-strong bg-canvas px-1 font-sans text-meta leading-none text-fg-4">
       {children}
     </kbd>
   );
@@ -528,3 +572,317 @@ export function TreeRail({ x, end }: { x: number; end?: number }) {
     />
   );
 }
+
+// ---------- the project manager's primitives. a kind, a status and an avatar get their colour here
+// and nowhere else: a screen passes a kind or a status, never a colour.
+
+/** a tooltip-dated relative time: `3m ago`, core's words */
+export function Time({ at, className }: { at: number; className?: string }) {
+  const now = useStore((s) => s.now);
+  return (
+    <span
+      className={cx("shrink-0 text-sm tabular-nums text-fg-4", className)}
+      title={new Date(at).toLocaleString()}
+    >
+      {formatRelativeTime(at, now)}
+    </span>
+  );
+}
+
+type DiscKind = "asked" | "new" | "finished" | "stopped";
+
+const DISC: Record<DiscKind, ReactNode> = {
+  asked: <path d="M6.2 6.3a1.9 1.9 0 1 1 2.9 1.6c-.7.45-1.1.85-1.1 1.6M8 11.7v.01" />,
+  new: <path d="M8 5v6M5 8h6" />,
+  finished: <path d="m5 8.2 2.1 2.1L11 6" />,
+  stopped: <rect x="5.75" y="5.75" width="4.5" height="4.5" rx="0.75" fill="black" />,
+};
+
+/**
+ * a mask that keeps everything but the glyph, so the cut-out is a real hole that shows whatever is
+ * behind it: white, the hover grey or the dark ground. white and black are mask luminance, not colours
+ */
+function Hole({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <mask id={id}>
+      <rect width="16" height="16" fill="white" />
+      <g fill="none" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        {children}
+      </g>
+    </mask>
+  );
+}
+
+/** ids must be unique per svg on the page, and some useId characters do not survive `url(#…)` */
+const maskId = (prefix: string, id: string) => `${prefix}${id.replace(/[^\w-]/g, "")}`;
+
+export function KindIcon({ kind, size = 12 }: { kind: DiscKind; size?: number }) {
+  const id = maskId("k", useId());
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className="shrink-0" aria-hidden="true">
+      <Hole id={id}>{DISC[kind]}</Hole>
+      <circle cx="8" cy="8" r="7" fill="currentColor" mask={`url(#${id})`} />
+    </svg>
+  );
+}
+
+export type Kind = InboxKind | ConclusionKind;
+
+const KINDS: Record<Kind, { word: string; tone: string; disc?: DiscKind; icon?: IconName }> = {
+  asked: { word: KIND_WORD.asked, tone: "text-hue-orange", disc: "asked" },
+  decided: { word: KIND_WORD.decided, tone: "text-hue-violet", icon: "split" },
+  decision: { word: "Decision", tone: "text-hue-violet", icon: "split" },
+  verdict: { word: KIND_WORD.verdict, tone: "text-hue-teal", icon: "verdict" },
+  found: { word: KIND_WORD.found, tone: "text-hue-blue", icon: "search" },
+  finding: { word: "Finding", tone: "text-hue-blue", icon: "search" },
+  new: { word: KIND_WORD.new, tone: "text-fg-3", disc: "new" },
+  finished: { word: KIND_WORD.finished, tone: "text-hue-green", disc: "finished" },
+  stopped: { word: KIND_WORD.stopped, tone: "text-hue-red", disc: "stopped" },
+};
+
+/** the kind's word, for aria labels */
+export const kindWord = (kind: Kind): string => KINDS[kind].word;
+
+/** only the icon takes the hue. the word stays grey */
+export function KindLabel({
+  kind,
+  className,
+  iconSize = 12,
+}: {
+  kind: Kind;
+  className?: string;
+  iconSize?: number;
+}) {
+  const k = KINDS[kind];
+  return (
+    <span
+      data-testid="kind"
+      data-kind={kind}
+      className={cx("inline-flex shrink-0 items-center gap-1.5 text-fg-2", className)}
+    >
+      <span className={cx("flex", k.tone)}>
+        {k.disc ? (
+          <KindIcon kind={k.disc} size={iconSize} />
+        ) : (
+          k.icon && <Icon name={k.icon} size={iconSize} />
+        )}
+      </span>
+      {k.word}
+    </span>
+  );
+}
+
+export const STATUS_LABEL: Record<CardDisplayStatus, string> = {
+  waiting: "In progress, waiting on you",
+  stopped: "Stopped",
+  in_progress: "In progress",
+  todo: "Todo",
+  done: "Done",
+  canceled: "Canceled",
+};
+
+const ring = (tone: string) => (
+  <circle cx="7" cy="7" r="5.5" fill="none" className={tone} strokeWidth="1.5" />
+);
+
+/** waiting and in progress share a shape and differ by colour: their groups and the header say it in words */
+export function StatusIcon({ status, size = 14 }: { status: CardDisplayStatus; size?: number }) {
+  const id = maskId("s", useId());
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 14 14"
+      className="shrink-0"
+      aria-hidden="true"
+      data-testid="status-icon"
+      data-status={status}
+    >
+      {status === "done" && (
+        <>
+          <Hole id={id}>
+            <path d="M4.3 7.2 6.2 9l3.5-3.8" />
+          </Hole>
+          <circle cx="7" cy="7" r="6" className="fill-hue-green" mask={`url(#${id})`} />
+        </>
+      )}
+      {status === "todo" && ring("stroke-faint")}
+      {status === "in_progress" && (
+        <>
+          {ring("stroke-hue-yellow")}
+          <path d="M7 3.5a3.5 3.5 0 0 1 0 7Z" className="fill-hue-yellow" />
+        </>
+      )}
+      {status === "waiting" && (
+        <>
+          {ring("stroke-hue-orange")}
+          <path d="M7 3.5a3.5 3.5 0 0 1 0 7Z" className="fill-hue-orange" />
+        </>
+      )}
+      {status === "stopped" && (
+        <>
+          {ring("stroke-hue-red")}
+          <rect x="4.75" y="4.75" width="4.5" height="4.5" rx="0.75" className="fill-hue-red" />
+        </>
+      )}
+      {status === "canceled" && (
+        <>
+          {ring("stroke-faint")}
+          <path
+            d="m4.6 9.4 4.8-4.8"
+            fill="none"
+            className="stroke-faint"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** written out whole: tailwind only emits the classes it can see */
+const AGENT_FILL = [
+  "bg-agent-1",
+  "bg-agent-2",
+  "bg-agent-3",
+  "bg-agent-4",
+  "bg-agent-5",
+  "bg-agent-6",
+  "bg-agent-7",
+  "bg-agent-8",
+  "bg-agent-9",
+];
+
+/** the person is a grey Y. an agent's fill is hashed from its session id, which outlives its name */
+export function Avatar({ who, size = 16 }: { who: WhoView; size?: 16 | 18 | 20 }) {
+  const person = who.kind === "person";
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="avatar"
+      className={cx(
+        "inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold leading-none tracking-[0.01em]",
+        person ? "bg-agent-you text-fg-2" : cx(AGENT_FILL[agentHue(who.id) - 1], "text-on-solid"),
+      )}
+      style={{ width: size, height: size, fontSize: Math.max(7, Math.round(size * 0.42)) }}
+    >
+      {person ? "Y" : initials(who.name)}
+    </span>
+  );
+}
+
+/** in your inbox, or waiting on you. role img because biome refuses aria-label on a bare span */
+export function Dot({ label }: { label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      data-testid="dot"
+      className="size-1.5 shrink-0 rounded-full bg-accent"
+    />
+  );
+}
+
+const RUNTIME_WORD: Record<Exclude<Runtime, "vscode">, string> = {
+  terminal: "Terminal",
+  background: "Background",
+  // claude -p runs and SDK apps: no window to land in
+  elsewhere: "Headless",
+  closed: "Closed",
+};
+
+export function RuntimeChip({ runtime }: { runtime: Runtime }) {
+  const editor = useStore((s) => s.editor?.label ?? "Editor");
+  return (
+    <span
+      data-testid="runtime-chip"
+      data-runtime={runtime}
+      className="inline-flex h-[18px] shrink-0 items-center whitespace-nowrap rounded-sm border border-line-strong bg-raised px-1.5 text-meta leading-none text-fg-3"
+    >
+      {runtime === "vscode" ? editor : RUNTIME_WORD[runtime]}
+    </span>
+  );
+}
+
+export function GroveMark({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <circle cx="4.6" cy="6" r="3" />
+      <circle cx="11.4" cy="6" r="3" />
+      <circle cx="8" cy="11.4" r="3" />
+    </svg>
+  );
+}
+
+/**
+ * a record file edited by hand or cut short. the readers show what they could read and never throw,
+ * so it is a warning, not an error. `count` is for a row, where main sends a number
+ */
+export function ProblemMark({
+  problems,
+  file,
+  count,
+}: {
+  problems?: string[];
+  file?: string;
+  count?: number;
+}) {
+  if (!problems?.length && !count) return null;
+  const title = problems?.length
+    ? `Grove read what it could${file ? ` from ${file}` : ""}: ${problems.join("; ")}.`
+    : `Grove read ${count} of its files with problems. Open it to see which.`;
+  return (
+    <span
+      role="img"
+      aria-label="Read with problems"
+      title={title}
+      data-testid="problem"
+      className="inline-flex shrink-0 text-waiting"
+    >
+      <Icon name="warning" size={12} />
+    </span>
+  );
+}
+
+/**
+ * the one popover shape: the switcher and the palette. no keys here: the global handler knows an
+ * overlay is open from the store
+ */
+export function Overlay({
+  open,
+  onClose,
+  style,
+  className,
+  testId,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** fixed position of the panel. the caller measures its anchor */
+  style: CSSProperties;
+  className?: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onMouseDown={onClose} />
+      <div
+        className={cx(
+          "fixed z-50 rounded-lg border border-line-strong bg-overlay overlay-shadow",
+          className,
+        )}
+        style={style}
+        data-testid={testId}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
+/** a row inside an Overlay. `data-active` is the keyboard's row */
+export const menuItemClass =
+  "fade flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body text-fg-2 data-[active]:bg-raised data-[active]:text-fg";

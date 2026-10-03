@@ -43,6 +43,37 @@
   --color-thumb-hover: light-dark(rgb(0 0 0 / 0.28), rgb(255 255 255 / 0.2));
   --color-transparent: transparent;
 
+  /* the project manager's tokens (ui.md 1.1), added beside today's. the swap gives the tokens above
+     their new values and removes the ones the new screens do not use */
+  --color-chrome: light-dark(#fafafb, #1b1c20);
+  /* icons, rings and chevrons only. 3:1, never words */
+  --color-faint: light-dark(#80858e, #747982);
+  --color-accent-solid: light-dark(#6726e1, #6e3ae6);
+  --color-on-solid: light-dark(#ffffff, #ffffff);
+  --color-accent-line: light-dark(#b9a3ee, #5b3fb0);
+  /* words that carry a state */
+  --color-danger: light-dark(#c2263f, #f0647a);
+  --color-waiting: light-dark(#b8490f, #f0854d);
+  /* one hue per meaning. drawn only by ui.tsx (KindLabel, StatusIcon) */
+  --color-hue-orange: light-dark(#dd5f1f, #f0854d);
+  --color-hue-violet: light-dark(#7c5cfc, #9a82ff);
+  --color-hue-teal: light-dark(#08848e, #2bb6c0);
+  --color-hue-blue: light-dark(#2f6fed, #5b8ff5);
+  --color-hue-green: light-dark(#1f8a5b, #35a873);
+  --color-hue-red: light-dark(#d32f4c, #ec5a72);
+  --color-hue-yellow: light-dark(#a87e00, #e0b32b);
+  /* avatars. drawn only by ui.tsx (Avatar). the same in both appearances: they are mid-tones */
+  --color-agent-1: light-dark(#0b817d, #0b817d);
+  --color-agent-2: light-dark(#cb3682, #cb3682);
+  --color-agent-3: light-dark(#4f6bed, #4f6bed);
+  --color-agent-4: light-dark(#9c6614, #9c6614);
+  --color-agent-5: light-dark(#61769f, #61769f);
+  --color-agent-6: light-dark(#3478b8, #3478b8);
+  --color-agent-7: light-dark(#8e5bd6, #8e5bd6);
+  --color-agent-8: light-dark(#26855a, #26855a);
+  --color-agent-9: light-dark(#bb4c72, #bb4c72);
+  --color-agent-you: light-dark(#dadce0, #3a3c43);
+
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
