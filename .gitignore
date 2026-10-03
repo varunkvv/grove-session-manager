@@ -10,4 +10,3 @@ apps/desktop/test-results/
 apps/desktop/playwright-report/
 tools/oracle/node_modules/
 .vscode-test/
-apps/desktop/e2e/screenshots/preview/
