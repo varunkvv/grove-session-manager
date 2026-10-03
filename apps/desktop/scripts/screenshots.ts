@@ -460,6 +460,9 @@ for (const scheme of ["light", "dark"]) {
     await page.getByTestId("nav-cards").click();
     await page.getByTestId("card-row").nth(7).waitFor();
     await shot("cards");
+    // the keyboard's row, right under a group's header
+    await page.keyboard.press("ArrowDown");
+    await shot("cards-keyboard", false);
 
     // where a click on the question's notification lands
     await g.reveal(SID.idp);

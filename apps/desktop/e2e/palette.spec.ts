@@ -241,6 +241,8 @@ test("Start a new agent on a card whose holder is closed: asked first, then the 
   const started = () => fakeClaudeCalls(fake).filter((c) => c.argv.includes("--bg"));
   expect(started()).toEqual([]);
   await expect(dialog.getByTestId("confirm-run")).toHaveText("Start a new agent");
+  // the keyboard starts on Cancel, not on the close button showModal would pick
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
   await dialog.getByTestId("confirm-run").click();
 
   await expect(toast(page, `started in background · ${FAKE_SHORT_ID}`)).toBeVisible();
