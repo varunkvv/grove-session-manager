@@ -1,17 +1,19 @@
 {
-  "name": "@grove/core",
-  "version": "0.1.0",
+  "name": "@grove/record",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./pure": "./src/pure.ts"
+    "./types": "./src/types.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@grove/record": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

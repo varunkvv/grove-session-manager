@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@grove/core": "workspace:*",
+    "@grove/record": "workspace:*",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-virtual": "^3.14.13",
