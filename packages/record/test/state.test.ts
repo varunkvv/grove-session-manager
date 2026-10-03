@@ -174,6 +174,11 @@ test("the worked example: a 9-card project", () => {
   const text = state(root, "s-login-page");
   fs.writeFileSync(path.join(RESULTS, "state-9-cards.txt"), `${text}\n`);
   assert.match(text.split("\n")[0]!, /^# record AUTH rev \d+ - auth-sso$/);
+  // a later session finds the why without a second call
+  assert.match(
+    text,
+    /D-1 decision AUTH-1 \| Refresh tokens stay on the server.*\(why: keeps tokens out of the page\)/,
+  );
   assert.ok(text.length < 10_000);
 });
 

@@ -33,6 +33,7 @@ import {
   listCardIds,
   listConclusionIds,
   type Project,
+  parseConclusion,
   type Question,
   readCard,
   readCards,
@@ -810,7 +811,10 @@ export function stateText(ctx: Ctx, opts: { all?: boolean } = {}): string {
     if (c.card) bits.push(c.card);
     if (c.replaces) bits.push(`replaces ${c.replaces}`);
     if (c.superseded) bits.push(`SUPERSEDED by ${c.replacedBy.join(",")}`);
-    out.push(cut(`${bits.join(" ")} | ${c.what}`, all ? 800 : 180));
+    // the why is what a later session looks up. the index line has no why, so read the shown ones
+    const why = parseConclusion(ctx.root, c.id)?.why;
+    const text = why ? `${c.what} (why: ${oneLine(why)})` : c.what;
+    out.push(cut(`${bits.join(" ")} | ${text}`, all ? 800 : 180));
   }
   if (index.length > caps.concl)
     out.push(

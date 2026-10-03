@@ -336,7 +336,7 @@ export function listConclusionIds(root: string): string[] {
   return conclusionFiles(root);
 }
 
-function parseConclusion(root: string, id: string): Conclusion | null {
+export function parseConclusion(root: string, id: string): Conclusion | null {
   const file = path.join(paths(root).conclusions, `${id}.md`);
   const text = readText(file);
   if (text === null) return null;
