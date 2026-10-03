@@ -183,7 +183,8 @@ export const TOOLS: ToolDef[] = [
         summary: {
           type: "string",
           max: 4000,
-          description: "What was done, what was not, and how you checked it.",
+          description:
+            "What was done, what was not, how you checked it, and the ids of the conclusions it rests on (D-4, F-2).",
         },
         artifacts: ARTIFACTS,
         as: AS,
@@ -280,7 +281,7 @@ export const TOOLS: ToolDef[] = [
     name: "question_ask",
     summary: "put a question on the record, to the person or to the agent on another card",
     description:
-      "Put a question on the record. Every question goes here, with its answer once there is one. A question that lives only in the chat is lost to every other agent and never reaches the person's inbox. card is the card the question is about, normally the one you hold. to is \"person\" (the default) for the person who runs the project, or a card id to ask whichever agent holds that card. After asking the person here, ask them in the chat as well. If you cannot carry on without the answer, stop there. If you can, say what you assumed and carry on. Returns the question's id, like AUTH-4#6.",
+      "Put a question on the record. Every question goes here, with its answer once there is one. A question that lives only in the chat is lost to every other agent and never reaches the person's inbox. card is the card the question is about, normally the one you hold. to is \"person\" (the default) for the person who runs the project, or a card id to ask whichever agent holds that card. After asking the person here, ask them in the chat as well. If you cannot carry on without the answer, stop there. If you can, say what you assumed and carry on. A value the person would want a say in (a timeout, a limit, a price) is a question for them even when you pick a default. Returns the question's id, like AUTH-4#6.",
     input: {
       properties: {
         card: card("The card the question is about, normally the one you hold."),
@@ -335,6 +336,7 @@ export const TOOLS: ToolDef[] = [
         as: AS,
       },
       required: ["card", "question", "text"],
+      aliases: { answer: "text" },
       example: {
         card: "AUTH-4",
         question: 6,
@@ -356,7 +358,7 @@ export const TOOLS: ToolDef[] = [
     summary:
       "record a decision, a finding or a verdict the moment it is settled, yours or the person's",
     description:
-      'Record something that is now settled, so that the person and every later agent can look it up instead of deciding or finding it again. Three kinds. decision: what we will do ("refresh tokens stay on the server"). finding: what turned out to be true ("staging has no okta tenant in terraform state"). verdict: a judgement on an option, an approach or a piece of work ("the saml strategy cannot be reused for oidc"). Record it the moment it is settled, not at the end of the work. That includes the ones nobody announced: a default, a limit, a name, a library or a file layout you picked, something you took as true without checking, something you ruled out or left out of scope. It also includes every one the person makes in the chat or in an answer to your question ("go with that", "no, use redis", "8h, to match the policy"): those are by "person". Call conclusion_search first. If it is already settled, follow it and cite its id. If you go against an earlier conclusion, pass its id in replaces and say why. Do not record routine edits or what the diff already says. Returns the id, like D-12. Cite it in cards, comments and commit messages.',
+      'Record something that is now settled, so that the person and every later agent can look it up instead of deciding or finding it again. Three kinds. decision: what we will do ("refresh tokens stay on the server"). finding: what turned out to be true ("staging has no okta tenant in terraform state"). verdict: a judgement on an option, an approach or a piece of work ("the saml strategy cannot be reused for oidc"). Record it the moment it is settled, not at the end of the work. That includes the ones nobody announced: a default, a limit, a name, a library or a file layout you picked, something you took as true without checking, something you ruled out or left out of scope. It also includes every one the person makes in the chat or in an answer to your question ("go with that", "no, use redis", "8h, to match the policy"): those are by "person". Call conclusion_search first. If it is already settled, follow it and cite its id. If you go against an earlier conclusion, pass its id in replaces and say why. One conclusion per thing settled: a value, the approach and an option you ruled out are three. Do not record routine edits, what the diff already says, or that a card is finished. Returns the id, like D-12. Cite it in cards, comments and commit messages.',
     input: {
       properties: {
         kind: {
@@ -423,9 +425,9 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "conclusion_search",
-    summary: "search what is already settled, before you decide or investigate",
+    summary: "search what is already settled, with the why, before you decide or investigate",
     description:
-      "Search the project's conclusions (decisions, findings, verdicts). Call it before you decide something, before you investigate something that may already be known, and whenever you need the id of an earlier conclusion to cite or replace. query is words that must all appear (in what, why, area, card or author; \"person\" finds the person's own), or an id like D-4. With no arguments it lists the newest. Superseded conclusions are left out and counted, unless include_replaced is true. Read-only.",
+      "Search the project's conclusions (decisions, findings, verdicts). Call it before you decide something, before you investigate something that may already be known, and whenever you need the id of an earlier conclusion to cite or replace. query is words that must all appear (in what, why, area, card or author; \"person\" finds the person's own), or an id like D-4. With no arguments it lists the newest. Each hit shows its why, which record_state leaves out. Superseded conclusions are left out and counted, unless include_replaced is true. Read-only.",
     input: {
       properties: {
         query: {

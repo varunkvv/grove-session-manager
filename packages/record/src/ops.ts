@@ -1013,7 +1013,7 @@ export function myCards(ctx: Ctx): OpResult {
   if (!mine.length) {
     const todo = cards.filter((x) => x.status === "todo").map((x) => x.id);
     out.push(
-      `you hold no card. ${todo.length ? `todo and unclaimed: ${todo.slice(0, 12).join(", ")}${todo.length > 12 ? ` and ${todo.length - 12} more` : ""}. claim one with card_claim before you work on it` : "there is no todo card. create one with card_create, or ask the person what to do next"}.`,
+      `you hold no card. ${todo.length ? `todo and unclaimed: ${todo.slice(0, 12).join(", ")}${todo.length > 12 ? ` and ${todo.length - 12} more` : ""}. claim one with card_claim before you work on it` : 'there is no todo card. if the person just asked for something, record what they decided (conclusion_record, by "person") and put the work on a new card with card_create'}.`,
     );
   } else {
     out.push(`you hold ${mine.length} card${mine.length === 1 ? "" : "s"}:`);

@@ -261,6 +261,10 @@ test("validation: small slips are repaired, the rest refused with an example", (
   assert.ok(
     asAgent(root, "s1", "question_answer", { card: "AUTH-1", question: "1", text: "a" }).ok,
   );
+  // sonnet sent `answer` in the decision-29 trial
+  assert.ok(
+    asAgent(root, "s1", "question_answer", { card: "AUTH-1", question: 1, answer: "b" }).ok,
+  );
   assert.match(
     asAgent(root, "s1", "question_answer", { card: "AUTH-1", question: "AUTH-9#3", text: "a" })
       .text,

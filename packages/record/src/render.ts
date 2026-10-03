@@ -51,6 +51,8 @@ name the file in a card, a comment or a conclusion.
 - before you start work: \`record_state\`. A subagent, and a session started inside a working
   copy, is not shown the state at session start, so for them this call is the only way to see it
 - at the start of each turn, and after a resume or a fork: \`my_cards\`
+- when the person's message decides, picks, approves or corrects anything, even with a bare
+  "8h" or "go ahead", record it with \`conclusion_record\` (\`by: "person"\`) before you act on it
 - if two "you:" lines in your context disagree, the newest one is right
 
 ## Cards
@@ -100,7 +102,10 @@ Implicit ones, the kind nobody announces:
 
 The test: would an agent picking this up tomorrow need to know it, to avoid undoing it or
 working it out again? Then record it. Do not record routine edits, what the diff already says,
-or thinking that led nowhere.
+thinking that led nowhere, or that a card is finished (that is \`card_done\`).
+
+One conclusion per thing settled. A value, the approach and an option you ruled out are three
+conclusions, so a later one can replace one of them without hiding the others.
 
 Before you settle something, call \`conclusion_search\`. If it is already settled, follow it and
 cite its id. To go against it, record a new one with \`replaces\`, say why, and tell the person.
@@ -113,6 +118,10 @@ Every question goes on a card with \`question_ask\`, and its answer goes there w
 
 - a question for the person: ask it on your card, then ask it in the chat too. If you cannot
   carry on without the answer, stop. If you can, say what you assume and carry on
+- a value or a behaviour the person would want a say in that nobody gave you (a timeout, a
+  limit, a price, words users see): pick one, record it as your decision, ask the person with
+  \`question_ask\` and carry on with your pick. Do not mark the card done while that question
+  is open: the card is waiting on them
 - when the person answers, in the chat or anywhere else: \`question_answer\` with
   \`by: "person"\`. If the answer settles something it is also a conclusion, and it is theirs
 - a question for another agent: \`question_ask\` with \`to\` set to that agent's card. They see
@@ -133,6 +142,10 @@ Pass \`as\` with a short name of your own on every write. Put conclusions, comme
 questions on the card your brief names. Do not claim, release or finish a card unless the
 brief says to. You cannot ask the person: put the question on the card with \`question_ask\`,
 say what you assumed and carry on.
+
+When you start a subagent, its brief may be all it reads: an Explore agent does not load this
+file. Write into the brief the card id, that it calls \`record_state\` first, passes \`as\` on
+every write and records what it finds on that card.
 
 ## If the tools are missing
 
