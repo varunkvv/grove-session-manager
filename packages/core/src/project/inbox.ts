@@ -65,6 +65,18 @@ export function trayCount(rows: readonly InboxRow[]): number {
   return rows.filter(urgent).length;
 }
 
+/**
+ * markdown an agent wrote, as one line of words. a row draws no markdown, so the heading and bold
+ * markers would show as typed. backticks stay: they say "this is code". a `**` in a glob or a power
+ * is not bold, so the markers only go as a pair around words
+ */
+function oneLine(text: string, max: number): string {
+  return squash(
+    text.replace(/^#+\s+/gm, "").replace(/(?<![\w/*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\w/*])/g, "$1"),
+    max,
+  );
+}
+
 /** what a session that needs the person is at, in the notifications' words */
 function sessionAsk(live: LiveStatus): string {
   if (live.state === "permission") {
@@ -119,7 +131,7 @@ export function buildInbox(i: InboxInput): InboxRow[] {
         title: c.title,
         who,
         sessionId: c.holder?.session ?? who?.sessionId,
-        summary: q ? squash(q.text, 300) : sessionAsk(live as LiveStatus),
+        summary: q ? oneLine(q.text, 300) : sessionAsk(live as LiveStatus),
         reviewKeys: keys,
       });
     }
@@ -140,7 +152,7 @@ export function buildInbox(i: InboxInput): InboxRow[] {
         title: c.title,
         who,
         sessionId: who?.sessionId,
-        summary: squash(done.body, 300),
+        summary: oneLine(done.body, 300),
         reviewKeys: keys,
       });
     } else if (c.by === "agent") {
@@ -153,7 +165,7 @@ export function buildInbox(i: InboxInput): InboxRow[] {
         title: c.title,
         who,
         sessionId: who?.sessionId,
-        summary: squash(c.body.trim().split("\n", 1)[0] ?? "", 200),
+        summary: oneLine(c.body.trim().split("\n", 1)[0] ?? "", 200),
         reviewKeys: [`card:${c.id}`],
       });
     }

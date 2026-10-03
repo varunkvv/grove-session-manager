@@ -19,6 +19,7 @@ import {
   type Runtime,
   runtimeOf,
   type SessionFacts,
+  snippetAround,
   squash,
   tokenize,
   trayCount,
@@ -474,11 +475,16 @@ export class ProjectsService {
         .slice(0, 20)
         .map((r) => hit(r));
     const tokens = tokenize(q);
+    // found by what was asked in it, not by its title: that prompt is why the row is there
+    const why = (r: SessionRow) =>
+      snippetAround(r.title ?? r.firstPrompt ?? "", tokens)
+        ? undefined
+        : (snippetAround(r.lastPrompt ?? "", tokens) ?? snippetAround(r.firstPrompt ?? "", tokens));
     const out = rows
       .filter((r) => tokens.every((t) => rowHaystack(r).includes(t)))
       .sort(newest)
       .slice(0, 50)
-      .map((r) => hit(r));
+      .map((r) => hit(r, why(r)));
     if (out.length < 50) {
       // full text: only rows the line above did not already match
       for (const h of await this.o.sessions.search(q)) {

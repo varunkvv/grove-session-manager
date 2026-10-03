@@ -661,6 +661,17 @@ describe("projects and sessions", () => {
       { sessionId: "s-1", where: "chat", project: "chat", runtime: "vscode", open: {} },
       { sessionId: "s-3", where: "elsewhere", runtime: "closed", snippet: "the rounding mode" },
     ]);
-    expect((await t.svc.findSessions("parser"))[0]?.title).toBe("look at the parser");
+    // with no title the prompt is the title, and the word is in it
+    expect((await t.svc.findSessions("parser"))[0]).toMatchObject({
+      title: "look at the parser",
+      snippet: undefined,
+    });
+    // found by a prompt its title does not show: the prompt says why
+    t.session("s-4", { title: "ci cleanup", lastPrompt: "then bump the lexer", activityMs: 1 });
+    expect((await t.svc.findSessions("lexer"))[0]).toMatchObject({
+      sessionId: "s-4",
+      title: "ci cleanup",
+      snippet: "then bump the lexer",
+    });
   });
 });

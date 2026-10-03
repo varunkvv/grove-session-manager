@@ -270,6 +270,27 @@ describe("the inbox", () => {
     ]);
   });
 
+  it("a summary is the agent's markdown as one line of words: no heading or bold markers", () => {
+    const done = (body: string) =>
+      inbox({
+        cards: [
+          held("P-1", "s1", 0, {
+            status: "done",
+            holder: null,
+            by: "person",
+            claims: [claim("P-1", 1, "claim", "s1", 0), claim("P-1", 2, "done", "s1", 7, body)],
+          }),
+        ],
+      })[0]?.summary;
+    expect(done("## Summary\n\nOkta wants a **web** app. **Not done:** the secret.")).toBe(
+      "Summary Okta wants a web app. Not done: the secret.",
+    );
+    // code keeps its backticks, and a `**` that is not bold stays
+    expect(done("Ran `pnpm test` over src/**/*.ts and lib/**/*.ts, 2**10 cases")).toBe(
+      "Ran `pnpm test` over src/**/*.ts and lib/**/*.ts, 2**10 cases",
+    );
+  });
+
   it("a new card is one an agent made, summed up by its first line", () => {
     const rows = inbox({ cards: [card("P-1"), card("P-2", { by: "person" })] });
     expect(rows).toMatchObject([
