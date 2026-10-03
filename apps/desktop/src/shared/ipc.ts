@@ -65,6 +65,8 @@ export interface SessionRow {
   parsed: boolean;
   /** tokens per model, subagents included, biggest first. absent until the whole file is counted. */
   usage?: ModelUsage[];
+  /** the model the session itself ran on most, its subagents left out */
+  model?: string;
   /** what the session is doing right now, when its hooks report to us */
   live?: LiveStatus;
   /** its subagents, running ones first. every session, live or long finished. */
@@ -311,7 +313,7 @@ export interface AgentPanel {
   /** absent until grove indexes the transcript */
   sessionKey?: SessionKey;
   runtime: Runtime;
-  /** modelLabel(usage[0].model): "opus 5.5" */
+  /** modelLabel of the session's own model: "opus 5.5" */
   model?: string;
   state: AgentState;
   stateAt?: number;

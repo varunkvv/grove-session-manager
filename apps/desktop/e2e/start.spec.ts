@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import {
@@ -8,7 +8,13 @@ import {
   setUntrusted,
   writeFakeClaude,
 } from "./helpers/fakeClaude.ts";
-import { type Fixture, type FixtureOptions, makeFixture, readExecLog } from "./helpers/fixture.ts";
+import {
+  type Fixture,
+  type FixtureOptions,
+  makeFixture,
+  pendingIntents,
+  readExecLog,
+} from "./helpers/fixture.ts";
 import { api, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { asAgent, writeProject } from "./helpers/project.ts";
 
@@ -52,13 +58,6 @@ function lastScript(): string {
   return readFileSync(open?.argv[0] as string, "utf8");
 }
 
-/** what the app left for the editor's window, and nothing else */
-function pendingIntents(): Array<Record<string, unknown>> {
-  const dir = path.join(fx.root, ".grove", "pending");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).map((n) => JSON.parse(readFileSync(path.join(dir, n), "utf8")));
-}
-
 /** single quotes around every argument, the way the .command writes them */
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -81,7 +80,7 @@ test("Start an agent in VS Code leaves the goal prompt for the panel, then waits
   expect(readExecLog(fx).find((l) => l.bin === "code")?.argv[0]).toMatch(
     /billing-export\.code-workspace$/,
   );
-  const [intent, ...more] = pendingIntents();
+  const [intent, ...more] = pendingIntents(fx);
   expect(more).toEqual([]);
   expect(intent).toMatchObject({ kind: "new", cwd: root, source: "app", prompt: PROMPT });
   expect(intent).not.toHaveProperty("sessionId");
@@ -214,7 +213,7 @@ test("an older companion cannot start a conversation: the project opens, the pro
     /billing-export\.code-workspace$/,
   );
   // never an intent it would ignore, and never a link that lands in whatever window has focus
-  expect(pendingIntents()).toEqual([]);
+  expect(pendingIntents(fx)).toEqual([]);
   const copied = await app.app.evaluate(({ clipboard }) => clipboard.readText());
   await app.app.evaluate(({ clipboard }, text) => clipboard.writeText(text), had);
   expect(copied).toBe(PROMPT);

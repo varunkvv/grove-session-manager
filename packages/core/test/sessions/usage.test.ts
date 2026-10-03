@@ -165,6 +165,18 @@ describe("token usage", () => {
     await plain.refresh();
     expect(plain.list()[0]?.usage).toBeUndefined();
   });
+
+  it("a record's model is its own transcript's, however much its subagents spent", async () => {
+    const { projectsDir, file } = setup([userEntry("hi"), block("msg_1", OPUS, { out: 10 })]);
+    const dir = path.join(path.dirname(file), SID.a, "subagents");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "agent-a.jsonl"), toJsonl([block("msg_2", HAIKU, { out: 500 })]));
+    const index = createSessionIndex({ projectsDir, cacheDir: null, usage: true });
+    await index.refresh();
+    const [record] = index.list();
+    expect(record?.usage?.[0]?.model).toBe(HAIKU);
+    expect(record?.model).toBe(OPUS);
+  });
 });
 
 describe("usage labels", () => {

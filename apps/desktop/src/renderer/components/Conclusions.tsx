@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ConclusionView } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import { type ConclusionControls, decidedLine, filterConclusions } from "../logic/views.ts";
@@ -15,9 +15,9 @@ import {
   Icon,
   inputClass,
   KindLabel,
+  Loading,
   ProblemMark,
   Segmented,
-  Spinner,
   Time,
 } from "./ui.tsx";
 
@@ -39,7 +39,7 @@ function ConclusionDetail({ c }: { c: ConclusionView }) {
   const canOpen = c.sessionKey && c.open;
   const dot = notReviewed(c);
   return (
-    <div className="space-y-2.5 pr-3 pb-3 pl-[174px]" data-testid="conclusion-detail">
+    <div className="space-y-2.5 pr-3 pb-3 pl-12" data-testid="conclusion-detail">
       <p className="text-sm text-fg-3">{decidedLine(c)}</p>
       {(c.replaces || c.related.length > 0) && (
         // flex, so a chip sits in the middle of its line whatever its own vertical-align says
@@ -62,17 +62,15 @@ function ConclusionDetail({ c }: { c: ConclusionView }) {
       {(canOpen || dot) && (
         <div className="flex gap-1.5">
           {canOpen && (
-            // the hint is on a span: a disabled Button takes no pointer events, so its own title never shows
-            <span className="flex" title={c.open?.disabled}>
-              <Button
-                size="sm"
-                disabled={!!c.open?.disabled}
-                data-testid="conclusion-open"
-                onClick={() => openWith(c.sessionKey, c.open, c.id)}
-              >
-                Open in {editor}
-              </Button>
-            </span>
+            <Button
+              size="sm"
+              disabled={!!c.open?.disabled}
+              title={c.open?.disabled}
+              data-testid="conclusion-open"
+              onClick={() => openWith(c.sessionKey, c.open, c.id)}
+            >
+              Open in {editor}
+            </Button>
           )}
           {dot && project && (
             <Button
@@ -90,7 +88,10 @@ function ConclusionDetail({ c }: { c: ConclusionView }) {
   );
 }
 
-/** two lines: what was settled and by whom, then why. open, both wrap to their full length */
+/**
+ * the inbox's shape: what it is and whose, then what was settled at full width, then why. closed,
+ * `what` takes two lines at most and `why` one. open, both wrap to their full length
+ */
 function ConclusionRow({ c, open, active }: { c: ConclusionView; open: boolean; active: boolean }) {
   const by = whoView(c.by === "person" ? "person" : c.who);
   // markSuperseded pushes oldest first
@@ -117,25 +118,14 @@ function ConclusionRow({ c, open, active }: { c: ConclusionView; open: boolean; 
         className="fade cursor-default px-3 py-2 hover:bg-raised group-data-[active]:bg-raised"
         onClick={() => setControls({ open: open ? null : c.id })}
       >
-        <div className={cx("flex gap-3", open ? "items-start" : "h-5 items-center")}>
-          {/* kept when there is no dot, so the ids line up */}
-          <span className="flex h-5 w-1.5 shrink-0 items-center">
+        <div className="flex h-5 items-center gap-3">
+          {/* kept when there is no dot, so the kinds line up */}
+          <span className="flex w-1.5 shrink-0">
             {notReviewed(c) && <Dot label="Not reviewed" />}
           </span>
-          <KindLabel kind={c.kind} className="h-5 w-[76px]" />
-          <span className="h-5 w-[44px] shrink-0 font-mono text-sm leading-5 text-fg-4">
-            {c.id}
-          </span>
-          <span className="flex min-w-0 flex-1 items-baseline gap-2">
-            <span
-              className={cx(
-                open ? "whitespace-normal" : "truncate",
-                c.superseded ? "text-fg-4 line-through" : "text-fg",
-              )}
-              title={c.what}
-            >
-              {c.what}
-            </span>
+          <KindLabel kind={c.kind} className="w-[76px]" />
+          <span className="w-[44px] shrink-0 font-mono text-sm text-fg-4">{c.id}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-2">
             <ProblemMark count={c.problems} />
             {c.superseded && newest && (
               <span className="shrink-0 text-sm text-fg-4" data-testid="replaced-by">
@@ -154,29 +144,36 @@ function ConclusionRow({ c, open, active }: { c: ConclusionView; open: boolean; 
               </span>
             )}
           </span>
-          <span className="flex h-5 shrink-0 items-center gap-3">
-            <span className="flex w-[104px] min-w-0 items-center gap-1.5">
-              {by && (
-                <>
-                  <Avatar who={by} />
-                  <span className="truncate text-fg-2">{by.name}</span>
-                </>
-              )}
-            </span>
-            <span className="flex w-[96px] items-center">
-              {c.card && <CardChip cardId={c.card.id} inRow />}
-            </span>
-            <span className="w-[56px] truncate text-sm text-fg-4">{c.area}</span>
-            <Time at={c.at} className="w-[60px] text-right" />
-          </span>
-        </div>
-        {c.why && (
-          // starts where `what` starts
-          <p
-            className={cx(
-              "mt-0.5 pl-[162px] text-sm text-fg-4",
-              open ? "whitespace-normal" : "truncate",
+          {/* the inbox's cell: avatar 16 + 6 + a name as long as `chat-features-35` */}
+          <span className="flex w-[126px] min-w-0 shrink-0 items-center gap-1.5">
+            {by && (
+              <>
+                <Avatar who={by} />
+                <span className="truncate text-fg-2">{by.name}</span>
+              </>
             )}
+          </span>
+          <span className="flex w-[96px] shrink-0 items-center">
+            {c.card && <CardChip cardId={c.card.id} inRow />}
+          </span>
+          <span className="w-[56px] shrink-0 truncate text-sm text-fg-4">{c.area}</span>
+          <Time at={c.at} className="w-[60px] text-right" />
+        </div>
+        {/* both start under the kind's word: dot 6 + 12, icon 12 + 6 */}
+        <p
+          className={cx(
+            "mt-0.5 pl-9",
+            !open && "line-clamp-2",
+            c.superseded ? "text-fg-4 line-through" : "text-fg",
+          )}
+          title={c.what}
+          data-testid="conclusion-what"
+        >
+          {c.what}
+        </p>
+        {c.why && (
+          <p
+            className={cx("mt-0.5 pl-9 text-sm text-fg-4", !open && "truncate")}
             title={c.why}
             data-testid="conclusion-why"
           >
@@ -186,21 +183,6 @@ function ConclusionRow({ c, open, active }: { c: ConclusionView; open: boolean; 
       </div>
       {open && <ConclusionDetail c={c} />}
     </li>
-  );
-}
-
-/** local reads are fast, so most of the time nothing flashes */
-function Loading() {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setLate(true), 300);
-    return () => clearTimeout(t);
-  }, []);
-  if (!late) return null;
-  return (
-    <div className="flex justify-center pt-24" data-testid="loading">
-      <Spinner />
-    </div>
   );
 }
 

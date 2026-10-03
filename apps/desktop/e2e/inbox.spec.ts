@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { readCard } from "@grove/record";
 import { expect, type Locator, type Page, test } from "@playwright/test";
@@ -10,7 +10,7 @@ import {
   readExecLog,
   writeSession,
 } from "./helpers/fixture.ts";
-import { api, groveTest, type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { api, groveTest, type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
 import { asAgent, asPerson, interrupted, liveSession, writeProject } from "./helpers/project.ts";
 
 const SID = {
@@ -51,10 +51,7 @@ function seed(): Fixture {
     you("card_create", { title });
   }
   const agent = (sessionId: string, name: string, lastPrompt?: string) => {
-    const file = writeSession(fx, { cwd: root, sessionId, title: name });
-    // what Claude Code appends when a prompt is sent: the Stopped row says what it was working on
-    if (lastPrompt)
-      appendFileSync(file, `${JSON.stringify({ type: "last-prompt", lastPrompt })}\n`);
+    writeSession(fx, { cwd: root, sessionId, title: name, lastPrompt });
     return asAgent(fx, root, { sessionId, name });
   };
 
@@ -172,7 +169,12 @@ test("one row of every kind, Asked and Stopped first, each with its summary on a
   const held = row(page, "decided");
   await expect(held.getByTestId("runtime-chip")).toHaveText("Background");
   await expect(held.getByTestId("inbox-open")).toBeDisabled();
-  await under(held, () => held.getByTitle("running in the background").click({ timeout: 2_000 }));
+  await expect(held.getByTestId("inbox-open")).toHaveAttribute(
+    "title",
+    "running in the background",
+  );
+  // force: playwright would wait for the button to be enabled
+  await under(held, () => held.getByTestId("inbox-open").click({ force: true, timeout: 2_000 }));
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
 
   // the other project's inbox is its own: nothing, and no count in the nav
@@ -276,26 +278,49 @@ test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Ente
   await expect(page.getByRole("listbox")).toBeFocused();
   await expect(active).toHaveCount(0);
 
-  // the first key only shows where the keyboard is
-  await page.keyboard.press("Enter");
-  await expect(active).toHaveAttribute("id", order[0]!);
+  const press = async (...keys: string[]) => {
+    for (const k of keys) await page.keyboard.press(k);
+  };
+  const at = (id: string) => expect(active).toHaveAttribute("id", id, { timeout: 2_000 });
+  // an arrow while no row shows only shows the keyboard's row. it never moves it, so a step can
+  // start with it however often it runs
+  const show = async () => {
+    if ((await active.count()) === 0) await page.keyboard.press("ArrowDown");
+  };
+
+  // the first key only shows where the keyboard is, an arrow as much as Enter
+  await step(async () => {
+    await show();
+    await at(order[0]!);
+  });
   await expect(page.getByRole("listbox")).toHaveAttribute("aria-activedescendant", order[0]!);
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await expect(active).toHaveAttribute("id", order[2]!);
+  await step(async () => {
+    await press("Meta+ArrowUp", "ArrowDown", "ArrowDown");
+    await at(order[2]!);
+  });
 
   // the row that takes a reviewed row's place is the keyboard's next
-  await page.keyboard.press("Meta+d");
-  await ready(page, 6);
-  await expect(active).toHaveAttribute("id", order[3]!);
+  await step(async () => {
+    if ((await rows(page).count()) === 7) {
+      await press("Meta+ArrowUp", "ArrowDown", "ArrowDown", "Meta+d");
+    }
+    await expect(rows(page)).toHaveCount(6, { timeout: 3_000 });
+    await show();
+    await at(order[3]!);
+  });
 
-  await page.keyboard.press("Meta+ArrowUp");
-  await expect(active).toHaveAttribute("id", order[0]!);
-  const opens = await active.getAttribute("data-card");
-  await page.keyboard.press("Meta+Enter");
-  await expect.poll(() => readExecLog(fx).filter((l) => l.bin === "code").length).toBe(1);
+  const opens = await rows(page).first().getAttribute("data-card");
+  const opened = () => readExecLog(fx).filter((l) => l.bin === "code").length;
+  await step(async () => {
+    if (opened() === 0) await press("Meta+ArrowUp", "Meta+Enter");
+    await expect.poll(opened, { timeout: 3_000 }).toBe(1);
+  });
 
-  await page.keyboard.press("Enter");
-  await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached();
+  await step(async () => {
+    await press("Meta+ArrowUp", "Enter");
+    await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached({
+      timeout: 2_000,
+    });
+  });
   expect(opens).toMatch(/^AUTH-[13]$/);
 });

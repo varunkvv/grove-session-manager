@@ -57,7 +57,12 @@ export function talkToServer(o: {
     let buffered = "";
     let tools = 0;
     let done = false;
-    const failed = (message: string, detail = stderr.slice(-300).trim()): Failed => ({
+    // the end of stderr, from the start of a line: a cut in the middle of a path reads as noise
+    const tail = () => {
+      const end = stderr.slice(-300);
+      return (end.length < stderr.length ? end.slice(end.indexOf("\n") + 1) : end).trim();
+    };
+    const failed = (message: string, detail = tail()): Failed => ({
       state: "failed",
       checkedAt: Date.now(),
       stage,

@@ -1,5 +1,5 @@
 import type { CardDisplayStatus } from "@grove/core/pure";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import type { CardHead, ProjectView } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import {
@@ -13,7 +13,17 @@ import {
 import { whoView } from "../logic/who.ts";
 import { editProject, focusScreen, openCard, optionId, startAgent } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
-import { Avatar, Button, Dot, ProblemMark, RuntimeChip, Spinner, StatusIcon, Time } from "./ui.tsx";
+import {
+  Avatar,
+  Button,
+  Dot,
+  Loading,
+  ProblemMark,
+  RuntimeChip,
+  Spinner,
+  StatusIcon,
+  Time,
+} from "./ui.tsx";
 
 const NONE: CardHead[] = [];
 
@@ -51,7 +61,8 @@ function CardRow({ card, active, pending }: { card: CardHead; active: boolean; p
       </span>
       {card.agent && LIVE.has(card.status) && (
         <span className="flex shrink-0 items-center gap-3">
-          <span className="flex w-[120px] min-w-0 items-center gap-1.5">
+          {/* the inbox's cell: avatar 16 + 6 + a name as long as `chat-features-35` */}
+          <span className="flex w-[126px] min-w-0 items-center gap-1.5">
             <Avatar who={whoView(card.agent.ref)!} />
             <span className="truncate text-fg-2">{card.agent.ref.name}</span>
           </span>
@@ -158,21 +169,6 @@ function StartState({ project }: { project: ProjectView }) {
   );
 }
 
-/** local reads are fast, so most of the time nothing flashes */
-function Loading() {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setLate(true), 300);
-    return () => clearTimeout(t);
-  }, []);
-  if (!late) return null;
-  return (
-    <div className="flex justify-center pt-24" data-testid="loading">
-      <Spinner />
-    </div>
-  );
-}
-
 /** the cards screen: the project's cards by status, or the start state when it has none */
 export function Cards() {
   const project = useStore(currentProject);
@@ -198,7 +194,8 @@ export function Cards() {
   const { done, total } = doneOf(cards);
 
   return (
-    <div className="h-full overflow-y-auto">
+    // the gutter stays, so the column does not move when the list grows long enough to scroll
+    <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
       <div className="mx-auto max-w-[860px] px-4 pt-8 pb-16">
         <div className="mb-6 flex items-start gap-4 px-3" data-testid="cards-header">
           <div className="min-w-0 flex-1">
@@ -247,7 +244,8 @@ export function Cards() {
               >
                 <div
                   id={`group-${g.key}`}
-                  className="flex h-8 items-center gap-2 rounded-md bg-raised px-3 text-sm font-medium text-fg-2"
+                  // the gap under it: the keyboard's row is the same grey, and must not read as its band
+                  className="mb-1 flex h-8 items-center gap-2 rounded-md bg-raised px-3 text-sm font-medium text-fg-2"
                 >
                   <StatusIcon status={g.key} size={12} />
                   {g.label}

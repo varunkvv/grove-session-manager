@@ -1,23 +1,22 @@
 import { tokenize } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useState } from "react";
-import type { Outcome, SessionHit } from "../../shared/ipc.ts";
+import type { SessionHit } from "../../shared/ipc.ts";
 import { type PaletteItem, paletteItems, reviewAllKeys } from "../logic/palette.ts";
 import { projectRows } from "../logic/views.ts";
-import { focusScreen, go, openWith, startAgent, switchProject } from "../state/actions.ts";
+import {
+  focusScreen,
+  go,
+  openWith,
+  report,
+  review,
+  startAgent,
+  switchProject,
+} from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { cx, Highlighted, Icon, Kbd, menuItemClass, Overlay, Time } from "./ui.tsx";
 
 /** its own prefix: aria-activedescendant must never name a list row behind the overlay */
 const domId = (id: string) => `palette-${id}`;
-
-/** a refusal as an error toast. true when it went through */
-function went(title: string, res: Outcome<unknown>): boolean {
-  if (res.ok) return true;
-  useStore
-    .getState()
-    .toast({ level: "error", title, body: res.error.message, detail: res.error.detail });
-  return false;
-}
 
 /** mounted only while it is open, so every open starts empty with the first item active */
 function Open() {
@@ -100,7 +99,7 @@ function Open() {
         case "long-work": {
           const next = p.longWork === "background" ? "foreground" : "background";
           void window.grove.setLongWork(p.id, next).then((res) => {
-            if (!went("Could not change that", res)) return;
+            if (!report("Could not change that", res)) return;
             const where = next === "background" ? "background" : "conversation";
             toast({ level: "info", title: `Long work runs in the ${where} in ${p.name}` });
           });
@@ -110,14 +109,13 @@ function Open() {
           // main says what it did to each working copy
           void window.grove
             .repairProject(p.id)
-            .then((res) => went("Could not repair the working copies", res));
+            .then((res) => report("Could not repair the working copies", res));
           break;
         case "review-all": {
           // a row can carry two keys (a card that was created and finished): the count is rows
           const n = rows.filter((r) => reviewAllKeys([r]).length > 0).length;
-          void window.grove.review(p.id, reviewAllKeys(rows), true).then((res) => {
-            if (went("Could not mark them reviewed", res))
-              toast({ level: "info", title: `Marked ${n} reviewed` });
+          void review(p.id, reviewAllKeys(rows)).then((ok) => {
+            if (ok) toast({ level: "info", title: `Marked ${n} reviewed` });
           });
           break;
         }
@@ -178,8 +176,7 @@ function Open() {
         aria-label="Go to, switch project or find a session"
         autoFocus
         spellCheck={false}
-        // `!`: app.css turns a focused field's border violet, and this one is always focused
-        className="h-11 w-full border-b border-line! bg-transparent px-4 text-body text-fg placeholder:text-fg-4"
+        className="h-11 w-full border-b border-line bg-transparent px-4 text-body text-fg placeholder:text-fg-4"
         placeholder="Go to, switch project or find a session"
         data-testid="palette-input"
         value={query}

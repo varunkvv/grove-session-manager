@@ -23,7 +23,8 @@ const state = () => useStore.getState();
 const editorLabel = () => state().editor?.label ?? "the editor";
 const nameOf = (id: ProjectId) => state().projects.find((p) => p.id === id)?.name ?? id;
 
-function report(
+/** a refusal as an error toast. true when it went through */
+export function report(
   title: string,
   outcome: { ok: true } | { ok: false; error: { message: string; detail?: string } },
 ): boolean {
@@ -133,7 +134,12 @@ export function openWith(
   plan: OpenPlan | undefined,
   label: string,
 ): void {
-  if (!key || plan?.disabled) return;
+  if (!key) return;
+  // a button never gets here: it is disabled. a key does, and has to be told why nothing opened
+  if (plan?.disabled) {
+    state().toast({ level: "error", title: `Could not open ${label}: ${plan.disabled}` });
+    return;
+  }
   const run = async () => {
     const res = await api().openSession(key);
     if (!res.ok) return void report(`Could not open ${label}`, res);
@@ -177,9 +183,13 @@ export async function startAgent(req: StartAgentRequest): Promise<void> {
 
 /**
  * the rows these keys clear leave at once, and main's next inbox is the truth either way. a
- * refusal puts them back, unless main has spoken since
+ * refusal puts them back, unless main has spoken since. true when it went through
  */
-export async function review(project: ProjectId, keys: string[], reviewed = true): Promise<void> {
+export async function review(
+  project: ProjectId,
+  keys: string[],
+  reviewed = true,
+): Promise<boolean> {
   const before = state().inbox;
   const marked = new Set(keys);
   const optimistic = {
@@ -195,10 +205,9 @@ export async function review(project: ProjectId, keys: string[], reviewed = true
     ),
   };
   state().set({ inbox: optimistic });
-  const res = await api().review(project, keys, reviewed);
-  if (!report("Could not mark it reviewed", res) && state().inbox === optimistic) {
-    state().set({ inbox: before });
-  }
+  const ok = report("Could not mark it reviewed", await api().review(project, keys, reviewed));
+  if (!ok && state().inbox === optimistic) state().set({ inbox: before });
+  return ok;
 }
 
 /** a file is shown in Finder, never opened: an agent wrote the path, and Finder runs nothing */
@@ -306,7 +315,10 @@ export function perform(intent: Intent): void {
   const list = listOf(s);
   switch (intent.type) {
     case "move":
-      if (list) moveTo(s, list, (list.at ? list.ids.indexOf(list.at) : -1) + intent.delta);
+      // nothing shows which row the keyboard is on yet: the first arrow shows it, like the first Enter
+      if (list) {
+        moveTo(s, list, (list.at ? list.ids.indexOf(list.at) : -1) + (s.keys ? intent.delta : 0));
+      }
       break;
     case "move-to":
       if (list) moveTo(s, list, intent.where === "first" ? 0 : list.ids.length - 1);

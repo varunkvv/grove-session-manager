@@ -73,6 +73,8 @@ export interface SessionRecord extends ParsedMeta {
   activityMs: number;
   /** tokens per model, subagents included, biggest first. absent until the usage pass reaches it. */
   usage?: ModelUsage[];
+  /** the model of the session's own transcript, the biggest when it changed model on the way */
+  model?: string;
 }
 
 export type ComboRelation = "root" | "inside";

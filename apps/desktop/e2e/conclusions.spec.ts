@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { type Fixture, makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
-import { api, type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { api, type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
 import { asAgent, asPerson, liveSession, writeProject } from "./helpers/project.ts";
 
 const SID = {
@@ -82,7 +82,8 @@ function seed(): Fixture {
   });
   callback({
     kind: "verdict",
-    what: "The existing SAML strategy cannot be reused for OIDC.",
+    // long enough for two lines: a closed row never cuts what was settled to one
+    what: "The existing SAML strategy cannot be reused for OIDC: it validates a signed assertion on every request, and OIDC needs a place where the code is traded in once.",
     why: "It assumes signed assertions and has no token exchange step.",
     by: "agent",
     card: "AUTH-1",
@@ -124,7 +125,7 @@ async function open(): Promise<Page> {
   return app.page;
 }
 
-test("the list: newest first, what and why on two lines, a dot on what an agent settled alone", async () => {
+test("the list: newest first, what and why under who and where, a dot on what an agent settled alone", async () => {
   const page = await open();
   expect(await ids(page)).toEqual(["F-2", "F-1", "V-1", "D-3", "D-2", "D-1"]);
   await expect(search(page)).toBeFocused();
@@ -163,10 +164,23 @@ test("the list: newest first, what and why on two lines, a dot on what an agent 
   );
   await expect(row(page, "D-2")).not.toHaveAttribute("data-superseded");
 
-  // nothing in a closed row wraps: two lines and the border
-  for (const h of await rows(page).evaluateAll((els) => els.map((e) => e.clientHeight))) {
-    expect(h).toBe(56);
-  }
+  // a closed row: who and where, what at full width on up to two lines, one line of why
+  const heights = await rows(page).evaluateAll((els) =>
+    els.map((e) => [(e as HTMLElement).dataset.id, e.clientHeight]),
+  );
+  expect(heights).toEqual([
+    ["F-2", 78],
+    ["F-1", 78],
+    ["V-1", 98],
+    ["D-3", 78],
+    ["D-2", 78],
+    ["D-1", 78],
+  ]);
+  // and the long one is all there
+  const cut = await row(page, "V-1")
+    .getByTestId("conclusion-what")
+    .evaluate((e) => e.scrollHeight > e.clientHeight);
+  expect(cut).toBe(false);
 });
 
 test("a row opens in place, one at a time, and says who settled it and how", async () => {
@@ -289,12 +303,6 @@ test("the keyboard: typing shows the first match, arrows move, Enter opens, cmd-
   const page = await open();
   const active = page.locator('[data-testid="conclusion-row"][data-active]');
   await expect(active).toHaveCount(0);
-  /**
-   * the keyboard's row only shows until a pointer moves over the screen, and this is a real window
-   * on a desk someone is using. so each step starts from a key that puts the row back, changes
-   * nothing when it runs twice, and is tried again until what follows holds
-   */
-  const step = (run: () => Promise<unknown>) => expect(run).toPass({ timeout: 30_000 });
   const press = async (...keys: string[]) => {
     for (const k of keys) await page.keyboard.press(k);
   };

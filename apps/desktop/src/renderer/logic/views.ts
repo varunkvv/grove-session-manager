@@ -297,11 +297,14 @@ export function linkWord(link: "needs" | "from"): string {
   return link === "needs" ? "needs" : "created from";
 }
 
+/** `owner/repo#12`, or the pull request's github url, which is what the record's tools ask for */
+const PR = /^(?:https:\/\/github\.com\/)?([\w.-]+)\/([\w.-]+)(?:#|\/pull\/)(\d+)(?:[/?#].*)?$/;
+
 /** a file's last path part, a branch as written, `PR #12`, a link's host and path */
 export function artifactName(a: Pick<ArtifactView, "type" | "ref">): string {
   if (a.type === "file") return a.ref.split("/").filter(Boolean).pop() ?? a.ref;
   if (a.type === "pr") {
-    const n = /#(\d+)$/.exec(a.ref)?.[1];
+    const n = PR.exec(a.ref)?.[3] ?? /#(\d+)$/.exec(a.ref)?.[1];
     return n ? `PR #${n}` : a.ref;
   }
   if (a.type === "link") {
@@ -315,9 +318,9 @@ export function artifactName(a: Pick<ArtifactView, "type" | "ref">): string {
   return a.ref;
 }
 
-/** `owner/repo#12` -> its github pull request. a bare `#12` names no repo */
+/** its github pull request. a bare `#12` names no repo, and another host's url is only copied */
 export function prUrl(ref: string): string | null {
-  const m = /^([\w.-]+)\/([\w.-]+)#(\d+)$/.exec(ref);
+  const m = PR.exec(ref);
   return m ? `https://github.com/${m[1]}/${m[2]}/pull/${m[3]}` : null;
 }
 

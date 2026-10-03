@@ -15,6 +15,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
 } from "react";
 import type { ArtifactView, ProjectId } from "../../shared/ipc.ts";
 import { artifactName, cardTitle } from "../logic/views.ts";
@@ -153,19 +154,35 @@ export function Spinner({ size = 12 }: { size?: number }) {
   );
 }
 
+/** local reads are fast, so most of the time nothing flashes */
+export function Loading() {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setLate(true), 300);
+    return () => clearTimeout(t);
+  }, []);
+  if (!late) return null;
+  return (
+    <div className="flex justify-center pt-24" data-testid="loading">
+      <Spinner />
+    </div>
+  );
+}
+
 type ButtonVariant = "primary" | "secondary" | "ghost" | "quiet" | "link";
 type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   // the accent: the one action a screen is for
-  primary: "bg-accent-solid text-on-solid font-medium hover:opacity-90",
+  primary: "bg-accent-solid text-on-solid font-medium enabled:hover:opacity-90",
   // row actions
-  secondary: "border border-line-strong bg-canvas text-fg-2 hover:bg-raised hover:text-fg",
+  secondary:
+    "border border-line-strong bg-canvas text-fg-2 enabled:hover:bg-raised enabled:hover:text-fg",
   // Cancel, Start in the background
-  ghost: "text-fg-2 hover:bg-raised hover:text-fg",
+  ghost: "text-fg-2 enabled:hover:bg-raised enabled:hover:text-fg",
   // Edit project, Add folder…
-  quiet: "text-fg-3 hover:bg-raised hover:text-fg",
-  link: "font-medium text-accent hover:underline focus-visible:underline",
+  quiet: "text-fg-3 enabled:hover:bg-raised enabled:hover:text-fg",
+  link: "font-medium text-accent enabled:hover:underline focus-visible:underline",
 };
 const SIZES: Record<ButtonSize, string> = {
   sm: "h-6 gap-1.5 px-2 text-sm",
@@ -184,7 +201,8 @@ export function Button({
       type="button"
       {...rest}
       className={cx(
-        "no-drag fade disabled:pointer-events-none disabled:opacity-40",
+        // a disabled button keeps its pointer: its title says why, and a click stops on it
+        "no-drag fade disabled:opacity-40",
         // a link sits in a line of prose: no height, no padding
         variant === "link"
           ? "inline p-0 align-baseline"
@@ -265,7 +283,7 @@ export function Segmented<T extends string>({
       aria-label={label}
       aria-disabled={disabled || undefined}
       className={cx(
-        "no-drag inline-flex rounded-md border border-line-strong bg-raised p-0.5 text-sm",
+        "no-drag inline-flex shrink-0 rounded-md border border-line-strong bg-raised p-0.5 text-sm",
         disabled && "opacity-60",
       )}
     >
@@ -281,7 +299,9 @@ export function Segmented<T extends string>({
             data-testid={o.testId}
             onClick={() => onChange(o.value)}
             className={cx(
-              "fade rounded-sm disabled:opacity-40",
+              "fade rounded-sm",
+              // a disabled group is dimmed whole, once
+              !disabled && "disabled:opacity-40",
               size === "md" ? "h-[26px] px-3" : "h-[22px] px-2",
               checked
                 ? "bg-canvas font-medium outline outline-1 outline-line-strong"
@@ -354,7 +374,12 @@ export function Modal({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (open && !el.open) el.showModal();
+    if (open && !el.open) {
+      el.showModal();
+      // showModal hands the keyboard to the first focusable, the close button. a dialog says where
+      // it starts instead
+      el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    }
     if (!open && el.open) el.close();
   }, [open]);
   if (!open) return null;
@@ -709,7 +734,7 @@ export function ProblemMark({
   if (!problems?.length && !count) return null;
   const title = problems?.length
     ? `Grove read what it could${file ? ` from ${file}` : ""}: ${problems.join("; ")}.`
-    : `Grove read ${count} of its files with problems. Open it to see which.`;
+    : `Grove read its files with ${count === 1 ? "1 problem" : `${count} problems`}. Open it to see which.`;
   return (
     <span
       role="img"
@@ -768,7 +793,7 @@ export const menuItemClass =
 // ---------- chips: a button that sits in a line of prose. a click never reaches the row it is in
 
 const CHIP =
-  "no-drag fade mx-0.5 inline-flex h-5 max-w-full items-center gap-1 rounded-sm border border-line-strong bg-raised px-1.5 align-[-4px] text-sm leading-none text-fg hover:bg-active";
+  "no-drag fade mx-0.5 inline-flex h-5 max-w-full items-center gap-1 rounded-sm border border-line-strong bg-raised px-1.5 align-bottom text-sm leading-none text-fg hover:bg-active";
 
 /** a control inside a list row is not a tab stop. in a thread and the side panel it is */
 const chipProps = (inRow: boolean | undefined, run: () => void) => ({

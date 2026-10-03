@@ -120,6 +120,7 @@ function toRow(
   }
   if (record.entrypoint) row.entrypoint = record.entrypoint;
   if (record.usage) row.usage = record.usage;
+  if (record.model) row.model = record.model;
   const status = live.get(record.sessionId);
   if (status) row.live = status;
   const bg = background.get(record.sessionId);

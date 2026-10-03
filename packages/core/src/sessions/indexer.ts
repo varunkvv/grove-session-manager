@@ -54,6 +54,8 @@ const USAGE_CONCURRENCY = 4;
 function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies): SessionRecord {
   const m: ParsedMeta = meta ?? { recognized: 0 };
   const models = usage ? summarizeUsage(Object.values(usage)) : [];
+  // "" is the session's own transcript (scanSessionUsage)
+  const own = usage?.[""] && summarizeUsage([usage[""]])[0]?.model;
   return {
     ...m,
     ...pickTitle(m),
@@ -65,6 +67,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     parsed: meta !== null,
     activityMs: m.lastActivityMs ?? s.mtimeMs,
     ...(models.length ? { usage: models } : {}),
+    ...(own ? { model: own } : {}),
   };
 }
 

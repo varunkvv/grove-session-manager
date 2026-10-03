@@ -232,26 +232,22 @@ function RepoRow({
           {shortPath(r.path, undefined, home)}
         </span>
         {r.info ? (
-          // Segmented dims a disabled group and each disabled option in it: 60% of 40%, which
-          // cannot be read. a locked row keeps the group's 60% alone
-          <span className={cx("flex shrink-0", r.locked && "[&_button]:opacity-100!")}>
-            <Segmented
-              size="sm"
-              label={`Access for ${name}`}
-              value={r.mode}
-              disabled={r.locked}
-              onChange={(mode) => onChange({ mode })}
-              options={[
-                {
-                  value: "worktree",
-                  label: "Working copy",
-                  disabled: !r.info.canBeWorktree,
-                  testId: "mode-worktree",
-                },
-                { value: "reference", label: "Reference", testId: "mode-reference" },
-              ]}
-            />
-          </span>
+          <Segmented
+            size="sm"
+            label={`Access for ${name}`}
+            value={r.mode}
+            disabled={r.locked}
+            onChange={(mode) => onChange({ mode })}
+            options={[
+              {
+                value: "worktree",
+                label: "Working copy",
+                disabled: !r.info.canBeWorktree,
+                testId: "mode-worktree",
+              },
+              { value: "reference", label: "Reference", testId: "mode-reference" },
+            ]}
+          />
         ) : (
           <Spinner />
         )}

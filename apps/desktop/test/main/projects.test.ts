@@ -331,6 +331,16 @@ describe("card heads and conclusion rows", () => {
     const fourth = t.heads("chat")[0];
     expect(fourth?.status).toBe("in_progress");
     expect(fourth?.version).not.toBe(third?.version);
+
+    // the card page lists the conclusions that name the card: a new one moves its version too
+    chat.as("s-1")("conclusion_record", {
+      kind: "decision",
+      what: "Round half up.",
+      by: "agent",
+      card: "CHAT-1",
+    });
+    chat.changed();
+    expect(t.heads("chat")[0]?.version).not.toBe(fourth?.version);
   });
 
   it("sends a project's heads whole once, then only the ones that changed", () => {
@@ -358,7 +368,12 @@ describe("the card view", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const t = setup();
     const chat = t.project("chat", "CHAT");
-    t.session("s-1", { title: "rounding fix", usage: [{ model: "claude-opus-5-5" } as never] });
+    // usage counts subagents, so its biggest spender is not the session's own model
+    t.session("s-1", {
+      title: "rounding fix",
+      model: "claude-opus-5-5",
+      usage: [{ model: "claude-sonnet-5" } as never],
+    });
     const agent = chat.as("s-1", "fixer");
     agent("card_create", { title: "Fix rounding", needs: [] });
     agent("card_claim", { card: "CHAT-1" });

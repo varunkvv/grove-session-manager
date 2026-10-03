@@ -196,9 +196,10 @@ input[type="checkbox"]:focus-visible {
   outline: none;
 }
 
-/* the palette's field has no border to light up */
+/* the palette's field is always focused: its bottom line stays a line */
 [data-palette-input]:focus-visible {
   outline: none;
+  border-color: var(--color-line);
 }
 
 /* a long list only lays out the rows near the window */

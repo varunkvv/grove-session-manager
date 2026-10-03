@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { type Fixture, makeFixture } from "./helpers/fixture.ts";
-import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
 import { asAgent, interrupted, liveSession, writeProject } from "./helpers/project.ts";
 
 let fx: Fixture;
@@ -121,18 +121,31 @@ test("a click opens a card, and so does the keyboard after it shows its row", as
   await expect(page.getByTestId("card-row")).toHaveCount(7);
 
   // the mouse left AUTH-4 the keyboard's row. the first Enter only shows it
-  await page.keyboard.press("Enter");
   const active = page.locator('[data-testid="card-row"][data-active]');
-  await expect(active).toHaveAttribute("data-id", "AUTH-4");
+  const at = (id: string) => expect(active).toHaveAttribute("data-id", id, { timeout: 2_000 });
+  await step(async () => {
+    // only while no row shows: a second Enter would open the card
+    if ((await active.count()) === 0) await page.keyboard.press("Enter");
+    await at("AUTH-4");
+  });
   await expect(card).toHaveCount(0);
   await expect(page.getByRole("listbox", { name: "Cards" })).toHaveAttribute(
     "aria-activedescendant",
     "row-AUTH-4",
   );
-  await page.keyboard.press("ArrowDown");
-  await expect(active).toHaveAttribute("data-id", "AUTH-5");
-  await page.keyboard.press("Enter");
-  await expect(card).toBeAttached();
+  await step(async () => {
+    // an arrow while no row shows only shows it: the second one moves
+    if ((await active.count()) === 0) await page.keyboard.press("ArrowDown");
+    if ((await active.getAttribute("data-id")) === "AUTH-4") await page.keyboard.press("ArrowDown");
+    await at("AUTH-5");
+  });
+  await step(async () => {
+    if ((await card.count()) === 0) {
+      if ((await active.count()) === 0) await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+    }
+    await expect(card).toBeAttached({ timeout: 2_000 });
+  });
 });
 
 test("a card an agent writes while the app is open shows up", async () => {

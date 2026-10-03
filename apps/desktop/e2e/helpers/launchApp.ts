@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { _electron, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron, type ElectronApplication, expect, type Page } from "@playwright/test";
 import type { Bootstrap } from "../../src/shared/ipc.ts";
 import type { Fixture } from "./fixture.ts";
 
@@ -61,14 +61,19 @@ export async function launchApp(
   };
 }
 
-/** talks to main over the same bridge the UI uses */
+/** talks to main over the same bridge the UI uses. any other call is `page.evaluate(() => window.grove.x())` */
 export function api(page: Page) {
   return {
     bootstrap: () => page.evaluate(() => window.grove.bootstrap()) as Promise<Bootstrap>,
-    call: <T>(fn: (grove: Window["grove"]) => Promise<T>) =>
-      page.evaluate(fn as never, undefined as never) as Promise<T>,
   };
 }
+
+/**
+ * the keyboard's row only shows until a pointer moves over the screen, and this is a real window
+ * on a desk someone is using. so a step starts from a key that puts the row back, changes nothing
+ * when it runs twice, and is tried again until what follows holds
+ */
+export const step = (run: () => Promise<unknown>) => expect(run).toPass({ timeout: 30_000 });
 
 /** main's own test hooks, installed only under GROVE_ROOT (main/index.ts) */
 interface GroveTest {

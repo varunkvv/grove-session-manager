@@ -43,12 +43,6 @@ import {
 const HEADING = "text-sm font-medium text-fg-4";
 const SIDE_ROW =
   "fade flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-sm hover:bg-raised";
-// Button takes no pointer when disabled, and a title only shows under one
-const HINTED = "disabled:pointer-events-auto!";
-// a chip is as tall as a line of prose. ui.tsx hangs it 4px under the baseline, which is right for
-// a box with no baseline of its own. a chip has one (its text), so it sat low and pushed the lines
-// apart. on the line's bottom edge it fills the line exactly
-const CHIPS_IN_LINE = "[&_[data-testid$='-chip']]:align-bottom";
 
 function Subagents({ list }: { list: SubagentView[] }) {
   const [open, setOpen] = useState(false);
@@ -203,12 +197,8 @@ export function CardPage({ cardId }: { cardId: string }) {
   const head = record?.cards.find((c) => c.id === cardId);
   // the store keeps the last card it showed: only this one counts
   const card = stored?.id === cardId && stored.project === projectId ? stored : null;
-  // the head's version moves with the card's own files. a conclusion is not one of them, so the
-  // ones that name this card are the other half of "it changed"
-  const version = `${head?.version} ${record?.conclusions
-    .filter((c) => c.card?.id === cardId)
-    .map((c) => (c.superseded ? `${c.id}~` : c.id))
-    .join()}`;
+  // it moves with the card's files, its agent's state and the conclusions that name it
+  const version = head?.version;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: version is what says to read the card again
   useEffect(() => {
@@ -260,11 +250,7 @@ export function CardPage({ cardId }: { cardId: string }) {
   const missing = gone && !!record?.readAt;
 
   return (
-    <div
-      className={cx("flex h-full min-h-0 flex-col", CHIPS_IN_LINE)}
-      data-testid="card-page"
-      data-id={cardId}
-    >
+    <div className="flex h-full min-h-0 flex-col" data-testid="card-page" data-id={cardId}>
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
         <button
           type="button"
@@ -295,7 +281,6 @@ export function CardPage({ cardId }: { cardId: string }) {
             {primary && (
               <Button
                 variant="primary"
-                className={HINTED}
                 data-testid="card-primary"
                 data-action={primary.action}
                 {...(primary.action === "open" ? open : { onClick: () => start("editor") })}
@@ -340,7 +325,7 @@ export function CardPage({ cardId }: { cardId: string }) {
                     ) : (
                       <>
                         Answer in the agent's session ·{" "}
-                        <Button variant="link" className={HINTED} {...open}>
+                        <Button variant="link" {...open}>
                           Open in {editor}
                         </Button>
                       </>

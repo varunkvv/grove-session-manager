@@ -74,6 +74,20 @@ describe("the ways a check fails", () => {
     });
   });
 
+  it("a server that dies says so with the end of its stderr, from the start of a line", async () => {
+    const { launcher, bundle, root } = setup();
+    writeFileSync(
+      bundle,
+      `for (let i = 0; i < 40; i++) console.error("line " + i + " of a long stack trace"); process.exit(3);`,
+    );
+    const r = await talkToServer({ launcher, root, appVersion: "0.5.0" });
+    expect(r).toMatchObject({ state: "failed", stage: "initialize" });
+    const detail = (r.state === "failed" && r.detail) || "";
+    expect(detail.length).toBeLessThanOrEqual(300);
+    expect(detail.split("\n").every((l) => /^line \d+ of a long stack trace$/.test(l))).toBe(true);
+    expect(detail.endsWith("line 39 of a long stack trace")).toBe(true);
+  });
+
   it("a server without record_state", async () => {
     const { launcher, bundle, root } = setup();
     writeFileSync(bundle, fakeBundle("notools"));

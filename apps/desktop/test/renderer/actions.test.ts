@@ -239,13 +239,27 @@ describe("keys on a list", () => {
     expect(s().view).toEqual({ name: "card", cardId: "AUTH-1" });
   });
 
-  it("the arrows move through this project's rows only, and say the keyboard moved", () => {
+  it("the first arrow only shows the keyboard's row. the next move through this project's rows only", () => {
+    perform({ type: "move", delta: 1 });
+    expect(s()).toMatchObject({ active: { inbox: "asked:AUTH-1" }, keys: true });
     perform({ type: "move", delta: 1 });
     expect(s()).toMatchObject({ active: { inbox: "decided:D-2" }, keys: true });
     perform({ type: "move", delta: 5 });
     expect(s().active.inbox).toBe("decided:D-2");
     perform({ type: "move-to", where: "first" });
     expect(s().active.inbox).toBe("asked:AUTH-1");
+  });
+
+  it("cmd-Enter on a row grove cannot open says why, instead of nothing", () => {
+    const blocked = row("decided:D-2", {
+      sessionKey: "/p/s.jsonl",
+      open: { disabled: "running in the background" },
+    });
+    s().set({ inbox: { rows: [blocked], tray: 0 }, keys: true });
+    perform({ type: "open-editor" });
+    expect(s().toasts).toMatchObject([
+      { level: "error", title: "Could not open decided:D-2: running in the background" },
+    ]);
   });
 
   it("Cards moves through the cards and opens one. Conclusions opens a row in place, and closes it", () => {

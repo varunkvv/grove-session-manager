@@ -292,7 +292,12 @@ export class ProjectsService {
     const c = snap?.cards.get(cardId.toUpperCase());
     if (!p || !snap || !c) return null;
     const index = this.index(projects);
-    const head = this.head(c, c.holder ? this.facts(c.holder.session, index) : undefined, index);
+    const head = this.head(
+      c,
+      c.holder ? this.facts(c.holder.session, index) : undefined,
+      index,
+      snap.conclusions,
+    );
     const marks = this.o.reviewed.keys(p.prefix);
     const who = (x: Author): AgentRef | "person" =>
       x.by === "person" ? "person" : refOf(x, index);
@@ -520,7 +525,9 @@ export class ProjectsService {
       }
       const marks = this.o.reviewed.keys(p.prefix);
       this.send(p.id, {
-        cards: cards.map((c) => this.head(c, facts.get(c.holder?.session ?? ""), index)),
+        cards: cards.map((c) =>
+          this.head(c, facts.get(c.holder?.session ?? ""), index, snap.conclusions),
+        ),
         conclusions: snap.conclusions.map((c) => this.conclusionView(c, snap.cards, marks, index)),
         problems: snap.problems,
         readAt: snap.readAt,
@@ -685,7 +692,12 @@ export class ProjectsService {
     return at;
   }
 
-  private head(c: Card, f: SessionFacts | undefined, index: Index): CardHead {
+  private head(
+    c: Card,
+    f: SessionFacts | undefined,
+    index: Index,
+    conclusions: readonly Conclusion[],
+  ): CardHead {
     const status = cardDisplayStatus(c, f);
     let agent: CardHead["agent"];
     if (c.holder && f) {
@@ -699,6 +711,12 @@ export class ProjectsService {
     }
     const lastActivity = ms(c.lastActivity);
     const problems = problemCount(c);
+    // the card page shows the conclusions that name it: a new one, or one replaced, is a change
+    // ponytail: every conclusion per card on each compute. index by card when a project has thousands
+    const concluded = conclusions
+      .filter((x) => x.card === c.id)
+      .map((x) => (x.superseded ? `${x.id}~` : x.id))
+      .join();
     return {
       id: c.id,
       title: c.title,
@@ -707,7 +725,7 @@ export class ProjectsService {
       lastActivity,
       agent,
       // no live.at in it: a tool call by the holder resends nothing. the status is, for a markSeen
-      version: `${c.comments.length}.${c.claims.length}.${lastActivity}.${problems}.${status}.${agent?.state}.${agent?.stateAt}`,
+      version: `${c.comments.length}.${c.claims.length}.${lastActivity}.${problems}.${status}.${agent?.state}.${agent?.stateAt}.${concluded}`,
       problems,
     };
   }
@@ -716,12 +734,11 @@ export class ProjectsService {
     const row = index.rows.get(session);
     const f = this.facts(session, index);
     const state = agentState(f);
-    const model = row?.usage?.[0]?.model;
     return {
       ref: refOf({ session, agent: name }, index),
       sessionKey: row?.key,
       runtime: f.runtime,
-      model: model ? modelLabel(model) : undefined,
+      model: row?.model ? modelLabel(row.model) : undefined,
       state,
       stateAt: this.since(session, state, f),
       subagents: (row?.agents ?? []).map((a) => ({

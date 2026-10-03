@@ -457,6 +457,10 @@ describe("links and artifacts", () => {
     expect(artifactName({ type: "file", ref: "src/auth/callback.ts" })).toBe("callback.ts");
     expect(artifactName({ type: "branch", ref: "feat/sso" })).toBe("feat/sso");
     expect(artifactName({ type: "pr", ref: "acme/web#2291" })).toBe("PR #2291");
+    expect(artifactName({ type: "pr", ref: "#7" })).toBe("PR #7");
+    expect(artifactName({ type: "pr", ref: "https://github.com/acme/web/pull/2291" })).toBe(
+      "PR #2291",
+    );
     expect(artifactName({ type: "pr", ref: "draft" })).toBe("draft");
     expect(artifactName({ type: "link", ref: "https://example.com/docs/sso/" })).toBe(
       "example.com/docs/sso",
@@ -465,6 +469,15 @@ describe("links and artifacts", () => {
   });
   it("prUrl", () => {
     expect(prUrl("owner/repo#12")).toBe("https://github.com/owner/repo/pull/12");
+    // the url the record's tool text asks agents for, with or without what follows the number
+    expect(prUrl("https://github.com/owner/repo/pull/12")).toBe(
+      "https://github.com/owner/repo/pull/12",
+    );
+    expect(prUrl("https://github.com/owner/repo/pull/12/files#diff-1")).toBe(
+      "https://github.com/owner/repo/pull/12",
+    );
+    expect(prUrl("https://gitlab.com/owner/repo/-/merge_requests/12")).toBeNull();
+    expect(prUrl("https://evil.example/owner/repo/pull/12")).toBeNull();
     expect(prUrl("#12")).toBeNull();
     expect(prUrl("owner/repo")).toBeNull();
   });

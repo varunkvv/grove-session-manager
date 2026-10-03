@@ -55,19 +55,16 @@ function InboxRow({ row, active }: { row: InboxRowView; active: boolean }) {
           onClick={(e) => e.stopPropagation()}
         >
           {row.sessionKey && row.open && (
-            // the hint is on a span: a disabled Button takes no pointer events, so its own title
-            // never shows and a click on it would fall through to the row
-            <span className="flex" title={row.open.disabled}>
-              <Button
-                size="sm"
-                tabIndex={-1}
-                disabled={!!row.open.disabled}
-                data-testid="inbox-open"
-                onClick={() => openWith(row.sessionKey, row.open, row.card?.id ?? row.title)}
-              >
-                Open in {editor}
-              </Button>
-            </span>
+            <Button
+              size="sm"
+              tabIndex={-1}
+              disabled={!!row.open.disabled}
+              title={row.open.disabled}
+              data-testid="inbox-open"
+              onClick={() => openWith(row.sessionKey, row.open, row.card?.id ?? row.title)}
+            >
+              Open in {editor}
+            </Button>
           )}
           {row.reviewKeys.length > 0 && (
             <Button
@@ -125,7 +122,8 @@ export function Inbox() {
   }, [rows]);
 
   return (
-    <div className="h-full overflow-y-auto" data-testid="inbox">
+    // the gutter stays, so the column does not move when the list grows long enough to scroll
+    <div className="h-full overflow-y-auto [scrollbar-gutter:stable]" data-testid="inbox">
       <div className="mx-auto max-w-[860px] px-4 pt-8 pb-16">
         <h1 className="sr-only">Inbox</h1>
         {some ? (

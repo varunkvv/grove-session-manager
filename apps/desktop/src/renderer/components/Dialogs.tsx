@@ -128,7 +128,7 @@ export function ConfirmDialog() {
       testId="confirm-dialog"
       footer={
         <>
-          <Button variant="secondary" autoFocus onClick={close}>
+          <Button variant="secondary" data-autofocus onClick={close}>
             Cancel
           </Button>
           <Button

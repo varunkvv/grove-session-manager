@@ -1,8 +1,14 @@
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FAKE_SHORT_ID, fakeClaudeCalls, writeFakeClaude } from "./helpers/fakeClaude.ts";
-import { type Fixture, makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
+import {
+  type Fixture,
+  makeFixture,
+  pendingIntents,
+  readExecLog,
+  writeSession,
+} from "./helpers/fixture.ts";
 import { groveTest, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { asAgent, asPerson, interrupted, liveSession, writeProject } from "./helpers/project.ts";
 
@@ -49,13 +55,6 @@ const cardPage = (page: Page, id: string) =>
 
 const chipTo = (page: Page, id: string) =>
   page.locator(`[data-testid="card-chip"][data-id="${id}"]`).first();
-
-/** what the app left for the editor's window */
-function pendingIntents(): Array<Record<string, unknown>> {
-  const dir = path.join(fx.root, ".grove", "pending");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).map((n) => JSON.parse(readFileSync(path.join(dir, n), "utf8")));
-}
 
 const codeRuns = () => readExecLog(fx).filter((l) => l.bin === "code");
 
@@ -229,7 +228,7 @@ test("Open by runtime: the editor lands, a terminal says so, an unfound session 
   await expect(toasts.filter({ hasText: "Opening AUTH-3 in VS Code" })).toBeVisible();
   await waitFor(async () => codeRuns().length === 1);
   expect(codeRuns()[0]?.argv[0]).toMatch(/auth-sso\.code-workspace$/);
-  expect(pendingIntents()).toMatchObject([{ kind: "resume", sessionId: SID.idp, cwd: root }]);
+  expect(pendingIntents(fx)).toMatchObject([{ kind: "resume", sessionId: SID.idp, cwd: root }]);
 
   // in a terminal: it cannot be landed on. the project opens, and nothing new is left to land
   await chipTo(page, "AUTH-2").click();
@@ -242,7 +241,7 @@ test("Open by runtime: the editor lands, a terminal says so, an unfound session 
       hasText: "This agent is running in a terminal. Quit it there, then open it in VS Code.",
     }),
   ).toBeVisible();
-  expect(pendingIntents().map((i) => i.sessionId)).toEqual([SID.idp]);
+  expect(pendingIntents(fx).map((i) => i.sessionId)).toEqual([SID.idp]);
 
   // no transcript yet: the button says why it cannot, and a title needs the pointer to show
   await page.keyboard.press("Escape");
@@ -287,7 +286,7 @@ test("a background agent is stopped after a confirm, then landed on", async () =
   const argv = fakeClaudeCalls(fake).map((c) => c.argv);
   expect(argv).toContainEqual(["stop", "d7b6bcc2"]);
   expect(argv.flat()).not.toContain("rm");
-  expect(pendingIntents()).toMatchObject([{ kind: "resume", sessionId: SID.idp }]);
+  expect(pendingIntents(fx)).toMatchObject([{ kind: "resume", sessionId: SID.idp }]);
   await expect(page.getByTestId("toast").filter({ hasText: "Opening OPS-1" })).toBeVisible();
 });
 
@@ -353,7 +352,7 @@ test("a card that was given back offers a start, and waits for the claim", async
       .getByTestId("toast")
       .filter({ hasText: "Opening pay-fix in VS Code on a new conversation" }),
   ).toBeVisible();
-  expect(pendingIntents()).toMatchObject([
+  expect(pendingIntents(fx)).toMatchObject([
     {
       kind: "new",
       cwd: root,
@@ -406,7 +405,7 @@ test("a stopped card resumes where it ran, or gets a new agent", async () => {
   // or the old session, where it ran
   await page.getByTestId("card-primary").click();
   await waitFor(async () => codeRuns().length === 1);
-  expect(pendingIntents()).toMatchObject([{ kind: "resume", sessionId: SID.store }]);
+  expect(pendingIntents(fx)).toMatchObject([{ kind: "resume", sessionId: SID.store }]);
 });
 
 test("a done card opens the session that did the work, and a card that is gone says so", async () => {
@@ -432,7 +431,7 @@ test("a done card opens the session that did the work, and a card that is gone s
   await expect(page.getByTestId("card-primary")).toHaveText("Open in VS Code");
   await page.getByTestId("card-primary").click();
   await waitFor(async () => codeRuns().length === 1);
-  expect(pendingIntents()).toMatchObject([{ kind: "resume", sessionId: SID.audit }]);
+  expect(pendingIntents(fx)).toMatchObject([{ kind: "resume", sessionId: SID.audit }]);
 
   rmSync(path.join(root, "cards", "PAY-4"), { recursive: true });
   await expect(page.getByTestId("card-missing")).toHaveText("This card no longer exists.", {

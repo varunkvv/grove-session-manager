@@ -1,8 +1,10 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -102,6 +104,8 @@ export interface SessionOptions {
   reply?: string;
   /** how long ago the last message was. drives both the timestamps and the file's mtime. */
   ageMs?: number;
+  /** what Claude Code appends when a prompt is sent: a Stopped row says what it was working on */
+  lastPrompt?: string;
 }
 
 /** a transcript shaped like the real thing: entries first, appended title record last */
@@ -155,6 +159,7 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
       },
     },
     ...(o.title ? [{ type: "ai-title", aiTitle: o.title, sessionId: o.sessionId }] : []),
+    ...(o.lastPrompt ? [{ type: "last-prompt", lastPrompt: o.lastPrompt }] : []),
   ];
   const dir = path.join(fx.projectsDir, claudeProjectSlug(o.cwd));
   mkdirSync(dir, { recursive: true });
@@ -351,6 +356,13 @@ export function makePlainDir(fx: Fixture, name: string): string {
 export interface ExecLine {
   bin: string;
   argv: string[];
+}
+
+/** what the app left for the editor's window, and nothing else */
+export function pendingIntents(fx: Fixture): Array<Record<string, unknown>> {
+  const dir = path.join(fx.root, ".grove", "pending");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).map((n) => JSON.parse(readFileSync(path.join(dir, n), "utf8")));
 }
 
 export function readExecLog(fx: Fixture): ExecLine[] {

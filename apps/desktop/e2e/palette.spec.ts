@@ -1,4 +1,3 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FAKE_SHORT_ID, fakeClaudeCalls, writeFakeClaude } from "./helpers/fakeClaude.ts";
@@ -6,6 +5,7 @@ import {
   type Fixture,
   makeFixture,
   makePlainDir,
+  pendingIntents,
   readExecLog,
   writeSession,
 } from "./helpers/fixture.ts";
@@ -104,13 +104,6 @@ const toast = (page: Page, text: string) => page.getByTestId("toast").filter({ h
 async function ask(page: Page, query: string): Promise<void> {
   if (!(await palette(page).isVisible())) await page.getByTestId("open-palette").click();
   await input(page).fill(query);
-}
-
-/** what the app left for the editor's window */
-function pendingIntents(): Array<Record<string, unknown>> {
-  const dir = path.join(fx.root, ".grove", "pending");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).map((n) => JSON.parse(readFileSync(path.join(dir, n), "utf8")));
 }
 
 test("opens empty on its first item, the keys and the mouse run an item, Escape hands the keyboard back", async () => {
@@ -216,7 +209,7 @@ test("a session outside every project is found, by its title or by what was said
   await waitFor(async () => code().length === 1);
   // its own folder, not a project's window
   expect(code()[0]?.argv[0]).toBe(scratch);
-  expect(pendingIntents()).toMatchObject([
+  expect(pendingIntents(fx)).toMatchObject([
     { kind: "resume", sessionId: SID.numbers, source: "app" },
   ]);
 });
