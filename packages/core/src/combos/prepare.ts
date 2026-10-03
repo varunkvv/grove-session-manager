@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { ensureWorktrees } from "../git/worktrees.ts";
 import { writeIntent } from "../intents.ts";
 import { getStateDir } from "../paths.ts";
+import { type RecordInstall, syncComboFiles } from "../project/recordSync.ts";
 import { syncComboStatusHooks } from "../sessions/liveStatus.ts";
 import { type Combo, err, type FolderOutcome, ok, type Result, type Warning } from "../types.ts";
 import { ensureRoot } from "./claudeMd.ts";
@@ -19,6 +20,8 @@ export interface PrepareOptions {
   gitPath?: string;
   source?: string;
   onOutcome?: (outcome: FolderOutcome) => void;
+  /** the app passes this when it may write the record's files. the extension never does */
+  record?: { install: RecordInstall; prefix: string };
 }
 
 export interface PrepareReport {
@@ -44,7 +47,7 @@ export async function prepareComboOpen(
 ): Promise<PrepareReport> {
   const warnings: Warning[] = [];
   const { created } = await ensureRoot(combo);
-  await syncLongWorkPolicy(combo);
+  if (!opts.record) await syncLongWorkPolicy(combo);
   const outcomes = await ensureWorktrees(combo, {
     gitPath: opts.gitPath,
     repairStale: opts.repairStale,
@@ -53,8 +56,13 @@ export async function prepareComboOpen(
   // synced before the intent is written, so a session the extension resumes already has access
   const sync = await syncAdditionalDirectories(combo, getStateDir(appRoot));
   if (sync.warning) warnings.push(sync.warning);
-  const hooks = await syncComboStatusHooks(appRoot, combo);
-  if (hooks.warning) warnings.push(hooks.warning);
+  if (opts.record) {
+    const files = await syncComboFiles(appRoot, combo, opts.record.prefix, opts.record.install);
+    warnings.push(...files.warnings);
+  } else {
+    const hooks = await syncComboStatusHooks(appRoot, combo);
+    if (hooks.warning) warnings.push(hooks.warning);
+  }
   const ws = await writeWorkspaceFile(combo);
   warnings.push(...ws.warnings);
 

@@ -14,6 +14,7 @@ export * from "./git/porcelain.ts";
 export * from "./git/worktrees.ts";
 export * from "./intents.ts";
 export * from "./paths.ts";
+export * from "./project/recordSync.ts";
 export * from "./pure.ts";
 export * from "./sessions/agents.ts";
 export * from "./sessions/agentTimeline.ts";

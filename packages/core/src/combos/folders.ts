@@ -25,4 +25,8 @@ export const COMBO_RESERVED_NAMES: ReadonlySet<string> = new Set([
   ".claude",
   ".git",
   ...COMBO_SHARED_DIRS,
+  // the project record and its server, written by agents and grove at the root
+  "cards",
+  "conclusions",
+  ".mcp.json",
 ]);

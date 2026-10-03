@@ -42,7 +42,7 @@ describe("combo root and CLAUDE.md", () => {
     expect(md).toContain("not a git repository");
   });
 
-  it("says what a worktree is, where plans and artifacts go, and how sessions leave word for each other", async () => {
+  it("says what a worktree is, where plans and artifacts go, and points sessions at the record", async () => {
     const md = renderClaudeMdStub(combo());
     // what this is
     expect(md).toContain("A working copy is a git worktree");
@@ -53,9 +53,11 @@ describe("combo root and CLAUDE.md", () => {
     expect(md).toContain("`plans/`");
     expect(md).toContain("`artifacts/`");
     expect(md).toContain("Nothing below belongs inside a working copy");
-    // forks and background agents do not share a conversation
+    // forks and background agents do not share a conversation. the record is what they share
     expect(md).toContain("forks of this conversation");
-    expect(md).toContain("`context/in-progress.md`");
+    expect(md).toContain("`.claude/rules/grove-record.md`");
+    expect(md).toContain("`record_state`");
+    expect(md).not.toContain("in-progress.md");
     // it is loaded into every session in the combo, so it has to stay small
     expect(md.length).toBeLessThan(3200);
   });
@@ -72,7 +74,11 @@ describe("combo root and CLAUDE.md", () => {
     );
     // it starts without the conversation, so it is sent to where the context was written down
     expect(agent).toContain("read the plan file you were given, then `context/`");
-    expect(agent).toContain("`context/in-progress.md`");
+    // it works under its parent's card and writes to the record, never claiming or finishing itself
+    expect(agent).toContain("`record_state`");
+    expect(agent).toContain("do not claim, release or finish a card yourself");
+    expect(agent).toContain('`conclusion_record` and pass `as: "long-task"`');
+    expect(agent).not.toContain("in-progress.md");
     expect(agent).toContain("do not stop to ask");
     // the agent never volunteers itself: whether long work goes to it is the policy file's call
     expect(agent).toContain("Use it only when .claude/long-work.md says");

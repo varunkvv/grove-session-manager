@@ -110,6 +110,13 @@ describe("folders", () => {
     ).toEqual([]);
   });
 
+  it("a repo named like a record folder or the server file needs another folder name", () => {
+    for (const name of ["cards", "conclusions", ".mcp.json", "Cards"]) {
+      const c = combo("c", [{ path: `/Users/you/src/${name}`, mode: "worktree" }]);
+      expect(validateFolders(c).join(" "), name).toContain("another folder name");
+    }
+  });
+
   it("the same path twice is reported, references may share a basename", () => {
     const dup = combo("c", [
       { path: "/a/api", mode: "reference" },
