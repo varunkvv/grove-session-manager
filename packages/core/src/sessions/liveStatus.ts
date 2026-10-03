@@ -8,6 +8,8 @@ import { squash } from "../transcript/title.ts";
 import type { AgentRun, Combo, Disposable, LiveState, LiveStatus, Warning } from "../types.ts";
 import { toolTarget } from "./timeline.ts";
 
+export { needsYou } from "./needsYou.ts";
+
 /**
  * which sessions need a person right now. a transcript cannot say it: "running a tool" and
  * "waiting on a permission prompt" look the same on disk. Claude Code hooks can, so each session
@@ -145,6 +147,8 @@ export interface HookWatchOptions {
   /** every re-sync that completed. the app logs it; the tests count it. */
   onSync?: (status: HookSyncStatus) => void;
   onError?: (error: unknown) => void;
+  /** run in place of the status-hook sync, so a combo's other settings come back too */
+  resync?: () => Promise<{ status: HookSyncStatus }>;
 }
 
 /**
@@ -176,7 +180,7 @@ export function watchStatusHooks(
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        void syncStatusHooks(settingsFile, eventsDir, true)
+        void (opts.resync?.() ?? syncStatusHooks(settingsFile, eventsDir, true))
           .then((r) => opts.onSync?.(r.status))
           .catch((e) => opts.onError?.(e));
       }, delay);
@@ -215,6 +219,8 @@ export interface StatusEvent {
   /** set when a subagent raised the event, not the session itself */
   agentId?: string;
   agentType?: string;
+  /** background subagents still running. read on Stop: a turn that handed work to one has not ended */
+  backgroundAgents?: number;
 }
 
 /**
@@ -287,13 +293,15 @@ export function parseStatusEvent(payload: unknown, at: number): StatusEvent | nu
   }
   if (agentId) ev.agentId = agentId;
   if (agentType) ev.agentType = agentType;
+  // shells left running (a dev server) do not count: that turn is over. a payload cut at 16KB has
+  // lost this field, it comes after last_assistant_message
+  const background = Array.isArray(payload.background_tasks)
+    ? payload.background_tasks.filter(
+        (t) => isObject(t) && t.type === "subagent" && t.status === "running",
+      ).length
+    : 0;
+  if (background) ev.backgroundAgents = background;
   return ev;
-}
-
-const NEEDS_YOU: ReadonlySet<LiveState> = new Set(["permission", "waiting", "failed"]);
-
-export function needsYou(s: LiveStatus | undefined): boolean {
-  return !!s && NEEDS_YOU.has(s.state) && !s.seen;
 }
 
 function next(
@@ -349,6 +357,9 @@ export function reduceStatus(
       return touched;
     case "Stop": {
       if (ev.agentId) return touched;
+      // it is still working through a background subagent. its finish starts a new turn and Stop
+      if (ev.backgroundAgents)
+        return touched ? { ...touched, state: "running" } : next(undefined, ev, "running");
       const turnMs = prev?.turnStart !== undefined ? ev.at - prev.turnStart : undefined;
       return next(undefined, ev, "waiting", {
         ...(turnMs !== undefined ? { turnMs } : {}),

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { isObject } from "../fsx.ts";
 import { expandHome } from "../paths.ts";
+import { PREFIX_RE, RESERVED_PREFIXES } from "../project/ids.ts";
 import { comboDirSlug } from "../slug.ts";
 import type { BranchSpec, Combo, ComboFolder } from "../types.ts";
 
@@ -104,6 +105,10 @@ export function normalizeCombosFile(
     if (item.longWork === "background" || item.longWork === "foreground")
       combo.longWork = item.longWork;
     else delete combo.longWork;
+    // a bad prefix is dropped, not fixed here. load never writes, the app assigns one after it
+    const prefix = typeof item.prefix === "string" ? item.prefix.toUpperCase() : "";
+    if (PREFIX_RE.test(prefix) && !RESERVED_PREFIXES.has(prefix)) combo.prefix = prefix;
+    else delete combo.prefix;
     combos.push(combo);
   }
   return { combos, problems, rejected };

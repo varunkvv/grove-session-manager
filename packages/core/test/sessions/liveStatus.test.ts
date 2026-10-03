@@ -197,6 +197,55 @@ describe("session status from hook events", () => {
     expect(needsYou({ state: "running", at: 1, lastEventAt: 1 })).toBe(false);
   });
 
+  it("a turn that hands work to a background subagent is still running. a background shell is not", () => {
+    // the shape of a real Stop payload (claude code 2.1.286)
+    const stop = (at: number, tasks: unknown[]) =>
+      parseStatusEvent(
+        {
+          session_id: SID,
+          hook_event_name: "Stop",
+          last_assistant_message: "launched",
+          background_tasks: tasks,
+        },
+        at,
+      ) as StatusEvent;
+    const subagent = { id: "a92", type: "subagent", status: "running", agent_type: "general" };
+    const shell = { id: "b1", type: "shell", status: "running", command: "sleep 90" };
+    const prompt = { sessionId: SID, event: "UserPromptSubmit", at: 1_000 };
+    const started = reduceStatus(undefined, prompt);
+
+    expect(stop(5_000, [subagent, shell]).backgroundAgents).toBe(1);
+    const kept = reduceStatus(started, stop(5_000, [subagent]));
+    expect(kept).toMatchObject({ state: "running", turnStart: 1_000, lastEventAt: 5_000 });
+    expect(needsYou(kept)).toBe(false);
+    expect(reduceStatus(undefined, stop(5_000, [subagent]))?.state).toBe("running");
+
+    expect(stop(5_000, [shell, { ...subagent, status: "completed" }]).backgroundAgents).toBe(
+      undefined,
+    );
+    expect(reduceStatus(started, stop(5_000, [shell]))?.state).toBe("waiting");
+
+    // the subagent's finish wakes the session: a new turn, then the Stop that is your turn
+    const woken = reduceStatus(kept, { sessionId: SID, event: "UserPromptSubmit", at: 9_000 });
+    expect(reduceStatus(woken, stop(10_000, []))).toMatchObject({
+      state: "waiting",
+      turnMs: 1_000,
+    });
+  });
+
+  it("a Stop cut at 16KB has lost its background tasks, and ends the turn as it always did", () => {
+    const text = JSON.stringify({
+      session_id: SID,
+      hook_event_name: "Stop",
+      last_assistant_message: "x".repeat(EVENT_MAX_BYTES),
+      background_tasks: [{ type: "subagent", status: "running" }],
+    }).slice(0, EVENT_MAX_BYTES);
+    const ev = parseStatusEvent(parseTruncatedEvent(text), 5_000);
+    expect(ev).toEqual({ sessionId: SID, event: "Stop", at: 5_000 });
+    const started = reduceStatus(undefined, { sessionId: SID, event: "UserPromptSubmit", at: 1 });
+    expect(reduceStatus(started, ev as StatusEvent)?.state).toBe("waiting");
+  });
+
   it("our hooks go in next to someone's own, and come out without touching them", () => {
     const theirs = { Stop: [{ matcher: "", hooks: [{ type: "command", command: "say done" }] }] };
     const added = withStatusHooks(theirs, "echo x # grove-status");
@@ -278,6 +327,36 @@ describe("session status from hook events", () => {
       expect(statSync(file).ino).toBe(settled);
       expect(seen.filter((s) => s === "written")).toEqual(["written"]);
       expect(seen.at(-1)).toBe("unchanged");
+    } finally {
+      watcher?.dispose();
+    }
+  });
+
+  it("the watcher runs the resync it was given, in place of the status-hook sync", async () => {
+    const dir = path.join(makeSandbox("grove-hooks-"), ".claude");
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "settings.local.json");
+    writeFileSync(file, "{}");
+    const seen: string[] = [];
+    let calls = 0;
+    const watcher = watchStatusHooks(file, path.join(dir, "events"), {
+      debounceMs: 30,
+      resync: async () => {
+        calls++;
+        return { status: "unchanged" };
+      },
+      onSync: (status) => seen.push(status),
+    });
+    try {
+      // the watch starts on another thread. touch until a change comes through (see above)
+      for (let i = 0; i < 50 && calls === 0; i++) {
+        writeFileSync(file, "{}");
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      expect(calls).toBeGreaterThan(0);
+      expect(seen.every((s) => s === "unchanged")).toBe(true);
+      // syncStatusHooks would have put the hooks in
+      expect(readFileSync(file, "utf8")).toBe("{}");
     } finally {
       watcher?.dispose();
     }

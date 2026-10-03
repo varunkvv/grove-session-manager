@@ -1,7 +1,10 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { workspaceFolders } from "../../src/combos/folders.ts";
 import { normalizeCombosFile, targetDirFor } from "../../src/combos/schema.ts";
+import { combosFilePath, loadCombos } from "../../src/combos/store.ts";
+import { makeSandbox } from "../helpers/transcript.ts";
 
 const APP = "/Users/you/claude-ws";
 
@@ -97,6 +100,23 @@ describe("combo model", () => {
     for (const junk of [null, 3, "x", [], {}, { combos: "no" }]) {
       expect(normalizeCombosFile(junk, APP).combos).toEqual([]);
     }
+  });
+
+  it("a card prefix is kept upper-cased, a bad one is dropped, and loading never writes", async () => {
+    const app = makeSandbox("grove-schema-");
+    const prefixes = ["auth", "BILL2", "D", "9x", "ABCDEFGHI", "a-b", 42, ""];
+    const text = JSON.stringify({
+      combos: prefixes.map((prefix, n) => ({ name: `c${n}`, prefix, folders: [] })),
+    });
+    writeFileSync(combosFilePath(app), text);
+    const { combos } = await loadCombos(app);
+    expect(combos.map((c) => c.prefix)).toEqual([
+      "AUTH",
+      "BILL2",
+      ...prefixes.slice(2).map(() => undefined),
+    ]);
+    expect(combos.every((c, n) => n < 2 || !("prefix" in c))).toBe(true);
+    expect(readFileSync(combosFilePath(app), "utf8")).toBe(text);
   });
 });
 
