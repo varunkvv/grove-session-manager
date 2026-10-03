@@ -237,6 +237,11 @@ export class LiveService {
     return this.holders.get(sessionId);
   }
 
+  /** its process was up at the last registry read. `holder` can name one that is gone */
+  isAlive(sessionId: string): boolean {
+    return this.alive.has(sessionId);
+  }
+
   /**
    * what `claude agents --json` said, by session id. only a real answer comes here - an unknown
    * one changes nothing. see applyBackground for who wins.
