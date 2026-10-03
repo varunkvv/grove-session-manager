@@ -424,7 +424,13 @@ export class ComboService {
       folders: draft.folders,
     };
     problems.push(...validateFolders(combo));
-    problems.push(...validateComboRoot(combo, this.combos, this.opts.appRoot).problems);
+    problems.push(
+      ...validateComboRoot(
+        combo,
+        this.combos.filter((c) => c !== existing),
+        this.opts.appRoot,
+      ).problems,
+    );
     // a prefix never changes once a project has cards, so only a new project's is looked at
     const prefixProblem = !existing && draft.prefix && validatePrefix(draft.prefix, this.combos);
     if (prefixProblem) problems.push(prefixProblem);

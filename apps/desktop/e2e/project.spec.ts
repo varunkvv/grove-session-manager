@@ -274,7 +274,7 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
 // main refuses every rename today: `problemsWithDraft` hands `validateComboRoot` the project's own
 // entry under its old name, so the draft "overlaps" with itself (main/services/combos.ts). the
 // form shows that as a problem. passes once main leaves the project out of `others`
-test.fixme("a rename keeps the folder, the id and the prefix", async () => {
+test("a rename keeps the folder, the id and the prefix", async () => {
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
     name: "auth-sso",
