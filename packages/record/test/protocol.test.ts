@@ -290,3 +290,81 @@ test("the CLI help and doctor run", () => {
     /^FAIL root: .* has no \.claude\/grove-project\.json\. open Grove once$/m,
   );
 });
+
+test("two sessions over MCP: one records with its source, a fresh one reads it in full", async () => {
+  const root = makeProject(path.join(base, "two sessions"));
+  const claude = path.join(base, "two sessions claude");
+  const dir = path.join(claude, "projects", "-tmp-two-sessions");
+  fs.mkdirSync(dir, { recursive: true });
+  const prompt =
+    "here is the thread, decide how long a checkout session lives.\n> priya: the token expires after 20 minutes\n> marco (infra): no cost difference under an hour";
+  const args = {
+    kind: "decision",
+    what: "A checkout session lives 20 minutes.",
+    why: "The processor's token expires after 20 minutes.",
+    by: "person",
+    sources: [
+      { ref: "https://acme.slack.com/archives/C04PAY/p17", note: "priya: 20 is the ceiling" },
+    ],
+  };
+  // what claude code has written by the time it runs the tool: the prompt, then the call
+  const lines = [
+    { type: "user", isSidechain: false, message: { role: "user", content: prompt } },
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: {
+        role: "assistant",
+        id: "msg_1",
+        content: [
+          { type: "text", text: "The thread settles it: 20 minutes." },
+          { type: "tool_use", id: "toolu_rec", name: "mcp__grove__conclusion_record", input: args },
+        ],
+      },
+    },
+  ];
+  const file = path.join(dir, "sess-one.jsonl");
+  fs.writeFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
+  const as = (session: string) =>
+    server(
+      root,
+      cleanEnv({
+        CLAUDE_CONFIG_DIR: claude,
+        GROVE_RECORD_SESSION: session,
+        GROVE_RECORD_PID: String(process.pid),
+        GROVE_RECORD_REGISTRY: "/nonexistent",
+      }),
+    );
+
+  const one = as("sess-one");
+  await one.init();
+  const rec = await one.call("conclusion_record", args, "toolu_rec");
+  assert.equal(rec.isError, false, rec.text);
+  assert.equal((await one.close()).code, 0);
+
+  // a new process with nothing of the first one's conversation
+  const two = as("sess-two");
+  await two.init();
+  const state = await two.call("record_state");
+  assert.match(
+    state.text,
+    /\nD-1 decision \(the person's\) \[1 source\] \| A checkout session lives 20 minutes\./,
+  );
+  const hit = await two.call("conclusion_search", { query: "checkout" });
+  assert.match(
+    hit.text,
+    /\n {2}source: https:\/\/acme\.slack\.com\/archives\/C04PAY\/p17 - priya: 20 is the ceiling\n {2}the person said: here is the thread, decide how long/,
+  );
+  const full = await two.call("conclusion_search", { query: "D-1" });
+  assert.equal(full.isError, false);
+  assert.match(
+    full.text,
+    /\n {4}the person: here is the thread, decide how long a checkout session lives\.\n {6}> priya: the token expires after 20 minutes\n {6}> marco \(infra\): no cost difference under an hour\n/,
+  );
+  assert.match(
+    full.text,
+    /\n {4}sess-one, before recording it: The thread settles it: 20 minutes\.\n/,
+  );
+  assert.ok(full.text.endsWith(`\n  transcript: ${file} (the call is toolu_rec)`), full.text);
+  assert.equal((await two.close()).code, 0);
+});
