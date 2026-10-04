@@ -116,7 +116,7 @@ A conclusion also carries where it came from, for the agent that picks the work 
   from the project root. Grove stores the reference, never the content, so agents are told to put the part that
   mattered into `why` and to save a digest for anything bigger: a later session may not have Slack or Figma connected,
   and threads get edited
-- `said`: the last thing you typed in that session before it was recorded, cut to 600 characters. The record looks it
+- `said`: the last thing you typed in that session before it was recorded, cut to 2,000 characters. The record looks it
   up in the session's transcript when the conclusion is written, because Claude Code deletes transcripts after about
   30 days and one agent cannot read another's. Something typed while the agent was working counts, and so does a
   slash command with its arguments. Tool results, hook output and other agents' messages do not

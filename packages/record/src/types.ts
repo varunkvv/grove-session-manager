@@ -129,7 +129,7 @@ export interface Conclusion extends Author {
   area?: string;
   /** what it was based on. empty for a conclusion written before sources existed. */
   sources: Source[];
-  /** the last thing the person typed in the session before it was recorded, cut to 600 characters. */
+  /** the last thing the person typed in the session before it was recorded, cut to 2,000 characters. */
   said?: string;
   file: string;
   problems: string[];

@@ -754,7 +754,7 @@ function asSession(
 test("conclusion_record keeps what the person said, and a transcript it cannot read costs nothing", () => {
   const root = makeProject(path.join(base, "said record"));
   const claude = path.join(base, "said record claude");
-  const long = `use redis.\n\nthe thread:\u001b[31m ${"ops said a cookie cannot be revoked. ".repeat(40)}`;
+  const long = `use redis.\n\nthe thread:\u001b[31m ${"ops said a cookie cannot be revoked. ".repeat(80)}`;
   transcript(claude, "sess-1", [typedLine(long), says(calls("toolu_rec"))]);
   const rec = (session: string) =>
     asSession(root, claude, session, "conclusion_record", {
@@ -764,7 +764,7 @@ test("conclusion_record keeps what the person said, and a transcript it cannot r
     });
   assert.ok(rec("sess-1").ok);
   const d1 = readConclusions(root).find((c) => c.id === "D-1")!;
-  assert.equal(Array.from(d1.said!).length, 600);
+  assert.equal(Array.from(d1.said!).length, 2000);
   assert.ok(d1.said!.startsWith("use redis.\n\nthe thread: [31m ops said"), d1.said!.slice(0, 40));
   assert.ok(d1.said!.endsWith("…"));
   assert.deepEqual(d1.problems, []);

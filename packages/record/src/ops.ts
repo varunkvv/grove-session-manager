@@ -560,8 +560,12 @@ export interface ConclusionArgs {
   sources?: Source[];
 }
 
-/** how much of what the person typed is kept on a conclusion. */
-const SAID_MAX = 600;
+/**
+ * how much of what the person typed is kept on a conclusion. once the transcript is gone this is
+ * all a later agent has, and a pasted thread runs past 600: the first live run lost the line the
+ * decision turned on.
+ */
+const SAID_MAX = 2000;
 
 function transcriptOf(ctx: Ctx, session: string): string | null {
   return transcriptFile(path.join(claudeDir(ctx.env), "projects"), session);
