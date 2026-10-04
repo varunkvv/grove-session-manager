@@ -406,9 +406,12 @@ a card with an agent, **Start an agent in VS Code** for one nobody holds.
 
 **Conclusions** is every decision, finding and verdict in the project, newest first, with a search over what, why,
 card, agent and area (`you` finds your own) and a filter by kind. A row opens in place to who settled it ("Decided by
-session store without asking", "Decided by you in idp config's chat"), what it replaces and what it relates to. A
-superseded one stays in the list, struck through, with a link to what replaced it. Marking one reviewed here and in
-the inbox is the same mark.
+session store without asking", "Decided by you in idp config's chat"), what it replaces and what it relates to. Under
+that are its sources, each with its note (a web link opens in the browser, a file in the project is shown in Finder),
+and the conversation it was recorded in: your message and what the agent wrote before recording it. The app gets that
+turn from the same reader `conclusion_search` answers an agent with, when the row opens. Once Claude Code has deleted
+the transcript, the row shows what you said, which the record kept. A superseded one stays in the list, struck
+through, with a link to what replaced it. Marking one reviewed here and in the inbox is the same mark.
 
 **New project** and **Edit project** are one form: name, goal, repos. Edit project also shows drift per repo and, when
 the record's check failed, why.

@@ -20,7 +20,7 @@ import type {
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
-import type { CardStatus, ConclusionKind } from "@grove/record/types";
+import type { CardStatus, ConclusionKind, Source, Turn } from "@grove/record/types";
 
 export type { ProjectId };
 
@@ -236,6 +236,10 @@ export interface ConclusionView {
   related: string[];
   changesPlan: boolean;
   area?: string;
+  /** what it was based on: urls, and files as paths from the project root. an agent wrote them */
+  sources: Source[];
+  /** the last thing the person typed in that session before it was recorded */
+  said?: string;
   at: number;
   /** it would enter the inbox: by an agent, a decision or verdict, or a finding that changes the plan */
   needsReview: boolean;
@@ -463,6 +467,11 @@ export interface Api {
 
   /** a card with its thread. null for an unknown project or card */
   card(project: ProjectId, cardId: string): Promise<CardView | null>;
+  /**
+   * the turn a conclusion was recorded in: the person's message and the agent's words before the
+   * call. read from the session's transcript now. null when the transcript or the call is gone
+   */
+  conclusionTurn(project: ProjectId, conclusionId: string): Promise<Turn | null>;
   /** marks, a seen session, or an open question answered as the person. at most 2,000 keys */
   review(project: ProjectId, keys: string[], reviewed: boolean): Promise<Outcome>;
 
@@ -520,6 +529,7 @@ export const INVOKE_CHANNELS = [
   "bootstrap",
   "refresh",
   "card",
+  "conclusionTurn",
   "review",
   "openSession",
   "startAgent",

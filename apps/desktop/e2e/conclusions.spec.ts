@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import { claudeProjectSlug } from "@grove/core";
 import { expect, type Page, test } from "@playwright/test";
 import { type Fixture, makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
 import { api, type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
@@ -366,4 +367,94 @@ test("a card chip opens the card and Back returns to the same search and open ro
     "No conclusions yet. Agents record decisions, findings and verdicts as they work, yours included.",
   );
   await expect(search(page)).toHaveCount(0);
+});
+
+test("an open row says where it came from: its sources, and the turn it was recorded in", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const { root } = writeProject(fx, { name: "auth-sso", prefix: "AUTH", goal: "SSO" });
+  asPerson(root)("card_create", { title: "Session store" });
+  const thread = "here is the thread:\nops: a cookie cannot be revoked\nso, redis?";
+  const session = (sessionId: string, name: string, prompt: string, toolUseId?: string) => {
+    writeSession(fx, {
+      cwd: root,
+      sessionId,
+      title: name,
+      prompt,
+      reply: "The thread settles it: redis.",
+      toolUseId,
+    });
+    return asAgent(fx, root, { sessionId, name });
+  };
+  session(
+    SID.store,
+    "session store",
+    thread,
+    "toolu_e2e_record",
+  )(
+    "conclusion_record",
+    {
+      kind: "decision",
+      what: "Sessions move to redis, on the server.",
+      why: "A cookie cannot be revoked.",
+      by: "person",
+      card: "AUTH-1",
+      sources: [
+        { ref: "https://acme.slack.com/archives/C01/p17", note: "ops: a cookie cannot be revoked" },
+        { ref: "artifacts/thread-digest.md" },
+      ],
+    },
+    "toolu_e2e_record",
+  );
+  tick();
+  // recorded through the CLI: no call to find, so what the person said is what the record kept
+  session(
+    SID.idp,
+    "idp config",
+    "which tenant does staging use?",
+  )("conclusion_record", {
+    kind: "finding",
+    what: "Staging has no okta tenant.",
+    by: "agent",
+  });
+
+  app = await launchApp(fx);
+  const page = app.page;
+  await page.getByTestId("nav-conclusions").click();
+  await expect(rows(page)).toHaveCount(2, { timeout: 15_000 });
+  const detail = page.getByTestId("conclusion-detail");
+
+  await row(page, "D-1").click();
+  const sources = detail.getByTestId("source");
+  await expect(sources).toHaveCount(2);
+  // a link reads as its host and path and a file as its name. the whole ref is the hint
+  await expect(sources.nth(0).getByTestId("file-chip")).toHaveText(
+    "acme.slack.com/archives/C01/p17",
+  );
+  await expect(sources.nth(0).getByTestId("file-chip")).toHaveAttribute(
+    "title",
+    "https://acme.slack.com/archives/C01/p17",
+  );
+  await expect(sources.nth(0)).toContainText("ops: a cookie cannot be revoked");
+  await expect(sources.nth(1).getByTestId("file-chip")).toHaveText("thread-digest.md");
+  await expect(sources.nth(1).getByTestId("file-chip")).toHaveAttribute(
+    "title",
+    "artifacts/thread-digest.md",
+  );
+  // the turn, from the transcript: the person's message with its lines, and the agent's words before the call
+  await expect(detail.getByTestId("turn-you")).toHaveText(thread, { useInnerText: true });
+  await expect(detail.getByTestId("turn-agent")).toHaveText("The thread settles it: redis.");
+  await expect(detail.getByTestId("conclusion-turn")).toContainText("session store");
+
+  await row(page, "F-1").click();
+  await expect(detail.getByTestId("conclusion-sources")).toHaveCount(0);
+  await expect(detail.getByTestId("turn-you")).toHaveText("which tenant does staging use?");
+  await expect(detail.getByTestId("turn-agent")).toHaveCount(0);
+
+  // claude code deleted the transcript: the row still says what the person said
+  const file = path.join(fx.projectsDir, claudeProjectSlug(root), `${SID.store}.jsonl`);
+  rmSync(file);
+  await row(page, "D-1").click();
+  await expect(detail.getByTestId("turn-you")).toHaveText(thread, { useInnerText: true });
+  await expect(detail.getByTestId("turn-agent")).toHaveCount(0);
+  await expect(detail.getByTestId("source")).toHaveCount(2);
 });

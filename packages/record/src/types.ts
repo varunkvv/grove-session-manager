@@ -139,6 +139,14 @@ export interface Conclusion extends Author {
   superseded: boolean;
 }
 
+/** the turn a conclusion was recorded in, read from the session's transcript when someone asks. */
+export interface Turn {
+  /** what the person typed before the call. absent when it is further back than the reader looks. */
+  prompt?: string;
+  /** what the agent wrote in that turn before the call, the part nearest the call. */
+  text?: string;
+}
+
 export interface IndexLine {
   id: string;
   kind: ConclusionKind;

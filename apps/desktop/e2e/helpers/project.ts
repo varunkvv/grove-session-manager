@@ -43,7 +43,7 @@ export function asAgent(
   fx: Fixture,
   root: string,
   o: { sessionId: string; name: string },
-): (tool: string, args: object) => OpResult {
+): (tool: string, args: object, toolUseId?: string) => OpResult {
   const env = {
     GROVE_RECORD_TEST: "1",
     GROVE_RECORD_SESSION: o.sessionId,
@@ -51,7 +51,8 @@ export function asAgent(
     GROVE_RECORD_PID: String(process.pid),
     CLAUDE_CONFIG_DIR: fx.claudeDir,
   };
-  return (tool, args) => must(runTool(tool, args, { root, env }));
+  // the id of the call that writes, the way the MCP server gets it from claude code
+  return (tool, args, toolUseId) => must(runTool(tool, args, { root, env, toolUseId }));
 }
 
 export function asPerson(root: string): (tool: string, args: object) => OpResult {

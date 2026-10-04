@@ -7,6 +7,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cut } from "./format.ts";
+import type { Turn } from "./types.ts";
+
+export type { Turn } from "./types.ts";
 
 /**
  * how far back from a call the person's message is looked for. measured on 303 real transcripts:
@@ -160,13 +163,6 @@ function find(fd: number, size: number, needle: Buffer, from = 0): number {
     if (i >= 0) return at + i;
   }
   return -1;
-}
-
-export interface Turn {
-  /** what the person typed before the call. absent when it is further back than this reads. */
-  prompt?: string;
-  /** what the agent wrote in that turn before the call, the part nearest the call. */
-  text?: string;
 }
 
 /**

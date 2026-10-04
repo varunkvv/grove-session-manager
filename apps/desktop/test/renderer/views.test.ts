@@ -16,6 +16,7 @@ import {
   projectRows,
   prUrl,
   revealConclusion,
+  sourceArtifact,
   startBlocked,
   stateLine,
   threadItems,
@@ -104,6 +105,7 @@ function conclusion(id: string, partial: Partial<ConclusionView>): ConclusionVie
     superseded: false,
     related: [],
     changesPlan: false,
+    sources: [],
     at: NOW,
     needsReview: true,
     reviewed: false,
@@ -480,6 +482,18 @@ describe("links and artifacts", () => {
     expect(prUrl("https://evil.example/owner/repo/pull/12")).toBeNull();
     expect(prUrl("#12")).toBeNull();
     expect(prUrl("owner/repo")).toBeNull();
+  });
+  it("a conclusion's source opens like the artifact it is", () => {
+    const type = (ref: string) => sourceArtifact({ ref }, 5).type;
+    expect(
+      sourceArtifact({ ref: "https://acme.slack.com/archives/C01/p17", note: "n" }, 5),
+    ).toEqual({ type: "link", ref: "https://acme.slack.com/archives/C01/p17", at: 5 });
+    expect(type("https://github.com/owner/repo/pull/12")).toBe("pr");
+    expect(type("artifacts/thread-digest.md")).toBe("file");
+    // only a web url leaves the app. anything else is a path, shown in Finder when it is inside the project
+    expect(type("notes/thread#12")).toBe("file");
+    expect(type("javascript:alert(1)")).toBe("file");
+    expect(type("file:///etc/passwd")).toBe("file");
   });
 });
 

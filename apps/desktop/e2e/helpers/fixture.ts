@@ -106,6 +106,8 @@ export interface SessionOptions {
   ageMs?: number;
   /** what Claude Code appends when a prompt is sent: a Stopped row says what it was working on */
   lastPrompt?: string;
+  /** a tool call at the end of the reply: the id a record written by that call carries */
+  toolUseId?: string;
 }
 
 /** a transcript shaped like the real thing: entries first, appended title record last */
@@ -149,7 +151,19 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
         role: "assistant",
         id: `msg_${o.sessionId.slice(0, 8)}`,
         model: "claude-opus-5",
-        content: [{ type: "text", text: o.reply ?? "sure" }],
+        content: [
+          { type: "text", text: o.reply ?? "sure" },
+          ...(o.toolUseId
+            ? [
+                {
+                  type: "tool_use",
+                  id: o.toolUseId,
+                  name: "mcp__grove__conclusion_record",
+                  input: {},
+                },
+              ]
+            : []),
+        ],
         usage: {
           input_tokens: 3,
           output_tokens: 1_200,

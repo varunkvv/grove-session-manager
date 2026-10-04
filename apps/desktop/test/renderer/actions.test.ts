@@ -58,6 +58,7 @@ const conclusion = (id: string, what: string): ConclusionView => ({
   superseded: false,
   related: [],
   changesPlan: false,
+  sources: [],
   at: 0,
   needsReview: true,
   reviewed: false,

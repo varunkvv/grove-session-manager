@@ -1,8 +1,14 @@
 import { oneLine } from "@grove/core/pure";
-import { useEffect, useMemo, useRef } from "react";
+import type { Turn } from "@grove/record/types";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ConclusionView } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
-import { type ConclusionControls, decidedLine, filterConclusions } from "../logic/views.ts";
+import {
+  type ConclusionControls,
+  decidedLine,
+  filterConclusions,
+  sourceArtifact,
+} from "../logic/views.ts";
 import { whoView } from "../logic/who.ts";
 import { openConclusion, openWith, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
@@ -13,6 +19,7 @@ import {
   ConclusionChip,
   cx,
   Dot,
+  FileChip,
   Icon,
   inputClass,
   KindLabel,
@@ -33,12 +40,34 @@ function setControls(patch: Partial<ConclusionControls>): void {
 /** exactly the conclusions that have an inbox row: the same mark clears both */
 const notReviewed = (c: ConclusionView) => c.needsReview && !c.reviewed;
 
-/** what opens with a row: who settled it and how, what it replaces, and the two actions */
+const LABEL = "mb-1 text-sm font-medium text-fg-4";
+/** a pasted thread keeps its lines, and a long one stops after six */
+const SPOKEN = "line-clamp-6 min-w-0 flex-1 whitespace-pre-line text-sm text-fg-2";
+
+/**
+ * what opens with a row: who settled it and how, what it replaces, where it came from, and the two
+ * actions. the conversation is the turn it was recorded in, read by the record from the session's
+ * transcript when the row opens. once claude code has deleted that, what the person said is what
+ * the record kept
+ */
 function ConclusionDetail({ c }: { c: ConclusionView }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
   const project = useStore((s) => s.project);
   const canOpen = c.sessionKey && c.open;
   const dot = notReviewed(c);
+  const [turn, setTurn] = useState<Turn | null>(null);
+  useEffect(() => {
+    if (!project) return;
+    let open = true;
+    void window.grove.conclusionTurn(project, c.id).then(
+      (t) => open && setTurn(t),
+      () => {},
+    );
+    return () => {
+      open = false;
+    };
+  }, [project, c.id]);
+  const you = turn?.prompt ?? c.said;
   return (
     <div className="space-y-2.5 pr-3 pb-3 pl-12" data-testid="conclusion-detail">
       <p className="text-sm text-fg-3">{decidedLine(c)}</p>
@@ -59,6 +88,42 @@ function ConclusionDetail({ c }: { c: ConclusionView }) {
             </span>
           )}
         </p>
+      )}
+      {c.sources.length > 0 && project && (
+        <div data-testid="conclusion-sources">
+          <p className={LABEL}>Sources</p>
+          <ul className="space-y-1">
+            {c.sources.map((s) => (
+              <li key={s.ref} className="flex items-center gap-2" data-testid="source">
+                <FileChip artifact={sourceArtifact(s, c.at)} project={project} />
+                {s.note && <span className="min-w-0 truncate text-sm text-fg-3">{s.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(you || turn?.text) && (
+        <div data-testid="conclusion-turn">
+          <p className={LABEL}>Conversation</p>
+          {you && (
+            <p className="flex gap-2">
+              <span className="w-[76px] shrink-0 truncate text-sm text-fg-4">You</span>
+              <span className={SPOKEN} data-testid="turn-you">
+                {you}
+              </span>
+            </p>
+          )}
+          {turn?.text && (
+            <p className="mt-1 flex gap-2">
+              <span className="w-[76px] shrink-0 truncate text-sm text-fg-4">
+                {c.who?.name ?? "The agent"}
+              </span>
+              <span className={SPOKEN} data-testid="turn-agent">
+                {turn.text}
+              </span>
+            </p>
+          )}
+        </div>
       )}
       {(canOpen || dot) && (
         <div className="flex gap-1.5">

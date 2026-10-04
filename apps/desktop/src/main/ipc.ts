@@ -15,7 +15,7 @@ import {
   saveSettings,
   validatePrefix,
 } from "@grove/core";
-import { CARD_ID, readProject } from "@grove/record";
+import { CARD_ID, CONCLUSION_ID, readProject, transcriptFile, turnAround } from "@grove/record";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
 import type {
@@ -255,6 +255,18 @@ function buildHandlers(deps: Deps): Handlers {
       const id = typeof cardId === "string" ? cardId.toUpperCase() : "";
       if (typeof project !== "string" || !CARD_ID.test(id)) return null;
       return projects.card(project, id);
+    },
+
+    async conclusionTurn(project, conclusionId) {
+      const id = typeof conclusionId === "string" ? conclusionId.toUpperCase() : "";
+      if (typeof project !== "string" || !CONCLUSION_ID.test(id)) return null;
+      const c = deps.record.snapshot(project)?.conclusions.find((x) => x.id === id);
+      if (!c?.toolUseId) return null;
+      // the record's own reader, the one conclusion_search answers an agent with. it reads a
+      // bounded part of the file and gives null for anything it cannot read
+      const file = transcriptFile(deps.projectsDir, c.session);
+      const turn = file ? turnAround(file, c.toolUseId) : null;
+      return turn?.prompt || turn?.text ? turn : null;
     },
 
     async review(project, keys, reviewed) {

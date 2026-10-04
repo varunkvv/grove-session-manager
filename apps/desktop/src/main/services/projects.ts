@@ -782,6 +782,8 @@ export class ProjectsService {
       related: c.related,
       changesPlan: c.changesPlan,
       area: c.area,
+      sources: c.sources,
+      said: c.said,
       at: ms(c.at),
       needsReview: c.by === "agent" && !c.superseded && (c.kind !== "finding" || c.changesPlan),
       reviewed: marks.has(`conclusion:${c.id}`),

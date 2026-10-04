@@ -6,7 +6,7 @@ import {
   formatRelativeTime,
   tokenize,
 } from "@grove/core/pure";
-import type { ConclusionKind } from "@grove/record/types";
+import type { ConclusionKind, Source } from "@grove/record/types";
 import type {
   ArtifactView,
   CardHead,
@@ -18,6 +18,7 @@ import type {
   ProjectView,
   RecordProblem,
 } from "../../shared/ipc.ts";
+import { webLink } from "./refs.ts";
 import { type WhoView, whoView } from "./who.ts";
 
 // ---------- inbox ----------
@@ -316,6 +317,12 @@ export function artifactName(a: Pick<ArtifactView, "type" | "ref">): string {
     }
   }
   return a.ref;
+}
+
+/** a conclusion's source as the artifact it opens like: a web link in the browser, a file shown in Finder */
+export function sourceArtifact(s: Source, at: number): ArtifactView {
+  const web = webLink(s.ref);
+  return { type: web ? (prUrl(web) ? "pr" : "link") : "file", ref: s.ref, at };
 }
 
 /** its github pull request. a bare `#12` names no repo, and another host's url is only copied */
