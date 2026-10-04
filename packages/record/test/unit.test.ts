@@ -688,6 +688,15 @@ test("said: the last thing the person typed, and nothing else that looks like a 
   // a line still being written is not read as one
   fs.appendFileSync(file, '{"type":"user","message":{"role":"user","content":"half a li');
   assert.equal(lastSaid(file), 'why is "toolUseResult": {"type":"user"} here?');
+  // a turn started with a slash command: its arguments are what the person said. one with none says nothing
+  const command = (name: string, args: string) =>
+    userLine(
+      `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>\n<command-args>${args}</command-args>`,
+      { origin: { kind: "human" } },
+    );
+  fs.appendFileSync(file, `\n${JSON.stringify(command("loop", "watch the rollout\nevery 5m"))}\n`);
+  fs.appendFileSync(file, `${JSON.stringify(command("mcp", ""))}\n`);
+  assert.equal(lastSaid(file), "/loop watch the rollout\nevery 5m");
 
   // nothing to read is nothing, never a throw
   assert.equal(transcriptFile(projects, "no-such-session"), null);

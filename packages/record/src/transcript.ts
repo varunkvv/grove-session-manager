@@ -85,10 +85,15 @@ function clean(block: string): string {
     if (start < 0) break;
     t = t.slice(0, start).trim();
   }
-  // the editor's context, a slash command's envelope, claude code's own notes
-  return t.startsWith("<") || t.startsWith("Caveat:") || t.startsWith("[Request interrupted")
-    ? ""
-    : t;
+  if (t.startsWith("<")) {
+    // a slash command with arguments is the person's words: "/loop watch the rollout". with
+    // none it says nothing. everything else in angle brackets is the editor's context
+    const name = /<command-name>\s*\/?([^<]+?)\s*<\/command-name>/.exec(t)?.[1];
+    const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(t)?.[1]?.trim();
+    return name && args ? `/${name} ${args}` : "";
+  }
+  // claude code's own notes
+  return t.startsWith("Caveat:") || t.startsWith("[Request interrupted") ? "" : t;
 }
 
 /**

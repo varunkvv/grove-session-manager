@@ -118,8 +118,8 @@ A conclusion also carries where it came from, for the agent that picks the work 
   and threads get edited
 - `said`: the last thing you typed in that session before it was recorded, cut to 600 characters. The record looks it
   up in the session's transcript when the conclusion is written, because Claude Code deletes transcripts after about
-  30 days and one agent cannot read another's. Something typed while the agent was working counts. Tool results, hook
-  output and other agents' messages do not
+  30 days and one agent cannot read another's. Something typed while the agent was working counts, and so does a
+  slash command with its arguments. Tool results, hook output and other agents' messages do not
 - the conversation it was recorded in: your message before the call and what the agent wrote before making it. This
   is not stored. It is read from the transcript when someone asks, for as long as the transcript exists
 
