@@ -271,7 +271,8 @@ test("the hook is fast: 50 and 200 cards, a whole process each time", () => {
     lines.push(
       `${n} cards, ${n * 5} conclusions: node src/bin.ts state --hook median ${median(runs).toFixed(0)}ms (min ${Math.min(...runs).toFixed(0)}, max ${Math.max(...runs).toFixed(0)}), stateText in process ${inproc.toFixed(1)}ms`,
     );
-    if (n === 50) assert.ok(median(runs) < 150, lines.at(-1));
+    // a shared CI runner starts node two or three times slower (194ms measured there)
+    if (n === 50) assert.ok(median(runs) < (process.env.CI ? 500 : 150), lines.at(-1));
   }
   const empty = Array.from({ length: 15 }, () => {
     const t0 = process.hrtime.bigint();

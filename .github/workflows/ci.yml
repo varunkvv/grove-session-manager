@@ -48,7 +48,10 @@ jobs:
         if: always()
         with:
           name: e2e-screenshots
-          path: apps/desktop/e2e/screenshots
+          # test-results has the page as it was when a test failed
+          path: |
+            apps/desktop/e2e/screenshots
+            apps/desktop/test-results
           if-no-files-found: ignore
 
   release:
