@@ -2,10 +2,11 @@
 // package checks every call itself, for the MCP server and the CLI alike. small slips are
 // repaired (a number sent as text, an id in lower case, a list sent as "a, b"). everything
 // else is refused with the valid arguments and an example, so the next call is right.
-import { normId, oneLine } from "./format.ts";
+import path from "node:path";
+import { cut, normId, oneLine } from "./format.ts";
 
 export interface Prop {
-  type: "string" | "boolean" | "integer" | "ids" | "artifacts";
+  type: "string" | "boolean" | "integer" | "ids" | "artifacts" | "sources";
   description: string;
   enum?: string[];
   /** longest allowed value, in characters. */
@@ -23,6 +24,8 @@ export interface InputSpec {
 }
 
 export const ARTIFACT_TYPES = ["file", "branch", "pr", "link"];
+/** a conclusion's sources: how many, and how long a ref and a note may be. search prints them in full. */
+export const SOURCE_LIMITS = { count: 12, ref: 1000, note: 300 };
 
 /** the JSON Schema sent in tools/list. this is what the model reads. */
 export function jsonSchema(spec: InputSpec): Record<string, unknown> {
@@ -39,6 +42,17 @@ export function jsonSchema(spec: InputSpec): Record<string, unknown> {
           properties: { type: { type: "string", enum: ARTIFACT_TYPES }, ref: { type: "string" } },
           required: ["type", "ref"],
           additionalProperties: false,
+        },
+      };
+    } else if (p.type === "sources") {
+      properties[name] = {
+        type: "array",
+        description: p.description,
+        // the limits are check()'s to enforce. this schema is in every request, so it stays short
+        items: {
+          type: "object",
+          properties: { ref: { type: "string" }, note: { type: "string" } },
+          required: ["ref"],
         },
       };
     } else {
@@ -60,7 +74,23 @@ export function usage(tool: string, spec: InputSpec): string {
 
 export type Checked = { ok: true; args: Record<string, unknown> } | { ok: false; text: string };
 
-export function check(tool: string, spec: InputSpec, raw: unknown): Checked {
+/** an http(s) url with a host and no credentials in it: the only kind the app will open. */
+function isWebUrl(ref: string): boolean {
+  try {
+    const u = new URL(ref);
+    return (
+      (u.protocol === "http:" || u.protocol === "https:") &&
+      !!u.hostname &&
+      !u.username &&
+      !u.password
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** `root` is the project folder. with it, a path given in full is stored from the root. */
+export function check(tool: string, spec: InputSpec, raw: unknown, root?: string): Checked {
   const bad = (why: string): Checked => ({
     ok: false,
     text: `${tool}: ${why}. ${usage(tool, spec)}`,
@@ -125,6 +155,55 @@ export function check(tool: string, spec: InputSpec, raw: unknown): Checked {
       if (!Array.isArray(v) || v.some((x) => typeof x !== "string"))
         return bad(`"${name}" must be a list of ids, like ["D-4"]`);
       args[name] = (v as string[]).map(normId).filter(Boolean);
+    } else if (p.type === "sources") {
+      const shape = `{"ref": "a url, or a path from the project root", "note": "what in it mattered"}`;
+      if (!Array.isArray(v)) return bad(`"${name}" must be a list, like [${shape}]`);
+      if (v.length > SOURCE_LIMITS.count)
+        return bad(
+          `"${name}" has ${v.length} entries, the limit is ${SOURCE_LIMITS.count}. List the ones that mattered`,
+        );
+      const out: { ref: string; note?: string }[] = [];
+      for (const item of v) {
+        // a bare string is a ref with no note
+        const given = typeof item === "string" ? { ref: item } : (item ?? {});
+        const { ref: rawRef, note: rawNote } = given as { ref?: unknown; note?: unknown };
+        if (typeof rawRef !== "string" || (rawNote != null && typeof rawNote !== "string"))
+          return bad(`each entry of "${name}" must be ${shape}`);
+        // one line each: a control character never reaches a terminal or a row through these
+        let ref = oneLine(rawRef);
+        const note = oneLine((rawNote as string | undefined) ?? "");
+        if (!ref) return bad(`each entry of "${name}" must be ${shape}`);
+        const tooLong =
+          Array.from(ref).length > SOURCE_LIMITS.ref
+            ? `its ref is over ${SOURCE_LIMITS.ref} characters`
+            : Array.from(note).length > SOURCE_LIMITS.note
+              ? `its note is over ${SOURCE_LIMITS.note} characters`
+              : "";
+        if (tooLong)
+          return bad(
+            `source "${cut(ref, 60)}": ${tooLong}. Shorten it, or save a digest under artifacts/ and list that file`,
+          );
+        if (/^[a-z][a-z0-9+.-]*:/i.test(ref)) {
+          if (!isWebUrl(ref))
+            return bad(
+              `source "${cut(ref, 60)}" must be an http(s) url with no password in it, or a path from the project root like artifacts/thread-digest.md`,
+            );
+        } else {
+          // a file is a path inside the project, from its root: what another agent's Read takes and the app joins
+          if (root && path.isAbsolute(ref)) ref = path.relative(root, ref);
+          if (
+            !ref ||
+            path.isAbsolute(ref) ||
+            ref.startsWith("~") ||
+            ref.split(/[/\\]/).includes("..")
+          )
+            return bad(
+              `source "${cut(oneLine(rawRef), 60)}" must be a url, or a file inside the project as a path from its root, like artifacts/thread-digest.md`,
+            );
+        }
+        out.push(note ? { ref, note } : { ref });
+      }
+      args[name] = out;
     } else {
       if (!Array.isArray(v))
         return bad(

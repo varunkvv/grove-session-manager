@@ -111,6 +111,18 @@ Before you settle something, call \`conclusion_search\`. If it is already settle
 cite its id. To go against it, record a new one with \`replaces\`, say why, and tell the person.
 Set \`changes_plan\` on a finding the person has to see.
 
+When a conclusion comes from something you were shown or read (a thread, a design, a doc, a PR,
+a log), list it in \`sources\` with a one-line \`note\` on what in it mattered, and put that part
+into \`why\` in a line or two. A later session may not have Slack or Figma connected, and threads
+get edited. For anything bigger, save a short digest under \`artifacts/\` and list that file as a
+source too. What the person last typed is kept with the conclusion without you doing anything.
+
+Before you rely on a conclusion for something that matters, and always before you overrule one,
+read it in full: \`conclusion_search\` with its id as the query, like \`D-4\`. That shows its
+sources, what the person said and the conversation it was recorded in. A mark like \`[2 sources]\`
+on a conclusion in the state means there is that much more behind the line. A file source is a
+path from the project root: read it.
+
 ## Questions
 
 Every question goes on a card with \`question_ask\`, and its answer goes there with

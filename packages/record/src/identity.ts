@@ -40,11 +40,13 @@ export interface CallerInput {
   hookSession?: string;
 }
 
+/** claude code's own folder: its registry of live sessions and its transcripts. */
+export function claudeDir(env: NodeJS.ProcessEnv): string {
+  return env.CLAUDE_CONFIG_DIR || path.join(env.HOME || os.homedir(), ".claude");
+}
+
 export function registryDir(env: NodeJS.ProcessEnv): string {
-  return (
-    (testOverrides() && env.GROVE_RECORD_REGISTRY) ||
-    path.join(env.CLAUDE_CONFIG_DIR || path.join(env.HOME || os.homedir(), ".claude"), "sessions")
-  );
+  return (testOverrides() && env.GROVE_RECORD_REGISTRY) || path.join(claudeDir(env), "sessions");
 }
 
 export interface RegistryEntry {

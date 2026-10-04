@@ -33,6 +33,7 @@ import type {
   Project,
   Question,
   RecordSnapshot,
+  Source,
 } from "./types.ts";
 
 export type {
@@ -50,6 +51,7 @@ export type {
   Project,
   Question,
   RecordSnapshot,
+  Source,
 } from "./types.ts";
 
 function readText(file: string): string | null {
@@ -98,6 +100,18 @@ function artifacts(v: unknown): Artifact[] {
         ref: (a as Artifact).ref,
       });
     } else if (typeof a === "string" && a) out.push({ type: "link", ref: a });
+  }
+  return out;
+}
+
+function sources(v: unknown): Source[] {
+  if (!Array.isArray(v)) return [];
+  const out: Source[] = [];
+  for (const s of v) {
+    // a hand edit may list bare refs
+    const ref = typeof s === "string" ? s : str((s as Source | null)?.ref);
+    const note = typeof s === "string" ? "" : str((s as Source | null)?.note);
+    if (ref) out.push(note ? { ref, note } : { ref });
   }
   return out;
 }
@@ -358,6 +372,8 @@ export function parseConclusion(root: string, id: string): Conclusion | null {
     related: strList(f.related).map((s) => s.toUpperCase()),
     changesPlan: bool(f.changes_plan),
     area: str(f.area) || undefined,
+    sources: sources(f.sources),
+    said: str(f.said) || undefined,
     file,
     problems,
     replacedBy: [],

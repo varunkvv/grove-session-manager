@@ -21,9 +21,12 @@ export function tmpDir(label: string): string {
   return base;
 }
 
+/** a claude config folder that is never created: no test reads the real ~/.claude for a registry or a transcript. */
+export const NO_CLAUDE = path.join(os.tmpdir(), "grove-record-test-no-claude");
+
 /** the environment every test process runs with: nothing of the claude session that runs the tests leaks in. */
 export function cleanEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { GROVE_RECORD_TEST: "1" };
+  const env: NodeJS.ProcessEnv = { GROVE_RECORD_TEST: "1", CLAUDE_CONFIG_DIR: NO_CLAUDE };
   for (const k of ["HOME", "PATH", "TMPDIR", "USER", "LANG"])
     if (process.env[k]) env[k] = process.env[k];
   for (const [k, v] of Object.entries(extra)) if (v !== undefined) env[k] = v;
@@ -344,6 +347,12 @@ export function fixture(
     if (j > 6 && j % 6 === 0) args.replaces = `${kind[0]!.toUpperCase()}-${Math.floor(j / 3) - 1}`;
     args.by = j % 4 === 0 ? "person" : "agent";
     if (j % 7 === 0) args.changes_plan = true;
+    // every second one came from somewhere, so the state's marker and its cost are in every size and speed test
+    if (j % 2 === 0)
+      args.sources = [
+        { ref: `https://acme.slack.com/archives/C01/p${j}`, note: `the thread on ${j}${pad}` },
+        { ref: `artifacts/digest-${j}.md` },
+      ];
     const r = asAgent(root, `sess-${j % 7}`, "conclusion_record", args);
     if (!r.ok) throw new Error(r.text);
   }

@@ -49,7 +49,7 @@ export const TOOLS: ToolDef[] = [
     summary:
       "the goal, every card with status and holder, open questions, newest conclusions, who you are",
     description:
-      "Read the shared project record: the goal, every card with its status and holder, the open questions, the newest conclusions (decisions, findings, verdicts) and which session you are. Call it before you start any work in this project, and again whenever you need the current picture. A subagent, and a session started inside a working copy, gets no state at session start, so for them this call is the only way to see it. Read-only.",
+      "Read the shared project record: the goal, every card with its status and holder, the open questions, the newest conclusions (decisions, findings, verdicts) and which session you are. A conclusion marked like [2 sources] has more behind it: conclusion_search with its id shows it in full. Call it before you start any work in this project, and again whenever you need the current picture. A subagent, and a session started inside a working copy, gets no state at session start, so for them this call is the only way to see it. Read-only.",
     input: {
       properties: {
         all: {
@@ -82,7 +82,7 @@ export const TOOLS: ToolDef[] = [
     summary:
       "one card in full: description, holder, the whole thread, its conclusions, linked cards",
     description:
-      "Read one card in full: its description, status, who holds it and whether their process is running, the whole thread (comments, questions with their answers, claim events), the conclusions recorded on it and the cards linked to it. Call it before you claim or work on a card, and before you answer a question on it. Read-only.",
+      "Read one card in full: its description, status, who holds it and whether their process is running, the whole thread (comments, questions with their answers, claim events), the conclusions recorded on it with their sources and what the person said, and the cards linked to it. Call it before you claim or work on a card, and before you answer a question on it. Read-only.",
     input: {
       properties: { card: card("The card id, like AUTH-3.") },
       required: ["card"],
@@ -358,7 +358,7 @@ export const TOOLS: ToolDef[] = [
     summary:
       "record a decision, a finding or a verdict the moment it is settled, yours or the person's",
     description:
-      'Record something that is now settled, so that the person and every later agent can look it up instead of deciding or finding it again. Three kinds. decision: what we will do ("refresh tokens stay on the server"). finding: what turned out to be true ("staging has no okta tenant in terraform state"). verdict: a judgement on an option, an approach or a piece of work ("the saml strategy cannot be reused for oidc"). Record it the moment it is settled, not at the end of the work. That includes the ones nobody announced: a default, a limit, a name, a library or a file layout you picked, something you took as true without checking, something you ruled out or left out of scope. It also includes every one the person makes in the chat or in an answer to your question ("go with that", "no, use redis", "8h, to match the policy"): those are by "person". Call conclusion_search first. If it is already settled, follow it and cite its id. If you go against an earlier conclusion, pass its id in replaces and say why. One conclusion per thing settled: a value, the approach and an option you ruled out are three. Do not record routine edits, what the diff already says, or that a card is finished. Returns the id, like D-12. Cite it in cards, comments and commit messages.',
+      'Record something that is now settled, so that the person and every later agent can look it up instead of deciding or finding it again. Three kinds. decision: what we will do ("refresh tokens stay on the server"). finding: what turned out to be true ("staging has no okta tenant in terraform state"). verdict: a judgement on an option, an approach or a piece of work ("the saml strategy cannot be reused for oidc"). Record it the moment it is settled, not at the end of the work. That includes the ones nobody announced: a default, a limit, a name, a library or a file layout you picked, something you took as true without checking, something you ruled out or left out of scope. It also includes every one the person makes in the chat or in an answer to your question ("go with that", "no, use redis", "8h, to match the policy"): those are by "person". Call conclusion_search first. If it is already settled, follow it and cite its id. To go against an earlier conclusion, read it in full first (conclusion_search with its id), then pass its id in replaces and say why. When it comes from something you were shown or read (a thread, a design, a doc, a log), list that in sources and put what mattered into why. One conclusion per thing settled: a value, the approach and an option you ruled out are three. Do not record routine edits, what the diff already says, or that a card is finished. Returns the id, like D-12. Cite it in cards, comments and commit messages.',
     input: {
       properties: {
         kind: {
@@ -407,6 +407,11 @@ export const TOOLS: ToolDef[] = [
           max: 40,
           description: "One word for the part of the system: api, web, infra, tests.",
         },
+        sources: {
+          type: "sources",
+          description:
+            '[{"ref": "https://acme.slack.com/archives/C01/p17", "note": "what in it mattered"}]. ref: a url, or a file as a path from the project root. Too big for why? Save a short digest under artifacts/ and list that file too: threads get edited, and a later session may lack Slack or Figma.',
+        },
         as: AS,
       },
       required: ["kind", "what", "by"],
@@ -417,6 +422,12 @@ export const TOOLS: ToolDef[] = [
         card: "AUTH-1",
         by: "agent",
         area: "api",
+        sources: [
+          {
+            ref: "https://acme.slack.com/archives/C01/p1727890123",
+            note: "security review: no tokens in the page",
+          },
+        ],
       },
     },
     writes: true,
@@ -425,16 +436,18 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "conclusion_search",
-    summary: "search what is already settled, with the why, before you decide or investigate",
+    summary:
+      "search what is already settled, with the why, before you decide or investigate. with an id, one conclusion in full: sources, what the person said, the conversation",
     description:
-      "Search the project's conclusions (decisions, findings, verdicts). Call it before you decide something, before you investigate something that may already be known, and whenever you need the id of an earlier conclusion to cite or replace. query is words that must all appear (in what, why, area, card or author; \"person\" finds the person's own), or an id like D-4. With no arguments it lists the newest. Each hit shows its why, which record_state leaves out. Superseded conclusions are left out and counted, unless include_replaced is true. Read-only.",
+      "Search the project's conclusions (decisions, findings, verdicts), or read one in full. Call it before you decide something, before you investigate something that may already be known, and whenever you need the id of an earlier conclusion to cite or replace. query is words that must all appear (in what, why, area, card or author; \"person\" finds the person's own), or an id like D-4. With no arguments it lists the newest. Each hit shows its why, its sources and what the person said, which record_state leaves out. An id as the query shows that one conclusion in full: what, why, who, its sources, what the person said, and the conversation it was recorded in, read from the session's transcript. Read a conclusion in full before you rely on it for something that matters, and always before you overrule it. A file source is a path from the project root that you can Read. Superseded conclusions are left out and counted, unless include_replaced is true. Read-only.",
     input: {
       properties: {
         query: {
           type: "string",
           format: "line",
           max: 200,
-          description: 'Words that must all appear, or a conclusion id like "D-4".',
+          description:
+            'Words that must all appear, or a conclusion id like "D-4" to read that one in full.',
         },
         kind: {
           type: "string",
@@ -497,7 +510,7 @@ export function runTool(name: string, rawArgs: unknown, o: RunOptions): ops.OpRe
         .join(", ")}.`,
     };
   }
-  const checked = check(name, t.input, rawArgs);
+  const checked = check(name, t.input, rawArgs, o.root);
   if (!checked.ok) return { ok: false, code: "invalid", text: checked.text };
   const { as, ...args } = checked.args;
   return ops.attempt(() => {

@@ -88,6 +88,7 @@ function conclusion(id: string, o: Partial<Conclusion> = {}): Conclusion {
     why: "",
     related: [],
     changesPlan: false,
+    sources: [],
     file: "",
     problems: [],
     replacedBy: [],

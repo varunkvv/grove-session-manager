@@ -20,7 +20,7 @@ import {
   renderRecord,
   shortTime,
 } from "./format.ts";
-import { type Caller, holderStatus, type Liveness, procStart } from "./identity.ts";
+import { type Caller, claudeDir, holderStatus, type Liveness, procStart } from "./identity.ts";
 import { appendLine, highest, publishAt, publishNext } from "./publish.ts";
 import {
   type Artifact,
@@ -28,6 +28,7 @@ import {
   type Card,
   type ClaimEvent,
   type Comment,
+  type Conclusion,
   isHeld,
   lastClaim,
   listCardIds,
@@ -41,7 +42,9 @@ import {
   readIndex,
   readProject,
   revisionOf,
+  type Source,
 } from "./read.ts";
+import { lastSaid, transcriptFile, turnAround } from "./transcript.ts";
 import { FORMAT_VERSION } from "./version.ts";
 
 export type ErrCode =
@@ -554,6 +557,29 @@ export interface ConclusionArgs {
   related?: string[];
   changes_plan?: boolean;
   area?: string;
+  sources?: Source[];
+}
+
+/** how much of what the person typed is kept on a conclusion. */
+const SAID_MAX = 600;
+
+function transcriptOf(ctx: Ctx, session: string): string | null {
+  return transcriptFile(path.join(claudeDir(ctx.env), "projects"), session);
+}
+
+/**
+ * the last thing the person typed in the calling session, for `said`. claude code deletes
+ * transcripts after about 30 days and another agent cannot read this one's, so the words are kept
+ * on the record. nothing found, or nothing readable, is no `said`: never a failed write.
+ */
+function saidNow(ctx: Ctx): string | undefined {
+  if (ctx.caller.actor !== "agent") return undefined;
+  const file = transcriptOf(ctx, ctx.caller.session);
+  const typed = file ? lastSaid(file) : undefined;
+  if (!typed) return undefined;
+  // line breaks stay. every other control character goes: this is printed to terminals
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+  return cut(typed.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, " ").trim(), SAID_MAX);
 }
 
 /** one line of conclusions/INDEX.md. under 1,000 bytes whatever `what` holds. */
@@ -594,6 +620,7 @@ export function conclusionRecord(ctx: Ctx, a: ConclusionArgs): OpResult {
   const author = authorFields(ctx.caller, by);
   const at = (author.find(([k]) => k === "at")![1] as { bare: string }).bare;
   const what = oneLine(a.what);
+  const said = saidNow(ctx);
   const made = publishNext(
     p.conclusions,
     () => highest(p.conclusions, new RegExp(`^${letter}-([1-9][0-9]*)\\.md$`)) + 1,
@@ -610,6 +637,8 @@ export function conclusionRecord(ctx: Ctx, a: ConclusionArgs): OpResult {
         ["related", related.length ? related : undefined],
         ["changes_plan", a.changes_plan ? true : undefined],
         ["area", a.area ? oneLine(a.area).toLowerCase() : undefined],
+        ["sources", a.sources?.length ? a.sources : undefined],
+        ["said", said || undefined],
       ]),
   );
   const id = `${letter}-${made.n}`;
@@ -678,23 +707,14 @@ export function conclusionSearch(ctx: Ctx, a: SearchArgs): OpResult {
   });
   const shown = matches.filter((c) => asId || a.include_replaced || !c.superseded);
   const hidden = matches.filter((c) => !shown.includes(c));
+  // an id asks for that one conclusion, so it gets all of it
+  if (asId && shown.length === 1) return ok(conclusionFull(ctx, shown[0]!));
   const limit = Math.min(Math.max(a.limit ?? 20, 1), 50);
   const lines: string[] = [];
   for (const c of shown.slice(0, limit)) {
-    const head = [
-      `${c.id} ${c.kind}`,
-      c.by === "person" ? `by the person (recorded by ${c.agent || "an agent"})` : `by ${who(c)}`,
-      shortTime(c.at),
-    ];
-    if (c.card) head.push(c.card);
-    if (c.area) head.push(`area ${c.area}`);
-    if (c.changesPlan) head.push("changes the plan");
-    if (c.replaces) head.push(`replaces ${c.replaces}`);
-    if (c.related.length) head.push(`related ${c.related.join(", ")}`);
-    if (c.superseded)
-      head.push(`SUPERSEDED by ${c.replacedBy.join(", ")} - do not follow this one`);
-    lines.push(head.join(" | "), `  what: ${c.what}`);
+    lines.push(conclusionHead(c), `  what: ${c.what}`);
     if (c.why) lines.push(`  why: ${cut(oneLine(c.why), 600)}`);
+    lines.push(...sourceLines(c));
   }
   const head = `${shown.length} conclusion${shown.length === 1 ? "" : "s"} match${shown.length === 1 ? "es" : ""}${q ? ` "${q}"` : ""}${a.kind ? `, kind ${a.kind}` : ""}${card ? `, card ${card}` : ""} (of ${all.length} in the project).`;
   const tail: string[] = [];
@@ -712,7 +732,70 @@ export function conclusionSearch(ctx: Ctx, a: SearchArgs): OpResult {
         ? "Nothing is settled on this yet as far as the record knows. Try fewer or other words before you conclude that."
         : "No conclusions recorded yet.",
     );
+  if (shown.length)
+    tail.push(
+      "To read one in full, with the conversation it was recorded in, call conclusion_search with its id as the query.",
+    );
   return ok([head, ...lines, ...tail].join("\n"));
+}
+
+function conclusionHead(c: Conclusion): string {
+  const head = [
+    `${c.id} ${c.kind}`,
+    c.by === "person" ? `by the person (recorded by ${c.agent || "an agent"})` : `by ${who(c)}`,
+    shortTime(c.at),
+  ];
+  if (c.card) head.push(c.card);
+  if (c.area) head.push(`area ${c.area}`);
+  if (c.changesPlan) head.push("changes the plan");
+  if (c.replaces) head.push(`replaces ${c.replaces}`);
+  if (c.related.length) head.push(`related ${c.related.join(", ")}`);
+  if (c.superseded) head.push(`SUPERSEDED by ${c.replacedBy.join(", ")} - do not follow this one`);
+  return head.join(" | ");
+}
+
+/** where it came from, as search hits and card_show print it: every source, and the person's words on one line. */
+function sourceLines(c: Conclusion): string[] {
+  const out = c.sources.map(sourceLine);
+  if (c.said) out.push(`  the person said: ${cut(oneLine(c.said), 200)}`);
+  return out;
+}
+
+const sourceLine = (s: Source) => `  source: ${s.ref}${s.note ? ` - ${s.note}` : ""}`;
+
+/** text that runs over lines, under a label. */
+const under = (text: string) => text.split("\n").join("\n      ");
+
+/**
+ * one conclusion with everything there is about it, for an agent that is about to rely on it or
+ * overrule it: the record's own fields, then the turn it was recorded in, read from the
+ * transcript now. a transcript that is gone costs one line, never the call.
+ */
+function conclusionFull(ctx: Ctx, c: Conclusion): string {
+  const out = [conclusionHead(c), `  what: ${c.what}`];
+  if (c.why) out.push(`  why: ${under(c.why)}`);
+  out.push(...(c.sources.length ? c.sources.map(sourceLine) : ["  sources: none recorded"]));
+  const file = transcriptOf(ctx, c.session);
+  const turn = file && c.toolUseId ? turnAround(file, c.toolUseId) : null;
+  // the transcript has the same message uncut. without it, the words kept on the record
+  if (c.said && !turn?.prompt) out.push(`  the person said: ${under(c.said)}`);
+  if (turn?.prompt || turn?.text) {
+    out.push("  the conversation it was recorded in:");
+    if (turn.prompt) out.push(`    the person: ${under(turn.prompt)}`);
+    if (turn.text) out.push(`    ${who(c)}, before recording it: ${under(turn.text)}`);
+    out.push(`  transcript: ${file} (the call is ${c.toolUseId})`);
+  } else if (c.session === "person") {
+    out.push("  the conversation: none. The person recorded it in Grove.");
+  } else if (!file) {
+    out.push(
+      `  the conversation: the session's transcript is gone or cannot be read from here.${c.said ? " What the person said is what is left." : ""}`,
+    );
+  } else {
+    out.push(
+      `  the conversation: the call that recorded it is not in the session's transcript (a subagent's call, or one made through the CLI). transcript: ${file}`,
+    );
+  }
+  return out.join("\n");
 }
 
 // ---------- reading for agents ----------
@@ -812,7 +895,11 @@ export function stateText(ctx: Ctx, opts: { all?: boolean } = {}): string {
     if (c.replaces) bits.push(`replaces ${c.replaces}`);
     if (c.superseded) bits.push(`SUPERSEDED by ${c.replacedBy.join(",")}`);
     // the why is what a later session looks up. the index line has no why, so read the shown ones
-    const why = parseConclusion(ctx.root, c.id)?.why;
+    const full = parseConclusion(ctx.root, c.id);
+    // there is more to read than this line: conclusion_search with the id shows it
+    const n = full?.sources.length ?? 0;
+    if (n) bits.push(`[${n} source${n === 1 ? "" : "s"}]`);
+    const why = full?.why;
     const text = why ? `${c.what} (why: ${oneLine(why)})` : c.what;
     out.push(cut(`${bits.join(" ")} | ${text}`, all ? 800 : 180));
   }
@@ -924,6 +1011,7 @@ export function cardShow(ctx: Ctx, a: { card: string }): OpResult {
           `${c.id} ${c.kind}${c.by === "person" ? ", the person's" : ""}${c.superseded ? ` SUPERSEDED by ${c.replacedBy.join(",")}` : ""} | ${c.what}`,
           300,
         ),
+        ...sourceLines(c),
       );
   }
   const others = readCards(ctx.root).filter((c) => c.id !== id);

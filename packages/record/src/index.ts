@@ -52,6 +52,8 @@ export {
 } from "./render.ts";
 export type { RunOptions, ToolDef } from "./tools.ts";
 export { mcpToolList, runTool, TOOLS, tool } from "./tools.ts";
+export type { Turn } from "./transcript.ts";
+export { transcriptFile, turnAround } from "./transcript.ts";
 export type * from "./types.ts";
 export { BUNDLE_VERSION, compareVersions, FORMAT_VERSION, SERVER_NAME } from "./version.ts";
 

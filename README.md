@@ -109,6 +109,23 @@ default, a timeout, a library picked over another, something taken as true witho
 "go with that" or a bare "8h" in the chat is recorded with `by: person`. A conclusion can name an earlier one in
 `replaces`, which then reads as superseded.
 
+A conclusion also carries where it came from, for the agent that picks the work up later:
+
+- `sources`: what the agent was shown or read. A Slack thread, a Figma frame, a doc, a PR, or a file in the project
+  such as a digest under `artifacts/`, each with a line on what in it mattered. Up to 12, each an http(s) url or a path
+  from the project root. Grove stores the reference, never the content, so agents are told to put the part that
+  mattered into `why` and to save a digest for anything bigger: a later session may not have Slack or Figma connected,
+  and threads get edited
+- `said`: the last thing you typed in that session before it was recorded, cut to 600 characters. The record looks it
+  up in the session's transcript when the conclusion is written, because Claude Code deletes transcripts after about
+  30 days and one agent cannot read another's. Something typed while the agent was working counts. Tool results, hook
+  output and other agents' messages do not
+- the conversation it was recorded in: your message before the call and what the agent wrote before making it. This
+  is not stored. It is read from the transcript when someone asks, for as long as the transcript exists
+
+An agent reads all of that for one conclusion with `conclusion_search` and its id. The rules tell agents to do so
+before relying on a conclusion for something that matters, and always before overruling one.
+
 It lives in the project folder as plain files:
 
 ```
@@ -138,6 +155,28 @@ at: 2026-10-02T18:24:11.402Z
 The brief, in markdown.
 ```
 
+A conclusion is all frontmatter:
+
+```
+---
+v: 1
+id: D-12
+kind: decision
+what: "Sessions move to redis, on the server."
+why: "A cookie cannot be revoked, and SSO logout needs revoke."
+by: person
+session: 6f2c1b7e-...
+agent: "session store"
+at: 2026-10-04T18:24:11.402Z
+tool_use_id: toolu_01JY1zva9dRYFViLwar442mK
+card: AUTH-2
+sources: [{"ref":"https://acme.slack.com/archives/C01/p1727890123","note":"ops: a cookie cannot be revoked"},{"ref":"artifacts/logout-thread.md"}]
+said: "no, use redis. the thread says why"
+---
+```
+
+`sources` and `said` are optional, and a conclusion written before they existed reads as it always did.
+
 A card, a comment, a claim and a conclusion are each written once and never changed or deleted. Everything else is
 derived when the files are read:
 
@@ -165,7 +204,7 @@ has these as `mcp__grove__<tool>`:
 | --- | --- |
 | `record_state` | the goal, every card with its status and holder, open questions, the newest conclusions, which session is asking |
 | `my_cards` | the cards this session holds, what is new on them, questions left for it. refreshes its claims after a resume |
-| `card_show` | one card in full: brief, holder, thread, conclusions, linked cards |
+| `card_show` | one card in full: brief, holder, thread, conclusions with their sources, linked cards |
 | `card_create` | a new card, todo and unclaimed |
 | `card_claim` | take a card before working on it. refused when another session holds it |
 | `card_release` | give it back unfinished, with a note on where it stopped |
@@ -175,8 +214,8 @@ has these as `mcp__grove__<tool>`:
 | `comment_add` | a note on a card, with what was made: a file, a branch, a PR, a link |
 | `question_ask` | a question on a card, to you or to the agent on another card |
 | `question_answer` | the answer, which closes it |
-| `conclusion_record` | a decision, a finding or a verdict, the agent's or yours |
-| `conclusion_search` | what is already settled, with the why |
+| `conclusion_record` | a decision, a finding or a verdict, the agent's or yours, with the sources it came from |
+| `conclusion_search` | what is already settled, with the why, the sources and what you said. with an id, that one conclusion in full, with the conversation it was recorded in |
 
 Claude Code defers MCP tools by default: a session sees their names and has to search for a schema before its first
 call. `record_state`, `my_cards`, `card_claim`, `question_ask` and `conclusion_record` are marked `alwaysLoad`, so their
@@ -199,8 +238,9 @@ The state print is kept under 9,000 characters, because above 10,000 Claude Code
 and a 2KB preview. It opens with a line like `# record AUTH rev 41 - auth-sso`, and the revision goes up with every
 record added and every change to the project's name or goal. That line is there because on a resume Claude Code drops
 a `SessionStart` output it has already shown: with a revision in the text, a changed state always arrives, and an
-unchanged one is not repeated. For the same reason the text holds no clock and no process checks. When the hook cannot
-run, it prints one line (`record unavailable: <reason>. open Grove once`) and exits 0, so the session is told why it
+unchanged one is not repeated. For the same reason the text holds no clock and no process checks. A conclusion that
+has sources carries a mark like `[2 sources]` on its line, so a new session knows there is more to read. When the hook
+cannot run, it prints one line (`record unavailable: <reason>. open Grove once`) and exits 0, so the session is told why it
 has no state.
 
 When the tools are missing (a session started with `--strict-mcp-config`, say), the rules teach the same tools
@@ -492,6 +532,11 @@ What did not run, or does not work:
   in Terminal** was only tested against a stand-in `claude`
 - `/clear` gives a session a new id in the same process. the server looks the id up on every call for that reason,
   which was only tested against a fake registry
+- `said` is only found when your last message is within 8MB of the end of the transcript. in 303 transcripts on one
+  machine that covered 99% of tool calls. past it the conclusion has no `said`, and the write still lands
+- a conclusion a subagent recorded has no conversation to show: its call is in the subagent's own transcript, which
+  is not read. `said` is still your last message in the parent session
+- reading one conclusion in full finds its call by reading the transcript from the start, about 1ms a MB
 - an Explore subagent does not load the rules file. the rules tell its parent to put the card, `record_state` and `as`
   into the brief. Sonnet did, Haiku did not
 - you cannot answer from Grove, and Grove cannot wake an agent. a question is answered in the agent's chat

@@ -56,6 +56,14 @@ export interface Artifact {
   ref: string;
 }
 
+/** where a conclusion came from: something the agent was shown or read. */
+export interface Source {
+  /** an http(s) url, or a path from the project root. */
+  ref: string;
+  /** one line on what in it mattered. */
+  note?: string;
+}
+
 export interface Comment extends Author {
   card: string;
   seq: number;
@@ -119,6 +127,10 @@ export interface Conclusion extends Author {
   related: string[];
   changesPlan: boolean;
   area?: string;
+  /** what it was based on. empty for a conclusion written before sources existed. */
+  sources: Source[];
+  /** the last thing the person typed in the session before it was recorded, cut to 600 characters. */
+  said?: string;
   file: string;
   problems: string[];
   // derived
