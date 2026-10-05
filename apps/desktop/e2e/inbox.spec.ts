@@ -192,7 +192,9 @@ test("Reviewed takes a row out and writes reviewed.json, and marking all leaves 
   await reviewed(row(page, "decided"));
   await ready(page, 6);
   await expect(row(page, "decided")).toHaveCount(0);
-  const marks = () => JSON.parse(readFileSync(path.join(fx.root, "reviewed.json"), "utf8"));
+  // the row leaves the page at once, before main has written the file, and a poll that throws ends
+  const file = path.join(fx.root, "reviewed.json");
+  const marks = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {});
   await expect.poll(() => Object.keys(marks())).toEqual(["AUTH/conclusion:D-1"]);
 
   // the palette's `Mark all reviewed in auth-sso` (its own piece) makes this same call
