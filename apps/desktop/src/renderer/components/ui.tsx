@@ -244,6 +244,22 @@ export function Kbd({ children }: { children: ReactNode }) {
   );
 }
 
+/** the way out of a page or a panel, with the key that does the same */
+export function EscButton({ label, onClick }: { label: "Back" | "Close"; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      data-testid={label === "Back" ? "back" : "panel-close"}
+      className="no-drag fade flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-fg-3 hover:bg-raised hover:text-fg"
+    >
+      <Icon name={label === "Back" ? "arrow-left" : "x"} size={12} />
+      <Kbd>esc</Kbd>
+    </button>
+  );
+}
+
 /** the only places monospace is allowed: paths, branches, SHAs and commands */
 export function Mono({
   children,

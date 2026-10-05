@@ -28,9 +28,9 @@ import {
   CardChip,
   cx,
   Dot,
+  EscButton,
   FileChip,
   Icon,
-  Kbd,
   Mono,
   ProblemMark,
   RuntimeChip,
@@ -181,8 +181,11 @@ function AgentSection({
   );
 }
 
-/** one card with its thread and side panel (ui.md 4.3) */
-export function CardPage({ cardId }: { cardId: string }) {
+/**
+ * one card with its thread and side panel (ui.md 4.3). with `onClose` it is the panel beside a
+ * list: the header's button closes it. under 768px of its own width the side goes under the thread
+ */
+export function CardPage({ cardId, onClose }: { cardId: string; onClose?: () => void }) {
   const project = useStore(currentProject);
   const record = useStore((s) => (s.project ? s.records[s.project] : undefined));
   const stored = useStore((s) => s.card);
@@ -250,18 +253,13 @@ export function CardPage({ cardId }: { cardId: string }) {
   const missing = gone && !!record?.readAt;
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="card-page" data-id={cardId}>
+    <div
+      className="@container flex h-full min-h-0 flex-col"
+      data-testid="card-page"
+      data-id={cardId}
+    >
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
-        <button
-          type="button"
-          aria-label="Back"
-          onClick={back}
-          data-testid="back"
-          className="no-drag fade flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-fg-3 hover:bg-raised hover:text-fg"
-        >
-          <Icon name="arrow-left" size={12} />
-          <Kbd>esc</Kbd>
-        </button>
+        <EscButton label={onClose ? "Close" : "Back"} onClick={onClose ?? back} />
         {shown && !missing && (
           <>
             <span className="shrink-0 tabular-nums text-fg-4">{shown.id}</span>
@@ -271,11 +269,13 @@ export function CardPage({ cardId }: { cardId: string }) {
             {card && <ProblemMark {...problemsFor(card.problems, `cards/${card.id}/card.md`)} />}
             <span
               className="flex shrink-0 items-center gap-1.5 text-sm text-fg-3"
+              title={STATUS_LABEL[shown.status]}
               data-testid="card-status"
               data-status={shown.status}
             >
               <StatusIcon status={shown.status} size={12} />
-              {STATUS_LABEL[shown.status]}
+              {/* a narrow header keeps its room for the title */}
+              <span className="hidden @3xl:inline">{STATUS_LABEL[shown.status]}</span>
             </span>
             <span className="flex-1" />
             {primary && (
@@ -285,7 +285,11 @@ export function CardPage({ cardId }: { cardId: string }) {
                 data-action={primary.action}
                 {...(primary.action === "open" ? open : { onClick: () => start("editor") })}
               >
-                {primary.action === "open" ? "Open" : "Start an agent"} in {editor}
+                {/* one span: the button is a flex row, and two would get its gap between them */}
+                <span>
+                  {primary.action === "open" ? "Open" : "Start an agent"}
+                  <span className="hidden @3xl:inline"> in {editor}</span>
+                </span>
               </Button>
             )}
           </>
@@ -296,15 +300,16 @@ export function CardPage({ cardId }: { cardId: string }) {
           This card no longer exists.
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1">
+        // narrow: one column that scrolls as a whole. wide: the thread and the side scroll apart
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto @3xl:flex-row @3xl:overflow-visible">
           <div
             // it holds focus so the arrows and space scroll it. a ring round the column says nothing
-            className="min-w-0 flex-1 overflow-y-auto outline-none!"
+            className="min-w-0 outline-none! @3xl:flex-1 @3xl:overflow-y-auto"
             tabIndex={-1}
             data-testid="card-main"
           >
             {card ? (
-              <div className="mx-auto max-w-[680px] px-10 pt-7 pb-16">
+              <div className="mx-auto px-10 pt-7 pb-7 @3xl:max-w-[680px] @3xl:pb-16">
                 <h2 className={cx("mb-2", HEADING)}>Description</h2>
                 {card.body ? (
                   <Markdown text={card.body} refs className="md-full" />
@@ -344,7 +349,7 @@ export function CardPage({ cardId }: { cardId: string }) {
           {card && (
             <aside
               aria-label="Card details"
-              className="w-[264px] shrink-0 space-y-7 overflow-y-auto border-l border-line px-5 py-7"
+              className="shrink-0 space-y-7 border-t border-line px-10 py-7 @3xl:w-[264px] @3xl:overflow-y-auto @3xl:border-t-0 @3xl:border-l @3xl:px-5"
               data-testid="card-side"
             >
               <AgentSection
