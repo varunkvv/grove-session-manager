@@ -482,9 +482,12 @@ export class ProjectsService {
   }
 
   /**
-   * the Cards screen's Sessions group: this project's sessions, newest first, without the ones
-   * holding an in-progress card, whose card row already shows them. at most 30: the palette finds
-   * the older ones
+   * the Cards screen's Sessions group: the sessions started in the project's folder, newest first,
+   * without the ones holding an in-progress card, whose card row already shows them. at most 30:
+   * the palette finds the older ones.
+   *
+   * one started in a subfolder is left to the palette too. Open takes it to that folder's own
+   * window, not the project's, and a project's `artifacts/` can hold hundreds of scripted runs
    */
   projectSessions(project: ProjectId): SessionHit[] {
     const { projects } = this.list();
@@ -493,7 +496,10 @@ export class ProjectsService {
     const index = this.index(projects);
     // ponytail: every card per session. index the holders once when a project has thousands of both
     return [...index.rows.values()]
-      .filter((r) => r.comboName === p.name && !this.heldBy(r.sessionId, [p]))
+      .filter(
+        (r) =>
+          r.comboName === p.name && r.comboRelation === "root" && !this.heldBy(r.sessionId, [p]),
+      )
       .sort(newest)
       .slice(0, 30)
       .map((r) => this.hit(r, index));

@@ -397,8 +397,9 @@ own conclusions and the cards you created never make a row, and neither do super
 
 **Cards** lists the project's cards in groups: Waiting on you, In progress, Todo, Done, Canceled, with who holds each
 and where that agent runs. A project with no cards shows its goal and the buttons to start an agent on it. Under
-either, **Sessions** lists the project's sessions that hold no card, newest first: 8, then up to 30, and `⌘K` finds the
-older ones. Each has **Open in VS Code**, and a double-click on the row does the same.
+either, **Sessions** lists the sessions started in the project's folder that hold no card, newest first: 8, then up to
+30. Each has **Open in VS Code**, and a double-click on the row does the same. Older ones, and sessions started in a
+subfolder, are in `⌘K`.
 
 A **card** page has the brief and the thread in order: comments, questions with their answers, the conclusions recorded
 on it, takeovers, and how it finished. Ids in the text are links to the card or conclusion they name. The side panel

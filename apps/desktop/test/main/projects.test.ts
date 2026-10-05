@@ -675,18 +675,20 @@ describe("projects and sessions", () => {
     });
   });
 
-  it("lists a project's sessions that hold no in-progress card, newest first, at most 30", () => {
+  it("lists the sessions started in a project's folder that hold no in-progress card, newest first, at most 30", () => {
     const t = setup();
     const chat = t.project("chat", "CHAT");
     const ops = t.project("ops", "OPS");
-    t.session("s-holds", { comboName: "chat", activityMs: 50 });
-    t.session("s-done", { comboName: "chat", title: "rounding fix", activityMs: 20 });
-    t.rows.push(
-      row("s-free", { comboName: "chat", firstPrompt: "look at the parser", activityMs: 40 }),
-    );
+    const inChat = { comboName: "chat", comboRelation: "root" } as const;
+    const inOps = { comboName: "ops", comboRelation: "root" } as const;
+    t.session("s-holds", { ...inChat, activityMs: 50 });
+    t.session("s-done", { ...inChat, title: "rounding fix", activityMs: 20 });
+    t.rows.push(row("s-free", { ...inChat, firstPrompt: "look at the parser", activityMs: 40 }));
     // the same session in an older transcript is not a second row
-    t.rows.push(row("s-free", { key: "/moved/s-free.jsonl", comboName: "chat", activityMs: 5 }));
-    t.session("s-ops", { comboName: "ops", activityMs: 60 });
+    t.rows.push(row("s-free", { ...inChat, key: "/moved/s-free.jsonl", activityMs: 5 }));
+    // started in a subfolder: Open takes it to that folder's window, so the palette has it
+    t.rows.push(row("s-sub", { comboName: "chat", comboRelation: "inside", activityMs: 90 }));
+    t.session("s-ops", { ...inOps, activityMs: 60 });
     t.rows.push(row("s-nowhere", { activityMs: 70 }));
     chat.as("s-holds")("card_create", { title: "Fix rounding" });
     chat.as("s-holds")("card_claim", { card: "CHAT-1" });
@@ -715,7 +717,7 @@ describe("projects and sessions", () => {
     expect(t.svc.projectSessions("no-such-project")).toEqual([]);
 
     for (let i = 0; i < 35; i++) {
-      t.rows.push(row(`s-many-${i}`, { comboName: "ops", activityMs: 100 + i }));
+      t.rows.push(row(`s-many-${i}`, { ...inOps, activityMs: 100 + i }));
     }
     const many = t.svc.projectSessions("ops").map((h) => h.sessionId);
     expect(many).toHaveLength(30);

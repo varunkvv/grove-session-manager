@@ -200,6 +200,11 @@ test("the switcher: typing narrows it, the keys move and pick, Escape hands the 
   await expect(switcher(page)).toContainText("zeta-reports");
   // the same screen in the other project
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "cards");
+
+  // the last of twelve is the project on screen now: the menu opens with it in view
+  await switcher(page).click();
+  await expect(item(page, "zeta-reports")).toHaveAttribute("data-active", "true");
+  await expect(item(page, "zeta-reports")).toBeInViewport();
 });
 
 test("the switcher by mouse: a click picks a project, New project… opens the form, a click outside closes it", async () => {

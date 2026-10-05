@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import {
@@ -209,6 +209,15 @@ test("sessions that hold no card are listed under the cards, and open from the b
       ageMs: (i + 1) * 60_000,
     });
   }
+  // one started in a subfolder: Open would take it to that folder's own window
+  const trial = path.join(root, "artifacts", "trial");
+  mkdirSync(trial, { recursive: true });
+  writeSession(fx, {
+    cwd: trial,
+    sessionId: "eeeeeeee-0000-4000-8000-000000000005",
+    title: "scripted run",
+    ageMs: 1000,
+  });
   // and one in a folder no project has
   writeSession(fx, {
     cwd: makePlainDir(fx, "elsewhere"),
@@ -226,11 +235,12 @@ test("sessions that hold no card are listed under the cards, and open from the b
   const codeRuns = () => readExecLog(fx).filter((l) => l.bin === "code");
   const toast = (text: string) => page.getByTestId("toast").filter({ hasText: text });
 
-  // eight, newest first. the holder is on its card's row and the outsider is nobody's
+  // eight, newest first. the holder is on its card's row, and the other two are the palette's
   await expect(rows).toHaveCount(8);
   expect(await shown()).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map(free));
   await expect(group).toContainText("Sessions");
   await expect(group).not.toContainText("idp config");
+  await expect(group).not.toContainText("scripted run");
   await expect(group).not.toContainText("quarterly numbers");
   // under the card groups and outside the list the arrows move in
   await expect(page.getByTestId("card-group").last()).toBeVisible();
@@ -263,6 +273,7 @@ test("sessions that hold no card are listed under the cards, and open from the b
   await rows.nth(9).dblclick({ position: { x: 240, y: 18 } });
   await expect(toast("Opening scratch 9 in VS Code")).toBeVisible();
   await waitFor(async () => codeRuns().length === 2);
+  expect(codeRuns()[1]?.argv[0]).toMatch(/auth-sso\.code-workspace$/);
   expect(pendingIntents(fx).map((i) => i.sessionId)).toContain(free(9));
   await page.waitForTimeout(500);
   expect(codeRuns()).toHaveLength(2);

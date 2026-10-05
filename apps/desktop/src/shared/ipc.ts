@@ -478,7 +478,7 @@ export interface Api {
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   findSessions(query: string): Promise<SessionHit[]>;
-  /** a project's sessions that hold no in-progress card, newest first, at most 30 */
+  /** the sessions started in a project's folder that hold no in-progress card, newest first, at most 30 */
   projectSessions(project: ProjectId): Promise<SessionHit[]>;
 
   /** a landing the page has not taken yet. taken once. */
