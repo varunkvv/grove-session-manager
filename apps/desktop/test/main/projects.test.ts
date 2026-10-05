@@ -264,6 +264,49 @@ describe("card heads and conclusion rows", () => {
     expect(rows["D-3"]).toMatchObject({ needsReview: true, reviewed: true, replaces: "D-1" });
   });
 
+  it("carries what a double-click opens: the holder's session, else the last agent's, else nothing", () => {
+    const t = setup();
+    const chat = t.project("chat", "CHAT");
+    t.session("s-1", { comboName: "chat" });
+    // in the background, and Claude Code has not said which background session it is
+    t.session("s-2", { background: { held: true } });
+    const a = chat.as("s-1");
+    for (const title of ["held", "done", "nobody was on it", "held, not indexed yet"]) {
+      a("card_create", { title });
+    }
+    a("card_claim", { card: "CHAT-1" });
+    chat.as("s-2")("card_claim", { card: "CHAT-2" });
+    chat.as("s-2")("card_done", { card: "CHAT-2", summary: "Done." });
+    chat.as("s-3")("card_claim", { card: "CHAT-4" });
+    chat.changed();
+    const head = (id: string) => t.heads("chat").find((h) => h.id === id);
+
+    expect(head("CHAT-1")).toMatchObject({ sessionKey: "/claude/projects/s-1.jsonl", open: {} });
+    // nobody holds a done card: the agent that finished it, with the plan its page's button has
+    expect(head("CHAT-2")).toMatchObject({
+      status: "done",
+      agent: undefined,
+      sessionKey: "/claude/projects/s-2.jsonl",
+      open: { disabled: "running in the background" },
+    });
+    expect(head("CHAT-2")?.sessionKey).toBe(t.svc.card("chat", "CHAT-2")?.agent?.sessionKey);
+    expect(head("CHAT-2")?.open).toEqual(t.svc.card("chat", "CHAT-2")?.agent?.open);
+    expect(head("CHAT-3")).toMatchObject({ sessionKey: undefined, open: undefined });
+
+    // a session grove has not indexed has neither. when it is, that head is sent again
+    expect(head("CHAT-4")).toMatchObject({
+      agent: { ref: { sessionId: "s-3" } },
+      sessionKey: undefined,
+      open: undefined,
+    });
+    const pushes = t.got.record.length;
+    t.session("s-3");
+    t.svc.sessionsChanged();
+    expect(head("CHAT-4")).toMatchObject({ sessionKey: "/claude/projects/s-3.jsonl", open: {} });
+    expect(t.got.record.slice(pushes)).toMatchObject([["chat", { cards: [{ id: "CHAT-4" }] }]]);
+    expect(t.got.record.at(-1)?.[1].cards).toHaveLength(1);
+  });
+
   it("gives each of the five runtimes", () => {
     const t = setup();
     const chat = t.project("chat", "CHAT");

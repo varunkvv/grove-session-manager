@@ -341,11 +341,8 @@ export class ProjectsService {
         artifacts.push({ type: a.type, ref: a.ref, at: ms(x.at), who: who(x) });
       }
     }
-    // the holder, else whoever wrote the last claim event as an agent: a done card still shows who did it
-    const last = c.claims.findLast((e) => e.by === "agent");
-    const agent = c.holder
-      ? this.panel(c.holder.session, c.holder.agent, true, index)
-      : last && this.panel(last.session, last.agent, false, index);
+    const on = agentOn(c);
+    const agent = on && this.panel(on.session, on.agent, on.holding, index);
     const dir = path.join("cards", c.id) + path.sep;
     return {
       project: p.id,
@@ -743,6 +740,10 @@ export class ProjectsService {
         stateAt: this.since(c.holder.session, state, f),
       };
     }
+    // the session the card page shows, so a double-click on the row goes where its Open button
+    // does. a key and a plan, or neither: grove has to have indexed it
+    const on = agentOn(c);
+    const row = on && index.rows.get(on.session);
     const lastActivity = ms(c.lastActivity);
     const problems = problemCount(c);
     // the card page shows the conclusions that name it: a new one, or one replaced, is a change
@@ -758,6 +759,8 @@ export class ProjectsService {
       at: ms(c.at),
       lastActivity,
       agent,
+      sessionKey: row?.key,
+      open: on && row && openPlanOf(this.runtimeFor(on.session, row), row),
       // no live.at in it: a tool call by the holder resends nothing. the status is, for a markSeen
       version: `${c.comments.length}.${c.claims.length}.${lastActivity}.${problems}.${status}.${agent?.state}.${agent?.stateAt}.${concluded}`,
       problems,
@@ -833,6 +836,13 @@ export class ProjectsService {
       open: row && runtime ? openPlanOf(runtime, row) : undefined,
     };
   }
+}
+
+/** whose card it is to open: the holder, else whoever wrote the last claim event as an agent. a done card still shows who did it */
+function agentOn(c: Card): { session: string; agent: string; holding: boolean } | undefined {
+  if (c.holder) return { session: c.holder.session, agent: c.holder.agent, holding: true };
+  const last = c.claims.findLast((e) => e.by === "agent");
+  return last && { session: last.session, agent: last.agent, holding: false };
 }
 
 /** the session's title, else the name the record has, else the start of the id */

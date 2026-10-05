@@ -216,6 +216,12 @@ export interface CardHead {
   lastActivity: number;
   /** the holder only */
   agent?: { ref: AgentRef; runtime: Runtime; state: AgentState; stateAt?: number };
+  /**
+   * what a double-click on its row opens: the session of the agent its page shows, the holder or
+   * else the last one on it. both absent on a card nobody was on, and until grove has indexed it
+   */
+  sessionKey?: SessionKey;
+  open?: OpenPlan;
   /** changes whenever anything on the card does. the card page re-fetches on a change */
   version: string;
   problems: number;
