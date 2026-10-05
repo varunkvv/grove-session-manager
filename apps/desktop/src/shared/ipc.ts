@@ -217,8 +217,9 @@ export interface CardHead {
   /** the holder only */
   agent?: { ref: AgentRef; runtime: Runtime; state: AgentState; stateAt?: number };
   /**
-   * what a double-click on its row opens: the session of the agent its page shows, the holder or
-   * else the last one on it. both absent on a card nobody was on, and until grove has indexed it
+   * what a double-click on its row opens, the session its page's Open button goes to: the holder's,
+   * or the last agent's on a done or canceled card. both absent on a todo card, whose page offers a
+   * start, and until grove has indexed the session
    */
   sessionKey?: SessionKey;
   open?: OpenPlan;

@@ -316,7 +316,7 @@ export function Cards() {
   const ids = useMemo(() => cardOrder(cards), [cards]);
   const had = useRef<string[]>([]);
   const open = cards.find((c) => c.id === peek);
-  // the session its page's Open button goes to. a card nobody was on has none: nothing is started
+  // the session its page's Open button goes to. a todo card has none: nothing is started
   const pair = useRowDoubleClick((c: CardHead) => openWith(c.sessionKey, c.open, c.id));
 
   useEffect(focusScreen, []);

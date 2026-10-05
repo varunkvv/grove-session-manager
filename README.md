@@ -400,11 +400,12 @@ make a row, and neither do superseded conclusions or canceled cards.
 
 **Cards** lists the project's cards in groups: Waiting on you, In progress, Todo, Done, Canceled, with who holds each
 and where that agent runs. A click opens a card in the same panel as the inbox's, to the right of the list. A
-double-click opens its agent in the editor: the one that holds it, or the last one that worked on it. On a card nobody
-was on a double-click opens nothing, and it never starts an agent. A project with no cards shows its goal and the
-buttons to start an agent on it. Under either, **Sessions** lists the sessions started in the project's folder that
-hold no card, newest first: 8, then up to 30. Each has **Open in VS Code**, and a double-click on the row does the
-same. Older ones, and sessions started in a subfolder, are in `⌘K`.
+double-click opens its agent in the editor: the one that holds it, or on a done or canceled card the last one that
+worked on it. On a todo card, also one that was given back, a double-click opens nothing, and it never starts an
+agent. A project with no cards shows its goal and the buttons to start an agent on it. Under either, **Sessions**
+lists the sessions started in the project's folder that hold no card, newest first: 8, then up to 30. Each has
+**Open in VS Code**, and a double-click on the row does the same. Older ones, and sessions started in a subfolder,
+are in `⌘K`.
 
 A **card** has the brief and the thread in order: comments, questions with their answers, the conclusions recorded
 on it, takeovers, and how it finished. Ids in the text are links to the card or conclusion they name. The side panel

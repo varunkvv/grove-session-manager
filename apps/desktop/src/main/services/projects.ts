@@ -740,10 +740,13 @@ export class ProjectsService {
         stateAt: this.since(c.holder.session, state, f),
       };
     }
-    // the session the card page shows, so a double-click on the row goes where its Open button
-    // does. a key and a plan, or neither: grove has to have indexed it
+    // the session the card page's Open button goes to, so a double-click on the row goes there
+    // too: the holder's, or the last agent's on a done or canceled card. a card that was given
+    // back offers a start on its page, and a row never starts one. a key and a plan, or neither:
+    // grove has to have indexed it
     const on = agentOn(c);
-    const row = on && index.rows.get(on.session);
+    const opens = on && (on.holding || c.status === "done" || c.status === "canceled");
+    const row = opens ? index.rows.get(on.session) : undefined;
     const lastActivity = ms(c.lastActivity);
     const problems = problemCount(c);
     // the card page shows the conclusions that name it: a new one, or one replaced, is a change

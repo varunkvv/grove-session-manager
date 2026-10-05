@@ -264,20 +264,28 @@ describe("card heads and conclusion rows", () => {
     expect(rows["D-3"]).toMatchObject({ needsReview: true, reviewed: true, replaces: "D-1" });
   });
 
-  it("carries what a double-click opens: the holder's session, else the last agent's, else nothing", () => {
+  it("carries what a double-click opens: the holder's session, the last agent's on a closed card, else nothing", () => {
     const t = setup();
     const chat = t.project("chat", "CHAT");
     t.session("s-1", { comboName: "chat" });
     // in the background, and Claude Code has not said which background session it is
     t.session("s-2", { background: { held: true } });
     const a = chat.as("s-1");
-    for (const title of ["held", "done", "nobody was on it", "held, not indexed yet"]) {
+    for (const title of [
+      "held",
+      "done",
+      "nobody was on it",
+      "held, not indexed yet",
+      "given back",
+    ]) {
       a("card_create", { title });
     }
     a("card_claim", { card: "CHAT-1" });
     chat.as("s-2")("card_claim", { card: "CHAT-2" });
     chat.as("s-2")("card_done", { card: "CHAT-2", summary: "Done." });
     chat.as("s-3")("card_claim", { card: "CHAT-4" });
+    a("card_claim", { card: "CHAT-5" });
+    a("card_release", { card: "CHAT-5", note: "Not started." });
     chat.changed();
     const head = (id: string) => t.heads("chat").find((h) => h.id === id);
 
@@ -292,6 +300,12 @@ describe("card heads and conclusion rows", () => {
     expect(head("CHAT-2")?.sessionKey).toBe(t.svc.card("chat", "CHAT-2")?.agent?.sessionKey);
     expect(head("CHAT-2")?.open).toEqual(t.svc.card("chat", "CHAT-2")?.agent?.open);
     expect(head("CHAT-3")).toMatchObject({ sessionKey: undefined, open: undefined });
+    // its page offers a start, not an open: the row opens nothing, though s-1 was on it
+    expect(head("CHAT-5")).toMatchObject({
+      status: "todo",
+      sessionKey: undefined,
+      open: undefined,
+    });
 
     // a session grove has not indexed has neither. when it is, that head is sent again
     expect(head("CHAT-4")).toMatchObject({

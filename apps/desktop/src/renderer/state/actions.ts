@@ -302,7 +302,7 @@ function act(s: State, list: NonNullable<ReturnType<typeof listOf>>, type: Inten
   } else if (list.screen === "cards") {
     const card = s.records[s.project]?.cards.find((c) => c.id === at);
     if (type === "open") openRow("cards", at);
-    // a card nobody was on has no session: nothing opens, and nothing is started
+    // a todo card has no session to open: nothing opens, and nothing is started
     else if (type === "open-editor") openWith(card?.sessionKey, card?.open, at);
     // a card is not reviewed: its inbox rows are
   } else {
