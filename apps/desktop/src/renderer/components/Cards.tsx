@@ -1,6 +1,7 @@
 import type { CardDisplayStatus } from "@grove/core/pure";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { CardHead, ProjectId, ProjectView, SessionHit } from "../../shared/ipc.ts";
+import { PROJECT_SESSIONS_MAX } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import {
   cardOrder,
@@ -187,10 +188,12 @@ function Sessions({ project, className }: { project: ProjectId; className: strin
   const editor = useStore((s) => s.editor?.label ?? "the editor");
   const inbox = useStore((s) => s.inbox);
   const record = useStore((s) => s.records[project]);
+  // ticks every 30s and when the window comes back: a session that closed moves neither of the above
+  const now = useStore((s) => s.now);
   const [hits, setHits] = useState<SessionHit[]>([]);
   const [all, setAll] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: no push says a session came or went. the inbox and the record moving are when to ask again
+  // biome-ignore lint/correctness/useExhaustiveDependencies: no push says a session came or went. the inbox, the record and the clock moving are when to ask again
   useEffect(() => {
     let stale = false;
     void window.grove.projectSessions(project).then(
@@ -203,7 +206,7 @@ function Sessions({ project, className }: { project: ProjectId; className: strin
     return () => {
       stale = true;
     };
-  }, [project, inbox, record]);
+  }, [project, inbox, record, now]);
 
   if (hits.length === 0) return null;
   return (
@@ -264,6 +267,11 @@ function Sessions({ project, className }: { project: ProjectId; className: strin
         >
           Show all {hits.length}
         </Button>
+      )}
+      {all && hits.length >= PROJECT_SESSIONS_MAX && (
+        <p className="mt-2 px-3 text-sm text-fg-4" data-testid="sessions-older">
+          Older sessions are in ⌘K.
+        </p>
       )}
     </div>
   );

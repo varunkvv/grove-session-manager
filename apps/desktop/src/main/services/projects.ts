@@ -45,6 +45,7 @@ import type {
   SessionRow,
   ThreadItem,
 } from "../../shared/ipc.ts";
+import { PROJECT_SESSIONS_MAX } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { diffRows } from "../patchCoalescer.ts";
 import type { ComboService } from "./combos.ts";
@@ -501,7 +502,7 @@ export class ProjectsService {
           r.comboName === p.name && r.comboRelation === "root" && !this.heldBy(r.sessionId, [p]),
       )
       .sort(newest)
-      .slice(0, 30)
+      .slice(0, PROJECT_SESSIONS_MAX)
       .map((r) => this.hit(r, index));
   }
 

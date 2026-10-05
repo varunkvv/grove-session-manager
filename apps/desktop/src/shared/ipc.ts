@@ -459,6 +459,9 @@ export interface Bootstrap {
   inbox: InboxView;
 }
 
+/** how many sessions `projectSessions` sends. the page says where the older ones are when it gets this many */
+export const PROJECT_SESSIONS_MAX = 30;
+
 /** request/response. every call resolves quickly or reports progress through the push events below. */
 export interface Api {
   bootstrap(): Promise<Bootstrap>;
@@ -478,7 +481,7 @@ export interface Api {
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   findSessions(query: string): Promise<SessionHit[]>;
-  /** the sessions started in a project's folder that hold no in-progress card, newest first, at most 30 */
+  /** the sessions started in a project's folder that hold no in-progress card, newest first, at most PROJECT_SESSIONS_MAX */
   projectSessions(project: ProjectId): Promise<SessionHit[]>;
 
   /** a landing the page has not taken yet. taken once. */
