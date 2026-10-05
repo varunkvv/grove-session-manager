@@ -224,6 +224,8 @@ test("Open by runtime: the editor lands, a terminal says so, an unfound session 
   // in the editor: the project's window, and an intent that names the session. cmd-Enter is Open
   await g.reveal(SID.idp);
   await expect(cardPage(page, "AUTH-3")).toBeVisible();
+  // the page is up before its card is fetched, and the key needs the card's session
+  await expect(primary).toBeEnabled();
   await page.keyboard.press("Meta+Enter");
   await expect(toasts.filter({ hasText: "Opening AUTH-3 in VS Code" })).toBeVisible();
   await waitFor(async () => codeRuns().length === 1);
