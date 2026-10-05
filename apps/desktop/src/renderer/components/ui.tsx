@@ -750,7 +750,10 @@ export function ProblemMark({
 
 /**
  * the one popover shape: the switcher and the palette. no keys here: the global handler knows an
- * overlay is open from the store
+ * overlay is open from the store.
+ *
+ * both layers are `no-drag`. app-region is inherited, and the switcher's overlay is drawn inside the
+ * top bar: left alone it is a window drag region, where macOS takes a click as the start of a drag
  */
 export function Overlay({
   open,
@@ -771,10 +774,14 @@ export function Overlay({
   if (!open) return null;
   return (
     <>
-      <div className="fixed inset-0 z-40" onMouseDown={onClose} />
+      <div
+        className="no-drag fixed inset-0 z-40"
+        onMouseDown={onClose}
+        data-testid="overlay-backdrop"
+      />
       <div
         className={cx(
-          "fixed z-50 rounded-lg border border-line-strong bg-overlay overlay-shadow",
+          "no-drag fixed z-50 rounded-lg border border-line-strong bg-overlay overlay-shadow",
           className,
         )}
         style={style}
