@@ -21,7 +21,7 @@ import {
 import type { ArtifactView, ProjectId } from "../../shared/ipc.ts";
 import { artifactName, cardTitle } from "../logic/views.ts";
 import { agentHue, initials, type WhoView } from "../logic/who.ts";
-import { openArtifact, openCard, openConclusion } from "../state/actions.ts";
+import { openArtifact, openCard, openConclusion, optionId } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -290,6 +290,53 @@ export function useRowDoubleClick<T>(run: (row: T) => void) {
       },
     },
   };
+}
+
+/**
+ * a list screen and the row that is open in it. the list keeps the left and scrolls by itself, the
+ * panel takes the right half behind a line. the list is a container: a row drops its who and where
+ * cells when the panel leaves it narrow. `root` is what `useRowDoubleClick` gives
+ */
+export function Split({
+  panel,
+  label,
+  testId,
+  root,
+  children,
+}: {
+  /** what is open, or nothing */
+  panel: ReactNode;
+  label?: string;
+  /** the list's scroller */
+  testId?: string;
+  root: ReturnType<typeof useRowDoubleClick>["root"];
+  children: ReactNode;
+}) {
+  const peek = useStore((s) => s.peek);
+  // the list narrows when the panel opens and the rows above the open one grow: it stays on screen
+  useEffect(() => {
+    if (peek) document.getElementById(optionId(peek))?.scrollIntoView({ block: "nearest" });
+  }, [peek]);
+  return (
+    <div className="flex h-full" {...root}>
+      {/* the gutter stays, so the column does not move when the list grows long enough to scroll */}
+      <div
+        className="@container h-full min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+        data-testid={testId}
+      >
+        <div className="mx-auto max-w-[860px] px-4 pt-8 pb-16">{children}</div>
+      </div>
+      {panel && (
+        <section
+          aria-label={label}
+          className="h-full w-1/2 shrink-0 border-l border-line"
+          data-testid="panel"
+        >
+          {panel}
+        </section>
+      )}
+    </div>
+  );
 }
 
 /** the only places monospace is allowed: paths, branches, SHAs and commands */

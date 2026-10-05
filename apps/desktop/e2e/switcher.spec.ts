@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { type Fixture, makeFixture, pendingIntents, readExecLog } from "./helpers/fixture.ts";
-import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
+import { groveTest, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { asAgent, asPerson, liveSession, writeProject } from "./helpers/project.ts";
 
 let fx: Fixture;
@@ -67,7 +67,7 @@ test("nothing that takes a click sits in a window drag region", async () => {
   await expect(page.getByTestId("inbox-row").first()).toBeVisible({ timeout: 15_000 });
   await sweep("inbox");
   await page.getByTestId("inbox-row").first().click();
-  await expect(page.getByTestId("inbox-panel").getByTestId("card-side")).toBeVisible();
+  await expect(page.getByTestId("panel").getByTestId("card-side")).toBeVisible();
   await sweep("the inbox with a card in its panel");
   await page.keyboard.press("Escape");
 
@@ -85,6 +85,12 @@ test("nothing that takes a click sits in a window drag region", async () => {
   await sweep("cards");
 
   await page.getByTestId("card-row").click();
+  await expect(page.getByTestId("panel").getByTestId("card-side")).toBeVisible();
+  await sweep("cards with a card in its panel");
+
+  // the full card page, where a notification lands
+  await groveTest(app.app).reveal(IDP);
+  await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached();
   await expect(page.getByTestId("card-side")).toBeVisible();
   await sweep("a card");
 

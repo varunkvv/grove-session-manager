@@ -16,6 +16,7 @@ import {
   KindLabel,
   kindWord,
   RuntimeChip,
+  Split,
   Time,
   useRowDoubleClick,
 } from "./ui.tsx";
@@ -202,7 +203,7 @@ function RowPanel({ row, onClose }: { row: InboxRowView; onClose: () => void }) 
 
 /**
  * the inbox screen (ui.md 4.1): this project's rows in main's order, Asked and Stopped first. a
- * click opens a row in the right half, beside the list
+ * click opens a row in the panel beside the list
  */
 export function Inbox() {
   const inbox = useStore((s) => s.inbox);
@@ -238,63 +239,48 @@ export function Inbox() {
     }
   }, [rows]);
 
-  // the list narrows when the panel opens and the rows above the open one grow: it stays on screen
-  useEffect(() => {
-    if (peek) document.getElementById(optionId(peek))?.scrollIntoView({ block: "nearest" });
-  }, [peek]);
-
   return (
-    <div className="flex h-full" {...pair.root}>
-      {/* the gutter stays, so the column does not move when the list grows long enough to scroll.
-          a container: a row hides its who and where cells when the list is narrow */}
-      <div
-        className="@container h-full min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
-        data-testid="inbox"
-      >
-        <div className="mx-auto max-w-[860px] px-4 pt-8 pb-16">
-          <h1 className="sr-only">Inbox</h1>
-          {some ? (
-            <ul
-              role="listbox"
-              aria-label="Inbox"
-              tabIndex={0}
-              data-list
-              aria-activedescendant={active ? optionId(active) : undefined}
-              className="border-t border-line"
-            >
-              {rows.map((r) => (
-                <InboxRow
-                  key={r.id}
-                  row={r}
-                  active={r.id === active}
-                  open={r.id === peek}
-                  onClick={() => {
-                    pair.clicked(r);
-                    openRow(r);
-                  }}
-                />
-              ))}
-            </ul>
-          ) : (
-            <p className="py-28 text-center text-body text-fg" data-testid="inbox-empty">
-              Nothing needs you.
-            </p>
-          )}
-        </div>
-      </div>
-      {open && (
-        <section
-          aria-label={`${kindWord(open.kind)}: ${open.card?.id ?? open.title}`}
-          className="h-full w-1/2 shrink-0 border-l border-line"
-          data-testid="inbox-panel"
+    <Split
+      testId="inbox"
+      root={pair.root}
+      label={open && `${kindWord(open.kind)}: ${open.card?.id ?? open.title}`}
+      panel={
+        open &&
+        (open.card ? (
+          <CardPage key={open.card.id} cardId={open.card.id} onClose={close} />
+        ) : (
+          <RowPanel row={open} onClose={close} />
+        ))
+      }
+    >
+      <h1 className="sr-only">Inbox</h1>
+      {some ? (
+        <ul
+          role="listbox"
+          aria-label="Inbox"
+          tabIndex={0}
+          data-list
+          aria-activedescendant={active ? optionId(active) : undefined}
+          className="border-t border-line"
         >
-          {open.card ? (
-            <CardPage key={open.card.id} cardId={open.card.id} onClose={close} />
-          ) : (
-            <RowPanel row={open} onClose={close} />
-          )}
-        </section>
+          {rows.map((r) => (
+            <InboxRow
+              key={r.id}
+              row={r}
+              active={r.id === active}
+              open={r.id === peek}
+              onClick={() => {
+                pair.clicked(r);
+                openRow("inbox", r.id);
+              }}
+            />
+          ))}
+        </ul>
+      ) : (
+        <p className="py-28 text-center text-body text-fg" data-testid="inbox-empty">
+          Nothing needs you.
+        </p>
       )}
-    </div>
+    </Split>
   );
 }

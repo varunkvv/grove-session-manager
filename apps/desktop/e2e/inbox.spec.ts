@@ -179,7 +179,7 @@ test("one row of every kind, Asked and Stopped first, each with its summary on a
   );
   // force: playwright would wait for the button to be enabled
   await under(held, () => held.getByTestId("inbox-open").click({ force: true, timeout: 2_000 }));
-  await expect(page.getByTestId("inbox-panel")).toHaveCount(0);
+  await expect(page.getByTestId("panel")).toHaveCount(0);
 
   // the other project's inbox is its own: nothing, and no count in the nav
   await page.keyboard.press("Alt+ArrowDown");
@@ -326,7 +326,7 @@ test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Ente
   });
 
   // the arrows alone never open the panel. Enter does, on the keyboard's row, and the list stays
-  const panel = page.getByTestId("inbox-panel");
+  const panel = page.getByTestId("panel");
   await expect(panel).toHaveCount(0);
   await step(async () => {
     await press("Meta+ArrowUp", "Enter");
@@ -358,7 +358,7 @@ test("a click opens the row's card in a panel beside the list, another row swaps
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-  const panel = page.getByTestId("inbox-panel");
+  const panel = page.getByTestId("panel");
   const card = panel.getByTestId("card-page");
   const chips = page.getByTestId("inbox").getByTestId("runtime-chip");
   // at most one row is under a pointer, and that one shows its buttons instead
@@ -412,7 +412,7 @@ test("a double-click opens the row's session in the editor, once, wherever the p
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-  const panel = page.getByTestId("inbox-panel");
+  const panel = page.getByTestId("panel");
   const asked = row(page, "asked");
 
   // the middle of a row: the first click opens the panel, whose edge is then under the pointer
@@ -436,7 +436,7 @@ test("a double-click opens the row's session in the editor, once, wherever the p
           .testid,
       at,
     ),
-  ).toBe("inbox-panel");
+  ).toBe("panel");
   // the second click was nobody's: the panel is still on that row, and on the inbox
   await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-1");
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
@@ -465,7 +465,7 @@ test("a row with no card opens in full in the panel, and a row that leaves hands
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-  const panel = page.getByTestId("inbox-panel");
+  const panel = page.getByTestId("panel");
   const session = page.locator('[data-testid="inbox-row"]:not([data-card])');
   const said = `Done with the first pass. ${"The callback route now checks the state cookie before it trades the code. ".repeat(4)}Want me to open the PR?`;
 

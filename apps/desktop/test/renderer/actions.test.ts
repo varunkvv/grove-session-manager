@@ -264,12 +264,45 @@ describe("keys on a list", () => {
     ]);
   });
 
-  it("Cards moves through the cards and opens one. Conclusions opens a row in place, and closes it", () => {
+  it("Cards moves through the cards. Enter opens one in the panel, cmd-Enter its agent in the editor", () => {
+    const records = s().records;
+    const held = head("AUTH-2", {
+      sessionKey: "/p/s.jsonl",
+      open: { disabled: "running in the background" },
+    });
+    s().set({ records: { ...records, auth: { ...records.auth!, cards: [head("AUTH-1"), held] } } });
     go("cards");
+    // a card nobody was on has no session: cmd-Enter opens nothing, starts nothing and says nothing
+    perform({ type: "move-to", where: "first" });
+    perform({ type: "open-editor" });
+    expect(s()).toMatchObject({ view: { name: "cards" }, peek: null, toasts: [], dialog: null });
     perform({ type: "move-to", where: "last" });
+    perform({ type: "open-editor" });
+    expect(s().toasts).toMatchObject([
+      { level: "error", title: "Could not open AUTH-2: running in the background" },
+    ]);
+
     perform({ type: "open" });
-    expect(s().view).toEqual({ name: "card", cardId: "AUTH-2" });
+    expect(s()).toMatchObject({
+      view: { name: "cards" },
+      peek: "AUTH-2",
+      active: { cards: "AUTH-2" },
+      back: [],
+    });
+    // the arrows move it, and Escape closes it
+    perform({ type: "move", delta: -1 });
+    expect(s()).toMatchObject({ peek: "AUTH-1", active: { cards: "AUTH-1" } });
+    perform({ type: "close-panel" });
+    expect(s()).toMatchObject({ view: { name: "cards" }, peek: null });
+    // it is one panel for both lists: leaving for the inbox shuts it
+    perform({ type: "open" });
+    go("inbox");
+    expect(s().peek).toBeNull();
+  });
+
+  it("Conclusions opens a row in place, and closes it", () => {
     go("conclusions");
+    s().set({ keys: true });
     perform({ type: "move", delta: 1 });
     perform({ type: "open" });
     expect(s().conclusions.open).toBe("F-1");
@@ -286,11 +319,9 @@ describe("keys on a list", () => {
   });
 });
 
-describe("the inbox panel", () => {
-  const rows = () => s().inbox.rows;
-
+describe("the panel beside a list", () => {
   it("a click opens the row beside the list and never toggles: a double-click is two clicks first", () => {
-    openRow(rows()[1]!);
+    openRow("inbox", "decided:D-2");
     expect(s()).toMatchObject({
       peek: "decided:D-2",
       active: { inbox: "decided:D-2" },
@@ -298,11 +329,8 @@ describe("the inbox panel", () => {
       back: [],
       toasts: [],
     });
-    openRow(rows()[1]!);
+    openRow("inbox", "decided:D-2");
     expect(s().peek).toBe("decided:D-2");
-    // a row with no card opens there too. nothing a click does reaches the editor
-    openRow(row("asked:session:s1", { sessionKey: "/p/s.jsonl", open: {} }));
-    expect(s()).toMatchObject({ peek: "asked:session:s1", view: { name: "inbox" }, toasts: [] });
   });
 
   it("follows the arrows while it is open, from its own row, and stays shut while it is not", () => {
@@ -312,7 +340,7 @@ describe("the inbox panel", () => {
     perform({ type: "move-to", where: "first" });
     expect(s().peek).toBeNull();
 
-    openRow(rows()[0]!);
+    openRow("inbox", "asked:AUTH-1");
     // the mouse went over another row and away: the keyboard's row moved, the panel did not
     s().set({ active: { ...s().active, inbox: "decided:D-2" }, keys: false });
     expect(s().peek).toBe("asked:AUTH-1");
@@ -328,18 +356,18 @@ describe("the inbox panel", () => {
   });
 
   it("Escape closes it. a card page and Back keep it, the nav and another project do not", () => {
-    openRow(rows()[0]!);
+    openRow("inbox", "asked:AUTH-1");
     perform({ type: "close-panel" });
     expect(s()).toMatchObject({ peek: null, view: { name: "inbox" } });
 
-    openRow(rows()[0]!);
+    openRow("inbox", "asked:AUTH-1");
     openCard("AUTH-2");
     back();
     expect(s()).toMatchObject({ peek: "asked:AUTH-1", view: { name: "inbox" } });
     go("inbox");
     expect(s().peek).toBeNull();
 
-    openRow(rows()[0]!);
+    openRow("inbox", "asked:AUTH-1");
     switchProject("billing");
     expect(s().peek).toBeNull();
   });

@@ -36,7 +36,7 @@ export interface KeyContext {
   query: string;
   /** a Conclusions row is open */
   expanded: boolean;
-  /** a row is open in the panel beside the inbox */
+  /** a row is open in the panel beside the Inbox or the Cards list */
   panel: boolean;
   /** Back has somewhere to go: the stack is not empty */
   canGoBack: boolean;
@@ -87,7 +87,7 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     if (ctx.overlay) return { type: "close-overlay" };
     if (ctx.view === "conclusions" && ctx.expanded) return { type: "collapse" };
     if (ctx.view === "conclusions" && ctx.query) return { type: "clear-query" };
-    if (ctx.view === "inbox" && ctx.panel) return { type: "close-panel" };
+    if ((ctx.view === "inbox" || ctx.view === "cards") && ctx.panel) return { type: "close-panel" };
     if (ctx.view === "card") return { type: "back" };
     // a form with changes is not thrown away by a stray Escape
     if (ctx.view === "new-project" || ctx.view === "edit-project") {

@@ -399,17 +399,21 @@ has **Open in VS Code** and **Reviewed**, which takes the row out. Your own conc
 make a row, and neither do superseded conclusions or canceled cards.
 
 **Cards** lists the project's cards in groups: Waiting on you, In progress, Todo, Done, Canceled, with who holds each
-and where that agent runs. A project with no cards shows its goal and the buttons to start an agent on it. Under
-either, **Sessions** lists the sessions started in the project's folder that hold no card, newest first: 8, then up to
-30. Each has **Open in VS Code**, and a double-click on the row does the same. Older ones, and sessions started in a
-subfolder, are in `⌘K`.
+and where that agent runs. A click opens a card in the same panel as the inbox's, to the right of the list. A
+double-click opens its agent in the editor: the one that holds it, or the last one that worked on it. On a card nobody
+was on a double-click opens nothing, and it never starts an agent. A project with no cards shows its goal and the
+buttons to start an agent on it. Under either, **Sessions** lists the sessions started in the project's folder that
+hold no card, newest first: 8, then up to 30. Each has **Open in VS Code**, and a double-click on the row does the
+same. Older ones, and sessions started in a subfolder, are in `⌘K`.
 
-A **card** page has the brief and the thread in order: comments, questions with their answers, the conclusions recorded
+A **card** has the brief and the thread in order: comments, questions with their answers, the conclusions recorded
 on it, takeovers, and how it finished. Ids in the text are links to the card or conclusion they name. The side panel
 has the agent (name, where it runs, model, what it is doing, its subagents), the artifacts agents attached, the cards
 it needs or was created from, and its conclusions. A file artifact is shown in Finder, never opened. A GitHub pull
 request or a web link opens in the browser. Anything else is copied. The header has one button: **Open in VS Code** for
-a card with an agent, **Start an agent in VS Code** for one nobody holds.
+a card with an agent, **Start an agent in VS Code** for one nobody holds. In the panel beside a list the side panel
+sits under the thread when there is no room next to it. An id in the text, the palette, a notification and the menu
+bar open the card as a page of its own, with Back.
 
 **Conclusions** is every decision, finding and verdict in the project, newest first, with a search over what, why,
 card, agent and area (`you` finds your own) and a filter by kind. A row opens in place to who settled it ("Decided by
@@ -592,15 +596,15 @@ No single letter is a shortcut, so on Conclusions a letter goes straight to the 
 | `⌘1` `⌘2` `⌘3` | Inbox / Cards / Conclusions |
 | `⌥↑` `⌥↓` | step through projects |
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` `⌘↑` `⌘↓` | move the active row |
-| `↵` | open the active row: an inbox row in the panel beside the list, a card, or a conclusion in place |
+| `↵` | open the active row: an inbox row or a card in the panel beside the list, a conclusion in place |
 | `⌘↵` | open the row's agent in the editor. on a card, the same as its Open button |
 | `⌘D` | mark the active inbox row or conclusion reviewed |
 | `⌘F` | search conclusions, from any screen. `/` does the same on Conclusions |
-| `Esc` | close what is open (the inbox panel, a conclusion), clear the search, then go back |
+| `Esc` | close what is open (the panel, a conclusion), clear the search, then go back |
 | `⌘N` `⌘O` `⌘E` `⌘R` `⌘,` | new project, open the project in the editor, edit project, refresh, settings |
 
 No row looks active until a key says so: the first arrow or `↵` only shows which row the keyboard is on, and the next
-one acts. With the inbox panel open the arrows step from its row at once. `Esc` does not leave a project form that has
+one acts. With the panel open the arrows step from its row at once. `Esc` does not leave a project form that has
 changes.
 
 ## Develop

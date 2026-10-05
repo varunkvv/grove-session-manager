@@ -49,10 +49,13 @@ describe("what a key means", () => {
     expect(conclusions({})).toBeNull();
     expect(interpret(ctx({ view: "card" }), key("Escape"))).toEqual({ type: "back" });
     expect(interpret(ctx({ view: "inbox" }), key("Escape"))).toBeNull();
-    // the inbox with a row open in the panel: the panel closes, before anything goes back
-    expect(interpret(ctx({ view: "inbox", panel: true, canGoBack: true }), key("Escape"))).toEqual({
-      type: "close-panel",
-    });
+    // Inbox or Cards with a row open in the panel: the panel closes, before anything goes back
+    for (const view of ["inbox", "cards"] as const) {
+      expect(interpret(ctx({ view, panel: true, canGoBack: true }), key("Escape")), view).toEqual({
+        type: "close-panel",
+      });
+    }
+    expect(interpret(ctx({ view: "conclusions", panel: true }), key("Escape"))).toBeNull();
     // the panel is kept across a trip to a card page: there Escape is still Back
     expect(interpret(ctx({ view: "card", panel: true }), key("Escape"))).toEqual({ type: "back" });
     expect(interpret(ctx({ overlay: true, panel: true }), key("Escape"))).toEqual({

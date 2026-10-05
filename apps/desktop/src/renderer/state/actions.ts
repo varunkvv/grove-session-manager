@@ -1,6 +1,5 @@
 import type {
   ArtifactView,
-  InboxRowView,
   OpenPlan,
   ProjectId,
   SessionKey,
@@ -156,12 +155,13 @@ export function openWith(
 }
 
 /**
- * a click or Enter: the row opens in the panel beside the list and is the keyboard's. never a
- * toggle, a double-click is two of these first. and never the editor: that is the double-click
+ * a click or Enter on an inbox row or a card row: it opens in the panel beside its list and is the
+ * keyboard's. never a toggle, a double-click is two of these first. and never the editor: that is
+ * the double-click
  */
-export function openRow(row: InboxRowView): void {
+export function openRow(screen: "inbox" | "cards", id: string): void {
   const s = state();
-  s.set({ peek: row.id, active: { ...s.active, inbox: row.id } });
+  s.set({ peek: id, active: { ...s.active, [screen]: id } });
 }
 
 /** the same for every start button in the app */
@@ -277,7 +277,7 @@ function moveTo(s: State, list: NonNullable<ReturnType<typeof listOf>>, index: n
     active: { ...s.active, [list.screen]: id },
     keys: true,
     // an open panel goes where the keyboard goes. it never follows the mouse
-    ...(list.screen === "inbox" && s.peek ? { peek: id } : {}),
+    ...(list.screen !== "conclusions" && s.peek ? { peek: id } : {}),
   });
   if (typeof document !== "undefined") {
     document.getElementById(optionId(id))?.scrollIntoView({ block: "nearest" });
@@ -296,12 +296,15 @@ function act(s: State, list: NonNullable<ReturnType<typeof listOf>>, type: Inten
   if (list.screen === "inbox") {
     const row = s.inbox.rows.find((r) => r.project === s.project && r.id === at);
     if (!row) return;
-    if (type === "open") openRow(row);
+    if (type === "open") openRow("inbox", at);
     else if (type === "open-editor") openWith(row.sessionKey, row.open, row.card?.id ?? row.title);
     else void review(s.project, row.reviewKeys);
   } else if (list.screen === "cards") {
-    // a card head carries no session to open, and a card is not reviewed: its inbox rows are
-    if (type === "open") openCard(at);
+    const card = s.records[s.project]?.cards.find((c) => c.id === at);
+    if (type === "open") openRow("cards", at);
+    // a card nobody was on has no session: nothing opens, and nothing is started
+    else if (type === "open-editor") openWith(card?.sessionKey, card?.open, at);
+    // a card is not reviewed: its inbox rows are
   } else {
     const c = s.records[s.project]?.conclusions.find((x) => x.id === at);
     if (!c) return;
@@ -327,7 +330,8 @@ export function perform(intent: Intent): void {
     case "move":
       if (list) {
         // the open row always shows, so an arrow steps from it at once, wherever the mouse has been
-        const open = list.screen === "inbox" && s.peek && list.ids.includes(s.peek) ? s.peek : null;
+        const open =
+          list.screen !== "conclusions" && s.peek && list.ids.includes(s.peek) ? s.peek : null;
         const from = open ?? list.at;
         // nothing shows which row the keyboard is on yet: the first arrow shows it, like the first Enter
         moveTo(s, list, (from ? list.ids.indexOf(from) : -1) + (s.keys || open ? intent.delta : 0));

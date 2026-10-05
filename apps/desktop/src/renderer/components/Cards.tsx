@@ -15,22 +15,27 @@ import { whoView } from "../logic/who.ts";
 import {
   editProject,
   focusScreen,
-  openCard,
+  openRow,
   openWith,
   optionId,
+  perform,
   startAgent,
 } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
+import { CardPage } from "./CardPage.tsx";
 import {
   Avatar,
   Button,
+  cx,
   Dot,
   Loading,
   ProblemMark,
   RuntimeChip,
   Spinner,
+  Split,
   StatusIcon,
   Time,
+  useRowDoubleClick,
 } from "./ui.tsx";
 
 const NONE: CardHead[] = [];
@@ -38,7 +43,20 @@ const NONE: CardHead[] = [];
 /** the statuses whose row says who holds the card. a done or canceled one shows nothing on the right */
 const LIVE: ReadonlySet<CardDisplayStatus> = new Set(["waiting", "stopped", "in_progress"]);
 
-function CardRow({ card, active, pending }: { card: CardHead; active: boolean; pending: number }) {
+function CardRow({
+  card,
+  active,
+  open,
+  pending,
+  onClick,
+}: {
+  card: CardHead;
+  active: boolean;
+  /** it is the one in the panel */
+  open: boolean;
+  pending: number;
+  onClick: () => void;
+}) {
   const title = cardTitle(card);
   return (
     <div
@@ -49,8 +67,13 @@ function CardRow({ card, active, pending }: { card: CardHead; active: boolean; p
       data-id={card.id}
       data-status={card.status}
       data-active={active || undefined}
-      className="fade flex h-9 items-center gap-3 border-b border-line px-3 last:border-b-0 hover:bg-raised data-[active]:bg-raised"
-      onClick={() => openCard(card.id)}
+      data-open={open || undefined}
+      className={cx(
+        "fade flex h-9 items-center gap-3 border-b border-line px-3 last:border-b-0",
+        // the open row is marked whoever moved last. hover and the keyboard's row are the lighter grey
+        open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
+      )}
+      onClick={onClick}
       // the keyboard carries on from where the mouse was
       onMouseEnter={() => {
         const s = useStore.getState();
@@ -69,12 +92,13 @@ function CardRow({ card, active, pending }: { card: CardHead; active: boolean; p
       </span>
       {card.agent && LIVE.has(card.status) && (
         <span className="flex shrink-0 items-center gap-3">
+          {/* who and where give way to the title in a narrow list, beside the panel */}
           {/* the inbox's cell: avatar 16 + 6 + a name as long as `chat-features-35` */}
-          <span className="flex w-[126px] min-w-0 items-center gap-1.5">
+          <span className="hidden w-[126px] min-w-0 items-center gap-1.5 @3xl:flex">
             <Avatar who={whoView(card.agent.ref)!} />
             <span className="truncate text-fg-2">{card.agent.ref.name}</span>
           </span>
-          <span className="w-[80px]">
+          <span className="hidden w-[80px] @3xl:block">
             <RuntimeChip runtime={card.agent.runtime} />
           </span>
           <span className="flex w-[32px] items-center justify-end gap-1" data-testid="card-pending">
@@ -277,109 +301,136 @@ function Sessions({ project, className }: { project: ProjectId; className: strin
   );
 }
 
-/** the cards screen: the project's cards by status, or the start state when it has none */
+/**
+ * the cards screen: the project's cards by status, or the start state when it has none. a click
+ * opens a card in the panel beside the list
+ */
 export function Cards() {
   const project = useStore(currentProject);
   const record = useStore((s) => (s.project ? s.records[s.project] : undefined));
   const inbox = useStore((s) => s.inbox);
   const active = useStore((s) => (s.keys ? s.active.cards : null));
+  const peek = useStore((s) => s.peek);
 
   const cards = record?.cards ?? NONE;
   const ids = useMemo(() => cardOrder(cards), [cards]);
   const had = useRef<string[]>([]);
+  const open = cards.find((c) => c.id === peek);
+  // the session its page's Open button goes to. a card nobody was on has none: nothing is started
+  const pair = useRowDoubleClick((c: CardHead) => openWith(c.sessionKey, c.open, c.id));
 
   useEffect(focusScreen, []);
 
-  // a row that leaves hands the keyboard to whatever took its index. on a fresh list, the first
+  // a row that leaves hands the keyboard to whatever took its index, and the panel with it. on a
+  // fresh list, the first
   useEffect(() => {
     const s = useStore.getState();
     const next = nextActiveKey(had.current, ids, s.active.cards, false);
+    // a closed panel stays closed: for a null, nextActiveKey answers the first row
+    const peek = s.peek && nextActiveKey(had.current, ids, s.peek, false);
     had.current = ids;
-    if (next !== s.active.cards) s.set({ active: { ...s.active, cards: next } });
+    if (next !== s.active.cards || peek !== s.peek) {
+      s.set({ active: { ...s.active, cards: next }, peek });
+    }
   }, [ids]);
 
   if (!project) return null;
   const { done, total } = doneOf(cards);
 
   return (
-    // the gutter stays, so the column does not move when the list grows long enough to scroll
-    <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
-      <div className="mx-auto max-w-[860px] px-4 pt-8 pb-16">
-        <div className="mb-6 flex items-start gap-4 px-3" data-testid="cards-header">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-title font-semibold">{project.name}</h1>
-            {project.goal && (
-              <p
-                className="mt-1 truncate text-body text-fg-4"
-                title={project.goal}
-                data-testid="goal"
-              >
-                {project.goal}
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <Button variant="quiet" size="sm" onClick={editProject} data-testid="edit-project">
-              Edit project
-            </Button>
-            {total > 0 && (
-              <span className="text-sm tabular-nums text-fg-4" data-testid="done-count">
-                {done} of {total} done
-              </span>
-            )}
-          </div>
-        </div>
-        {record?.readAt === undefined ? (
-          <Loading />
-        ) : cards.length === 0 ? (
-          <StartState project={project} />
-        ) : (
-          <div
-            role="listbox"
-            aria-label="Cards"
-            tabIndex={0}
-            data-list
-            aria-activedescendant={active ? optionId(active) : undefined}
-            className="space-y-5"
-          >
-            {groupCards(cards).map((g) => (
-              <div
-                key={g.key}
-                role="group"
-                aria-labelledby={`group-${g.key}`}
-                data-testid="card-group"
-                data-group={g.key}
-              >
-                <div
-                  id={`group-${g.key}`}
-                  // the gap under it: the keyboard's row is the same grey, and must not read as its band
-                  className="mb-1 flex h-8 items-center gap-2 rounded-md bg-raised px-3 text-sm font-medium text-fg-2"
-                >
-                  <StatusIcon status={g.key} size={12} />
-                  {g.label}
-                  <span className="font-normal tabular-nums text-fg-4">{g.cards.length}</span>
-                </div>
-                {g.cards.map((c) => (
-                  <CardRow
-                    key={c.id}
-                    card={c}
-                    active={c.id === active}
-                    pending={pendingFor(inbox, project.id, c.id)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-        {record?.readAt !== undefined && (
-          // keyed, so one project's sessions never show under another's cards
-          <Sessions
-            key={project.id}
-            project={project.id}
-            className={cards.length === 0 ? "mt-12" : "mt-5"}
+    <Split
+      root={pair.root}
+      label={open && `${open.id} ${open.title}`}
+      panel={
+        open && (
+          // the same as Escape
+          <CardPage
+            key={open.id}
+            cardId={open.id}
+            onClose={() => perform({ type: "close-panel" })}
           />
-        )}
+        )
+      }
+    >
+      <div className="mb-6 flex items-start gap-4 px-3" data-testid="cards-header">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-title font-semibold">{project.name}</h1>
+          {project.goal && (
+            <p
+              className="mt-1 truncate text-body text-fg-4"
+              title={project.goal}
+              data-testid="goal"
+            >
+              {project.goal}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Button variant="quiet" size="sm" onClick={editProject} data-testid="edit-project">
+            Edit project
+          </Button>
+          {total > 0 && (
+            <span className="text-sm tabular-nums text-fg-4" data-testid="done-count">
+              {done} of {total} done
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+      {record?.readAt === undefined ? (
+        <Loading />
+      ) : cards.length === 0 ? (
+        <StartState project={project} />
+      ) : (
+        <div
+          role="listbox"
+          aria-label="Cards"
+          tabIndex={0}
+          data-list
+          aria-activedescendant={active ? optionId(active) : undefined}
+          className="space-y-5"
+        >
+          {groupCards(cards).map((g) => (
+            <div
+              key={g.key}
+              role="group"
+              aria-labelledby={`group-${g.key}`}
+              data-testid="card-group"
+              data-group={g.key}
+            >
+              <div
+                id={`group-${g.key}`}
+                // the gap under it: the keyboard's row is the same grey, and must not read as its band
+                className="mb-1 flex h-8 items-center gap-2 rounded-md bg-raised px-3 text-sm font-medium text-fg-2"
+              >
+                <StatusIcon status={g.key} size={12} />
+                {g.label}
+                <span className="font-normal tabular-nums text-fg-4">{g.cards.length}</span>
+              </div>
+              {g.cards.map((c) => (
+                <CardRow
+                  key={c.id}
+                  card={c}
+                  active={c.id === active}
+                  open={c.id === peek}
+                  pending={pendingFor(inbox, project.id, c.id)}
+                  onClick={() => {
+                    pair.clicked(c);
+                    openRow("cards", c.id);
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {record?.readAt !== undefined && (
+        // keyed, so one project's sessions never show under another's cards
+        <Sessions
+          key={project.id}
+          project={project.id}
+          className={cards.length === 0 ? "mt-12" : "mt-5"}
+        />
+      )}
+    </Split>
   );
 }

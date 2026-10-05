@@ -125,44 +125,165 @@ test("cards sit in groups by display status, with who holds the live ones", asyn
   await expect(page.getByTestId("sessions-group")).toHaveCount(0);
 });
 
-test("a click opens a card, and so does the keyboard after it shows its row", async () => {
+const cardRow = (page: Page, id: string) =>
+  page.locator(`[data-testid="card-row"][data-id="${id}"]`);
+/** the row in the panel */
+const openRow = (page: Page) => page.locator('[data-testid="card-row"][data-open]');
+const codeRuns = () => readExecLog(fx).filter((l) => l.bin === "code");
+
+test("a click opens a card in the panel beside the list, and so does the keyboard after it shows its row", async () => {
   setup();
   app = await launchApp(fx);
   const { page } = app;
   await openCards(page);
-  const card = page.locator('[data-testid="screen"][data-view="card"]');
+  const panel = page.getByTestId("panel");
+  const card = panel.getByTestId("card-page");
+  const screen = page.getByTestId("screen");
+  const chips = page.getByRole("listbox", { name: "Cards" }).getByTestId("runtime-chip");
+  // at most one row is under a pointer, and three rows say where their agent runs
+  await expect(chips.filter({ visible: true })).not.toHaveCount(0);
 
-  await page.locator('[data-testid="card-row"][data-id="AUTH-4"]').click();
-  await expect(card).toBeAttached();
-  await page.keyboard.press("Escape");
+  await cardRow(page, "AUTH-4").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-4");
+  await expect(panel.getByTestId("card-side")).toBeVisible();
+  await expect(panel.getByTestId("panel-close")).toBeVisible();
+  // the list is still there under its header, with that row marked
+  await expect(screen).toHaveAttribute("data-view", "cards");
   await expect(page.getByTestId("card-row")).toHaveCount(7);
+  await expect(page.getByTestId("cards-header").locator("h1")).toHaveText("auth-sso");
+  await expect(openRow(page)).toHaveAttribute("data-id", "AUTH-4");
+  // half the window is not room for who and where. the not-reviewed count stays
+  await expect(chips.filter({ visible: true })).toHaveCount(0);
+  await expect(cardRow(page, "AUTH-1").getByTestId("card-pending")).toBeVisible();
+  await expect(cardRow(page, "AUTH-1").getByTestId("card-pending")).toHaveText("2");
 
-  // the mouse left AUTH-4 the keyboard's row. the first Enter only shows it
+  // a second click is not a toggle, another row swaps the card, Escape closes it
+  await cardRow(page, "AUTH-4").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-4");
+  await cardRow(page, "AUTH-6").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-6");
+  await expect(openRow(page)).toHaveCount(1);
+  await expect(openRow(page)).toHaveAttribute("data-id", "AUTH-6");
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(screen).toHaveAttribute("data-view", "cards");
+  await expect(page.getByTestId("card-row")).toHaveCount(7);
+  // no click opened the editor
+  expect(codeRuns()).toHaveLength(0);
+
+  // the mouse left a row the keyboard's. the first Enter only shows it
   const active = page.locator('[data-testid="card-row"][data-active]');
-  const at = (id: string) => expect(active).toHaveAttribute("data-id", id, { timeout: 2_000 });
   await step(async () => {
     // only while no row shows: a second Enter would open the card
     if ((await active.count()) === 0) await page.keyboard.press("Enter");
-    await at("AUTH-4");
+    await expect(active).toHaveCount(1, { timeout: 2_000 });
   });
-  await expect(card).toHaveCount(0);
+  await expect(panel).toHaveCount(0);
   await expect(page.getByRole("listbox", { name: "Cards" })).toHaveAttribute(
     "aria-activedescendant",
-    "row-AUTH-4",
+    `row-${await active.getAttribute("data-id")}`,
   );
+  // the arrows alone never open the panel
   await step(async () => {
-    // an arrow while no row shows only shows it: the second one moves
-    if ((await active.count()) === 0) await page.keyboard.press("ArrowDown");
-    if ((await active.getAttribute("data-id")) === "AUTH-4") await page.keyboard.press("ArrowDown");
-    await at("AUTH-5");
+    await page.keyboard.press("Meta+ArrowDown");
+    await expect(active).toHaveAttribute("data-id", "AUTH-7", { timeout: 2_000 });
   });
+  await expect(panel).toHaveCount(0);
+  // Enter opens the keyboard's row in the panel
   await step(async () => {
-    if ((await card.count()) === 0) {
-      if ((await active.count()) === 0) await page.keyboard.press("ArrowDown");
-      await page.keyboard.press("Enter");
+    await page.keyboard.press("Meta+ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(card).toHaveAttribute("data-id", "AUTH-7", { timeout: 2_000 });
+  });
+  await expect(screen).toHaveAttribute("data-view", "cards");
+  await expect(openRow(page)).toHaveAttribute("data-id", "AUTH-7");
+
+  // while it is open it goes where the arrows go, from its own row whatever the mouse did since
+  const order = await page
+    .getByTestId("card-row")
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
+  await step(async () => {
+    await page.keyboard.press("Meta+ArrowUp");
+    await page.keyboard.press("ArrowDown");
+    await expect(card).toHaveAttribute("data-id", order[1] as string, { timeout: 2_000 });
+  });
+  await expect(openRow(page)).toHaveAttribute("data-id", order[1] as string);
+
+  // the header's button closes it as well
+  await cardRow(page, "AUTH-1").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-1");
+  await page.getByTestId("panel-close").click();
+  await expect(panel).toHaveCount(0);
+});
+
+test("a double-click on a card row opens its agent in the editor, once. a card nobody was on opens nothing", async () => {
+  const { root } = setup();
+  // the holder of AUTH-1 has a transcript, so there is a session to land on
+  writeSession(fx, { cwd: root, sessionId: IDP, title: "idp config" });
+  app = await launchApp(fx);
+  const { page } = app;
+  // sessions are indexed after the page is up, and the card's head is sent again with its session
+  await page.waitForFunction(
+    async () =>
+      !!(await window.grove.bootstrap()).record["auth-sso"]?.cards.find((c) => c.id === "AUTH-1")
+        ?.sessionKey,
+    undefined,
+    { timeout: 30_000 },
+  );
+  await openCards(page);
+  const panel = page.getByTestId("panel");
+  const card = panel.getByTestId("card-page");
+  const toasts = page.getByTestId("toast");
+
+  // a todo card nobody was on: the first click opens the panel, and that is all. nothing starts
+  await cardRow(page, "AUTH-4").dblclick();
+  await expect(card).toHaveAttribute("data-id", "AUTH-4");
+  await expect(panel.getByTestId("card-primary")).toHaveAttribute("data-action", "start");
+  await page.waitForTimeout(500);
+  expect(codeRuns()).toHaveLength(0);
+  expect(pendingIntents(fx)).toEqual([]);
+  expect((await page.evaluate(() => window.grove.bootstrap())).projects[0]?.starting).toEqual([]);
+  await expect(toasts).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+
+  // a held card, on the right of its title: the panel opens under the second click, and the pair
+  // is still the row's. its agent's session, once
+  const box = (await cardRow(page, "AUTH-1").boundingBox()) as {
+    x: number;
+    y: number;
+    width: number;
+  };
+  const at = [box.x + box.width * 0.6, box.y + 18] as const;
+  await page.mouse.dblclick(...at);
+  await expect(toasts.filter({ hasText: "Opening AUTH-1 in VS Code" })).toBeVisible();
+  await waitFor(async () => codeRuns().length === 1);
+  expect(codeRuns()[0]?.argv[0]).toMatch(/auth-sso\.code-workspace$/);
+  expect(pendingIntents(fx)).toMatchObject([{ kind: "resume", sessionId: IDP, cwd: root }]);
+  expect(
+    await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.closest("section")?.dataset.testid,
+      at,
+    ),
+  ).toBe("panel");
+  await expect(card).toHaveAttribute("data-id", "AUTH-1");
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "cards");
+
+  // cmd-Enter does the same from the keyboard's row, which the arrows put on AUTH-1
+  const order = await page
+    .getByTestId("card-row")
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
+  await step(async () => {
+    if (codeRuns().length === 1) {
+      await page.keyboard.press("Meta+ArrowUp");
+      for (let i = 0; i < order.indexOf("AUTH-1"); i++) await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Meta+Enter");
     }
-    await expect(card).toBeAttached({ timeout: 2_000 });
+    await expect.poll(() => codeRuns().length, { timeout: 3_000 }).toBe(2);
   });
+  await page.waitForTimeout(500);
+  expect(codeRuns()).toHaveLength(2);
+  expect([...new Set(pendingIntents(fx).map((i) => i.sessionId))]).toEqual([IDP]);
 });
 
 test("a card an agent writes while the app is open shows up", async () => {
@@ -232,7 +353,6 @@ test("sessions that hold no card are listed under the cards, and open from the b
   const group = page.getByTestId("sessions-group");
   const rows = group.getByTestId("session-row");
   const shown = () => rows.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
-  const codeRuns = () => readExecLog(fx).filter((l) => l.bin === "code");
   const toast = (text: string) => page.getByTestId("toast").filter({ hasText: text });
 
   // eight, newest first. the holder is on its card's row, and the other two are the palette's
