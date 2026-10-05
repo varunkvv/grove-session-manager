@@ -398,6 +398,10 @@ function buildHandlers(deps: Deps): Handlers {
       return projects.findSessions(typeof query === "string" ? query : "");
     },
 
+    async projectSessions(project) {
+      return typeof project === "string" ? projects.projectSessions(project) : [];
+    },
+
     async takeLanding() {
       return deps.reveals.take();
     },

@@ -396,7 +396,9 @@ down the list. A click opens the card. Each row has **Open in VS Code** and **Re
 own conclusions and the cards you created never make a row, and neither do superseded conclusions or canceled cards.
 
 **Cards** lists the project's cards in groups: Waiting on you, In progress, Todo, Done, Canceled, with who holds each
-and where that agent runs. A project with no cards shows its goal and the buttons to start an agent on it.
+and where that agent runs. A project with no cards shows its goal and the buttons to start an agent on it. Under
+either, **Sessions** lists the project's sessions that hold no card, newest first: 8, then up to 30, and `⌘K` finds the
+older ones. Each has **Open in VS Code**, and a double-click on the row does the same.
 
 A **card** page has the brief and the thread in order: comments, questions with their answers, the conclusions recorded
 on it, takeovers, and how it finished. Ids in the text are links to the card or conclusion they name. The side panel
@@ -567,8 +569,8 @@ What is gone:
 
 - the conversation pane and its search within a conversation
 - the agent inspector, the Agents view, and the Haiku lines that summarised what each agent was doing
-- the session list as a screen, its token counts and its archive. Sessions are found from `⌘K`. `archived.json` is no
-  longer read, and is left where it is
+- the session list as a screen, its token counts and its archive. Sessions are found from `⌘K`, and a project's own
+  under its cards. `archived.json` is no longer read, and is left where it is
 - **New session...** with its model, permission mode and effort settings, and **Continue in background...**. Starting
   an agent takes no settings: the project's own decide
 - attaching to a background session in Terminal. Open stops it and lands in the editor

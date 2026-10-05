@@ -373,7 +373,7 @@ export interface ArtifactView {
   who?: AgentRef | "person";
 }
 
-/** one session found from the palette */
+/** one session found from the palette, or listed under a project's cards */
 export interface SessionHit {
   key: SessionKey;
   sessionId: string;
@@ -478,6 +478,8 @@ export interface Api {
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   findSessions(query: string): Promise<SessionHit[]>;
+  /** a project's sessions that hold no in-progress card, newest first, at most 30 */
+  projectSessions(project: ProjectId): Promise<SessionHit[]>;
 
   /** a landing the page has not taken yet. taken once. */
   takeLanding(): Promise<Landing | null>;
@@ -534,6 +536,7 @@ export const INVOKE_CHANNELS = [
   "openSession",
   "startAgent",
   "findSessions",
+  "projectSessions",
   "takeLanding",
   "setVisibleProject",
   "validateProjectName",

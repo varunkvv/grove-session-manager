@@ -1,8 +1,15 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { type Fixture, makeFixture } from "./helpers/fixture.ts";
-import { type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
+import {
+  type Fixture,
+  makeFixture,
+  makePlainDir,
+  pendingIntents,
+  readExecLog,
+  writeSession,
+} from "./helpers/fixture.ts";
+import { type LaunchedApp, launchApp, step, waitFor } from "./helpers/launchApp.ts";
 import { asAgent, interrupted, liveSession, writeProject } from "./helpers/project.ts";
 
 let fx: Fixture;
@@ -59,6 +66,14 @@ async function openCards(page: Page): Promise<void> {
   await expect(page.getByTestId("cards-header")).toBeVisible();
 }
 
+/** the sessions are indexed after the page is up, and the Cards screen asks for them when it mounts */
+const sessionsIndexed = (page: Page, project: string, count: number) =>
+  page.waitForFunction(
+    async ([id, n]) => (await window.grove.projectSessions(id)).length === n,
+    [project, count] as const,
+    { timeout: 30_000 },
+  );
+
 const idsIn = (page: Page, group: string) =>
   page
     .locator(`[data-testid="card-group"][data-group="${group}"] [data-testid="card-row"]`)
@@ -106,6 +121,8 @@ test("cards sit in groups by display status, with who holds the live ones", asyn
   for (const id of ["AUTH-4", "AUTH-6", "AUTH-7"]) {
     await expect(row(id).getByTestId("runtime-chip"), id).toHaveCount(0);
   }
+  // every session here holds a card, or has no transcript: there is no Sessions group to show
+  await expect(page.getByTestId("sessions-group")).toHaveCount(0);
 });
 
 test("a click opens a card, and so does the keyboard after it shows its row", async () => {
@@ -178,11 +195,96 @@ test("a card file cut in half shows its problem, and the other cards are all the
   await expect(page.getByTestId("problem")).toHaveCount(1);
 });
 
-test("a project with no cards shows the start state in place of the groups", async () => {
-  fx = makeFixture({ withCompanion: true });
-  writeProject(fx, { name: "billing-export", prefix: "BILL", goal: "Invoice exports" });
+const free = (i: number) => `1212121${i}-0000-4000-8000-000000000000`;
+
+test("sessions that hold no card are listed under the cards, and open from the button or a double-click", async () => {
+  const { root } = setup();
+  // the holder of AUTH-1 has a transcript, and so do ten sessions that hold nothing
+  writeSession(fx, { cwd: root, sessionId: IDP, title: "idp config" });
+  for (let i = 0; i < 10; i++) {
+    writeSession(fx, {
+      cwd: root,
+      sessionId: free(i),
+      title: `scratch ${i}`,
+      ageMs: (i + 1) * 60_000,
+    });
+  }
+  // and one in a folder no project has
+  writeSession(fx, {
+    cwd: makePlainDir(fx, "elsewhere"),
+    sessionId: "dddddddd-0000-4000-8000-000000000004",
+    title: "quarterly numbers",
+  });
   app = await launchApp(fx);
   const { page } = app;
+  await sessionsIndexed(page, "auth-sso", 10);
+  await openCards(page);
+
+  const group = page.getByTestId("sessions-group");
+  const rows = group.getByTestId("session-row");
+  const shown = () => rows.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
+  const codeRuns = () => readExecLog(fx).filter((l) => l.bin === "code");
+  const toast = (text: string) => page.getByTestId("toast").filter({ hasText: text });
+
+  // eight, newest first. the holder is on its card's row and the outsider is nobody's
+  await expect(rows).toHaveCount(8);
+  expect(await shown()).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map(free));
+  await expect(group).toContainText("Sessions");
+  await expect(group).not.toContainText("idp config");
+  await expect(group).not.toContainText("quarterly numbers");
+  // under the card groups and outside the list the arrows move in
+  await expect(page.getByTestId("card-group").last()).toBeVisible();
+  await expect(page.getByRole("listbox", { name: "Cards" }).getByTestId("session-row")).toHaveCount(
+    0,
+  );
+  const first = rows.first();
+  await expect(first.getByTestId("runtime-chip")).toHaveText("Closed");
+  await expect(first).toContainText("scratch 0");
+  await expect(first).toContainText("1m ago");
+  // the button is there without a hover, and is a tab stop like any other
+  const open = first.getByTestId("session-open");
+  await expect(open).toBeVisible();
+  await expect(open).toHaveText("Open in VS Code");
+  await expect(open).not.toHaveAttribute("tabindex");
+
+  // the button: the project's window, and an intent that names the session
+  await open.click();
+  await expect(toast("Opening scratch 0 in VS Code")).toBeVisible();
+  await waitFor(async () => codeRuns().length === 1);
+  expect(codeRuns()[0]?.argv[0]).toMatch(/auth-sso\.code-workspace$/);
+  expect(pendingIntents(fx)).toMatchObject([{ kind: "resume", sessionId: free(0), cwd: root }]);
+
+  await expect(page.getByTestId("sessions-all")).toHaveText("Show all 10");
+  await page.getByTestId("sessions-all").click();
+  await expect(rows).toHaveCount(10);
+  await expect(page.getByTestId("sessions-all")).toHaveCount(0);
+
+  // a double-click anywhere on a row opens it, once
+  await rows.nth(9).dblclick({ position: { x: 240, y: 18 } });
+  await expect(toast("Opening scratch 9 in VS Code")).toBeVisible();
+  await waitFor(async () => codeRuns().length === 2);
+  expect(pendingIntents(fx).map((i) => i.sessionId)).toContain(free(9));
+  await page.waitForTimeout(500);
+  expect(codeRuns()).toHaveLength(2);
+
+  // a session that claims a card leaves the group for its card's row: the record changed, so the
+  // screen asked again
+  asAgent(fx, root, { sessionId: free(1), name: "scratch 1" })("card_claim", { card: "AUTH-4" });
+  await expect(rows).toHaveCount(9, { timeout: 15_000 });
+  expect(await shown()).not.toContain(free(1));
+});
+
+test("a project with no cards shows the start state in place of the groups", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const { root } = writeProject(fx, {
+    name: "billing-export",
+    prefix: "BILL",
+    goal: "Invoice exports",
+  });
+  writeSession(fx, { cwd: root, sessionId: STORE, title: "invoice columns" });
+  app = await launchApp(fx);
+  const { page } = app;
+  await sessionsIndexed(page, "billing-export", 1);
   await openCards(page);
 
   const start = page.getByTestId("start-state");
@@ -193,4 +295,13 @@ test("a project with no cards shows the start state in place of the groups", asy
   await expect(page.getByTestId("start-background")).toHaveText("Start in the background");
   await expect(page.getByTestId("card-group")).toHaveCount(0);
   await expect(page.getByTestId("done-count")).toHaveCount(0);
+
+  // the sessions the project already has are under it, with no Show all for one
+  const group = page.getByTestId("sessions-group");
+  await expect(group.getByTestId("session-row")).toHaveCount(1);
+  await expect(group.getByTestId("session-row")).toContainText("invoice columns");
+  await expect(group.getByTestId("session-open")).toHaveText("Open in VS Code");
+  await expect(page.getByTestId("sessions-all")).toHaveCount(0);
+  const [above, below] = await Promise.all([start.boundingBox(), group.boundingBox()]);
+  expect((below?.y ?? 0) >= (above?.y ?? 0) + (above?.height ?? 0)).toBe(true);
 });

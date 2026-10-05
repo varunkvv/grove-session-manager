@@ -80,7 +80,7 @@ function build(scheme: string) {
       { path: runbooks, mode: "reference" },
     ],
   });
-  writeProject(fx, {
+  const billing = writeProject(fx, {
     name: "billing-export",
     prefix: "BILL",
     goal: "Monthly invoice exports for finance, as csv.",
@@ -333,6 +333,34 @@ function build(scheme: string) {
     title: "thread composer",
     ageMs: 20 * MIN,
   });
+  // sessions that hold no card: the Cards screen lists them under the groups, and under the start
+  // state of a project that has no cards yet
+  const loose = (root: string, n: number, titles: string[]) => {
+    for (const [i, title] of titles.entries()) {
+      writeSession(fx, {
+        cwd: root,
+        sessionId: `34343434-0000-4000-8000-0000000000${n}${i}`,
+        title,
+        ageMs: (i + 1) * (i + 2) * 3 * 60 * MIN,
+      });
+    }
+  };
+  loose(auth.root, 1, [
+    "why is the staging deploy red",
+    "sketch the login page states",
+    "auth-sso-9",
+    "read the SAML strategy",
+    "terraform state for staging",
+    "draft the rollout note",
+    "check the session cookie flags",
+    "auth-sso-3",
+    "compare the two IdP price lists",
+  ]);
+  loose(billing.root, 2, [
+    "which invoices does finance need",
+    "invoice csv columns",
+    "billing-export-2",
+  ]);
   // sessions in repos no project has: the form suggests their folders
   for (const [i, name] of ["infra", "design-system", "pipelines"].entries()) {
     writeSession(fx, {
@@ -403,7 +431,9 @@ async function launch(fx: Fixture) {
       return (
         b.projects.every((p) => p.server.state !== "unknown" && !!b.record[p.id]?.readAt) &&
         b.projects[0]?.folders.every((f) => f.state === "ok" || f.state === "reference") &&
-        (await window.grove.frequentFolders()).length >= 3
+        (await window.grove.frequentFolders()).length >= 3 &&
+        // the sessions are indexed after the page is up
+        (await window.grove.projectSessions("billing-export")).length === 3
       );
     },
     undefined,
@@ -468,6 +498,9 @@ for (const scheme of ["light", "dark"]) {
     // the keyboard's row, right under a group's header
     await page.keyboard.press("ArrowDown");
     await shot("cards-keyboard", false);
+    // the sessions that hold no card, under the groups
+    await page.getByTestId("sessions-all").scrollIntoViewIfNeeded();
+    await shot("cards-sessions");
 
     // where a click on the question's notification lands
     await g.reveal(SID.idp);

@@ -1,6 +1,6 @@
 import type { CardDisplayStatus } from "@grove/core/pure";
-import { type ReactNode, useEffect, useMemo, useRef } from "react";
-import type { CardHead, ProjectView } from "../../shared/ipc.ts";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { CardHead, ProjectId, ProjectView, SessionHit } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import {
   cardOrder,
@@ -11,7 +11,14 @@ import {
   startBlocked,
 } from "../logic/views.ts";
 import { whoView } from "../logic/who.ts";
-import { editProject, focusScreen, openCard, optionId, startAgent } from "../state/actions.ts";
+import {
+  editProject,
+  focusScreen,
+  openCard,
+  openWith,
+  optionId,
+  startAgent,
+} from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import {
   Avatar,
@@ -169,6 +176,99 @@ function StartState({ project }: { project: ProjectView }) {
   );
 }
 
+/** how many sessions show before `Show all` */
+const SESSIONS_FIRST = 8;
+
+/**
+ * the project's sessions that hold no card: the ones nothing else on this screen shows. it is not
+ * part of the cards list, so the arrows stay on cards and these buttons are ordinary tab stops
+ */
+function Sessions({ project, className }: { project: ProjectId; className: string }) {
+  const editor = useStore((s) => s.editor?.label ?? "the editor");
+  const inbox = useStore((s) => s.inbox);
+  const record = useStore((s) => s.records[project]);
+  const [hits, setHits] = useState<SessionHit[]>([]);
+  const [all, setAll] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: no push says a session came or went. the inbox and the record moving are when to ask again
+  useEffect(() => {
+    let stale = false;
+    void window.grove.projectSessions(project).then(
+      (found) => {
+        if (!stale) setHits(found);
+      },
+      // main did not answer: what is on screen stays
+      () => {},
+    );
+    return () => {
+      stale = true;
+    };
+  }, [project, inbox, record]);
+
+  if (hits.length === 0) return null;
+  return (
+    <div
+      role="group"
+      aria-labelledby="group-sessions"
+      className={className}
+      data-testid="sessions-group"
+    >
+      <div
+        id="group-sessions"
+        className="mb-1 flex h-8 items-center rounded-md bg-raised px-3 text-sm font-medium text-fg-2"
+      >
+        Sessions
+      </div>
+      <div>
+        {(all ? hits : hits.slice(0, SESSIONS_FIRST)).map((h) => {
+          // a disabled plan says why in a toast, and a working background agent is asked about first
+          const open = () => openWith(h.key, h.open, h.title);
+          return (
+            <div
+              key={h.key}
+              data-testid="session-row"
+              data-id={h.sessionId}
+              className="fade flex h-9 items-center gap-3 border-b border-line px-3 last:border-b-0 hover:bg-raised"
+              onDoubleClick={open}
+            >
+              <span className="w-[80px] shrink-0">
+                <RuntimeChip runtime={h.runtime} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-fg" title={h.title}>
+                {h.title}
+              </span>
+              <Time at={h.activityMs} />
+              <Button
+                variant="quiet"
+                size="sm"
+                disabled={!!h.open.disabled}
+                title={h.open.disabled}
+                data-testid="session-open"
+                onClick={open}
+                // two clicks on the button are two clicks, not the row's double-click as well
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                Open in {editor}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      {!all && hits.length > SESSIONS_FIRST && (
+        <Button
+          variant="quiet"
+          size="sm"
+          className="mt-1 ml-1"
+          onClick={() => setAll(true)}
+          data-testid="sessions-all"
+        >
+          Show all {hits.length}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** the cards screen: the project's cards by status, or the start state when it has none */
 export function Cards() {
   const project = useStore(currentProject);
@@ -262,6 +362,14 @@ export function Cards() {
               </div>
             ))}
           </div>
+        )}
+        {record?.readAt !== undefined && (
+          // keyed, so one project's sessions never show under another's cards
+          <Sessions
+            key={project.id}
+            project={project.id}
+            className={cards.length === 0 ? "mt-12" : "mt-5"}
+          />
         )}
       </div>
     </div>

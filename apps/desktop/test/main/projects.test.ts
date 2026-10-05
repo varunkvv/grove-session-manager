@@ -674,4 +674,52 @@ describe("projects and sessions", () => {
       snippet: "then bump the lexer",
     });
   });
+
+  it("lists a project's sessions that hold no in-progress card, newest first, at most 30", () => {
+    const t = setup();
+    const chat = t.project("chat", "CHAT");
+    const ops = t.project("ops", "OPS");
+    t.session("s-holds", { comboName: "chat", activityMs: 50 });
+    t.session("s-done", { comboName: "chat", title: "rounding fix", activityMs: 20 });
+    t.rows.push(
+      row("s-free", { comboName: "chat", firstPrompt: "look at the parser", activityMs: 40 }),
+    );
+    // the same session in an older transcript is not a second row
+    t.rows.push(row("s-free", { key: "/moved/s-free.jsonl", comboName: "chat", activityMs: 5 }));
+    t.session("s-ops", { comboName: "ops", activityMs: 60 });
+    t.rows.push(row("s-nowhere", { activityMs: 70 }));
+    chat.as("s-holds")("card_create", { title: "Fix rounding" });
+    chat.as("s-holds")("card_claim", { card: "CHAT-1" });
+    // a card that is done is held by nobody
+    chat.as("s-done")("card_create", { title: "Pick the rounding mode" });
+    chat.as("s-done")("card_claim", { card: "CHAT-2" });
+    chat.as("s-done")("card_done", { card: "CHAT-2", summary: "Half even." });
+    // a card of another project is on that project's screen, not on the session's own
+    chat.as("s-ops")("card_create", { title: "Rotate the keys" });
+    chat.as("s-ops")("card_claim", { card: "CHAT-3" });
+    chat.changed();
+    ops.changed();
+
+    expect(t.svc.projectSessions("chat")).toMatchObject([
+      {
+        sessionId: "s-free",
+        key: "/claude/projects/s-free.jsonl",
+        title: "look at the parser",
+        project: "chat",
+        runtime: "closed",
+        open: {},
+      },
+      { sessionId: "s-done", title: "rounding fix", runtime: "vscode" },
+    ]);
+    expect(t.svc.projectSessions("ops").map((h) => h.sessionId)).toEqual(["s-ops"]);
+    expect(t.svc.projectSessions("no-such-project")).toEqual([]);
+
+    for (let i = 0; i < 35; i++) {
+      t.rows.push(row(`s-many-${i}`, { comboName: "ops", activityMs: 100 + i }));
+    }
+    const many = t.svc.projectSessions("ops").map((h) => h.sessionId);
+    expect(many).toHaveLength(30);
+    expect(many[0]).toBe("s-many-34");
+    expect(many[29]).toBe("s-many-5");
+  });
 });

@@ -124,6 +124,7 @@ const REVIEW_KEY =
   /^(conclusion:[DFV]-[1-9]\d*|card:[A-Z][A-Z0-9]{0,7}-[1-9]\d*|(finished|question):[A-Z][A-Z0-9]{0,7}-[1-9]\d*#[1-9]\d*|stopped:[A-Za-z0-9-]{1,64}@(\d{1,16}|failed)|seen:[A-Za-z0-9-]{1,64})$/;
 
 const ms = (iso: string) => Date.parse(iso);
+const newest = (a: SessionRow, b: SessionRow) => b.activityMs - a.activityMs;
 
 function isDir(p: string): boolean {
   try {
@@ -451,24 +452,8 @@ export class ProjectsService {
   async findSessions(query: string): Promise<SessionHit[]> {
     const q = query.trim().slice(0, 500);
     const index = this.index(this.list().projects);
-    const hit = (row: SessionRow, snippet?: string): SessionHit => {
-      const project = row.comboName ? index.projectOf.get(row.comboName) : undefined;
-      const runtime = this.runtimeFor(row.sessionId, row);
-      return {
-        key: row.key,
-        sessionId: row.sessionId,
-        title: row.title ?? (row.firstPrompt ? squash(row.firstPrompt, 120) : "Untitled session"),
-        project,
-        where: project ? (row.comboName ?? row.projectLabel) : row.projectLabel,
-        activityMs: row.activityMs,
-        runtime,
-        live: row.live?.state,
-        snippet,
-        open: openPlanOf(runtime, row),
-      };
-    };
+    const hit = (row: SessionRow, snippet?: string) => this.hit(row, index, snippet);
     const rows = this.o.sessions.list();
-    const newest = (a: SessionRow, b: SessionRow) => b.activityMs - a.activityMs;
     if (!q)
       return [...rows]
         .sort(newest)
@@ -494,6 +479,24 @@ export class ProjectsService {
       }
     }
     return out;
+  }
+
+  /**
+   * the Cards screen's Sessions group: this project's sessions, newest first, without the ones
+   * holding an in-progress card, whose card row already shows them. at most 30: the palette finds
+   * the older ones
+   */
+  projectSessions(project: ProjectId): SessionHit[] {
+    const { projects } = this.list();
+    const p = projects.find((x) => x.id === project);
+    if (!p) return [];
+    const index = this.index(projects);
+    // ponytail: every card per session. index the holders once when a project has thousands of both
+    return [...index.rows.values()]
+      .filter((r) => r.comboName === p.name && !this.heldBy(r.sessionId, [p]))
+      .sort(newest)
+      .slice(0, 30)
+      .map((r) => this.hit(r, index));
   }
 
   dispose(): void {
@@ -640,6 +643,24 @@ export class ProjectsService {
       if (id) active.set(id, [...(active.get(id) ?? []), r.sessionId]);
     }
     return { rows, projectOf, active };
+  }
+
+  /** a session as the palette and the Cards screen list it: where it is and how it opens */
+  private hit(row: SessionRow, index: Index, snippet?: string): SessionHit {
+    const project = row.comboName ? index.projectOf.get(row.comboName) : undefined;
+    const runtime = this.runtimeFor(row.sessionId, row);
+    return {
+      key: row.key,
+      sessionId: row.sessionId,
+      title: row.title ?? (row.firstPrompt ? squash(row.firstPrompt, 120) : "Untitled session"),
+      project,
+      where: project ? (row.comboName ?? row.projectLabel) : row.projectLabel,
+      activityMs: row.activityMs,
+      runtime,
+      live: row.live?.state,
+      snippet,
+      open: openPlanOf(runtime, row),
+    };
   }
 
   /** the in-progress card a session holds, the one it took last */
