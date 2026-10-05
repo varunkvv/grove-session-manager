@@ -457,6 +457,11 @@ for (const scheme of ["light", "dark"]) {
     await page.locator('[data-testid="inbox-row"][data-kind="decided"]').first().hover();
     await shot("inbox-hover", false);
 
+    await page.getByTestId("project-switcher").click();
+    await page.getByTestId("project-search").fill("e");
+    await shot("switcher-search");
+    await page.keyboard.press("Escape");
+
     await page.getByTestId("nav-cards").click();
     await page.getByTestId("card-row").nth(7).waitFor();
     await shot("cards");

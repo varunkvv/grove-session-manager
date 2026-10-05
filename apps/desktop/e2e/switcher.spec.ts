@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { type Fixture, makeFixture } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
-import { asAgent, liveSession, writeProject } from "./helpers/project.ts";
+import { asAgent, asPerson, liveSession, writeProject } from "./helpers/project.ts";
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -97,4 +97,134 @@ test("nothing that takes a click sits in a window drag region", async () => {
   await expect(page.getByTestId("palette-item").first()).toBeVisible();
   expect(await region(page, "overlay-backdrop")).not.toBe("drag");
   await sweep("the palette");
+});
+
+const NAMES = [
+  "auth-sso",
+  "billing-export",
+  "chat-features",
+  "data-objects",
+  "Émile café",
+  "infra-cleanup",
+  "mobile-push",
+  "ops-jobs",
+  "pay-fix",
+  "search-relevance",
+  "web-perf",
+  "zeta-reports",
+];
+
+/** more projects than the menu shows at once. the first has a card, so its Cards screen has a list */
+function manyProjects(): Fixture {
+  fx = makeFixture({ withCompanion: true });
+  const roots = NAMES.map(
+    (name, i) =>
+      writeProject(fx, { name, prefix: `P${String.fromCharCode(65 + i)}`, goal: name }).root,
+  );
+  asPerson(roots[0] as string)("card_create", { title: "Point staging at okta" });
+  return fx;
+}
+
+const switcher = (page: Page) => page.getByTestId("project-switcher");
+const menu = (page: Page) => page.getByTestId("project-menu");
+const search = (page: Page) => page.getByTestId("project-search");
+const items = (page: Page) => page.getByTestId("project-item");
+const item = (page: Page, id: string) =>
+  page.locator(`[data-testid="project-item"][data-id="${id}"]`);
+const newProject = (page: Page) => page.getByTestId("new-project");
+const names = (page: Page) => items(page).evaluateAll((els) => els.map((e) => e.textContent));
+
+test("the switcher: typing narrows it, the keys move and pick, Escape hands the keyboard back", async () => {
+  app = await launchApp(manyProjects());
+  const { page } = app;
+  await page.getByTestId("nav-cards").click();
+  await expect(page.getByTestId("card-row")).toHaveCount(1, { timeout: 15_000 });
+
+  await switcher(page).click();
+  await expect(search(page)).toBeFocused();
+  await expect(search(page)).toHaveAttribute("placeholder", "Find a project");
+  expect(await names(page)).toEqual(NAMES);
+  // it opens on the project on screen, which is the checked one
+  await expect(item(page, "auth-sso")).toHaveAttribute("data-active", "true");
+  await expect(item(page, "auth-sso")).toHaveAttribute("aria-checked", "true");
+  await expect(search(page)).toHaveAttribute("aria-activedescendant", "switcher-0");
+
+  // twelve do not fit: the list scrolls inside the menu, and New project… is not part of what scrolls
+  const scroller = items(page).first().locator("..");
+  expect(await scroller.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+  await expect(item(page, "zeta-reports")).not.toBeInViewport();
+  await expect(newProject(page)).toBeInViewport();
+  // the keys: End is New project…, and the arrows keep their item in view
+  await page.keyboard.press("End");
+  await expect(newProject(page)).toHaveAttribute("data-active", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(newProject(page)).toHaveAttribute("data-active", "true");
+  await page.keyboard.press("ArrowUp");
+  await expect(item(page, "zeta-reports")).toHaveAttribute("data-active", "true");
+  await expect(item(page, "zeta-reports")).toBeInViewport();
+  await page.keyboard.press("Home");
+  await expect(item(page, "auth-sso")).toHaveAttribute("data-active", "true");
+  await expect(item(page, "auth-sso")).toBeInViewport();
+  await page.keyboard.press("ArrowUp");
+  await expect(item(page, "auth-sso")).toHaveAttribute("data-active", "true");
+
+  // every word, in any order, whatever the case. the first match is the keyboard's
+  await search(page).fill("PORT bill");
+  expect(await names(page)).toEqual(["billing-export"]);
+  await expect(item(page, "billing-export")).toHaveAttribute("data-active", "true");
+  await expect(newProject(page)).toBeVisible();
+  // accents do not count
+  await search(page).fill("emile cafe");
+  expect(await names(page)).toEqual(["Émile café"]);
+  // nothing found: one line, and New project… is still there
+  await search(page).fill("nothing like it");
+  await expect(items(page)).toHaveCount(0);
+  await expect(page.getByTestId("project-none")).toHaveText("No projects match.");
+  await expect(newProject(page)).toBeVisible();
+
+  // Escape closes it without switching, and the list behind has the keyboard again
+  await page.keyboard.press("Escape");
+  await expect(menu(page)).toHaveCount(0);
+  await expect(switcher(page)).toContainText("auth-sso");
+  await expect(page.locator("[data-list]")).toBeFocused();
+
+  // every open starts empty. Enter picks the first match
+  await switcher(page).click();
+  await expect(search(page)).toHaveValue("");
+  await search(page).fill("e");
+  await page.keyboard.press("ArrowDown");
+  await expect(item(page, "chat-features")).toHaveAttribute("data-active", "true");
+  await search(page).fill("zeta");
+  await page.keyboard.press("Enter");
+  await expect(menu(page)).toHaveCount(0);
+  await expect(switcher(page)).toContainText("zeta-reports");
+  // the same screen in the other project
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "cards");
+});
+
+test("the switcher by mouse: a click picks a project, New project… opens the form, a click outside closes it", async () => {
+  app = await launchApp(manyProjects());
+  const { page } = app;
+
+  await switcher(page).click();
+  await item(page, "chat-features").click();
+  await expect(menu(page)).toHaveCount(0);
+  await expect(switcher(page)).toContainText("chat-features");
+
+  // the check moved with it, and a click in the list leaves the keyboard in the field
+  await switcher(page).click();
+  await expect(item(page, "chat-features").locator("svg")).toHaveCount(1);
+  await expect(item(page, "auth-sso").locator("svg")).toHaveCount(0);
+  await menu(page).getByRole("separator").click();
+  await expect(search(page)).toBeFocused();
+
+  await page.mouse.click(700, 400);
+  await expect(menu(page)).toHaveCount(0);
+  await expect(switcher(page)).toContainText("chat-features");
+
+  await switcher(page).click();
+  await search(page).fill("pay");
+  await newProject(page).click();
+  await expect(menu(page)).toHaveCount(0);
+  await expect(page.getByTestId("project-name")).toBeVisible();
 });

@@ -10,6 +10,7 @@ import {
   filterConclusions,
   groupCards,
   linkWord,
+  matchProjects,
   needsYouCount,
   pendingFor,
   problemsFor,
@@ -162,6 +163,30 @@ describe("inbox", () => {
   it("needsYouCount counts one project's Asked and Stopped rows", () => {
     expect(needsYouCount(inbox, "auth")).toBe(2);
     expect(needsYouCount(inbox, "data")).toBe(1);
+  });
+});
+
+describe("the switcher's search", () => {
+  const projects = ["auth-sso", "Billing export", "Café menu", "billing-archive"].map((name) => ({
+    name,
+  }));
+  const found = (query: string) => matchProjects(projects, query).map((p) => p.name);
+
+  it("no words is every project, in the list's order", () => {
+    expect(found("")).toEqual(projects.map((p) => p.name));
+    expect(found("   ")).toEqual(projects.map((p) => p.name));
+  });
+
+  it("every word has to be in the name, anywhere in it and in any order", () => {
+    expect(found("bill")).toEqual(["Billing export", "billing-archive"]);
+    expect(found("port bill")).toEqual(["Billing export"]);
+    expect(found("bill sso")).toEqual([]);
+  });
+
+  it("case and accents do not count, in the name or in what was typed", () => {
+    expect(found("BILLING EXPORT")).toEqual(["Billing export"]);
+    expect(found("cafe")).toEqual(["Café menu"]);
+    expect(found("CAFÉ")).toEqual(["Café menu"]);
   });
 });
 

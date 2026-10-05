@@ -1,8 +1,149 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { needsYouCount, projectRows } from "../logic/views.ts";
+import type { ProjectView } from "../../shared/ipc.ts";
+import { matchProjects, needsYouCount, projectRows } from "../logic/views.ts";
 import { focusScreen, go, newProject, switchProject } from "../state/actions.ts";
 import { type Section, useStore } from "../state/store.ts";
-import { cx, Dot, GroveMark, Icon, Kbd, menuItemClass, Overlay } from "./ui.tsx";
+import { cx, Dot, GroveMark, Icon, inputClass, Kbd, menuItemClass, Overlay } from "./ui.tsx";
+
+const itemId = (i: number) => `switcher-${i}`;
+
+/** mounted only while it is open, so every open starts with an empty search, on the current project */
+function SwitcherMenu({ anchor, close }: { anchor?: DOMRect; close: () => void }) {
+  const projects = useStore((s) => s.projects);
+  const project = useStore((s) => s.project);
+  const inbox = useStore((s) => s.inbox);
+  const list = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
+  /** the keyboard's item: a found project by index, or `found.length` for New project… */
+  const [at, setAt] = useState(() =>
+    Math.max(
+      0,
+      projects.findIndex((p) => p.id === project),
+    ),
+  );
+
+  const found = matchProjects(projects, query);
+  // with nothing found the one item left is New project…
+  const active = Math.min(at, found.length);
+  const failed = (p: ProjectView) => p.server.state === "failed";
+
+  // the project on screen can be far down a long list
+  useEffect(() => {
+    list.current?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  const pick = (i: number) => {
+    useStore.getState().set({ overlay: null });
+    const p = found[i];
+    if (p) switchProject(p.id);
+    else newProject();
+    focusScreen();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    const last = found.length;
+    const next = {
+      ArrowDown: Math.min(last, active + 1),
+      ArrowUp: Math.max(0, active - 1),
+      Home: 0,
+      End: last,
+    }[e.key];
+    if (next !== undefined) {
+      setAt(next);
+      document.getElementById(itemId(next))?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      // an Enter that ends an IME composition picks a candidate, not an item
+      if (!e.nativeEvent.isComposing) pick(active);
+    } else if (e.key === "Escape") close();
+    // Tab stays in the field: the screen behind the menu is not reachable while it is open
+    else if (e.key !== "Tab") return;
+    e.stopPropagation();
+    e.preventDefault();
+  };
+
+  return (
+    <Overlay
+      open
+      onClose={close}
+      style={{ top: (anchor?.bottom ?? 40) + 4, left: anchor?.left ?? 84 }}
+      className="w-[208px] p-1"
+      testId="project-menu"
+    >
+      <input
+        aria-label="Find a project"
+        aria-controls="switcher-list"
+        aria-activedescendant={itemId(active)}
+        autoFocus
+        spellCheck={false}
+        className={cx(inputClass, "mb-1")}
+        placeholder="Find a project"
+        data-testid="project-search"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          // typing puts the keyboard on the first match
+          setAt(0);
+        }}
+        onKeyDown={onKey}
+      />
+      <div
+        id="switcher-list"
+        role="menu"
+        aria-label="Projects"
+        // a click on a row or between rows must not take the keyboard out of the field
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        {/* ten rows, then it scrolls. New project… stays put under it */}
+        <div ref={list} className="max-h-[320px] overflow-y-auto">
+          {found.map((p, i) => {
+            const count = needsYouCount(inbox, p.id);
+            return (
+              <div
+                key={p.id}
+                id={itemId(i)}
+                role="menuitemradio"
+                aria-checked={p.id === project}
+                className={menuItemClass}
+                data-active={i === active || undefined}
+                data-testid="project-item"
+                data-id={p.id}
+                data-count={count}
+                onMouseMove={() => setAt(i)}
+                onClick={() => pick(i)}
+              >
+                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                {failed(p) ? (
+                  <span title="Agents cannot reach the record" className="flex text-danger">
+                    <Icon name="warning" size={11} />
+                  </span>
+                ) : (
+                  count > 0 && <span className="text-sm tabular-nums text-fg-4">{count}</span>
+                )}
+                {p.id === project && <Icon name="check" size={10} className="text-fg-3" />}
+              </div>
+            );
+          })}
+          {found.length === 0 && (
+            <p className="px-2 py-1.5 text-sm text-fg-4" data-testid="project-none">
+              No projects match.
+            </p>
+          )}
+        </div>
+        <div role="separator" className="my-1 h-px bg-line" />
+        <div
+          id={itemId(found.length)}
+          role="menuitem"
+          className={menuItemClass}
+          data-active={active === found.length || undefined}
+          data-testid="new-project"
+          onMouseMove={() => setAt(found.length)}
+          onClick={() => pick(found.length)}
+        >
+          New project…
+        </div>
+      </div>
+    </Overlay>
+  );
+}
 
 /**
  * which project is on screen, and where another project's needs show: a question in project B must
@@ -15,14 +156,10 @@ function ProjectSwitcher() {
   const open = useStore((s) => s.overlay === "switcher");
   const set = useStore((s) => s.set);
   const button = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  /** the keyboard's item: a project by index, or `projects.length` for New project… */
-  const [at, setAt] = useState(0);
 
   const current = projects.find((p) => p.id === project);
-  const failed = (id: string) => projects.find((p) => p.id === id)?.server.state === "failed";
   const elsewhere = projects.some(
-    (p) => p.id !== project && (needsYouCount(inbox, p.id) > 0 || failed(p.id)),
+    (p) => p.id !== project && (needsYouCount(inbox, p.id) > 0 || p.server.state === "failed"),
   );
 
   // main still notifies while the window is focused when the row is in another project
@@ -34,38 +171,6 @@ function ProjectSwitcher() {
     return () => document.removeEventListener("visibilitychange", onShow);
   }, [project]);
 
-  useEffect(() => {
-    if (open) menu.current?.focus();
-  }, [open]);
-
-  const close = () => {
-    set({ overlay: null });
-    focusScreen();
-  };
-  const pick = (i: number) => {
-    set({ overlay: null });
-    const p = projects[i];
-    if (p) switchProject(p.id);
-    else newProject();
-    focusScreen();
-  };
-  const onKey = (e: KeyboardEvent) => {
-    const last = projects.length;
-    const next = {
-      ArrowDown: Math.min(last, at + 1),
-      ArrowUp: Math.max(0, at - 1),
-      Home: 0,
-      End: last,
-    }[e.key];
-    if (next !== undefined) setAt(next);
-    else if (e.key === "Enter") pick(at);
-    else if (e.key === "Escape") close();
-    else return;
-    e.stopPropagation();
-    e.preventDefault();
-  };
-
-  const rect = open ? button.current?.getBoundingClientRect() : undefined;
   return (
     <>
       <button
@@ -77,9 +182,7 @@ function ProjectSwitcher() {
         data-testid="project-switcher"
         onClick={() => {
           // with no project the screen is already the form
-          if (!current) return;
-          setAt(projects.indexOf(current));
-          set({ overlay: open ? null : "switcher" });
+          if (current) set({ overlay: open ? null : "switcher" });
         }}
       >
         <GroveMark size={12} />
@@ -87,55 +190,15 @@ function ProjectSwitcher() {
         {elsewhere && <Dot label="Another project needs you" />}
         <Icon name="chevron" size={8} faint className="rotate-90" />
       </button>
-      <Overlay
-        open={open}
-        onClose={close}
-        style={{ top: (rect?.bottom ?? 40) + 4, left: rect?.left ?? 84 }}
-        className="w-[208px] p-1"
-        testId="project-menu"
-      >
-        {/* the ring would go round the whole menu: its active item says where the keyboard is */}
-        <div role="menu" ref={menu} tabIndex={-1} onKeyDown={onKey} style={{ outline: "none" }}>
-          {projects.map((p, i) => {
-            const count = needsYouCount(inbox, p.id);
-            return (
-              <div
-                key={p.id}
-                role="menuitemradio"
-                aria-checked={p.id === project}
-                className={menuItemClass}
-                data-active={i === at || undefined}
-                data-testid="project-item"
-                data-id={p.id}
-                data-count={count}
-                onMouseMove={() => setAt(i)}
-                onClick={() => pick(i)}
-              >
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                {failed(p.id) ? (
-                  <span title="Agents cannot reach the record" className="flex text-danger">
-                    <Icon name="warning" size={11} />
-                  </span>
-                ) : (
-                  count > 0 && <span className="text-sm tabular-nums text-fg-4">{count}</span>
-                )}
-                {p.id === project && <Icon name="check" size={10} className="text-fg-3" />}
-              </div>
-            );
-          })}
-          <div className="my-1 h-px bg-line" />
-          <div
-            role="menuitem"
-            className={menuItemClass}
-            data-active={at === projects.length || undefined}
-            data-testid="new-project"
-            onMouseMove={() => setAt(projects.length)}
-            onClick={() => pick(projects.length)}
-          >
-            New project…
-          </div>
-        </div>
-      </Overlay>
+      {open && (
+        <SwitcherMenu
+          anchor={button.current?.getBoundingClientRect()}
+          close={() => {
+            set({ overlay: null });
+            focusScreen();
+          }}
+        />
+      )}
     </>
   );
 }

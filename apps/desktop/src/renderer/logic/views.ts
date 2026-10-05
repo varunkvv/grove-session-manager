@@ -40,6 +40,21 @@ export function needsYouCount(inbox: InboxView, project: ProjectId): number {
   ).length;
 }
 
+/** case and accents do not count: `cafe` finds Café */
+const fold = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** the switcher's search: every word typed is somewhere in the name, in the list's own order */
+export function matchProjects<T extends { name: string }>(
+  projects: readonly T[],
+  query: string,
+): T[] {
+  const words = tokenize(fold(query));
+  return projects.filter((p) => {
+    const name = fold(p.name);
+    return words.every((w) => name.includes(w));
+  });
+}
+
 // ---------- cards ----------
 
 export type GroupKey = "waiting" | "in_progress" | "todo" | "done" | "canceled";

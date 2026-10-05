@@ -376,7 +376,8 @@ switch off takes them out again. Use the switch: setting `trackAllSessions` to `
 
 The top bar has the project switcher, then **Inbox** with its count, **Cards** and **Conclusions**. The switcher shows
 each project's count of things waiting on you, and carries a dot while another project has one, so a question in
-project B is not invisible while the window is on A.
+project B is not invisible while the window is on A. Typing in it narrows the list to the names that have every word
+typed.
 
 **Inbox** is what in this project wants a look, one row each, two lines: what it is, the card, the agent, where the
 agent runs and when, then the summary at full width.
