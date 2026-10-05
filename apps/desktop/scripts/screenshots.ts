@@ -511,8 +511,13 @@ for (const scheme of ["light", "dark"]) {
     await card("AUTH-5");
     await shot("card-stopped");
     await page.getByTestId("nav-cards").click();
-    await page.locator('[data-testid="card-row"][data-id="AUTH-1"]').click();
+    // a click on a row opens the card in the panel. its page is a chip away: AUTH-2 came from AUTH-1
+    await page.locator('[data-testid="card-row"][data-id="AUTH-2"]').click();
+    await page
+      .locator('[data-testid="card-side"] [data-testid="card-chip"][data-id="AUTH-1"]')
+      .click();
     await card("AUTH-1");
+    await page.locator('[data-testid="screen"][data-view="card"]').waitFor();
     await page.getByTestId("card-side").waitFor();
     await shot("card-done");
 
