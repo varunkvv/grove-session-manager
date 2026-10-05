@@ -9,6 +9,7 @@ const ctx = (o: Partial<KeyContext> = {}): KeyContext => ({
   inControl: false,
   query: "",
   expanded: false,
+  panel: false,
   canGoBack: false,
   formDirty: false,
   pageSize: 10,
@@ -48,6 +49,15 @@ describe("what a key means", () => {
     expect(conclusions({})).toBeNull();
     expect(interpret(ctx({ view: "card" }), key("Escape"))).toEqual({ type: "back" });
     expect(interpret(ctx({ view: "inbox" }), key("Escape"))).toBeNull();
+    // the inbox with a row open in the panel: the panel closes, before anything goes back
+    expect(interpret(ctx({ view: "inbox", panel: true, canGoBack: true }), key("Escape"))).toEqual({
+      type: "close-panel",
+    });
+    // the panel is kept across a trip to a card page: there Escape is still Back
+    expect(interpret(ctx({ view: "card", panel: true }), key("Escape"))).toEqual({ type: "back" });
+    expect(interpret(ctx({ overlay: true, panel: true }), key("Escape"))).toEqual({
+      type: "close-overlay",
+    });
     expect(interpret(ctx({ view: "cards", canGoBack: true }), key("Escape"))).toEqual({
       type: "back",
     });

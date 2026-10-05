@@ -66,6 +66,10 @@ test("nothing that takes a click sits in a window drag region", async () => {
 
   await expect(page.getByTestId("inbox-row").first()).toBeVisible({ timeout: 15_000 });
   await sweep("inbox");
+  await page.getByTestId("inbox-row").first().click();
+  await expect(page.getByTestId("inbox-panel").getByTestId("card-side")).toBeVisible();
+  await sweep("the inbox with a card in its panel");
+  await page.keyboard.press("Escape");
 
   // the menu is drawn inside the top bar, which is the drag region
   await page.getByTestId("project-switcher").click();

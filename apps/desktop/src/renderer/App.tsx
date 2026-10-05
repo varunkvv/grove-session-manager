@@ -95,6 +95,7 @@ export function App() {
           ),
           query: s.conclusions.query,
           expanded: s.conclusions.open !== null,
+          panel: s.peek !== null,
           canGoBack: s.back.length > 0,
           // the form says so itself, on any element: its fields are its own state
           formDirty: !!document.querySelector("[data-form-dirty]"),

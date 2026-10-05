@@ -109,6 +109,10 @@ function seed(): Fixture {
 const rows = (page: Page) => page.getByTestId("inbox-row");
 const row = (page: Page, kind: string) =>
   page.locator(`[data-testid="inbox-row"][data-kind="${kind}"]`);
+/** the row in the panel */
+const openRow = (page: Page) => page.locator('[data-testid="inbox-row"][data-open]');
+/** every time the editor was run */
+const code = () => readExecLog(fx).filter((l) => l.bin === "code");
 const kinds = (page: Page) =>
   rows(page).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.kind));
 
@@ -175,7 +179,7 @@ test("one row of every kind, Asked and Stopped first, each with its summary on a
   );
   // force: playwright would wait for the button to be enabled
   await under(held, () => held.getByTestId("inbox-open").click({ force: true, timeout: 2_000 }));
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await expect(page.getByTestId("inbox-panel")).toHaveCount(0);
 
   // the other project's inbox is its own: nothing, and no count in the nav
   await page.keyboard.press("Alt+ArrowDown");
@@ -273,7 +277,7 @@ test("a notification click lands on the card, or on the inbox row of a session w
   await expect(session.getByTestId("inbox-review")).toBeVisible();
 });
 
-test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Enter opens the card", async () => {
+test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Enter opens the panel", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
@@ -321,11 +325,213 @@ test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Ente
     await expect.poll(opened, { timeout: 3_000 }).toBe(1);
   });
 
+  // the arrows alone never open the panel. Enter does, on the keyboard's row, and the list stays
+  const panel = page.getByTestId("inbox-panel");
+  await expect(panel).toHaveCount(0);
   await step(async () => {
     await press("Meta+ArrowUp", "Enter");
-    await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached({
+    await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", opens as string, {
       timeout: 2_000,
     });
   });
   expect(opens).toMatch(/^AUTH-[13]$/);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await expect(page.getByRole("listbox")).toBeFocused();
+  expect(opened()).toBe(1);
+
+  // while it is open it goes where the arrows go, from its own row whatever the mouse did since
+  const left = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+  await step(async () => {
+    await press("Meta+ArrowUp", "ArrowDown");
+    await expect(openRow(page)).toHaveAttribute("id", left[1] as string, { timeout: 2_000 });
+  });
+  await expect(panel.getByTestId("card-page")).toHaveAttribute(
+    "data-id",
+    (await openRow(page).getAttribute("data-card")) as string,
+  );
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+});
+
+test("a click opens the row's card in a panel beside the list, another row swaps it, Escape closes it", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+  const panel = page.getByTestId("inbox-panel");
+  const card = panel.getByTestId("card-page");
+  const chips = page.getByTestId("inbox").getByTestId("runtime-chip");
+  // at most one row is under a pointer, and that one shows its buttons instead
+  await expect(chips.filter({ visible: true })).not.toHaveCount(0);
+
+  await row(page, "asked").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-1");
+  await expect(panel.getByTestId("card-side")).toBeVisible();
+  await expect(panel.getByTestId("thread-item").first()).toBeVisible();
+  // the list is still there, with that row marked, and it kept the keyboard
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await expect(rows(page)).toHaveCount(7);
+  await expect(row(page, "asked")).toBeVisible();
+  await expect(openRow(page)).toHaveAttribute("data-kind", "asked");
+  await expect(page.getByRole("listbox")).toBeFocused();
+  // half the window is not room for who and where: the title keeps it
+  await expect(chips.filter({ visible: true })).toHaveCount(0);
+  await expect(row(page, "finished")).toContainText("AUTH-4");
+
+  // a second click on it is not a toggle, and a click on another row swaps the card
+  await row(page, "asked").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-1");
+  await row(page, "stopped").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-3");
+  await expect(openRow(page)).toHaveCount(1);
+  await expect(openRow(page)).toHaveAttribute("data-kind", "stopped");
+
+  // a chip in the panel still goes to the full page, and Back returns to the list and its panel
+  await row(page, "new").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-5");
+  await panel.getByTestId("side-links").getByTestId("card-chip").click();
+  await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached();
+  await expect(page.locator('[data-testid="card-page"][data-id="AUTH-2"]')).toBeVisible();
+  await page.getByTestId("back").click();
+  await expect(card).toHaveAttribute("data-id", "AUTH-5");
+  await expect(openRow(page)).toHaveAttribute("data-kind", "new");
+
+  // no click opened the editor
+  expect(code()).toHaveLength(0);
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(openRow(page)).toHaveCount(0);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await row(page, "asked").click();
+  await panel.getByTestId("panel-close").click();
+  await expect(panel).toHaveCount(0);
+});
+
+test("a double-click opens the row's session in the editor, once, wherever the panel lands under it", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+  const panel = page.getByTestId("inbox-panel");
+  const asked = row(page, "asked");
+
+  // the middle of a row: the first click opens the panel, whose edge is then under the pointer
+  await asked.dblclick();
+  await expect.poll(() => code().length).toBe(1);
+  await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-1");
+  await expect(openRow(page)).toHaveAttribute("data-kind", "asked");
+  await expect(page.getByTestId("toast")).toHaveText(["Opening AUTH-1 in VS Code"]);
+
+  // the right of a closed list's row: the second click lands in the panel, on the card
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  const box = (await asked.boundingBox()) as { x: number; y: number; width: number };
+  const at = [box.x + box.width * 0.62, box.y + 12] as const;
+  await page.mouse.dblclick(...at);
+  await expect.poll(() => code().length).toBe(2);
+  expect(
+    await page.evaluate(
+      ([x, y]) =>
+        document.elementFromPoint(x, y)?.closest("[data-testid]")?.closest("section")?.dataset
+          .testid,
+      at,
+    ),
+  ).toBe("inbox-panel");
+  // the second click was nobody's: the panel is still on that row, and on the inbox
+  await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-1");
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+
+  // with the panel open nothing moves, and it is still one open
+  await asked.dblclick();
+  await expect.poll(() => code().length).toBe(3);
+  await expect(rows(page)).toHaveCount(7);
+
+  // two clicks on a row's button are that button's, twice: no third open for the row
+  await under(asked, () => asked.getByTestId("inbox-open").dblclick({ timeout: 2_000 }));
+  await expect.poll(() => code().length).toBe(5);
+  // a double-click in the panel is the panel's: it selects a word
+  await panel.getByTestId("thread-item").first().dblclick();
+  // an agent grove cannot open: the double-click says why, like the key does
+  const held = row(page, "decided");
+  await held.dblclick({ position: { x: 200, y: 12 } });
+  await expect(
+    page.getByTestId("toast").filter({ hasText: "running in the background" }),
+  ).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(code()).toHaveLength(5);
+});
+
+test("a row with no card opens in full in the panel, and a row that leaves hands the panel on", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+  const panel = page.getByTestId("inbox-panel");
+  const session = page.locator('[data-testid="inbox-row"]:not([data-card])');
+  const said = `Done with the first pass. ${"The callback route now checks the state cookie before it trades the code. ".repeat(4)}Want me to open the PR?`;
+
+  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: said });
+  await expect(session).toHaveCount(1);
+  await session.click();
+  const small = panel.getByTestId("row-panel");
+  await expect(small.getByRole("heading")).toHaveText("chat-features-35");
+  await expect(small.getByTestId("kind")).toHaveText("Asked");
+  // the row clamps it at two lines. here it is whole
+  await expect(small.getByTestId("panel-summary")).toHaveText(said);
+  expect(
+    await small.getByTestId("panel-summary").evaluate((e) => e.scrollHeight <= e.clientHeight),
+  ).toBe(true);
+  await expect(small.getByTestId("panel-open")).toHaveText("Open in VS Code");
+  await expect(openRow(page)).not.toHaveAttribute("data-card");
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  // a click never opens the editor, on a row with no card either
+  expect(code()).toHaveLength(0);
+
+  // Reviewed in the panel takes the row out, and the row that took its place is the open one
+  const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+  const at = order.indexOf((await session.getAttribute("id")) as string);
+  await small.getByTestId("panel-review").click();
+  await expect(session).toHaveCount(0);
+  await expect(openRow(page)).toHaveAttribute("id", order[at + 1] as string);
+  await expect(panel.getByTestId("card-page")).toHaveAttribute(
+    "data-id",
+    (await openRow(page).getAttribute("data-card")) as string,
+  );
+
+  // its next event brings the row back, and the panel stays on the card it moved to
+  hookEvent(fx, SID.chat, "UserPromptSubmit");
+  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Opened it. Merge now?" });
+  await expect(session).toHaveCount(1);
+  await expect(openRow(page)).toHaveAttribute("id", order[at + 1] as string);
+  // the panel's Open is the editor. opening a session is looking at it, so its row leaves as well
+  await session.click();
+  await small.getByTestId("panel-open").click();
+  await expect.poll(() => code().length).toBe(1);
+  await expect(session).toHaveCount(0);
+  await expect(small).toHaveCount(0);
+
+  // the same from a row's own button, with the panel on that row
+  await row(page, "decided").click();
+  await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-2");
+  const before = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+  const was = before.indexOf((await row(page, "decided").getAttribute("id")) as string);
+  await reviewed(row(page, "decided"));
+  await ready(page, 6);
+  await expect(openRow(page)).toHaveAttribute("id", before[was + 1] as string);
+
+  // the last rows go: the panel closes with the list, and a new row does not open it again
+  const boot = await api(page).bootstrap();
+  await page.evaluate(
+    (k) => window.grove.review("auth-sso", k, true),
+    reviewAllKeys(boot.inbox.rows),
+  );
+  await ready(page, 2);
+  await expect(openRow(page)).toHaveCount(1);
+  await reviewed(row(page, "asked"));
+  await reviewed(row(page, "stopped"));
+  await expect(page.getByTestId("inbox-empty")).toBeVisible();
+  await expect(panel).toHaveCount(0);
+  hookEvent(fx, SID.chat, "UserPromptSubmit");
+  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Merged. Anything else?" });
+  await expect(session).toHaveCount(1);
+  await expect(panel).toHaveCount(0);
 });

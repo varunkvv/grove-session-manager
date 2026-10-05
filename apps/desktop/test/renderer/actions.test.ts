@@ -6,6 +6,7 @@ import {
   newProject,
   openCard,
   openConclusion,
+  openRow,
   perform,
   switchProject,
 } from "../../src/renderer/state/actions.ts";
@@ -235,9 +236,9 @@ describe("keys on a list", () => {
       expect(s(), type).toMatchObject({ keys: true, view: { name: "inbox" } });
       expect(s().inbox.rows).toHaveLength(3);
     }
-    // the next press acts: the first row has a card
+    // the next press acts: the first row opens in the panel, and the list stays
     perform({ type: "open" });
-    expect(s().view).toEqual({ name: "card", cardId: "AUTH-1" });
+    expect(s()).toMatchObject({ view: { name: "inbox" }, peek: "asked:AUTH-1" });
   });
 
   it("the first arrow only shows the keyboard's row. the next move through this project's rows only", () => {
@@ -282,6 +283,65 @@ describe("keys on a list", () => {
     perform({ type: "project-step", delta: 1 });
     perform({ type: "project-step", delta: 1 });
     expect(s().project).toBe("billing");
+  });
+});
+
+describe("the inbox panel", () => {
+  const rows = () => s().inbox.rows;
+
+  it("a click opens the row beside the list and never toggles: a double-click is two clicks first", () => {
+    openRow(rows()[1]!);
+    expect(s()).toMatchObject({
+      peek: "decided:D-2",
+      active: { inbox: "decided:D-2" },
+      view: { name: "inbox" },
+      back: [],
+      toasts: [],
+    });
+    openRow(rows()[1]!);
+    expect(s().peek).toBe("decided:D-2");
+    // a row with no card opens there too. nothing a click does reaches the editor
+    openRow(row("asked:session:s1", { sessionKey: "/p/s.jsonl", open: {} }));
+    expect(s()).toMatchObject({ peek: "asked:session:s1", view: { name: "inbox" }, toasts: [] });
+  });
+
+  it("follows the arrows while it is open, from its own row, and stays shut while it is not", () => {
+    perform({ type: "move", delta: 1 });
+    perform({ type: "move", delta: 1 });
+    expect(s()).toMatchObject({ active: { inbox: "decided:D-2" }, peek: null });
+    perform({ type: "move-to", where: "first" });
+    expect(s().peek).toBeNull();
+
+    openRow(rows()[0]!);
+    // the mouse went over another row and away: the keyboard's row moved, the panel did not
+    s().set({ active: { ...s().active, inbox: "decided:D-2" }, keys: false });
+    expect(s().peek).toBe("asked:AUTH-1");
+    // the open row shows where the arrows are, so the first one moves
+    perform({ type: "move", delta: 1 });
+    expect(s()).toMatchObject({
+      peek: "decided:D-2",
+      active: { inbox: "decided:D-2" },
+      keys: true,
+    });
+    perform({ type: "move-to", where: "first" });
+    expect(s()).toMatchObject({ peek: "asked:AUTH-1", active: { inbox: "asked:AUTH-1" } });
+  });
+
+  it("Escape closes it. a card page and Back keep it, the nav and another project do not", () => {
+    openRow(rows()[0]!);
+    perform({ type: "close-panel" });
+    expect(s()).toMatchObject({ peek: null, view: { name: "inbox" } });
+
+    openRow(rows()[0]!);
+    openCard("AUTH-2");
+    back();
+    expect(s()).toMatchObject({ peek: "asked:AUTH-1", view: { name: "inbox" } });
+    go("inbox");
+    expect(s().peek).toBeNull();
+
+    openRow(rows()[0]!);
+    switchProject("billing");
+    expect(s().peek).toBeNull();
   });
 });
 

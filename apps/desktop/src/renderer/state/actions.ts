@@ -49,6 +49,7 @@ export function go(section: Section): void {
     view: { name: section },
     back: [],
     overlay: null,
+    peek: null,
     ...(section === "conclusions" ? { conclusions: NO_CONCLUSIONS } : {}),
   });
 }
@@ -84,6 +85,7 @@ export function switchProject(id: ProjectId): void {
     view: { name: s.section },
     back: [],
     card: null,
+    peek: null,
     active: { inbox: null, cards: null, conclusions: null },
     conclusions: NO_CONCLUSIONS,
   });
@@ -153,10 +155,13 @@ export function openWith(
   else void run();
 }
 
-/** a row with a card opens the card. one with only a session has no screen here, so the editor */
+/**
+ * a click or Enter: the row opens in the panel beside the list and is the keyboard's. never a
+ * toggle, a double-click is two of these first. and never the editor: that is the double-click
+ */
 export function openRow(row: InboxRowView): void {
-  if (row.card) openCard(row.card.id);
-  else openWith(row.sessionKey, row.open, row.title);
+  const s = state();
+  s.set({ peek: row.id, active: { ...s.active, inbox: row.id } });
 }
 
 /** the same for every start button in the app */
@@ -268,7 +273,12 @@ function listOf(s: State): { screen: Section; ids: string[]; at: string | null }
 function moveTo(s: State, list: NonNullable<ReturnType<typeof listOf>>, index: number): void {
   const id = list.ids[Math.min(list.ids.length - 1, Math.max(0, index))];
   if (id === undefined) return;
-  s.set({ active: { ...s.active, [list.screen]: id }, keys: true });
+  s.set({
+    active: { ...s.active, [list.screen]: id },
+    keys: true,
+    // an open panel goes where the keyboard goes. it never follows the mouse
+    ...(list.screen === "inbox" && s.peek ? { peek: id } : {}),
+  });
   if (typeof document !== "undefined") {
     document.getElementById(optionId(id))?.scrollIntoView({ block: "nearest" });
   }
@@ -315,9 +325,12 @@ export function perform(intent: Intent): void {
   const list = listOf(s);
   switch (intent.type) {
     case "move":
-      // nothing shows which row the keyboard is on yet: the first arrow shows it, like the first Enter
       if (list) {
-        moveTo(s, list, (list.at ? list.ids.indexOf(list.at) : -1) + (s.keys ? intent.delta : 0));
+        // the open row always shows, so an arrow steps from it at once, wherever the mouse has been
+        const open = list.screen === "inbox" && s.peek && list.ids.includes(s.peek) ? s.peek : null;
+        const from = open ?? list.at;
+        // nothing shows which row the keyboard is on yet: the first arrow shows it, like the first Enter
+        moveTo(s, list, (from ? list.ids.indexOf(from) : -1) + (s.keys || open ? intent.delta : 0));
       }
       break;
     case "move-to":
@@ -341,6 +354,10 @@ export function perform(intent: Intent): void {
       break;
     case "collapse":
       s.set({ conclusions: { ...s.conclusions, open: null } });
+      break;
+    case "close-panel":
+      s.set({ peek: null });
+      focusScreen();
       break;
     case "clear-query":
       s.set({ conclusions: { ...s.conclusions, query: "" } });

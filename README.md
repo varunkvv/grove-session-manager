@@ -392,8 +392,11 @@ agent runs and when, then the summary at full width.
 | Finished | a card was marked done. its summary is the row |
 
 Asked and Stopped sort above everything else, so a burst of decisions from a busy agent cannot push a waiting question
-down the list. A click opens the card. Each row has **Open in VS Code** and **Reviewed**, which takes the row out. Your
-own conclusions and the cards you created never make a row, and neither do superseded conclusions or canceled cards.
+down the list. A click opens the row in a panel to the right of the list: its card, or the row in full when it has no
+card. A double-click opens its agent in the editor. The panel takes the right half of the window. While it is open it
+follows the arrow keys, and when its row is reviewed it moves to the row that took its place. `Esc` closes it. Each row
+has **Open in VS Code** and **Reviewed**, which takes the row out. Your own conclusions and the cards you created never
+make a row, and neither do superseded conclusions or canceled cards.
 
 **Cards** lists the project's cards in groups: Waiting on you, In progress, Todo, Done, Canceled, with who holds each
 and where that agent runs. A project with no cards shows its goal and the buttons to start an agent on it. Under
@@ -589,15 +592,16 @@ No single letter is a shortcut, so on Conclusions a letter goes straight to the 
 | `⌘1` `⌘2` `⌘3` | Inbox / Cards / Conclusions |
 | `⌥↑` `⌥↓` | step through projects |
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` `⌘↑` `⌘↓` | move the active row |
-| `↵` | open the active row: its card, or a conclusion in place |
+| `↵` | open the active row: an inbox row in the panel beside the list, a card, or a conclusion in place |
 | `⌘↵` | open the row's agent in the editor. on a card, the same as its Open button |
 | `⌘D` | mark the active inbox row or conclusion reviewed |
 | `⌘F` | search conclusions, from any screen. `/` does the same on Conclusions |
-| `Esc` | close what is open, clear the search, then go back |
+| `Esc` | close what is open (the inbox panel, a conclusion), clear the search, then go back |
 | `⌘N` `⌘O` `⌘E` `⌘R` `⌘,` | new project, open the project in the editor, edit project, refresh, settings |
 
 No row looks active until a key says so: the first arrow or `↵` only shows which row the keyboard is on, and the next
-one acts. `Esc` does not leave a project form that has changes.
+one acts. With the inbox panel open the arrows step from its row at once. `Esc` does not leave a project form that has
+changes.
 
 ## Develop
 

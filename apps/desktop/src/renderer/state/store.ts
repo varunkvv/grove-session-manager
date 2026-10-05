@@ -61,6 +61,8 @@ export interface State {
   active: { inbox: string | null; cards: string | null; conclusions: string | null };
   /** the keyboard moved last. while false no row looks active and only hover shows a row's buttons */
   keys: boolean;
+  /** the inbox row open in the panel beside the list, by id. a trip to a card page and Back keeps it */
+  peek: string | null;
   /** the Conclusions screen's controls. they outlive a trip to a card and back. */
   conclusions: ConclusionControls;
   /** a popover the global key handler must leave alone */
@@ -93,6 +95,7 @@ export const useStore = create<State>((set) => ({
   card: null,
   active: { inbox: null, cards: null, conclusions: null },
   keys: false,
+  peek: null,
   conclusions: { query: "", kind: "all", open: null },
   overlay: null,
   dialog: null,

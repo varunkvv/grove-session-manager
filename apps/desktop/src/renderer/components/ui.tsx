@@ -10,6 +10,7 @@ import type { ConclusionKind } from "@grove/record/types";
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
   type SelectHTMLAttributes,
   useEffect,
@@ -258,6 +259,37 @@ export function EscButton({ label, onClick }: { label: "Back" | "Close"; onClick
       <Kbd>esc</Kbd>
     </button>
   );
+}
+
+/**
+ * a double-click on a row whose first click opens a panel. the panel takes half the screen and the
+ * rows reflow, so the second click lands on whatever is under the pointer by then: the panel,
+ * another row, a button. the pair belongs to the row its first click was on: that click remembers
+ * the row, the second is nobody's wherever it lands, and the double-click runs for that row
+ */
+export function useRowDoubleClick<T>(run: (row: T) => void) {
+  const first = useRef<T | null>(null);
+  return {
+    /** from the row's own click */
+    clicked: (row: T) => {
+      first.current = row;
+    },
+    /** for the element that holds the list and the panel */
+    root: {
+      onClickCapture: (e: MouseEvent) => {
+        // 1 is a first click and 0 a key on a button: either starts over
+        if (e.detail < 2) first.current = null;
+        else if (first.current) {
+          e.stopPropagation();
+          // a link in the panel would otherwise be followed
+          e.preventDefault();
+        }
+      },
+      onDoubleClick: () => {
+        if (first.current) run(first.current);
+      },
+    },
+  };
 }
 
 /** the only places monospace is allowed: paths, branches, SHAs and commands */
