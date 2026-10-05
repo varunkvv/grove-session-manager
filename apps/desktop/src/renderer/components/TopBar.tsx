@@ -1,9 +1,19 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ProjectView } from "../../shared/ipc.ts";
 import { matchProjects, needsYouCount, projectRows } from "../logic/views.ts";
-import { focusScreen, go, newProject, switchProject } from "../state/actions.ts";
-import { type Section, useStore } from "../state/store.ts";
-import { cx, Dot, GroveMark, Icon, inputClass, Kbd, menuItemClass, Overlay } from "./ui.tsx";
+import { focusScreen, go, newProject, openProject, switchProject } from "../state/actions.ts";
+import { currentProject, type Section, useStore } from "../state/store.ts";
+import {
+  Button,
+  cx,
+  Dot,
+  GroveMark,
+  Icon,
+  inputClass,
+  Kbd,
+  menuItemClass,
+  Overlay,
+} from "./ui.tsx";
 
 const itemId = (i: number) => `switcher-${i}`;
 
@@ -232,7 +242,8 @@ function NavItem({ section, label, count }: { section: Section; label: string; c
 
 export function TopBar() {
   const mac = useStore((s) => s.env?.platform === "darwin");
-  const project = useStore((s) => s.project);
+  const project = useStore(currentProject);
+  const editor = useStore((s) => s.editor?.label ?? "the editor");
   // every row of this project, Asked to Finished: the window is a reading list, the tray an alarm
   const inboxCount = useStore((s) => projectRows(s.inbox, s.project).length);
   return (
@@ -256,6 +267,18 @@ export function TopBar() {
         </>
       )}
       <span className="flex-1" />
+      {/* the project's window in the editor, from every screen. cmd-O does the same */}
+      {project && (
+        <Button
+          size="sm"
+          className="mr-2"
+          title={`Open ${project.name} in ${editor}`}
+          onClick={() => void openProject(project.id)}
+          data-testid="open-project"
+        >
+          Open in {editor}
+        </Button>
+      )}
       <button
         type="button"
         className="no-drag fade flex h-7 items-center rounded-md px-1.5 hover:bg-raised"

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
-import { type Fixture, makeFixture } from "./helpers/fixture.ts";
-import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { type Fixture, makeFixture, pendingIntents, readExecLog } from "./helpers/fixture.ts";
+import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { asAgent, asPerson, liveSession, writeProject } from "./helpers/project.ts";
 
 let fx: Fixture;
@@ -227,4 +227,34 @@ test("the switcher by mouse: a click picks a project, New project… opens the f
   await newProject(page).click();
   await expect(menu(page)).toHaveCount(0);
   await expect(page.getByTestId("project-name")).toBeVisible();
+});
+
+test("Open in VS Code in the top bar opens the window of the project on screen", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  const open = page.getByTestId("open-project");
+  const code = () => readExecLog(fx).filter((l) => l.bin === "code");
+
+  await expect(open).toHaveText("Open in VS Code");
+  await expect(open).toHaveAttribute("title", "Open auth-sso in VS Code");
+  await open.click();
+  await expect(
+    page.getByTestId("toast").filter({ hasText: "Opening auth-sso in VS Code" }),
+  ).toBeVisible();
+  await waitFor(async () => code().length === 1);
+  expect(code()[0]?.argv[0]).toMatch(/auth-sso\.code-workspace$/);
+  // the project and no session: nothing is left for the editor to land on
+  expect(pendingIntents(fx)).toEqual([]);
+
+  // it is on every screen, and follows the switcher
+  for (const nav of ["nav-cards", "nav-conclusions"]) {
+    await page.getByTestId(nav).click();
+    await expect(open).toBeVisible();
+  }
+  await switcher(page).click();
+  await item(page, "billing-export").click();
+  await expect(open).toHaveAttribute("title", "Open billing-export in VS Code");
+  await open.click();
+  await waitFor(async () => code().length === 2);
+  expect(code()[1]?.argv[0]).toMatch(/billing-export\.code-workspace$/);
 });
