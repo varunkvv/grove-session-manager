@@ -1,31 +1,33 @@
-## 0.10
+## 0.11
 
-Grove is now a project manager for agents. What was a combo is a project, with a goal and a record that agents write
-and you read. Before 0.10 it was a session finder.
+Grove tells you which Claude Code agents need you, and gets you to them. 0.10 made it a project manager with a record
+agents wrote to. That is gone, and the sessions are the app again.
 
 New:
 
-- the record: cards, questions and conclusions (decisions, findings, verdicts), kept as plain files in the project
-  folder. agents write it through an MCP server, `grove`, that every session runs for itself, so it works with Grove closed
-- an inbox of what agents ask of you and what they decided without you, a cards screen, a page per card, and every
-  conclusion in one searchable list
-- starting an agent on the project's goal or on a card, in VS Code or in the background
-- `⌘K` to go anywhere, switch project and find any Claude Code session on the machine
-- a menu bar item with the count of what waits on you. closing the window hides it, and the app keeps running
-- notifications when an agent asks you something on a card and when one stops mid-turn
+- a sidebar of your projects, each with the count of its sessions that need you
+- one inbox over every project: Needs permission, Your turn, Failed, Stopped
+- a project's sessions as a screen, all of them, with a filter. the ones that need you first, then the ones working
+- a click on a row opens the session in a panel beside the list, with what you last said to it and what it has said
+  since. a double-click opens it in VS Code
+- a notification and a menu bar row open the window on that session, with the panel open
+- a colour per project, and one colour per state everywhere
 
-Gone: the session list as a screen, the conversation pane, the agent inspector, the Agents view, the archive, token
-counts, **New session...** and **Continue in background...**. Sessions are found from `⌘K`.
+Gone: the Cards and Conclusions screens, card pages, inbox rows about cards and conclusions, starting an agent on a
+card, the notification for a question on a card, the card prefix, and the record itself. Agents no longer get the
+`grove` MCP server, its rules file or its `SessionStart` hook.
 
-The first launch writes to disk, once:
+The first launch takes out of every project what 0.10 installed, and only that:
 
-- `~/claude-ws/combos.json` gets a `prefix` for every project (`AUTH`, so its cards are `AUTH-1`, `AUTH-2`, ...)
-- `~/claude-ws/.grove/bin/record` and `record.cjs` are installed
-- every project gets `.mcp.json` (only its `grove` entry is ours), `.claude/rules/grove-record.md` and
-  `.claude/grove-project.json`, and in `.claude/settings.local.json` the `grove` server's approval, two allow rules
-  (`mcp__grove`, and Bash for the launcher) and a `SessionStart` hook
+- `mcpServers.grove` in `.mcp.json` (the file too, when that was all it held)
+- in `.claude/settings.local.json`: the `SessionStart` hook marked `# grove-record`, the `grove` server's approval and
+  its two allow rules. the status hooks stay
+- `.claude/rules/grove-record.md`
+- the record paragraphs in `CLAUDE.md` and `.claude/agents/long-task.md`, where they are still exactly what Grove wrote
+- `~/claude-ws/.grove/bin/record` and `record.cjs`
 
-Sessions that are open during the upgrade get the tools after a restart. The
+`cards/`, `conclusions/` and `.claude/grove-project.json` are yours and are not touched. What you marked reviewed stays
+dismissed. Sessions that are open during the upgrade need a restart. The
 [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not verified.
 
 ## Install

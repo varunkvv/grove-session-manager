@@ -158,7 +158,7 @@ export interface OpenReport {
   warnings: string[];
 }
 
-// what the page gets: the project manager's views, built in main.
+// what the page gets: views built in main.
 
 export interface ProjectView {
   /** basename(root). a rename never changes it */

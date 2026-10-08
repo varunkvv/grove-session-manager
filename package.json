@@ -32,7 +32,7 @@
     "vitest": "catalog:"
   },
   "license": "MIT",
-  "description": "Grove: a project manager for Claude Code agents",
+  "description": "Grove: tells you which Claude Code agents need you, and gets you to them",
   "repository": {
     "type": "git",
     "url": "https://github.com/varunkvv/grove-session-manager.git"
