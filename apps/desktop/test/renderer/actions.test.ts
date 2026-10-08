@@ -211,6 +211,23 @@ describe("keys on a list", () => {
     expect(s()).toMatchObject({ view: { name: "inbox" }, peek: "s-asks" });
   });
 
+  it("with a session open in the panel, the first cmd-D dismisses that one: the open row is marked", async () => {
+    const asked: unknown[] = [];
+    grove.review = (...args: unknown[]) => {
+      asked.push(args);
+      return Promise.resolve({ ok: true, value: undefined });
+    };
+    // he clicked s-cut and is reading it. the mouse moved last, and it is on no row
+    s().set({ keys: false, peek: "s-cut", active: { ...s().active, inbox: "s-asks" } });
+    perform({ type: "review" });
+    await Promise.resolve();
+    expect(asked).toHaveLength(1);
+    expect(s().inbox.rows.map((r) => r.sessionId)).not.toContain("s-cut");
+    expect(s().inbox.rows).toHaveLength(2);
+    // nothing became the keyboard's row for it
+    expect(s().keys).toBe(false);
+  });
+
   it("the first arrow only shows the keyboard's row. the next move through every project's rows", () => {
     perform({ type: "move", delta: 1 });
     expect(s()).toMatchObject({ active: { inbox: "s-asks" }, keys: true });

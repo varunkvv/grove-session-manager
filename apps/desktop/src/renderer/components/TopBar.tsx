@@ -27,7 +27,8 @@ export function TopBar() {
           <ProjectMark id={project.id} />
           <h1
             className="min-w-[48px] shrink truncate font-medium"
-            title={project.name}
+            // what the project is for, when its form says
+            title={project.goal ? `${project.name}: ${project.goal}` : project.name}
             data-testid="project-name"
           >
             {project.name}

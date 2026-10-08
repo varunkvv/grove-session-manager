@@ -18,6 +18,8 @@ New:
 - **New session** opens a new conversation in VS Code, and a project needs no goal for it: a project is the folders,
   each session has its own ask. a background session is started from `⌘K`, with what it should do typed first
 - fixed: a session that changed state in the second before Grove quit was missing from the inbox on the next launch
+- fixed: `⌘D` after a click did nothing on its first press. it dismisses the session open in the panel, or the row
+  under the pointer, at once
 - a colour per project, and one colour per state everywhere
 
 Gone: the Cards and Conclusions screens, card pages, inbox rows about cards and conclusions, starting an agent on a

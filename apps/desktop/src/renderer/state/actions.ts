@@ -226,14 +226,23 @@ function moveTo(s: State, list: NonNullable<ReturnType<typeof listOf>>, index: n
   }
 }
 
+/** the pointer is on this row, so its buttons show: it is plain which row a key would act on */
+const underPointer = (id: string): boolean =>
+  typeof document !== "undefined" && !!document.getElementById(optionId(id))?.matches(":hover");
+
 /** Enter, cmd-Enter and cmd-D on the keyboard's row */
 function act(s: State, list: NonNullable<ReturnType<typeof listOf>>, type: Intent["type"]): void {
-  // nothing shows which row the keyboard is on yet: show it, and let the next press act
+  let { at } = list;
   if (!s.keys) {
-    s.set({ keys: true });
-    return;
+    // the mouse moved last, so no row is marked as the keyboard's. a row that shows it is the one
+    // is acted on at once: the row under the pointer, else the row open in the panel, which is
+    // what he is reading. with neither, the first press only shows the keyboard's row
+    if (!(at && underPointer(at))) at = s.peek && list.ids.includes(s.peek) ? s.peek : null;
+    if (!at) {
+      s.set({ keys: true });
+      return;
+    }
   }
-  const { at } = list;
   if (!at) return;
   // its inbox row, when it needs the person: what Dismiss clears
   const row = s.inbox.rows.find((r) => r.sessionId === at);

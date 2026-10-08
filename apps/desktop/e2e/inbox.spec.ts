@@ -373,6 +373,47 @@ test("the panel's own buttons: Dismiss hands it to the row that took the place, 
   await expect(page.getByTestId("panel")).toHaveCount(0);
 });
 
+test("cmd-D with the mouse: one press dismisses the open row, and the row under the pointer", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+  const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+
+  // he clicked a row and is reading it in the panel. the open row is marked, so the first press acts
+  await rows(page).nth(1).click();
+  await expect(openRow(page)).toHaveAttribute("id", order[1] as string);
+  await page.keyboard.press("Meta+d");
+  await ready(page, 3);
+  await expect(rows(page).nth(1)).toHaveAttribute("id", order[2] as string);
+  // the panel went to the row that took its place, and that one goes the same way
+  await expect(openRow(page)).toHaveAttribute("id", order[2] as string);
+  // the pointer crossed another row on its way to the panel. the open row is still the one
+  await rows(page).nth(0).hover();
+  await panel(page).hover();
+  await page.keyboard.press("Meta+d");
+  await ready(page, 2);
+  expect(await rows(page).evaluateAll((els) => els.map((e) => e.id))).toEqual([order[0], order[3]]);
+
+  // no panel: the row under the pointer shows its buttons, and one press is enough there too
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("panel")).toHaveCount(0);
+  await under(rows(page).nth(0), async () => {
+    await expect(rows(page).nth(0).getByTestId("inbox-dismiss")).toBeVisible({ timeout: 2_000 });
+    await page.keyboard.press("Meta+d");
+    await expect(rows(page)).toHaveCount(1, { timeout: 2_000 });
+  });
+
+  // the pointer is on no row and nothing shows which one the keyboard is on: the first press only
+  // shows it, the second acts
+  await page.getByTestId("top-bar").hover();
+  await expect(page.locator('[data-testid="inbox-row"][data-active]')).toHaveCount(0);
+  await page.keyboard.press("Meta+d");
+  await expect(page.locator('[data-testid="inbox-row"][data-active]')).toHaveCount(1);
+  await expect(rows(page)).toHaveCount(1);
+  await page.keyboard.press("Meta+d");
+  await expect(page.getByTestId("inbox-empty")).toBeVisible();
+});
+
 test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, Enter opens the panel", async () => {
   app = await launchApp(seed());
   const { page } = app;

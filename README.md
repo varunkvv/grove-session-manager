@@ -421,7 +421,8 @@ No single letter is a shortcut: a letter only ever types, in the filter or a for
 | `⌘N` `⌘O` `⌘E` `⌘R` `⌘,` | new project, open the project in the editor, edit project, refresh, settings. `⌘O` and `⌘E` do nothing on the inbox |
 
 No row looks active until a key says so: the first arrow or `↵` only shows which row the keyboard is on, and the next
-one acts. With the panel open the arrows step from its row at once. `Esc` does not leave a project form that has
+one acts. After the mouse, `↵`, `⌘↵` and `⌘D` act at once on a row that already shows it is the one: the row under the
+pointer, else the row open in the panel. With the panel open the arrows step from its row at once. `Esc` does not leave a project form that has
 changes.
 
 ## Develop
