@@ -199,7 +199,6 @@ function RepoRow({
   slug,
   needsName,
   folder,
-  shadowed,
   onChange,
   onRemove,
 }: {
@@ -209,7 +208,6 @@ function RepoRow({
   needsName: NeedsName;
   /** edit: the project's own view of a locked working copy, for its drift */
   folder?: FolderView;
-  shadowed?: boolean;
   onChange: (patch: Partial<Repo>) => void;
   onRemove: () => void;
 }) {
@@ -218,7 +216,7 @@ function RepoRow({
   const canBranch = r.info && r.mode === "worktree" && !r.locked;
   // a folder name that is taken opens it by itself, and one the person typed keeps it open
   const shown = canBranch && (open || needsName !== null || r.as !== "");
-  const note = repoNote({ info: r.info, folder, shadowed });
+  const note = repoNote({ info: r.info, folder });
   return (
     <div
       className="border-b border-line last:border-b-0"
@@ -281,33 +279,16 @@ function RepoRow({
   );
 }
 
-/** only while something is wrong: a working record says nothing */
-function RecordCheck({ project }: { project: ProjectView }) {
-  const { server, syncProblem } = project;
-  const failed = server.state === "failed" ? server : null;
-  // a failure at the config stage is the sync's own warning: once is enough
-  const sync = syncProblem !== failed?.message ? syncProblem : undefined;
-  if (!failed && !sync) return null;
+/** only while something is wrong: what grove could not write into the project's folder */
+function SyncProblem({ project }: { project: ProjectView }) {
+  if (!project.syncProblem) return null;
   return (
-    <section data-testid="record-check" data-state={server.state}>
-      <h2 className="mb-1.5 text-sm font-medium text-fg-2">Record</h2>
-      {failed && (
-        <>
-          <p className="text-sm text-danger">Agents in this project cannot reach the record.</p>
-          <p className="mt-1 break-words text-sm text-fg-3">{failed.message}</p>
-          {failed.detail && (
-            <pre className="selectable mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-raised p-2 font-mono text-meta text-fg-2">
-              {failed.detail}
-            </pre>
-          )}
-          <p className="mt-1 text-sm text-fg-4">Fix it, then press ⌘R to check again.</p>
-        </>
-      )}
-      {sync && (
-        <p className="mt-1 break-words text-sm text-danger">
-          Grove could not update this project's files. {sync}
-        </p>
-      )}
+    <section data-testid="sync-problem">
+      <h2 className="mb-1.5 text-sm font-medium text-fg-2">Files</h2>
+      <p className="break-words text-sm text-danger">
+        Grove could not update this project's files. {project.syncProblem}
+      </p>
+      <p className="mt-1 text-sm text-fg-4">Fix it, then press ⌘R to check again.</p>
     </section>
   );
 }
@@ -528,7 +509,7 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
             hint={
               mode === "new"
                 ? "Every agent in the project starts from this."
-                : "Agents see a changed goal the next time a session starts."
+                : "What an agent started from Grove is told to work toward."
             }
           >
             <input
@@ -594,8 +575,6 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
                       slug={comboDirSlug(name)}
                       needsName={needsName(r)}
                       folder={folder}
-                      // main lists the working copy's own folder, not the repo it came from
-                      shadowed={folder && live?.shadowed.includes(`${live.root}/${folder.dirName}`)}
                       onChange={(p) =>
                         setRepos((repos) =>
                           repos.map((x) => (x.path === r.path ? { ...x, ...p } : x)),
@@ -620,7 +599,7 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
             )}
           </fieldset>
 
-          {mode === "edit" && live && <RecordCheck project={live} />}
+          {mode === "edit" && live && <SyncProblem project={live} />}
         </div>
 
         {problems.length > 0 && (

@@ -2,6 +2,8 @@ import path from "node:path";
 import {
   loadSettings,
   projectIdOf,
+  recordPrefixes,
+  removeRecordRuntime,
   resolveEditor,
   type Settings,
   sessionsRegistryDir,
@@ -25,11 +27,9 @@ import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier } from "./services/notify.ts";
 import { ProjectRecordService } from "./services/projectRecord.ts";
 import { ProjectsService } from "./services/projects.ts";
-import { installRecordRuntime, recordInstallFor, recordPaths } from "./services/recordInstall.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
 import { ReviewedService } from "./services/reviewed.ts";
-import { ServerChecks } from "./services/serverCheck.ts";
 import { SessionService } from "./services/sessions.ts";
 import { createTray, updateTray } from "./tray.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
@@ -168,24 +168,9 @@ async function start(): Promise<void> {
     },
   });
 
-  // packaged, or under GROVE_ROOT. a dev build next to the installed app writes no record file
-  const install = recordInstallFor({
-    isPackaged: electron.app.isPackaged,
-    customRoot: appEnv.customRoot,
-    appRoot: appEnv.appRoot,
-  });
-  const installRuntime = async () => {
-    const r = await installRecordRuntime({
-      appRoot: appEnv.appRoot,
-      execPath: process.execPath,
-      source: path.join(outDir, "record", "record.cjs"),
-      appVersion: electron.app.getVersion(),
-    });
-    if (r.error) log.warn("record runtime:", r.error);
-    else if (r.launcherChanged || r.bundleChanged || r.newerInstalled)
-      log.info("record runtime:", r);
-    return r;
-  };
+  // packaged, or under GROVE_ROOT. a dev build next to the installed app leaves its projects, and
+  // what 0.10 installed in them, alone
+  const cleanRecord = electron.app.isPackaged || appEnv.customRoot;
 
   /** the project list as the page has it. sent only when something in it moved */
   let sentProjects = "";
@@ -201,39 +186,17 @@ async function start(): Promise<void> {
     });
   };
 
-  const serverChecks = install
-    ? new ServerChecks({
-        ...recordPaths(appEnv.appRoot),
-        appVersion: electron.app.getVersion(),
-        claudeConfigDir: path.dirname(projectsDir),
-        report: (root) => combos.syncReport(root),
-        repair: installRuntime,
-        onResult: (combo, check) => {
-          if (check.state === "ok") {
-            log.info(`record check ${combo.name}: ok in ${check.ms}ms, ${check.tools} tools`);
-          } else if (check.state === "failed") {
-            log.warn(
-              `record check ${combo.name}: ${check.stage}: ${check.message}`,
-              check.detail ?? "",
-            );
-          }
-          pushProjects();
-        },
-      })
-    : null;
-  // the first pass checks every project. after it, a project whose .mcp.json was just written is checked again
-  let checkedOnce = false;
   // projects.start() takes the stopped baseline, so nothing calls it before live.start() is through
   let started = false;
 
   const combos = new ComboService({
     appRoot: appEnv.appRoot,
-    install,
+    cleanRecord,
     onSynced: (combo, report) => {
-      if (checkedOnce && (report.mcp === "created" || report.mcp === "written")) {
-        void serverChecks?.run(combo);
+      if (report.cleaned.length) {
+        log.info(`took 0.10's record out of ${combo.name}:`, report.cleaned.join(", "));
       }
-      // a file grove could not write, or a working copy that shadows the server
+      // a file grove could not write
       pushProjects();
     },
     queue,
@@ -268,7 +231,6 @@ async function start(): Promise<void> {
 
   const projects = new ProjectsService({
     combos,
-    server: (root) => serverChecks?.results.get(root),
     record,
     sessions,
     live,
@@ -313,9 +275,13 @@ async function start(): Promise<void> {
 
   await combos.load();
   await combos.backfillPrefixes();
-  await reviewed.load();
+  if (cleanRecord) {
+    const gone = await removeRecordRuntime(appEnv.appRoot);
+    if (gone.length) log.info("removed 0.10's record runtime:", gone.join(", "));
+  }
+  // what was dismissed under 0.10 is filed under each project's card prefix: it moves to its id
+  await reviewed.load(cleanRecord ? await recordPrefixes(combos.list()) : undefined);
   await sessions.loadCached(combos.list());
-  if (install) await installRuntime();
 
   const handlers = registerIpc({
     env: appEnv,
@@ -340,7 +306,6 @@ async function start(): Promise<void> {
     combos,
     record,
     projects,
-    serverChecks,
     background,
     reveals,
     notifier,
@@ -382,14 +347,12 @@ async function start(): Promise<void> {
       await live.start().catch((e) => log.warn("session status:", e));
       // stopped and finished background sessions have no process, so the registry never says
       void background.read();
-      // combos made before status tracking or the record existed get both without anyone opening them
+      // combos made before status tracking get it without anyone opening them
       await combos.syncAll();
       // after live.start(), never beside it: the interruptions it found are the baseline, so
       // what stopped while the app was closed shows in the inbox and does not notify
       projects.start();
       started = true;
-      checkedOnce = true;
-      await serverChecks?.runAll(combos.list());
     })();
     if (settings.trackAllSessions) void live.trackAllSessions(true).catch((e) => log.warn(e));
   });

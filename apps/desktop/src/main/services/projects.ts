@@ -21,7 +21,6 @@ import type {
   InboxView,
   LandingTarget,
   ProjectView,
-  ServerCheck,
   SessionHit,
   SessionRef,
   SessionRow,
@@ -34,7 +33,7 @@ import { openPlanOf } from "./openPlan.ts";
 import type { ProjectRecordService } from "./projectRecord.ts";
 import type { SessionService } from "./sessions.ts";
 
-/** the person's dismissals: `<PREFIX>/<key>` in reviewed.json (ReviewedService) */
+/** the person's dismissals: `<project id>/<key>` in reviewed.json (ReviewedService) */
 export interface ReviewMarks {
   /** the marks under `<prefix>/`, with it taken off */
   keys(prefix: string): ReadonlySet<string>;
@@ -43,8 +42,6 @@ export interface ReviewMarks {
 
 export interface ProjectsOptions {
   combos: Pick<ComboService, "list" | "views" | "syncReport" | "problemMessage">;
-  /** the self-check's last result for a root */
-  server: (root: string) => ServerCheck | undefined;
   record: Pick<ProjectRecordService, "setProjects" | "snapshot">;
   sessions: Pick<SessionService, "list" | "get" | "search">;
   live: Pick<LiveService, "interruptions" | "holder" | "isAlive" | "markSeen">;
@@ -213,8 +210,6 @@ export class ProjectsService {
           status: v.status,
           checkedAt: v.checkedAt,
           rootExists: isDir(p.root),
-          server: this.o.server(p.root) ?? { state: "unknown" },
-          shadowed: report?.shadowed ?? [],
           syncProblem: report?.warnings.map((w) => w.message).join(" ") || undefined,
         };
       }),
@@ -238,7 +233,7 @@ export class ProjectsService {
     const p = this.list().projects.find((x) => x.id === project);
     if (!p) throw new AppError("no-project", `There is no project called "${project}".`);
     const on = reviewed === true;
-    const marks = keys.filter((k) => k.startsWith("stopped:")).map((k) => `${p.prefix}/${k}`);
+    const marks = keys.filter((k) => k.startsWith("stopped:")).map((k) => `${p.id}/${k}`);
     if (marks.length) await this.o.reviewed.set(marks, on);
     // looking at a session is not a decision: nothing is stored, and its next event shows again
     if (on) {
@@ -321,9 +316,7 @@ export class ProjectsService {
     for (const p of projects) {
       const sessions = index.active.get(p.id);
       if (!sessions) continue;
-      built.push(
-        ...buildInbox({ project: p.id, sessions, reviewed: this.o.reviewed.keys(p.prefix) }),
-      );
+      built.push(...buildInbox({ project: p.id, sessions, reviewed: this.o.reviewed.keys(p.id) }));
     }
     const inbox: InboxView = {
       rows: built.sort(inboxOrder).map(

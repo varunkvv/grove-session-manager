@@ -74,11 +74,12 @@ export function Toasts() {
   );
 }
 
-/** one message at a time, the first that applies. the record's is only ever about the project on screen */
+/** one message at a time, the first that applies. a project's is only ever about the one on screen */
 export function Banner() {
   const editor = useStore((s) => s.editor);
   const problem = useStore((s) => s.projectsProblem);
-  const project = useStore(currentProject);
+  // the inbox is every project's: one project's files are not its news
+  const project = useStore((s) => (s.view.name === "inbox" ? undefined : currentProject(s)));
   const dismissed = useStore((s) => s.bannerDismissed);
   const set = useStore((s) => s.set);
   if (!editor) return null;
@@ -101,12 +102,8 @@ export function Banner() {
   } else if (problem) {
     reason = "projects-problem";
     message = problem;
-  } else if (project?.server.state === "failed") {
-    reason = "record";
-    message = `Agents in ${project.name} cannot reach the record. ${project.server.message}`;
-    action = { label: "Details", run: editProject };
   } else if (project?.syncProblem) {
-    reason = "record";
+    reason = "sync";
     message = `Grove could not update ${project.name}'s files. ${project.syncProblem}`;
     action = { label: "Details", run: editProject };
   } else return null;

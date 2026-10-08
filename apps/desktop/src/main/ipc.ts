@@ -52,7 +52,6 @@ import {
   resumeScriptPath,
 } from "./services/resumeScript.ts";
 import type { Reveals } from "./services/reveal.ts";
-import type { ServerChecks } from "./services/serverCheck.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { parseStartAgent, startPrompt } from "./services/startAgent.ts";
 import { keptFolderToast } from "./services/views.ts";
@@ -67,8 +66,6 @@ export interface Deps {
   combos: ComboService;
   record: ProjectRecordService;
   projects: ProjectsService;
-  /** null in a dev build outside GROVE_ROOT, which installs no record runtime */
-  serverChecks: ServerChecks | null;
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
   /** where a notification click or a tray row is taking the page */
@@ -242,7 +239,7 @@ function buildHandlers(deps: Deps): Handlers {
           await combos.backfillPrefixes();
           await combos.syncAll();
           deps.record.check();
-          await Promise.all([combos.reconcileAll(), deps.serverChecks?.runAll(combos.list())]);
+          await combos.reconcileAll();
         })(),
       ]);
     },

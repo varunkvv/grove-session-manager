@@ -18,7 +18,6 @@ import {
   type ProjectId,
   prepareComboOpen,
   projectIdOf,
-  type RecordInstall,
   reconcileCombo,
   repairCombo,
   repairFolder,
@@ -71,8 +70,11 @@ export interface ComboServiceOptions {
   onToast: (toast: ToastMessage) => void;
   /** combos moved, so session -> combo has to be worked out again */
   onModelChanged: (combos: Combo[]) => void;
-  /** undefined in a dev build outside GROVE_ROOT: then no record file is written anywhere */
-  install?: RecordInstall;
+  /**
+   * take what 0.10 installed for the record out of every project. off in a dev build outside
+   * GROVE_ROOT, which never edits the projects of the app installed next to it
+   */
+  cleanRecord?: boolean;
   /** every combo sync that ran, with what it wrote */
   onSynced?: (combo: Combo, report: ComboSyncReport) => void;
 }
@@ -88,7 +90,7 @@ export class ComboService {
   private hookWatchers = new Map<string, Disposable>();
   private debounce: NodeJS.Timeout | null = null;
   private selfWriteUntil = 0;
-  /** the last sync of each combo, by root. the self-check reads its config stage from here */
+  /** the last sync of each combo, by root: what it could not write is the project's `syncProblem` */
   private reports = new Map<string, ComboSyncReport>();
 
   constructor(opts: ComboServiceOptions) {
@@ -230,7 +232,7 @@ export class ComboService {
     return this.opts.queue.run("mutate", run);
   }
 
-  /** every combo reports session status and has the record's files, including ones made before either existed */
+  /** every combo reports session status, including ones made before that existed, and none is left with 0.10's record in it */
   async syncAll(): Promise<void> {
     for (const combo of this.list()) {
       await this.sync(combo).catch((e) => log.warn("sync", combo.name, e));
@@ -239,19 +241,11 @@ export class ComboService {
   }
 
   private async sync(combo: Combo): Promise<void> {
-    const report = await syncComboFiles(
-      this.opts.appRoot,
-      combo,
-      combo.prefix ?? "",
-      this.installFor(combo),
-    );
+    const report = await syncComboFiles(this.opts.appRoot, combo, {
+      cleanRecord: this.opts.cleanRecord,
+    });
     this.reports.set(combo.root, report);
     this.opts.onSynced?.(combo, report);
-  }
-
-  /** a combo assignPrefixes could not give a prefix gets status hooks only */
-  private installFor(combo: Combo): RecordInstall | undefined {
-    return combo.prefix ? this.opts.install : undefined;
   }
 
   /**
@@ -270,11 +264,11 @@ export class ComboService {
       // a missing root stays missing: the sync no longer recreates it
       if (this.hookWatchers.has(combo.root) || this.reports.get(combo.root)?.skipped) continue;
       // null while the combo has no `.claude` dir yet. the next sync picks it up.
-      const install = this.installFor(combo);
-      const w = watchComboStatusHooks(this.opts.appRoot, combo, {
+      const { appRoot, cleanRecord } = this.opts;
+      const w = watchComboStatusHooks(appRoot, combo, {
         onError: (e) => log.warn("status hook watch:", e),
-        // a session writing its start-up copy back drops the record's keys too
-        ...(install ? { resync: () => syncComboSettings(this.opts.appRoot, combo, install) } : {}),
+        // a session that ran through the upgrade writes its start-up copy back, 0.10's record and all
+        ...(cleanRecord ? { resync: () => syncComboSettings(appRoot, combo, true) } : {}),
       });
       if (w) this.hookWatchers.set(combo.root, w);
     }
@@ -286,8 +280,7 @@ export class ComboService {
     this.setBusyAll(combo, "creating");
     return this.mutate(async () => {
       await ensureRoot(combo);
-      // there from the first session on, not only after the first "open". an edited goal is in
-      // the project file before the next session starts
+      // there from the first session on, not only after the first "open"
       await this.sync(combo).catch((e) => log.warn("sync", combo.name, e));
       this.watchStatusHooks();
       try {
@@ -354,14 +347,12 @@ export class ComboService {
     return this.mutate(async () => {
       this.setBusyAll(combo, "creating");
       try {
-        const install = this.installFor(combo);
         const report = await prepareComboOpen(this.opts.appRoot, combo, {
           sessionId,
           ...land,
           gitPath: this.opts.gitPath,
           source: "app",
           onOutcome: (o) => this.applyOutcome(combo, o, "open"),
-          ...(install ? { record: { install, prefix: combo.prefix ?? "" } } : {}),
         });
         return {
           workspaceFile: report.workspaceFile,

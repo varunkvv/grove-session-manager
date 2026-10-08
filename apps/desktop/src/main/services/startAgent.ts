@@ -31,7 +31,7 @@ export function startPrompt(f: StartFacts): string {
   if (!goal) {
     throw new AppError("no-goal", "Write the project's goal first. Agents start from it.");
   }
-  return `Call record_state first, then work toward this project's goal: ${goal}
+  return `Work toward this project's goal: ${goal}
 
-Claim a card nobody holds with card_claim, or create one with card_create for work that has no card yet. Record what you decide or find with conclusion_record as you go.`;
+Read context/ first: it holds what other sessions here decided and learned. Write what you decide or learn there as you go.`;
 }

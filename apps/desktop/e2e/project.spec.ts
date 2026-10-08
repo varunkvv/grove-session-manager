@@ -1,6 +1,14 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
-import { readProject } from "@grove/record";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import {
   type Fixture,
@@ -18,7 +26,7 @@ import {
   stubDirectoryPicker,
   waitFor,
 } from "./helpers/launchApp.ts";
-import { writeProject } from "./helpers/project.ts";
+import { interrupted, writeProject } from "./helpers/project.ts";
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -60,7 +68,7 @@ async function submit(page: Page): Promise<void> {
   await expect(page.getByTestId("project-form")).toHaveCount(0);
 }
 
-test("the first project: working copies, a reference, the prefix and the record's files", async () => {
+test("the first project: working copies, a reference, the prefix, and nothing of the record", async () => {
   fx = makeFixture({ withCompanion: true, withClaude: true });
   const apiRepo = makeRepo(fx, "api", { branches: ["release"] });
   const shared = makeRepo(fx, "shared");
@@ -134,23 +142,20 @@ test("the first project: working copies, a reference, the prefix and the record'
     expect(existsSync(path.join(root, dir)), dir).toBe(true);
   }
 
-  // what grove writes for the record, and the self-check through the real launcher
-  await waitFor(async () => (await project(page, "prod-debug"))?.server.state === "ok", 30_000);
-  const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
-  expect(mcp.mcpServers.grove.command).toBe(path.join(fx.root, ".grove", "bin", "record"));
+  // it says where sessions leave word for each other, and names no tool
+  expect(claudeMd).toContain("The files in `context/` are the only\nmemory you have in common.");
+  expect(claudeMd).not.toContain("record");
+  // what grove writes into it: the status hooks, and no server, rules or runtime for a record
   const settings = JSON.parse(
     readFileSync(path.join(root, ".claude", "settings.local.json"), "utf8"),
   );
-  expect(settings.enabledMcpjsonServers).toContain("grove");
-  expect(settings.permissions.allow).toContain("mcp__grove");
-  expect(readFileSync(path.join(root, ".claude", "rules", "grove-record.md"), "utf8")).toContain(
-    "PROD-",
-  );
-  expect(readProject(root)).toMatchObject({
-    name: "Prod debug",
-    prefix: "PROD",
-    goal: "Find why webhooks go missing",
-  });
+  expect(Object.keys(settings.hooks)).toContain("PermissionRequest");
+  expect(JSON.stringify(settings)).not.toMatch(/grove-record|mcp__grove/);
+  expect(settings.enabledMcpjsonServers).toBeUndefined();
+  for (const gone of [".mcp.json", ".claude/rules", ".claude/grove-project.json", "cards"]) {
+    expect(existsSync(path.join(root, gone)), gone).toBe(false);
+  }
+  expect(existsSync(path.join(fx.root, ".grove", "bin"))).toBe(false);
 
   // opening it: the root first, then the reference, which Claude may read
   await page.keyboard.press("Meta+o");
@@ -212,11 +217,9 @@ test("a prefix another project uses brings up the prefix field, and Escape keeps
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
   await expect(page.getByTestId("project-name")).toHaveText("data-objects-test");
   expect(combos().map((c) => c.prefix)).toEqual(["DATA", "DAT2"]);
-  const root = path.join(fx.root, "data-objects-test");
-  await waitFor(async () => readProject(root)?.prefix === "DAT2", 30_000);
 });
 
-test("Edit project: repos that were in it are fixed, and an edited goal bumps the project file's rev", async () => {
+test("Edit project: repos that were in it are fixed, and an edited goal is saved", async () => {
   fx = makeFixture({ withCompanion: true });
   const apiRepo = makeRepo(fx, "api");
   const docs = makePlainDir(fx, "docs");
@@ -252,13 +255,12 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
   await expect(rows.nth(0).getByTestId("mode-reference")).toBeDisabled();
   await expect(rows.nth(0).getByTestId("branch-toggle")).toHaveCount(0);
   await expect(form).toContainText("To change how a repo is included, remove it and add it again.");
-  // a working record says nothing
-  await expect(page.getByTestId("record-check")).toHaveCount(0);
+  // nothing grove could not write: nothing said
+  await expect(page.getByTestId("sync-problem")).toHaveCount(0);
   const save = page.getByTestId("form-submit");
   await expect(save).toHaveText("Save");
   await expect(save).toBeDisabled();
 
-  const before = readProject(root)?.rev ?? 0;
   await page.getByTestId("project-goal").fill("SSO for the dashboard, okta first");
   // a form with changes is not thrown away by Escape
   await page.keyboard.press("Escape");
@@ -271,11 +273,10 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
     "title",
     "auth-sso: SSO for the dashboard, okta first",
   );
-  await waitFor(async () => readProject(root)?.rev === before + 1, 30_000);
-  expect(readProject(root)).toMatchObject({
+  expect(combos()[0]).toMatchObject({
     name: "auth-sso",
-    prefix: "AUTH",
-    goal: "SSO for the dashboard, okta first",
+    root,
+    note: "SSO for the dashboard, okta first",
   });
 
   // nothing changed this time: Escape leaves
@@ -287,7 +288,7 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
 
 test("a project that has no repos can still be given a goal", async () => {
   fx = makeFixture({ withCompanion: true });
-  const { root } = writeProject(fx, { name: "notes", prefix: "NOTE" });
+  writeProject(fx, { name: "notes", prefix: "NOTE" });
 
   app = await launchApp(fx);
   const { page } = app;
@@ -300,7 +301,6 @@ test("a project that has no repos can still be given a goal", async () => {
   await page.getByTestId("project-goal").fill("keep the notes in one place");
   await expect(save).toBeEnabled();
   await submit(page);
-  await waitFor(async () => readProject(root)?.goal === "keep the notes in one place", 30_000);
   expect(combos()[0]).toMatchObject({ note: "keep the notes in one place", folders: [] });
 });
 
@@ -332,7 +332,7 @@ test("a rename keeps the folder, the id and the prefix", async () => {
   await expect(page.locator('[data-testid="project-item"][data-id="auth-sso"]')).toHaveText(
     "Auth SSO",
   );
-  await waitFor(async () => readProject(root)?.name === "Auth SSO", 30_000);
+  await expect.poll(() => combos()[0]?.name).toBe("Auth SSO");
   expect(combos()[0]).toMatchObject({ name: "Auth SSO", root, prefix: "AUTH" });
   expect((await api(page).bootstrap()).projects.map((p) => p.id)).toEqual([
     "auth-sso",
@@ -340,71 +340,96 @@ test("a rename keeps the folder, the id and the prefix", async () => {
   ]);
 });
 
-test("the self-check is ok, and Cmd-R puts a deleted record.cjs back", async () => {
-  fx = makeFixture({ withCompanion: true });
-  writeProject(fx, { name: "auth-sso", prefix: "AUTH", goal: "SSO for the dashboard" });
+// what 0.10 wrote into a project, captured from 0.10's own code (see recordCleanup.test.ts in core)
+const RECORD_0_10 = path.join(
+  import.meta.dirname,
+  "../../../packages/core/test/fixtures/record-0.10",
+);
 
-  app = await launchApp(fx);
-  const { page } = app;
-  const server = async () => (await project(page, "auth-sso"))?.server;
-  await waitFor(async () => (await server())?.state === "ok", 30_000);
-  const first = await server();
-  if (first?.state !== "ok") throw new Error("the first check did not pass");
-
-  const bundle = path.join(fx.root, ".grove", "bin", "record.cjs");
-  rmSync(bundle);
-  await page.keyboard.press("Meta+r");
-  await waitFor(async () => {
-    const s = await server();
-    return s?.state === "ok" && s.checkedAt > first.checkedAt;
-  }, 30_000);
-  expect(existsSync(bundle)).toBe(true);
-  await expect(page.locator('[data-testid="banner"][data-reason="record"]')).toHaveCount(0);
-});
-
-test("an invalid .mcp.json is a config problem on Edit project, until it is fixed and checked again", async () => {
+test("a project as 0.10 left it: the record is taken out at launch, and what was dismissed stays dismissed", async () => {
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
     name: "auth-sso",
     prefix: "AUTH",
     goal: "SSO for the dashboard",
   });
+  // the files 0.10 made and synced, with this machine's paths, and what an agent and the person left
+  cpSync(RECORD_0_10, root, { recursive: true });
+  for (const name of readdirSync(root, { recursive: true }).map(String)) {
+    const file = path.join(root, name);
+    if (!statSync(file).isFile()) continue;
+    writeFileSync(file, readFileSync(file, "utf8").replaceAll("/Users/you/claude-ws", fx.root));
+  }
+  mkdirSync(path.join(root, "cards", "AUTH-1"), { recursive: true });
+  writeFileSync(path.join(root, "cards", "AUTH-1", "card.md"), "# Point staging at okta\n");
+  const bin = path.join(fx.root, ".grove", "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(bin, "record"), "#!/bin/sh\n");
+  writeFileSync(path.join(bin, "record.cjs"), "// grove-record app=0.10.17\n");
+  // two sessions stopped mid-turn. he dismissed the first under 0.10, which filed it under AUTH
+  const [seen, fresh] = [
+    "aaaaaaaa-0000-4000-8000-000000000001",
+    "bbbbbbbb-0000-4000-8000-000000000002",
+  ];
+  const at = Date.now() - 60_000;
+  writeSession(fx, { cwd: root, sessionId: seen as string, title: "dismissed last week" });
+  writeSession(fx, { cwd: root, sessionId: fresh as string, title: "stopped just now" });
+  interrupted(fx, { [seen as string]: at, [fresh as string]: at });
+  const marks = path.join(fx.root, "reviewed.json");
+  writeFileSync(
+    marks,
+    JSON.stringify({ [`AUTH/stopped:${seen}@${at}`]: { at: 5 }, "AUTH/conclusion:D-1": { at: 6 } }),
+  );
 
   app = await launchApp(fx);
   const { page } = app;
-  await waitFor(async () => (await project(page, "auth-sso"))?.server.state === "ok", 30_000);
-
-  const file = path.join(root, ".mcp.json");
-  const good = readFileSync(file, "utf8");
-  writeFileSync(file, "{ not json");
-  await page.keyboard.press("Meta+r");
-
-  const banner = page.locator('[data-testid="banner"][data-reason="record"]');
-  await expect(banner).toContainText("Agents in auth-sso cannot reach the record.", {
-    timeout: 30_000,
+  // the one he dismissed does not come back
+  await expect(page.getByTestId("inbox-row")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.getByTestId("inbox-row")).toContainText("stopped just now");
+  expect(JSON.parse(readFileSync(marks, "utf8"))).toEqual({
+    [`auth-sso/stopped:${seen}@${at}`]: { at: 5 },
+    "auth-sso/conclusion:D-1": { at: 6 },
   });
-  // Details is the project's form
-  await show(page, "auth-sso");
-  await page.getByTestId("banner-action").click();
-  const check = page.getByTestId("record-check");
-  await expect(check).toHaveAttribute("data-state", "failed");
-  await expect(check).toContainText("Agents in this project cannot reach the record.");
-  await expect(check).toContainText(
-    `${file} is not valid JSON, so the grove server was not added.`,
+
+  // the server, the rules, the hook and the allow rules, the launcher and the bundle: gone
+  const settings = () => readFileSync(path.join(root, ".claude", "settings.local.json"), "utf8");
+  await expect
+    .poll(() => existsSync(path.join(root, ".mcp.json")), { timeout: 15_000 })
+    .toBe(false);
+  await expect.poll(() => /grove-record|mcp__grove|bin\/record/.test(settings())).toBe(false);
+  expect(existsSync(path.join(root, ".claude", "rules"))).toBe(false);
+  expect(existsSync(bin)).toBe(false);
+  // the status hooks are where this inbox comes from: they stay, pointed at this app's events
+  expect(JSON.parse(settings()).hooks.Stop[0].hooks[0].command).toContain(
+    path.join(fx.root, ".grove", "events"),
   );
-  await expect(check).toContainText("Fix it, then press ⌘R to check again.");
-  // the sync's warning is the failure's own message: said once
-  await expect(check).not.toContainText("Grove could not update this project's files.");
-  expect((await project(page, "auth-sso"))?.server).toMatchObject({
-    state: "failed",
-    stage: "config",
-  });
+  // its stub and its agent say `context/` again, and name no tool that is gone
+  for (const name of ["CLAUDE.md", ".claude/agents/long-task.md"]) {
+    const text = readFileSync(path.join(root, name), "utf8");
+    expect(text, name).toContain("context/");
+    expect(text, name).not.toMatch(/record_state|conclusion_record|comment_add/);
+  }
+  // the person's own: the cards agents wrote, and the project file
+  expect(readFileSync(path.join(root, "cards", "AUTH-1", "card.md"), "utf8")).toBe(
+    "# Point staging at okta\n",
+  );
+  expect(
+    JSON.parse(readFileSync(path.join(root, ".claude", "grove-project.json"), "utf8")),
+  ).toEqual({ v: 1, name: "auth-sso", prefix: "AUTH", goal: "SSO for the dashboard", rev: 1 });
+  // nothing is wrong with a project that was cleaned
+  await show(page, "auth-sso");
+  await expect(page.getByTestId("banner")).toHaveCount(0);
 
-  writeFileSync(file, good);
+  // again, on a refresh: not one file is written
+  const files = () =>
+    readdirSync(root, { recursive: true })
+      .map(String)
+      .sort()
+      .map((n) => [n, statSync(path.join(root, n)).mtimeMs]);
+  const before = [files(), statSync(marks).mtimeMs];
   await page.keyboard.press("Meta+r");
-  await expect(check).toHaveCount(0, { timeout: 30_000 });
-  await expect(banner).toHaveCount(0);
-  expect((await project(page, "auth-sso"))?.server.state).toBe("ok");
+  await page.waitForTimeout(1_500);
+  expect([files(), statSync(marks).mtimeMs]).toEqual(before);
 });
 
 test("a second project that wants the same branch is told, and the rest of it still builds", async () => {
@@ -448,7 +473,7 @@ test("a second project that wants the same branch is told, and the rest of it st
   expect(git(apiRepo, "status", "--porcelain")).toBe("");
 });
 
-test("drift and a shadowing server are notes on Edit project, and a repair fixes what it can", async () => {
+test("drift is a note on Edit project, and a repair fixes what it can", async () => {
   fx = makeFixture({ withCompanion: true });
   const apiRepo = makeRepo(fx, "api");
   const shared = makeRepo(fx, "shared");
@@ -486,17 +511,6 @@ test("drift and a shadowing server are notes on Edit project, and a repair fixes
   await expect(rows.nth(0).getByTestId("repo-note")).toHaveCount(0, { timeout: 30_000 });
   await expect(rows.nth(1).getByTestId("repo-note")).toContainText("Something else is here.");
   expect(readFileSync(path.join(root, "shared", "important.txt"), "utf8")).toBe("not a worktree\n");
-
-  // a working copy whose own .mcp.json declares a grove server
-  writeFileSync(
-    path.join(root, "api", ".mcp.json"),
-    JSON.stringify({ mcpServers: { grove: { command: "/usr/bin/true" } } }),
-  );
-  await page.keyboard.press("Meta+r");
-  await expect(rows.nth(0).getByTestId("repo-note")).toHaveText(
-    "Its .mcp.json also declares a server called grove. Sessions started inside it may use that one instead of the project's.",
-    { timeout: 30_000 },
-  );
 });
 
 test("removing working copies on Edit project takes the clean one down and keeps the one with changes", async () => {

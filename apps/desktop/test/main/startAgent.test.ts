@@ -25,7 +25,7 @@ function refusal(f: StartFacts): { code: string; message: string } {
 describe("the prompt an agent started from grove gets", () => {
   it("works the goal", () => {
     expect(startPrompt(BASE)).toBe(
-      "Call record_state first, then work toward this project's goal: Ship the leave planner to the pilot team\n\nClaim a card nobody holds with card_claim, or create one with card_create for work that has no card yet. Record what you decide or find with conclusion_record as you go.",
+      "Work toward this project's goal: Ship the leave planner to the pilot team\n\nRead context/ first: it holds what other sessions here decided and learned. Write what you decide or learn there as you go.",
     );
   });
 });

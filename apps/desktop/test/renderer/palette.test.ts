@@ -19,8 +19,6 @@ const project = (id: string, partial: Partial<ProjectView> = {}): ProjectView =>
   folders: [],
   status: "known",
   rootExists: true,
-  server: { state: "ok", checkedAt: NOW, ms: 40, tools: 14 },
-  shadowed: [],
   ...partial,
 });
 
@@ -114,7 +112,6 @@ describe("paletteItems", () => {
     for (const p of [
       project("auth", { goal: undefined }),
       project("auth", { rootExists: false }),
-      project("auth", { server: { state: "failed", checkedAt: NOW, stage: "spawn", message: "" } }),
     ]) {
       const got = ids(ctx({ project: p }));
       expect(got).not.toContain("start-editor");

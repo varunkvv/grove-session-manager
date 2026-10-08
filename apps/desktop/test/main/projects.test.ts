@@ -85,7 +85,6 @@ function setup() {
       syncReport: () => undefined,
       problemMessage: () => undefined,
     },
-    server: () => undefined,
     record: {
       setProjects: () => {},
       snapshot: (id) => snaps.get(id),
@@ -239,7 +238,7 @@ describe("the inbox", () => {
 });
 
 describe("dismiss", () => {
-  it("stores a stop under the prefix, sends seen keys to the live state, and refuses bad keys", async () => {
+  it("stores a stop under the project's id, sends seen keys to the live state, and refuses bad keys", async () => {
     const t = setup();
     t.project("chat", "CHAT");
     t.rows.push(row("s-cut", { ...inChat, interrupted: { why: "gone", at: 4000 } }));
@@ -248,7 +247,7 @@ describe("dismiss", () => {
     expect(cut?.reviewKeys).toEqual(["stopped:s-cut@4000"]);
 
     await t.svc.review("chat", [...(cut?.reviewKeys ?? []), ...(turn?.reviewKeys ?? [])], true);
-    expect([...t.marks]).toEqual(["CHAT/stopped:s-cut@4000"]);
+    expect([...t.marks]).toEqual(["chat/stopped:s-cut@4000"]);
     // looking at a session is not stored: the live state forgets it at its next event
     expect(t.seen).toEqual(["s-turn"]);
     expect(t.svc.inbox().rows.map((r) => r.sessionId)).toEqual(["s-turn"]);
@@ -352,8 +351,6 @@ describe("projects and sessions", () => {
       goal: "Fix the rounding.",
       prefix: "CHAT",
       rootExists: true,
-      server: { state: "unknown" },
-      shadowed: [],
     });
     // a second combo on another folder called chat
     const other = path.join(mkdtempSync(path.join(tmp, "t-")), "chat");

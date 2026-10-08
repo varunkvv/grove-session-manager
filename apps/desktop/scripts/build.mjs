@@ -1,21 +1,10 @@
-// production build, also what the e2e suite runs against. `--main-only` skips the renderer, not
-// the record bundle: e2e and dev install it.
+// production build, also what the e2e suite runs against. `--main-only` skips the renderer.
 import { build } from "esbuild";
-import {
-  appVersion,
-  mainOptions,
-  preloadOptions,
-  recordOptions,
-  viteConfigFile,
-} from "./shared.mjs";
+import { mainOptions, preloadOptions, viteConfigFile } from "./shared.mjs";
 
 const mainOnly = process.argv.includes("--main-only");
 
-await Promise.all([
-  build(mainOptions()),
-  build(preloadOptions()),
-  build(recordOptions(appVersion())),
-]);
+await Promise.all([build(mainOptions()), build(preloadOptions())]);
 
 if (!mainOnly) {
   const { build: viteBuild } = await import("vite");

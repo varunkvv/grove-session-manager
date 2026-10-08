@@ -106,18 +106,6 @@ export interface FolderDraft {
   as?: string;
 }
 
-/** the start-up self-check of a project's record server, run through the real launcher */
-export type ServerCheck =
-  | { state: "unknown" }
-  | { state: "ok"; checkedAt: number; ms: number; tools: number }
-  | {
-      state: "failed";
-      checkedAt: number;
-      stage: "config" | "spawn" | "initialize" | "tools/list" | "record_state";
-      message: string;
-      detail?: string;
-    };
-
 export interface PathInfoView {
   path: string;
   exists: boolean;
@@ -188,9 +176,6 @@ export interface ProjectView {
   checkedAt?: number;
   /** the root folder is there. no start buttons when it is not */
   rootExists: boolean;
-  server: ServerCheck;
-  /** working copies whose own .mcp.json declares a server called grove */
-  shadowed: string[];
   /** a file grove could not write, from the sync's warnings */
   syncProblem?: string;
 }
@@ -314,7 +299,7 @@ export interface Bootstrap {
 /** request/response. every call resolves quickly or reports progress through the push events below. */
 export interface Api {
   bootstrap(): Promise<Bootstrap>;
-  /** Cmd-R: rescan sessions, reload combos.json, run the record backstop, sync every project, rerun its self-check */
+  /** Cmd-R: rescan sessions, reload combos.json, sync every project and look at its working copies again */
   refresh(): Promise<Outcome>;
 
   /** Dismiss: a row's keys. a stop is marked, a status that needs the person is seen. at most 2,000 keys */

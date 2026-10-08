@@ -1,20 +1,13 @@
-// vite dev server for the renderer + esbuild watch for main, preload and the record bundle.
+// vite dev server for the renderer + esbuild watch for main and preload.
 // electron restarts on every rebuild, and quitting either side stops the other.
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { context } from "esbuild";
 import { createServer } from "vite";
-import {
-  appVersion,
-  desktopDir,
-  mainOptions,
-  preloadOptions,
-  recordOptions,
-  viteConfigFile,
-} from "./shared.mjs";
+import { desktopDir, mainOptions, preloadOptions, viteConfigFile } from "./shared.mjs";
 
-// even with --real-root a dev build writes no record files into real combos (main/index.ts)
+// even with --real-root a dev build leaves what 0.10 installed in real projects alone (main/index.ts)
 if (!process.env.GROVE_ROOT && !process.argv.includes("--real-root")) {
   console.error(
     "GROVE_ROOT is not set. A dev build next to the installed app takes its hook events (decision 28). Set GROVE_ROOT, or pass --real-root to use ~/claude-ws anyway.",
@@ -36,7 +29,7 @@ let child = null;
 let dying = null;
 let stopping = false;
 let restartTimer = null;
-const built = { main: false, preload: false, record: false };
+const built = { main: false, preload: false };
 
 function childEnv() {
   const env = { ...process.env, GROVE_DEV_SERVER_URL: devUrl };
@@ -75,8 +68,7 @@ function respawnOnEnd(name) {
       build.onEnd((result) => {
         if (result.errors.length > 0) return;
         built[name] = true;
-        // they usually finish together, so one restart covers all three. the app installs a
-        // changed record bundle when it starts
+        // they usually finish together, so one restart covers both
         clearTimeout(restartTimer);
         restartTimer = setTimeout(restart, 120);
       });
@@ -87,7 +79,6 @@ function respawnOnEnd(name) {
 const contexts = await Promise.all([
   context({ ...mainOptions(), plugins: [respawnOnEnd("main")] }),
   context({ ...preloadOptions(), plugins: [respawnOnEnd("preload")] }),
-  context({ ...recordOptions(appVersion()), plugins: [respawnOnEnd("record")] }),
 ]);
 await Promise.all(contexts.map((c) => c.watch()));
 

@@ -155,8 +155,6 @@ export function repoNote(i: {
   info?: PathInfoView;
   /** edit: the project's view of a locked working copy */
   folder?: FolderView;
-  /** edit: its own .mcp.json declares a server called grove */
-  shadowed?: boolean;
 }): { text: string; tone: string } | null {
   if (i.info && !i.info.exists)
     return { text: "This folder no longer exists.", tone: "text-danger" };
@@ -169,10 +167,5 @@ export function repoNote(i: {
     };
   const drift = i.folder && driftNote(i.folder);
   if (drift) return { text: drift, tone: "text-danger" };
-  if (i.shadowed)
-    return {
-      text: "Its .mcp.json also declares a server called grove. Sessions started inside it may use that one instead of the project's.",
-      tone: "text-danger",
-    };
   return null;
 }

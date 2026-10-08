@@ -72,8 +72,8 @@ export function DeleteProjectDialog() {
     >
       <div className="space-y-3 text-fg-2">
         <p>
-          Clean working copies are removed first, then the project leaves the list. Original clones,
-          past sessions and the project's cards and conclusions are not touched.
+          Clean working copies are removed first, then the project leaves the list. Original clones
+          and past sessions are not touched.
         </p>
         <label className="flex items-start gap-2.5">
           <input
@@ -86,8 +86,7 @@ export function DeleteProjectDialog() {
           <span>
             Also move the project folder to the Trash
             <span className="block text-meta text-fg-3">
-              It holds your CLAUDE.md, .claude settings, cards and conclusions, so this is off by
-              default.
+              It holds your CLAUDE.md, .claude settings, plans and notes, so this is off by default.
             </span>
           </span>
         </label>

@@ -1,0 +1,141 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d='/Users/you/claude-ws/.grove/events'; mkdir -p \"$d\" && [ \"$(ls \"$d\" | wc -l | tr -d ' ')\" -lt 5000 ] && f=\"$d/$$-$(date +%s)\" && head -c 16384 > \"$f.tmp\" && mv \"$f.tmp\" \"$f.json\"; cat > /dev/null # grove-status",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/you/claude-ws/.grove/bin/record' state --hook --root '/Users/you/claude-ws/auth-sso' # grove-record",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "grove"
+  ],
+  "permissions": {
+    "allow": [
+      "mcp__grove",
+      "Bash(/Users/you/claude-ws/.grove/bin/record:*)"
+    ]
+  }
+}

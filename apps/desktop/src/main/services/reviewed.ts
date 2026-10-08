@@ -1,12 +1,12 @@
 import path from "node:path";
-import { loadMarks, setMarks } from "@grove/core";
+import { loadMarks, renameMarkPrefixes, setMarks } from "@grove/core";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 
 /**
- * what the person reviewed, as `<PREFIX>/<key>`. the file behind it is a decision record people
- * may edit by hand, so this only ever holds what was read back from it - never what we hoped to
- * write.
+ * what the person dismissed, as `<project id>/<key>`. the file behind it is a decision record
+ * people may edit by hand, so this only ever holds what was read back from it - never what we
+ * hoped to write.
  */
 export class ReviewedService {
   private readonly file: string;
@@ -25,8 +25,18 @@ export class ReviewedService {
     );
   }
 
-  /** a broken file means "nothing is reviewed" until someone fixes it, never a rewrite */
-  async load(): Promise<void> {
+  /**
+   * a broken file means "nothing is dismissed" until someone fixes it, never a rewrite.
+   * `renames` is the one-time move of 0.10's marks, each card prefix to its project's id
+   */
+  async load(renames?: ReadonlyMap<string, string>): Promise<void> {
+    if (renames?.size) {
+      const moved = await renameMarkPrefixes(this.file, renames).catch((e) => {
+        log.warn("reviewed.json:", e);
+        return 0;
+      });
+      if (moved) log.info(`reviewed.json: moved ${moved} marks from card prefixes to project ids`);
+    }
     const loaded = await loadMarks(this.file);
     if (loaded.message) log.warn("reviewed.json:", loaded.message);
     this.marks = loaded.keys;

@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import {
@@ -27,9 +27,9 @@ test.afterEach(async () => {
 
 const GOAL = "Invoice exports as csv, one file per customer";
 // written out, not imported from main: this is what the agent is told, to the byte
-const PROMPT = `Call record_state first, then work toward this project's goal: ${GOAL}
+const PROMPT = `Work toward this project's goal: ${GOAL}
 
-Claim a card nobody holds with card_claim, or create one with card_create for work that has no card yet. Record what you decide or find with conclusion_record as you go.`;
+Read context/ first: it holds what other sessions here decided and learned. Write what you decide or learn there as you go.`;
 
 /** a project nobody has worked in yet, on its screen, with a fake claude and the fake `code` */
 async function start(o: FixtureOptions & { goal?: string } = {}): Promise<{
@@ -150,31 +150,23 @@ test("no goal: Edit project in place of the start buttons", async () => {
   await expect(page.locator('[data-testid="screen"][data-view="edit-project"]')).toBeAttached();
 });
 
-test("a start that is known to fail is not offered: the folder is gone, or the record is unreachable", async () => {
+test("a start that is known to fail is not offered: the folder is gone", async () => {
   fx = makeFixture({ withCompanion: true });
   const gone = writeProject(fx, { name: "moved-away", prefix: "MOVE", goal: GOAL });
   rmSync(gone.root, { recursive: true });
-  const broken = writeProject(fx, { name: "broken-config", prefix: "BRKN", goal: GOAL });
-  // not JSON: the record server's self-check fails at its config stage
-  writeFileSync(path.join(broken.root, ".mcp.json"), "{ half written");
   app = await launchApp(fx);
   const { page } = app;
-  const project = (id: string) =>
-    page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
-  await project(gone.id);
+  await page.locator(`[data-testid="project-item"][data-id="${gone.id}"]`).click();
 
   const empty = page.getByTestId("sessions-empty");
   await expect(empty).toHaveAttribute("data-case", "root");
   await expect(empty).toContainText(`The project folder is missing: ${gone.root}`);
   await expect(empty.getByRole("button")).toHaveCount(0);
   await expect(page.getByTestId("start-editor")).toBeDisabled();
-
-  await project(broken.id);
-  await expect(empty).toHaveAttribute("data-case", "server", { timeout: 20_000 });
-  await expect(empty).toContainText(
-    "Agents cannot reach this project's record, so a new one could not work. Edit project says why.",
-  );
-  await expect(empty.getByRole("button")).toHaveCount(0);
+  // and the sync did not make the folder again
+  await page.keyboard.press("Meta+r");
+  await page.waitForTimeout(500);
+  expect(existsSync(gone.root)).toBe(false);
 });
 
 test("an older companion cannot start a conversation: the project opens, the prompt waits on the clipboard", async () => {

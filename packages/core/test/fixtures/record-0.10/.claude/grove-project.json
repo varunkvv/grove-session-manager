@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "name": "auth-sso",
+  "prefix": "AUTH",
+  "goal": "SSO for the dashboard",
+  "rev": 1
+}

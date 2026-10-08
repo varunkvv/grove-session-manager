@@ -83,10 +83,6 @@ jobs:
           echo "version=${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - name: build the dmg
-        env:
-          # the record bundle's banner carries the release's number, so the bundle an older
-          # release installs never replaces a newer one's
-          GROVE_APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           pnpm app:build
           pnpm ext:package

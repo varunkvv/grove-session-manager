@@ -193,7 +193,8 @@ test("Dismiss takes a row out: a stop is written down, a turn is only seen until
   await dismiss(row(page, "stopped"));
   await ready(page, 2);
   await expect.poll(marks).toHaveLength(1);
-  expect(marks()[0]).toMatch(new RegExp(`^AUTH/stopped:${SID.stopped}@\\d+$`));
+  // filed under the project's id, which a rename does not change
+  expect(marks()[0]).toMatch(new RegExp(`^auth-sso/stopped:${SID.stopped}@\\d+$`));
 
   // its next turn brings the session back, with what it asks now
   hookEvent(fx, SID.turn, "UserPromptSubmit");

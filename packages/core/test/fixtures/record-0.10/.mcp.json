@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "grove": {
+      "command": "/Users/you/claude-ws/.grove/bin/record",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "GROVE_RECORD_ROOT": "/Users/you/claude-ws/auth-sso"
+      }
+    }
+  }
+}

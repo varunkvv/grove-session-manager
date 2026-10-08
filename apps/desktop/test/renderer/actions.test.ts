@@ -24,8 +24,6 @@ const project = (id: string): ProjectView => ({
   folders: [],
   status: "known",
   rootExists: true,
-  server: { state: "unknown" },
-  shadowed: [],
 });
 const hit = (id: string, o: Partial<SessionHit> = {}): SessionHit => ({
   key: `/p/${id}.jsonl`,

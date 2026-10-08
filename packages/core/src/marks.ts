@@ -84,3 +84,32 @@ export async function setMarks(
   for (const [key, value] of Object.entries(raw)) if (isMarked(value)) out.add(key);
   return ok(out);
 }
+
+/**
+ * every key under `<from>/` moved to `<to>/`, its entry untouched, so `at` still says when it was
+ * marked. for when what the keys are filed under goes away. a key that is already there under
+ * the new name wins. a file that is missing or cannot be made sense of is left as it is, and a
+ * second run finds nothing to move and writes nothing. returns how many keys moved
+ */
+export async function renameMarkPrefixes(
+  file: string,
+  renames: ReadonlyMap<string, string>,
+): Promise<number> {
+  const read = await readJsonGuarded(file);
+  if (read.status !== "ok" || !isObject(read.value)) return 0;
+  const out: Record<string, unknown> = {};
+  let moved = 0;
+  for (const [key, value] of Object.entries(read.value)) {
+    const cut = key.indexOf("/");
+    const to = cut > 0 ? renames.get(key.slice(0, cut)) : undefined;
+    if (to === undefined) {
+      out[key] = value;
+      continue;
+    }
+    moved++;
+    const next = `${to}${key.slice(cut)}`;
+    if (!Object.hasOwn(read.value, next)) out[next] = value;
+  }
+  if (moved > 0) await writeFileAtomic(file, stringifyLike(out, read.text));
+  return moved;
+}

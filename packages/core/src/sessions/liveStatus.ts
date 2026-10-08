@@ -97,11 +97,15 @@ export type HookSyncStatus =
 /**
  * adds or removes our hooks in one Claude Code settings file. a file that is not valid JSON is
  * left alone. Claude Code watches its settings files, so running sessions pick this up.
+ *
+ * `also` is anything else to change in the same read and write, given the settings with the hooks
+ * already in: a file that is not there is not made for it.
  */
 export async function syncStatusHooks(
   settingsFile: string,
   eventsDir: string,
   enabled: boolean,
+  also: (settings: Record<string, unknown>) => Record<string, unknown> = (settings) => settings,
 ): Promise<{ status: HookSyncStatus; warning?: Warning }> {
   const read = await readJsonGuarded(settingsFile);
   if (read.status === "invalid") {
@@ -123,10 +127,10 @@ export async function syncStatusHooks(
   if (!isObject(root) || (root.hooks !== undefined && !isObject(root.hooks))) {
     return { status: "skipped-unexpected-shape" };
   }
-  const hooks = withStatusHooks(root.hooks, command);
-  if (JSON.stringify(hooks) === JSON.stringify(root.hooks ?? {})) return { status: "unchanged" };
-  const next = { ...root, hooks };
-  if (Object.keys(hooks).length === 0) delete (next as Record<string, unknown>).hooks;
+  const next = also({ ...root, hooks: withStatusHooks(root.hooks, command) });
+  const before = { ...root, hooks: root.hooks ?? {} };
+  if (JSON.stringify(next) === JSON.stringify(before)) return { status: "unchanged" };
+  if (isObject(next.hooks) && Object.keys(next.hooks).length === 0) delete next.hooks;
   await writeFileAtomic(settingsFile, stringifyLike(next, read.text));
   return { status: "written" };
 }
@@ -135,8 +139,14 @@ export async function syncStatusHooks(
 export function syncComboStatusHooks(
   appRoot: string,
   combo: Combo,
+  also?: (settings: Record<string, unknown>) => Record<string, unknown>,
 ): Promise<{ status: HookSyncStatus; warning?: Warning }> {
-  return syncStatusHooks(settingsLocalPath(combo), statusEventsDir(getStateDir(appRoot)), true);
+  return syncStatusHooks(
+    settingsLocalPath(combo),
+    statusEventsDir(getStateDir(appRoot)),
+    true,
+    also,
+  );
 }
 
 /** the repair is not urgent, and a settings file is often written in a burst */
@@ -147,7 +157,7 @@ export interface HookWatchOptions {
   /** every re-sync that completed. the app logs it; the tests count it. */
   onSync?: (status: HookSyncStatus) => void;
   onError?: (error: unknown) => void;
-  /** run in place of the status-hook sync, so a combo's other settings come back too */
+  /** run in place of the status-hook sync, when a combo's file needs more than the hooks */
   resync?: () => Promise<{ status: HookSyncStatus }>;
 }
 

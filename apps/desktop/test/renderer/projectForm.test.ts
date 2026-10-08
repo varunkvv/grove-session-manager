@@ -210,13 +210,10 @@ describe("repoNote", () => {
     expect(repoNote({ info: info({ canBeWorktree: false }) })?.text).toBe(
       "Not the top level of a repository, so it can only be a reference.",
     );
-    expect(repoNote({ info: info(), folder: folder({ state: "stale" }), shadowed: true })).toEqual({
+    expect(repoNote({ info: info(), folder: folder({ state: "stale" }) })).toEqual({
       text: driftNote(folder({ state: "stale" })),
       tone: "text-danger",
     });
-    expect(repoNote({ info: info(), folder: folder(), shadowed: true })?.text).toBe(
-      "Its .mcp.json also declares a server called grove. Sessions started inside it may use that one instead of the project's.",
-    );
     expect(repoNote({ info: info(), folder: folder() })).toBeNull();
     expect(repoNote({})).toBeNull();
   });

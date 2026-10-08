@@ -51,8 +51,6 @@ const project = (partial: Partial<ProjectView>): ProjectView => ({
   folders: [],
   status: "known",
   rootExists: true,
-  server: { state: "ok", checkedAt: NOW, ms: 40, tools: 14 },
-  shadowed: [],
   ...partial,
 });
 
@@ -163,12 +161,6 @@ describe("startBlocked", () => {
       case: "root",
       line: "The project folder is missing: /w/auth",
     });
-  });
-  it("a failed server", () => {
-    const p = project({
-      server: { state: "failed", checkedAt: NOW, stage: "spawn", message: "no" },
-    });
-    expect(startBlocked(p)?.case).toBe("server");
   });
   it("no goal", () => {
     expect(startBlocked(project({ goal: undefined }))).toEqual({

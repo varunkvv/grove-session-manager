@@ -62,13 +62,13 @@ export function renderClaudeMdStub(combo: Combo): string {
     "## Other sessions work here too",
     "",
     "Several sessions can be working in this folder at once: forks of this conversation, background",
-    "agents, other tabs. They do not share your conversation. The project record is the memory you",
-    "have in common: cards (who is doing what), questions with their answers, and conclusions",
-    "(decisions, findings, verdicts). `.claude/rules/grove-record.md` says how to read and write it.",
+    "agents, other tabs. They do not share your conversation. The files in `context/` are the only",
+    "memory you have in common.",
     "",
-    "- before starting a task, call `record_state`, and claim a card before you work on it",
-    "- record each decision, finding and verdict when it is settled, yours and the person's",
-    "- `context/` is for longer notes the record points at: `context/<topic>.md`, short dated entries, added to and never rewritten",
+    "- before starting a task, read `context/`",
+    "- when you decide something, learn something non-obvious, or finish a piece of work, write it to `context/<topic>.md` as a short dated entry",
+    "- add to a file, do not rewrite it. another session may be reading it or adding to it",
+    "- before a large edit in a working copy, say what you are touching in `context/in-progress.md`, and remove your entry when done. two sessions editing the same files is what this prevents",
     "",
     "This file was written once when the combo was created. It is yours to edit.",
     "",
@@ -82,7 +82,7 @@ export function longTaskAgentPath(combo: Combo): string {
 /**
  * a subagent starts with its own prompt, the combo's CLAUDE.md and the brief it is handed -
  * never the conversation that spawned it. so the prompt sends it to the files where that
- * context was written down, and has it write back to the project record.
+ * context was written down, and has it write back to the same place.
  */
 export function renderLongTaskAgent(combo: Combo): string {
   return [
@@ -100,18 +100,18 @@ export function renderLongTaskAgent(combo: Combo): string {
     "Before you start:",
     "",
     "- read the plan file you were given, then `context/`. they hold what the conversation that sent you knows and you do not",
-    "- call `record_state`. work under the card your brief names. the session that started you holds it. do not claim, release or finish a card yourself (the rules' Subagents section says the same)",
+    "- add an entry to `context/in-progress.md` naming the working copy and the files you will touch",
     "- stay inside the working copy and files you were given. another agent may own the rest",
     "",
     "While you work:",
     "",
-    '- when you decide something the plan did not settle, find something out, or judge an approach, record it with `conclusion_record` and pass `as: "long-task"`. a question you would have asked goes on the card with `question_ask`, with what you assumed',
+    "- when you decide something the plan did not settle, or learn something non-obvious, add a short dated entry to `context/<topic>.md`",
     "- generated output that is not source goes in `artifacts/`, never inside a working copy",
     "- run the tests for what you changed. a change you did not verify is not finished",
     "",
     "When you finish:",
     "",
-    "- put your report on the card with `comment_add`, and list what you made in `artifacts`. the session that started you marks the card done",
+    "- remove your entry from `context/in-progress.md`",
     "- report what you changed, what you verified and how, what you decided on your own, and what is left. if something failed, say so with the output",
     "",
   ].join("\n");
