@@ -272,6 +272,22 @@ export function SettingsDialog() {
             Code's own settings.json, which Grove otherwise never touches.
           </span>
         </div>
+        <div>
+          <span className="mb-1.5 block text-sm font-medium text-fg-2">Recaps</span>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 text-sm text-fg-2">Write recaps with Claude</span>
+            <Switch
+              checked={draft.recaps !== false}
+              onChange={(v) => setDraft({ ...draft, recaps: v })}
+              label="Write recaps with Claude"
+              testId="setting-recaps"
+            />
+          </div>
+          <span className="mt-1 block text-meta text-fg-3">
+            A few lines on what a session was for and what it needs from you, written when it starts
+            needing you or you open it. It uses your Claude login and the haiku model.
+          </span>
+        </div>
         {error && <p className="text-danger">{error}</p>}
       </div>
     </Modal>

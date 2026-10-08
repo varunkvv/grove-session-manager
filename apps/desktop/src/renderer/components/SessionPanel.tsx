@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { InboxRowView, ProjectId, SessionRef, SessionTail } from "../../shared/ipc.ts";
+import type {
+  InboxRowView,
+  ProjectId,
+  RecapView,
+  SessionRef,
+  SessionTail,
+} from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import type { SessionState } from "../logic/views.ts";
 import { openWith, review } from "../state/actions.ts";
@@ -11,7 +17,9 @@ import {
   Icon,
   Mono,
   ProjectMark,
+  RecapBlock,
   RuntimeChip,
+  Spinner,
   StateLabel,
   Time,
 } from "./ui.tsx";
@@ -45,8 +53,54 @@ export function useHandoff(screen: Section, ids: string[], loaded = true, query 
 }
 
 /**
- * a session, beside the list its row is in: what the person last said to it and what it has said
- * since, enough to know whether to open it. both lists open this one panel
+ * a session's recap and, under it, when it was written and the way to have it written again.
+ * while the first one is on its way there is only a quiet line: the rest of the panel is what
+ * says where the session is until then
+ */
+function Recap({
+  recap,
+  working,
+  onAgain,
+}: {
+  recap: RecapView;
+  /** it is in a turn now: no recap is written, and the one there is from before it */
+  working: boolean;
+  onAgain: () => void;
+}) {
+  const writing = (words: string) => (
+    <span className="flex items-center gap-1.5" data-testid="recap-writing">
+      <Spinner size={10} />
+      {words}
+    </span>
+  );
+  if (!recap.lines) {
+    return recap.writing ? (
+      <p className="mt-4 text-sm text-fg-4">{writing("Writing a recap…")}</p>
+    ) : null;
+  }
+  return (
+    <div className="mt-4">
+      <RecapBlock lines={recap.lines} />
+      <div className="mt-1 flex min-h-6 flex-wrap items-center gap-x-2 px-1 text-sm text-fg-4">
+        <span data-testid="recap-when">
+          Written {recap.at !== undefined && <Time at={recap.at} />}
+          {working ? ", before this turn" : recap.old ? ", before it moved on" : ""}
+        </span>
+        {recap.writing
+          ? writing("Writing a new one…")
+          : !working && (
+              <Button variant="quiet" size="sm" data-testid="recap-again" onClick={onAgain}>
+                Write again
+              </Button>
+            )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * a session, beside the list its row is in: a recap of what it was for and what it needs, then
+ * what the person last said to it and what it has said since. both lists open this one panel
  */
 export function SessionPanel({
   session,
@@ -106,7 +160,10 @@ export function SessionPanel({
           </span>
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 @xl:px-10">
+      {/* what the person reads first stays put over what scrolls, and takes the room it needs:
+          the recap matters more. in the shortest window it leaves a strip of what is under it,
+          and scrolls by itself past that */}
+      <div className="max-h-[calc(100%-11rem)] shrink-0 overflow-y-auto px-4 pt-4 pb-3 @md:px-6 @md:pt-5 @md:pb-4 @xl:px-10">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="panel-meta">
           <span className="flex min-w-0 items-center gap-1.5">
             {project && <ProjectMark id={project} />}
@@ -121,8 +178,17 @@ export function SessionPanel({
           <RuntimeChip runtime={session.runtime} />
           <Time at={at} />
         </div>
+        {session.recap && (
+          <Recap
+            recap={session.recap}
+            working={state === "working"}
+            onAgain={() => void window.grove.writeRecap(session.key)}
+          />
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line px-4 pt-4 pb-6 @md:px-6 @xl:px-10">
         {tail?.prompt && (
-          <section className="mt-6">
+          <section>
             <h3 className="text-sm font-medium text-fg-4">You</h3>
             {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near */}
             <p
@@ -134,7 +200,7 @@ export function SessionPanel({
           </section>
         )}
         {tail !== undefined && (
-          <section className="mt-6">
+          <section className="mt-6 first:mt-0">
             <h3 className="text-sm font-medium text-fg-4">Claude</h3>
             <div className="mt-1" data-testid="panel-text">
               {tail?.text ? (

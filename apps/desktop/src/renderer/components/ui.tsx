@@ -1,4 +1,10 @@
-import { formatRelativeTime, highlightRanges, KIND_WORD, type Runtime } from "@grove/core/pure";
+import {
+  formatRelativeTime,
+  highlightRanges,
+  KIND_WORD,
+  type Recap,
+  type Runtime,
+} from "@grove/core/pure";
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,
@@ -728,6 +734,46 @@ export function SideItem({
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <CountPill n={count} testId="count" />
     </button>
+  );
+}
+
+const RECAP_ROWS: ReadonlyArray<[keyof Recap, string]> = [
+  ["goal", "Goal"],
+  ["done", "Done"],
+  ["state", "Now"],
+  ["needs", "Needs you"],
+];
+
+/**
+ * what a session was for and where it stands: the one tinted surface of the panel, so it is what
+ * the eye lands on. the lines are plain text on purpose. a model wrote them from an agent's
+ * output, so they are never markdown and never a link
+ */
+export function RecapBlock({ lines }: { lines: Recap }) {
+  return (
+    <dl
+      data-testid="recap"
+      className="selectable space-y-1.5 rounded-lg bg-accent-soft px-3 py-2.5 @md:px-4 @md:py-3"
+    >
+      {RECAP_ROWS.map(([key, label]) => (
+        // the label runs into its line in a narrow panel, where every row of text counts, and
+        // has a column of its own once there is room
+        <div key={key} className="@md:grid @md:grid-cols-[72px_1fr] @md:gap-x-3">
+          <dt
+            className={cx(
+              "mr-2 inline text-sm font-medium @md:mr-0 @md:block",
+              // what is asked of the person is the accent's, like Your turn
+              key === "needs" ? "text-accent" : "text-fg-3",
+            )}
+          >
+            {label}
+          </dt>
+          <dd data-testid={`recap-${key}`} className="inline break-words text-fg @md:block">
+            {lines[key]}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

@@ -61,7 +61,8 @@ function lastScript(): string {
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** the calls that start something: the app also asks the supervisor what it runs */
-const started = (fake: FakeClaude) => fakeClaudeCalls(fake).filter((c) => c.argv[0] !== "agents");
+const started = (fake: FakeClaude) =>
+  fakeClaudeCalls(fake).filter((c) => c.argv[0] !== "agents" && c.argv[0] !== "-p");
 
 test("Start an agent in VS Code leaves the goal prompt for the panel, and one in the background runs claude", async () => {
   const { root, fake, page } = await start();

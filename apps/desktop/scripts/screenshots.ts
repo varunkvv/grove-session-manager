@@ -1,12 +1,12 @@
 // every screen as the real app draws it, light and dark, at the default window and at its smallest,
 // against fixture projects. `pnpm --filter @grove/desktop build` first, then
-//   node scripts/screenshots.ts <outDir>     ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
+//   node scripts/screenshots.ts <outDir> [light|dark]  ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
 import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ElectronApplication, Page } from "@playwright/test";
-import { writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
+import { recapSays, setFakeRecaps, writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
 import {
   type Fixture,
   hookEvent,
@@ -62,6 +62,9 @@ The client secret is in 1Password under **okta-dev**, not in the repo. \`terrafo
 
 Want me to open the PR now, or wait for the callback route to land first?`;
 
+/** the quiet session whose recap never arrives */
+const SLOW = "read the SAML strategy";
+
 const QUIET = [
   "why is the staging deploy red",
   "sketch the login page states",
@@ -103,6 +106,66 @@ const QUIET = [
   "backfill okta ids",
 ];
 const BRANCHES = ["feat/okta-staging", "auth-sso", "fix/callback-state", undefined, undefined];
+
+/** what the fake haiku says of a session, found by its title in the digest. the last one is everyone else's */
+const RECAPS = [
+  {
+    when: "title: auth-sso-12",
+    say: recapSays(
+      "Register one okta app for staging and production in the dev tenant, with the secret kept out of the repo",
+      "Created the app with a redirect URI per environment. The client secret is in 1Password under okta-dev, and terraform plan is clean on feat/okta-staging.",
+      "Finished. The PR is not open yet.",
+      "Say whether to open the PR now or wait for the callback route to land first.",
+    ),
+  },
+  {
+    when: "title: callback route",
+    say: recapSays(
+      "Check the state cookie in the okta callback before it trades the code, test first",
+      "Wrote the failing test for a callback with no state cookie.",
+      "Waiting to run the callback suite.",
+      "Allow pnpm test --filter callback.",
+    ),
+  },
+  {
+    when: "title: session store",
+    say: recapSays(
+      "Wire the redis store into the session middleware and run the api suite",
+      "Read the session middleware. Nothing is changed yet.",
+      "Stopped mid-turn when its window closed, before the store was wired in.",
+      "Open it and tell it to carry on.",
+    ),
+  },
+  {
+    when: "title: token rotation",
+    say: recapSays(
+      "Rotate refresh tokens on every use and revoke the whole family on reuse",
+      "Nothing yet. The first request failed before any work.",
+      "Stopped on API Error 529 Overloaded.",
+      "Send the prompt again.",
+    ),
+  },
+  {
+    when: "title: threads backend",
+    say: recapSays(
+      "Add the reply_to column to messages and backfill it",
+      "Wrote the migration and the backfill script. Neither has run.",
+      "Waiting on when to run the backfill.",
+      "Choose: run the backfill on staging now, or tonight.",
+    ),
+  },
+  // never answers in time: its panel is the one that shows a recap being written
+  { when: `title: ${SLOW}`, say: "", afterMs: 10 * 60_000 },
+  {
+    when: "title: ",
+    say: recapSays(
+      "Answer one question about the SSO work",
+      "Looked it up and answered in a few lines.",
+      "Finished.",
+      "nothing",
+    ),
+  },
+];
 
 /**
  * seven projects. auth-sso has 44 sessions: one of each kind that needs the person, two working,
@@ -294,6 +357,7 @@ function build(scheme: string) {
 /** the built app on the fixture, with every session indexed and every status read */
 async function launch(fx: Fixture) {
   const fake = writeFakeClaude(path.join(fx.dir, "bin"), []);
+  setFakeRecaps(fake, RECAPS);
   // HOME is the fixture's, so nothing reaches the real home
   const app = await launchApp(fx, { HOME: fx.dir, GROVE_CLAUDE_BIN: fake.bin });
   const { page } = app;
@@ -304,6 +368,8 @@ async function launch(fx: Fixture) {
       const b = await window.grove.bootstrap();
       return (
         b.inbox.rows.length === 6 &&
+        // each row that says what it needs has its recap. a permission row's is written on a look
+        b.inbox.rows.every((r) => r.kind === "permission" || r.recap?.lines) &&
         b.projects[0]?.folders.every((f) => f.state === "ok") &&
         // the sessions are indexed after the page is up
         (await window.grove.projectSessions("auth-sso")).length === 44
@@ -324,7 +390,7 @@ const resize = async (app: ElectronApplication, page: Page, width: number, heigh
   await page.waitForFunction((w) => window.innerWidth === w, width);
 };
 
-for (const scheme of ["light", "dark"]) {
+for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
   const dir = path.join(out, scheme);
   mkdirSync(dir, { recursive: true });
   const { fx, turn } = build(scheme);
@@ -370,9 +436,12 @@ for (const scheme of ["light", "dark"]) {
     // where a click on its notification lands: the row, with its panel open
     await g.reveal(turn);
     await page.getByTestId("panel-text").waitFor();
+    await page.getByTestId("recap").waitFor();
     await shot("inbox-panel");
     await page.keyboard.press("ArrowDown");
     await page.getByTestId("panel-text").waitFor();
+    // a permission row's recap is written when its panel opens
+    await page.getByTestId("recap").waitFor();
     await shot("inbox-panel-keyboard", false);
     await page.keyboard.press("Escape");
 
@@ -386,7 +455,13 @@ for (const scheme of ["light", "dark"]) {
     // a quiet one, from further down the list
     await page.getByTestId("session-row").nth(20).click();
     await page.getByTestId("panel-text").waitFor();
+    await page.getByTestId("recap").waitFor();
     await shot("sessions-panel-quiet");
+    await page.keyboard.press("Escape");
+    // one whose recap is still being written
+    await page.getByTestId("session-row").filter({ hasText: SLOW }).click();
+    await page.getByTestId("recap-writing").waitFor();
+    await shot("sessions-panel-writing");
     await page.keyboard.press("Escape");
     await page.getByTestId("session-filter").fill("okta");
     await page.getByTestId("session-row").nth(3).waitFor();
