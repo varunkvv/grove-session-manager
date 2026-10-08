@@ -150,8 +150,8 @@ export function ConfirmDialog() {
 }
 
 /**
- * what a new session should do, and where it starts. a session starts from an ask, not from its
- * project: a project is only the folders it works in
+ * what a background session should do. it runs with no window and nobody to ask, so it starts
+ * from what is typed here. a session in the editor needs no dialog: its ask is typed there
  */
 export function StartDialog() {
   const dialog = useStore((s) => s.dialog);
@@ -170,18 +170,18 @@ export function StartDialog() {
   }, [open]);
 
   const close = () => set({ dialog: null });
-  const start = (where: "editor" | "background") => {
-    if (!project) return;
+  const start = () => {
+    if (!project || !typed) return;
     // closed first: a folder the CLI has not trusted answers with a dialog of its own
     close();
-    void startAgent({ project: project.id, where, prompt: typed });
+    void startAgent({ project: project.id, where: "background", prompt: typed });
   };
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title={`New session in ${project?.name ?? ""}`}
+      title={`Background session in ${project?.name ?? ""}`}
       width={520}
       testId="start-dialog"
       footer={
@@ -190,16 +190,12 @@ export function StartDialog() {
             Cancel
           </Button>
           <Button
-            variant="secondary"
+            variant="primary"
             disabled={!typed}
-            title={typed ? undefined : "A background session starts from what you type here"}
-            onClick={() => start("background")}
+            onClick={start}
             data-testid="start-background"
           >
             Start in background
-          </Button>
-          <Button variant="primary" onClick={() => start("editor")} data-testid="start-editor">
-            Start in {editor}
           </Button>
         </>
       }
@@ -216,13 +212,13 @@ export function StartDialog() {
           // Enter starts it, shift-Enter is a new line. an Enter that ends an IME composition is neither
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
           e.preventDefault();
-          start("editor");
+          start();
         }}
         data-testid="start-prompt"
       />
       <p className="mt-2 text-sm text-fg-4">
-        In {editor} it waits in the Claude panel for you to send. Leave it empty for a plain new
-        conversation.
+        It runs with no window, so you cannot type to it. Grove tells you when it needs you, and a
+        double-click moves it into {editor}.
       </p>
     </Modal>
   );

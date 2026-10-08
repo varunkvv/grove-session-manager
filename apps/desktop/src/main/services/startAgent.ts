@@ -15,7 +15,11 @@ export function parseStartAgent(raw: unknown): StartAgentRequest {
   if (raw.where !== "editor" && raw.where !== "background") {
     throw new AppError("invalid", "Start it in the editor or in the background.");
   }
-  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim().slice(0, PROMPT_MAX) : "";
+  // the editor takes none: what a session there should do is typed there
+  const prompt =
+    raw.where === "background" && typeof raw.prompt === "string"
+      ? raw.prompt.trim().slice(0, PROMPT_MAX)
+      : "";
   // `claude --bg` has nothing to do without one
   if (raw.where === "background" && !prompt) {
     throw new AppError(

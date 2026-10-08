@@ -305,49 +305,36 @@ function buildHandlers(deps: Deps): Handlers {
       if (!(await isDirectory(combo.root))) {
         throw new AppError("cwd-missing", `${combo.root} does not exist.`);
       }
-      // what the person typed, and nothing added: the project's CLAUDE.md says the rest
-      const prompt = req.prompt;
       const label = editor.current().label;
 
       if (req.where === "editor") {
         const { companionVersion } = await editor.status();
         // an older companion cannot start a conversation, and an unpinned link would go to
-        // whichever window has focus. the project still opens; the prompt waits on the clipboard.
+        // whichever window has focus. the project still opens, and the person starts it there.
         if (
           !companionVersion ||
           compareVersions(companionVersion, NEW_CONVERSATION_COMPANION) < 0
         ) {
           await openWindow(combo);
-          if (prompt) electron.clipboard.writeText(prompt);
           return {
-            message: prompt
-              ? "Prompt copied - paste it into a new Claude conversation"
-              : `Opened ${combo.name} - start a new Claude conversation there`,
+            message: `Opened ${combo.name} - start a new Claude conversation there`,
             body: companionVersion
               ? `The Grove extension in ${label} is older than ${NEW_CONVERSATION_COMPANION}, so it cannot start the conversation.`
               : `The Grove extension is not installed in ${label}, so it cannot start the conversation.`,
           };
         }
-        const report = await combos.open(combo, undefined, {
-          newConversation: true,
-          ...(prompt ? { prompt } : {}),
-        });
+        const report = await combos.open(combo, undefined, { newConversation: true });
         const launched = await openInEditor(report.workspaceFile, editor.current());
         if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
         for (const warning of report.warnings) {
           pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
         }
-        return {
-          message: `Opening ${combo.name} in ${label} on a new conversation`,
-          // the panel only fills the box
-          ...(prompt
-            ? { body: "The prompt is in the Claude panel. Send it to start the agent." }
-            : {}),
-        };
+        return { message: `Opening ${combo.name} in ${label} on a new conversation` };
       }
 
       // the project root as the cwd, so its CLAUDE.md and its hooks load
-      const args = backgroundArgs({}, prompt);
+      // what the person typed, and nothing added: the project's CLAUDE.md says the rest
+      const args = backgroundArgs({}, req.prompt);
       if (req.throughTerminal) {
         await openInTerminal(
           deps,

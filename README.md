@@ -29,8 +29,7 @@ the background. Checked against Claude Code 2.1.286 and 2.1.287.
    under `~/claude-ws/`, with a working copy of each repo
 3. If a banner offers to install the Grove extension into your editor, take it: landing on a session and starting a
    conversation both go through it
-4. **New session** asks what the session should do. **Start in VS Code** opens the project on a new Claude
-   conversation with that in the input box. Send it
+4. **New session** opens the project in your editor on a new Claude conversation. Say there what it should do
 5. Watch the **Inbox**: every session that needs you, in any project. A click opens it in a panel beside the list, a
    double-click opens it in the editor, which is where you answer. **Dismiss** clears a row
 
@@ -140,7 +139,7 @@ that took its place. `Esc` closes it. A double-click on a row opens the session 
 **New project** and **Edit project** are one form: name, about, repos. Edit project also shows drift per repo and, when
 Grove could not write the project's files, why.
 
-`⌘K` opens the palette: go to the inbox or a project, start a session, switch long work, repair working copies, delete
+`⌘K` opens the palette: go to the inbox or a project, start a session there or in the background, switch long work, repair working copies, delete
 the project, settings. Typing also searches every Claude Code session on the machine, in a project or not: titles and
 prompts first, then everything that was said in each session and by its subagents. `↵` on a session opens it in the
 editor.
@@ -227,19 +226,20 @@ the same count as the menu bar. **Notifications** in Settings switches them off.
 
 Landing needs the companion extension in that editor. Without it the window opens and Grove says it could not land.
 
-**New session** is in a project's top bar, on a project with no sessions, and in `⌘K`. It asks one thing, what the
-session should do, and then where it starts:
+**New session** is in a project's top bar, on a project with no sessions, and in `⌘K`. The project opens in VS Code
+(or Cursor) on a new conversation in the Claude panel, and what the session should do is typed there. Grove asks
+nothing first: a project is the folders work happens in, and each session has its own ask.
 
-| where | what happens |
-| --- | --- |
-| VS Code (or Cursor), or `Enter` | the project opens on a new conversation in the Claude panel, what you typed waiting in its input box - you send it. The panel takes a prompt from outside but cannot be made to send it. With nothing typed it is a plain new conversation |
-| Background | `claude --bg -- <what you typed>` in the project root. It needs something typed: a background session has nothing else to start from |
+**Start a background session…** is in `⌘K` only. It asks what the session should do and runs `claude --bg -- <what you
+typed>` in the project root, with nothing added. It needs something typed: a background session has no window, so you
+cannot type to it later, and it has nothing else to start from. Grove shows it in the project's list and tells you when
+it needs you. A double-click moves it into the editor (see the table above).
 
-What you typed is sent as it is, with nothing added. Grove does not start what it knows will fail: a missing project
-folder. The new session shows in the project's list once it runs.
+Grove does not start what it knows will fail: a missing project folder. A new session shows in the project's list once
+it runs.
 
 Starting a conversation in the editor needs Grove Companion 0.3.0 or later. With an older one, or none, the project
-still opens and the prompt is put on the clipboard to paste into a new conversation.
+still opens and Grove says to start the conversation there.
 
 A background session keeps the environment it was dispatched with for good, and an app opened from Finder has almost
 none (`PATH=/usr/bin:/bin:/usr/sbin:/sbin`: no node, no pnpm, no gh). So every `claude` Grove runs itself gets your

@@ -102,11 +102,13 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
     "project:auth-sso",
     "project:billing-export",
     "new-session",
+    "start-background",
     "long-work",
     "delete-project",
     "settings",
   ]);
-  await expect(item(page, "new-session")).toHaveText("New session…");
+  await expect(item(page, "new-session")).toHaveText("New session in VS Code");
+  await expect(item(page, "start-background")).toHaveText("Start a background session…");
   await expect(item(page, "go-inbox")).toHaveAttribute("data-active", "true");
   await expect(input(page)).toHaveAttribute("aria-activedescendant", "palette-go-inbox");
   // the project on screen is checked

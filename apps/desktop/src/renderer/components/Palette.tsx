@@ -2,7 +2,7 @@ import { tokenize } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import type { SessionHit } from "../../shared/ipc.ts";
 import { type PaletteItem, paletteItems } from "../logic/palette.ts";
-import { focusScreen, go, openWith, report, switchProject } from "../state/actions.ts";
+import { focusScreen, go, newSession, openWith, report, switchProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { cx, Highlighted, Icon, Kbd, menuItemClass, Overlay, Time } from "./ui.tsx";
 
@@ -70,8 +70,11 @@ function Open() {
     // the rows of `This project`
     if (p) {
       switch (name) {
-        // a dialog takes the keyboard itself
         case "new-session":
+          newSession(p.id);
+          break;
+        // a dialog takes the keyboard itself
+        case "start-background":
           return set({ overlay: null, dialog: { kind: "start", project: p.id } });
         case "long-work": {
           const next = p.longWork === "background" ? "foreground" : "background";

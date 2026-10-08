@@ -3,10 +3,10 @@ import { AppError } from "../../src/main/errors.ts";
 import { parseStartAgent } from "../../src/main/services/startAgent.ts";
 
 describe("the request as the page sent it", () => {
-  it("keeps the ask as typed, trimmed", () => {
+  it("keeps a background session's ask as typed, trimmed", () => {
     expect(
-      parseStartAgent({ project: "chat", where: "editor", prompt: "  fix the login page\n" }),
-    ).toEqual({ project: "chat", where: "editor", prompt: "fix the login page" });
+      parseStartAgent({ project: "chat", where: "background", prompt: "  run the suite\n" }),
+    ).toEqual({ project: "chat", where: "background", prompt: "run the suite" });
     expect(
       parseStartAgent({
         project: "chat",
@@ -22,11 +22,11 @@ describe("the request as the page sent it", () => {
     });
   });
 
-  it("the editor takes no ask: a plain new conversation", () => {
+  it("the editor takes no ask: a plain new conversation, whatever was sent", () => {
     for (const raw of [
       { project: "chat", where: "editor" },
-      { project: "chat", where: "editor", prompt: "   " },
-      // the editor path has no terminal, and a prompt is text or nothing
+      { project: "chat", where: "editor", prompt: "fix the login page" },
+      // the editor path has no terminal either
       { project: "chat", where: "editor", prompt: 4, throughTerminal: true },
     ]) {
       expect(parseStartAgent(raw), JSON.stringify(raw)).toEqual({
@@ -54,7 +54,11 @@ describe("the request as the page sent it", () => {
   });
 
   it("a pasted wall of text is cut", () => {
-    const got = parseStartAgent({ project: "chat", where: "editor", prompt: "x".repeat(30_000) });
+    const got = parseStartAgent({
+      project: "chat",
+      where: "background",
+      prompt: "x".repeat(30_000),
+    });
     expect(got.prompt).toHaveLength(20_000);
   });
 

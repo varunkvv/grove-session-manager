@@ -253,8 +253,8 @@ export interface StartAgentRequest {
   project: ProjectId;
   where: "editor" | "background";
   /**
-   * what the session should do, as typed. the editor: it waits in the panel's input box, and
-   * empty is a plain new conversation. the background: its first message, so there has to be one
+   * the background only: what the session should do, as typed. it is its first message, so there
+   * has to be one. the editor gets a plain new conversation, and the ask is typed there
    */
   prompt: string;
   /** background only: run it in Terminal, where the CLI's trust prompt is answered once */

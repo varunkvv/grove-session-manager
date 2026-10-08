@@ -1,5 +1,5 @@
 import { startBlocked } from "../logic/views.ts";
-import { editProject, openProject } from "../state/actions.ts";
+import { editProject, newSession, openProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { Button, Icon, Kbd, ProjectMark } from "./ui.tsx";
 
@@ -51,13 +51,13 @@ export function TopBar() {
       <span className="ml-auto" />
       {project && (
         <>
-          {/* what it should do is asked next: a session starts from an ask, not from the project */}
+          {/* a new conversation in the editor, where the ask is typed. a background one is in cmd-K */}
           <Button
             variant="quiet"
             size="sm"
             disabled={!!blocked}
-            title={blocked?.line ?? `Start a session in ${project.name}`}
-            onClick={() => set({ dialog: { kind: "start", project: project.id } })}
+            title={blocked?.line ?? `A new conversation in ${project.name}, in ${editor}`}
+            onClick={() => newSession(project.id)}
             data-testid="new-session"
           >
             <Icon name="plus" size={10} />

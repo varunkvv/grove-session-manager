@@ -4,6 +4,7 @@ import { groupSessions, type SessionItem, startBlocked } from "../logic/views.ts
 import {
   focusScreen,
   loadSessions,
+  newSession,
   openRow,
   openWith,
   optionId,
@@ -104,9 +105,7 @@ function NoSessions({ project }: { project: ProjectView }) {
           <Button
             variant="primary"
             size="lg"
-            onClick={() =>
-              useStore.getState().set({ dialog: { kind: "start", project: project.id } })
-            }
+            onClick={() => newSession(project.id)}
             data-testid="empty-new-session"
           >
             New session

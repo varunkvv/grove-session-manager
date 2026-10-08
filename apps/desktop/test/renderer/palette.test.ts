@@ -61,6 +61,7 @@ describe("paletteItems", () => {
       "project:auth",
       "project:data",
       "new-session",
+      "start-background",
       "long-work",
       "delete-project",
       "settings",
@@ -105,12 +106,15 @@ describe("paletteItems", () => {
     );
   });
 
-  it("the start row follows startBlocked", () => {
+  it("the start rows follow startBlocked", () => {
     expect(ids(ctx())).toContain("new-session");
-    expect(ids(ctx({ project: project("auth", { goal: undefined }) }))).toContain("new-session");
-    expect(ids(ctx({ project: project("auth", { rootExists: false }) }))).not.toContain(
-      "new-session",
-    );
+    // a project needs no goal: a session starts from its own ask
+    const noGoal = ids(ctx({ project: project("auth", { goal: undefined }) }));
+    expect(noGoal).toContain("new-session");
+    expect(noGoal).toContain("start-background");
+    const gone = ids(ctx({ project: project("auth", { rootExists: false }) }));
+    expect(gone).not.toContain("new-session");
+    expect(gone).not.toContain("start-background");
   });
 
   it("a query keeps the section order and drops empty sections", () => {

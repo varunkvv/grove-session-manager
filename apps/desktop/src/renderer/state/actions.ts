@@ -132,7 +132,11 @@ export function openRow(screen: Section, id: string): void {
   s.set({ peek: id, active: { ...s.active, [screen]: id } });
 }
 
-/** the same for every start button in the app */
+/** a new conversation in the project's window, with nothing typed for it: the ask is typed there */
+export const newSession = (project: ProjectId): void =>
+  void startAgent({ project, where: "editor", prompt: "" });
+
+/** the same for every start in the app */
 export async function startAgent(req: StartAgentRequest): Promise<void> {
   const res = await api().startAgent(req);
   if (res.ok) {

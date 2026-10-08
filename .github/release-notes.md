@@ -15,8 +15,9 @@ New:
 - under the recap, the whole conversation: what you typed, one line for the work, and the message each turn ended on
 - **Write recaps with Claude** in Settings switches recaps off. they use your Claude login and the haiku model
 - a notification and a menu bar row open the window on that session, with the panel open
-- **New session** asks what the session should do, then starts it in VS Code with that in the Claude panel, or in the
-  background. a project needs no goal for it: a project is the folders, each session has its own ask
+- **New session** opens a new conversation in VS Code, and a project needs no goal for it: a project is the folders,
+  each session has its own ask. a background session is started from `⌘K`, with what it should do typed first
+- fixed: a session that changed state in the second before Grove quit was missing from the inbox on the next launch
 - a colour per project, and one colour per state everywhere
 
 Gone: the Cards and Conclusions screens, card pages, inbox rows about cards and conclusions, starting an agent on a
