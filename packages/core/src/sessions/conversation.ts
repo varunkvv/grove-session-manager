@@ -606,10 +606,11 @@ export interface TurnView {
   files: number;
   agents: number;
   ms?: number;
-  /** the message it ended on. markdown, and an agent's: untrusted */
+  /**
+   * the message it ended on. markdown, and an agent's: untrusted. for the last turn, when it has
+   * not ended on one, the last thing it said
+   */
   text?: string;
-  /** it did not end on a message, and `text` is the last thing it said: the last turn only */
-  open?: boolean;
   /** how it ended when not on a message: an interrupt, an api error */
   note?: string;
 }
@@ -654,7 +655,6 @@ export function conversationView(state: ConversationState): ConversationView {
         agents: n.agents,
         ...(n.durationMs !== undefined ? { ms: n.durationMs } : {}),
         ...(text ? { text: text.length > max ? `…${text.slice(1 - max)}` : text } : {}),
-        ...(text && !answer ? { open: true } : {}),
         ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
       };
     }),

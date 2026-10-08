@@ -523,18 +523,7 @@ describe("the conversation as the page gets it", () => {
       expect(Object.keys(x).every((k) => TURN_KEYS.includes(k))).toBe(true);
     }
   });
-  const TURN_KEYS = [
-    "kind",
-    "prompt",
-    "said",
-    "tools",
-    "files",
-    "agents",
-    "ms",
-    "text",
-    "open",
-    "note",
-  ];
+  const TURN_KEYS = ["kind", "prompt", "said", "tools", "files", "agents", "ms", "text", "note"];
 
   it("says who started a turn, the work in numbers, and the message it ended on", async () => {
     const v = await view([
@@ -607,15 +596,16 @@ describe("the conversation as the page gets it", () => {
       says("m3", call("t2", "Read", { file_path: "/work/api/b.ts" }), 15),
     ]);
     expect(
-      v.items.map((i) => (i.kind === "turn" ? [i.prompt?.text, i.text, i.note, i.open] : "|")),
+      v.items.map((i) => (i.kind === "turn" ? [i.prompt?.text, i.text, i.note] : "|")),
     ).toEqual([
-      ["refactor it", undefined, "Interrupted", undefined],
+      ["refactor it", undefined, "Interrupted"],
       // what it said before the error is not what it ended on, so only the last turn would show it
-      ["go on", undefined, "API Error: 529 Overloaded", undefined],
-      ["again", undefined, undefined, undefined],
+      ["go on", undefined, "API Error: 529 Overloaded"],
+      ["again", undefined, undefined],
       "|",
-      // the work that carried on after the compaction: nobody asked, and it has not ended
-      [undefined, "Reading the second file now.", undefined, true],
+      // the work that carried on after the compaction: nobody asked, and it has not ended, so
+      // this is the last thing it said
+      [undefined, "Reading the second file now.", undefined],
     ]);
   });
 
