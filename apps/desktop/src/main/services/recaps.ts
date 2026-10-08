@@ -79,6 +79,9 @@ interface Kept extends Recap {
   end: number;
 }
 
+/** `moved`: it just started needing the person. `again`: the person asked for a new one */
+type How = { moved?: boolean; again?: boolean };
+
 export interface RecapsOptions {
   stateDir: string;
   claudeBin: () => Promise<string>;
@@ -103,7 +106,7 @@ export class RecapService {
   /** being looked at: one look per session at a time */
   private looking = new Set<SessionKey>();
   /** a look asked for while one was under way: it runs after it, since the transcript may have moved */
-  private redo = new Map<SessionKey, SessionRow>();
+  private redo = new Map<SessionKey, { row: SessionRow; how: How }>();
   /** where the conversation ended when a call for it failed, and when that was */
   private failed = new Map<SessionKey, { end: number; at: number }>();
   private running = 0;
@@ -144,10 +147,14 @@ export class RecapService {
    * working. a call that failed is silent, and is made again when the conversation has moved, a
    * minute has passed or the person asks
    */
-  async want(row: SessionRow, how: { moved?: boolean; again?: boolean } = {}): Promise<void> {
+  async want(row: SessionRow, how: How = {}): Promise<void> {
     const key = row.key;
     if (!this.o.enabled() || row.live?.state === "running") return;
-    if (this.looking.has(key)) return void this.redo.set(key, row);
+    if (this.looking.has(key)) {
+      // the person's Write again outlasts whatever else was asked meanwhile
+      const again = how.again || this.redo.get(key)?.how.again;
+      return void this.redo.set(key, { row, how: { ...how, again } });
+    }
     this.looking.add(key);
     if (how.moved && this.kept.has(key) && !this.old.has(key)) {
       this.old.add(key);
@@ -181,9 +188,9 @@ export class RecapService {
     } finally {
       this.looking.delete(key);
       if (this.writing.delete(key)) this.o.onChange();
-      const again = this.redo.get(key);
+      const next = this.redo.get(key);
       this.redo.delete(key);
-      if (again) void this.want(again);
+      if (next) void this.want(next.row, next.how);
     }
   }
 
