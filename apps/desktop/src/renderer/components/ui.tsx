@@ -226,8 +226,11 @@ export function EscButton({ onClick }: { onClick: () => void }) {
 /**
  * a double-click on a row whose first click opens a panel. the panel takes half the screen and the
  * rows reflow, so the second click lands on whatever is under the pointer by then: the panel,
- * another row, a button. the pair belongs to the row its first click was on: that click remembers
- * the row, the second is nobody's wherever it lands, and the double-click runs for that row
+ * another row, a button, the list's scrollbar. the pair belongs to the row its first click was on:
+ * that click remembers the row, and the second press opens that row's session wherever it lands.
+ *
+ * the second press, not `dblclick`: a press on a scrollbar is followed by no click and no
+ * dblclick, and in a long list the scrollbar is what the middle of a row ends up under
  */
 export function useRowDoubleClick<T>(run: (row: T) => void) {
   const first = useRef<T | null>(null);
@@ -238,17 +241,18 @@ export function useRowDoubleClick<T>(run: (row: T) => void) {
     },
     /** for the element that holds the list and the panel */
     root: {
+      onMouseDownCapture: (e: MouseEvent) => {
+        if (e.detail === 2 && first.current) run(first.current);
+      },
       onClickCapture: (e: MouseEvent) => {
         // 1 is a first click and 0 a key on a button: either starts over
         if (e.detail < 2) first.current = null;
+        // the second click is nobody's
         else if (first.current) {
           e.stopPropagation();
           // a link in the panel would otherwise be followed
           e.preventDefault();
         }
-      },
-      onDoubleClick: () => {
-        if (first.current) run(first.current);
       },
     },
   };
