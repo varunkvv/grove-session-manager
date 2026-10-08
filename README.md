@@ -320,13 +320,12 @@ are a screen again.
 ## Limits
 
 What ran: the unit tests, and Playwright driving the built app against fixture projects under a temp root, with
-stand-ins for `code` and `claude`. The cleanup of 0.10's files runs against a fixture project written by 0.10's own
-code.
+stand-ins for `code` and `claude`. The packaged app was opened the same way, once. The cleanup of 0.10's files runs
+against a fixture project written by 0.10's own code.
 
 What did not run, or does not work:
 
 - no test drives a real editor tab, and the double-click was only driven by Playwright's mouse
-- the packaged app's smoke test was not run for 0.11
 - you cannot answer from Grove, and Grove cannot wake an agent. you answer in the agent's chat
 - the panel shows the last exchange, not the conversation
 - a session whose last prompt is more than 8MB from the end of its transcript shows only the first 500 characters of
