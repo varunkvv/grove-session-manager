@@ -12,7 +12,7 @@ test.skip(!existsSync(EXECUTABLE), "run `pnpm app:package` first");
 
 test("the packaged app opens on its projects and carries the companion extension", async () => {
   const fx = makeFixture({ withCompanion: true });
-  const { id } = writeProject(fx, { name: "toy", prefix: "TOY", goal: "Ship the toy" });
+  const { id } = writeProject(fx, { name: "toy", goal: "Ship the toy" });
 
   const app = await _electron.launch({
     executablePath: EXECUTABLE,

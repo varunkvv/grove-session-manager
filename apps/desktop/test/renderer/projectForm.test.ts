@@ -48,20 +48,15 @@ const base = { appRoot: "/Users/me/claude-ws", home: HOME };
 
 describe("nameHint", () => {
   it("new, empty", () => {
-    expect(nameHint({ ...base, mode: "new", name: "", touched: false, prefix: "" })).toEqual({
-      text: "The folder and card prefix come from the name.",
+    expect(nameHint({ ...base, mode: "new", name: "", touched: false })).toEqual({
+      text: "The folder comes from the name.",
       problem: false,
     });
   });
   it("new, typed", () => {
-    expect(
-      nameHint({ ...base, mode: "new", name: "Auth SSO", touched: true, prefix: "AUTH" }).text,
-    ).toBe("Folder ~/claude-ws/auth-sso · cards will be AUTH-1, AUTH-2…");
-  });
-  it("new, typed before main answered: the derived prefix", () => {
-    expect(
-      nameHint({ ...base, mode: "new", name: "2026 launch", touched: true, prefix: "" }).text,
-    ).toBe("Folder ~/claude-ws/2026-launch · cards will be LAUN-1, LAUN-2…");
+    expect(nameHint({ ...base, mode: "new", name: "Auth SSO", touched: true }).text).toBe(
+      "Folder ~/claude-ws/auth-sso",
+    );
   });
   it("edit", () => {
     expect(
@@ -70,22 +65,22 @@ describe("nameHint", () => {
         mode: "edit",
         name: "auth",
         touched: true,
-        prefix: "AUTH",
         root: "/Users/me/claude-ws/auth-sso",
       }),
     ).toEqual({
-      text: "The folder stays at ~/claude-ws/auth-sso. Only the name changes, and cards keep the AUTH prefix.",
+      text: "The folder stays at ~/claude-ws/auth-sso. Only the name changes.",
       problem: false,
     });
   });
   it("a name problem in place of the hint", () => {
-    expect(
-      nameHint({ ...base, mode: "new", name: "x", touched: true, prefix: "X", problem: "taken" }),
-    ).toEqual({ text: "taken", problem: true });
+    expect(nameHint({ ...base, mode: "new", name: "x", touched: true, problem: "taken" })).toEqual({
+      text: "taken",
+      problem: true,
+    });
   });
   it("a name typed and cleared", () => {
     for (const mode of ["new", "edit"] as const)
-      expect(nameHint({ ...base, mode, name: " ", touched: true, prefix: "A" })).toEqual({
+      expect(nameHint({ ...base, mode, name: " ", touched: true })).toEqual({
         text: "Give the project a name.",
         problem: true,
       });
@@ -123,10 +118,7 @@ describe("draftOf", () => {
         { path: "/c/cli", mode: "worktree", branch: { kind: "detach" } },
       ],
     });
-    expect(draftOf({ ...form, goal: " ship ", prefix: "AUT2" })).toMatchObject({
-      note: "ship",
-      prefix: "AUT2",
-    });
+    expect(draftOf({ ...form, goal: " ship " })).toMatchObject({ note: "ship" });
   });
 });
 
@@ -166,7 +158,6 @@ describe("canSubmit", () => {
     expect(canSubmit(ok)).toBe(true);
     expect(canSubmit({ ...ok, form: { ...form, name: "  " } })).toBe(false);
     expect(canSubmit({ ...ok, nameProblem: "taken" })).toBe(false);
-    expect(canSubmit({ ...ok, prefixProblem: "taken" })).toBe(false);
     expect(canSubmit({ ...ok, form: { ...form, repos: [] } })).toBe(false);
     expect(canSubmit({ ...ok, form: { ...form, repos: [repo({ info: undefined })] } })).toBe(false);
     const badBranch = repo({ branchKind: "new", newBranch: "a..b" });
@@ -177,12 +168,11 @@ describe("canSubmit", () => {
     expect(canSubmit({ ...ok, running: true })).toBe(false);
   });
 
-  it("edit: something changed, and the same rules but the prefix", () => {
+  it("edit: something changed, and the same rules", () => {
     const edit = { mode: "edit" as const, form, initial: form, running: false };
     expect(canSubmit(edit)).toBe(false);
     const renamed = { ...form, name: "auth2" };
     expect(canSubmit({ ...edit, form: renamed })).toBe(true);
-    expect(canSubmit({ ...edit, form: renamed, prefixProblem: "ignored on edit" })).toBe(true);
     expect(canSubmit({ ...edit, form: { ...renamed, repos: [] } })).toBe(false);
     expect(canSubmit({ ...edit, form: renamed, nameProblem: "taken" })).toBe(false);
     expect(canSubmit({ ...edit, form: renamed, running: true })).toBe(false);

@@ -33,10 +33,9 @@ function seed(): Fixture {
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
     name: "auth-sso",
-    prefix: "AUTH",
     goal: "SSO for the dashboard",
   });
-  writeProject(fx, { name: "billing-export", prefix: "BILL", goal: "Invoice exports" });
+  writeProject(fx, { name: "billing-export", goal: "Invoice exports" });
   writeSession(fx, { cwd: root, sessionId: SID.idp, title: "idp config" });
 
   scratch = makePlainDir(fx, "scratch");

@@ -1,6 +1,6 @@
 // the join: the sessions grove knows, where each runs and what the person dismissed, turned into
 // what the page gets: the projects, the inbox and a project's sessions. also the session search,
-// and the question and stopped diffs the notifications fire on.
+// and the stopped diff its notification fires on.
 import { statSync } from "node:fs";
 import {
   buildInbox,
@@ -14,7 +14,6 @@ import {
   squash,
   tokenize,
 } from "@grove/core";
-import type { Author } from "@grove/record/types";
 import { rowHaystack } from "../../shared/haystack.ts";
 import type {
   InboxRowView,
@@ -30,7 +29,6 @@ import type { ComboService } from "./combos.ts";
 import type { Interruption } from "./interrupted.ts";
 import type { LiveService } from "./live.ts";
 import { openPlanOf } from "./openPlan.ts";
-import type { ProjectRecordService } from "./projectRecord.ts";
 import type { SessionService } from "./sessions.ts";
 
 /** the person's dismissals: `<project id>/<key>` in reviewed.json (ReviewedService) */
@@ -42,7 +40,6 @@ export interface ReviewMarks {
 
 export interface ProjectsOptions {
   combos: Pick<ComboService, "list" | "views" | "syncReport" | "problemMessage">;
-  record: Pick<ProjectRecordService, "setProjects" | "snapshot">;
   sessions: Pick<SessionService, "list" | "get" | "search">;
   live: Pick<LiveService, "interruptions" | "holder" | "isAlive" | "markSeen">;
   reviewed: ReviewMarks;
@@ -50,14 +47,6 @@ export interface ProjectsOptions {
   onInbox?: (inbox: InboxView) => void;
   /** what a project's sessions list shows may have changed: the page asks again */
   onSessions?: () => void;
-  /** an open question to the person appeared after its project's first read */
-  onQuestion?: (q: {
-    project: ProjectId;
-    projectName: string;
-    card: string;
-    sessionId: string;
-    text: string;
-  }) => void;
   /** a session in a project stopped mid-turn after start() */
   onStopped?: (s: { sessionId: string; title?: string; project: ProjectId }) => void;
   debounceMs?: number;
@@ -67,7 +56,6 @@ interface Project {
   id: ProjectId;
   name: string;
   root: string;
-  prefix: string;
   goal?: string;
 }
 
@@ -100,8 +88,6 @@ export class ProjectsService {
   private inboxJson = "";
   /** what the sessions lists were last built from, less what moves on every tool call */
   private sessionsJson = "";
-  /** open questions to the person, per project, from its first read on */
-  private questions = new Map<ProjectId, Set<string>>();
   /** interrupted session ids. undefined until start() takes the baseline */
   private stopped?: Set<string>;
 
@@ -110,44 +96,17 @@ export class ProjectsService {
   }
 
   /**
-   * the projects to the record service (the first reads and watchers), then a compute. call it
-   * after live.start() resolved: the interruptions found until then are the stopped baseline, so a
-   * reboot does not notify. call it again whenever the combo model changes.
+   * call it after live.start() resolved: the interruptions found until then are the stopped
+   * baseline, so a reboot does not notify. call it again whenever the combo model changes.
    */
   start(): void {
     this.stopped ??= new Set(this.o.live.interruptions().keys());
-    this.o.record.setProjects(this.list().projects.map((p) => ({ id: p.id, root: p.root })));
     this.schedule();
   }
 
   /** a session's row, its status or where it runs moved */
   sessionsChanged(): void {
     this.schedule();
-  }
-
-  /** ProjectRecordService's onChange. the question diff runs here, so the baseline is the first read */
-  recordChanged(id: ProjectId): void {
-    const snap = this.o.record.snapshot(id);
-    const p = this.list().projects.find((x) => x.id === id);
-    if (!snap || !p) return;
-    const open = new Map<string, Author & { card: string; text: string }>();
-    for (const c of snap.cards.values()) {
-      if (c.status === "canceled") continue;
-      for (const q of c.questions) if (q.open && q.to === "person") open.set(`${c.id}#${q.seq}`, q);
-    }
-    const before = this.questions.get(id);
-    this.questions.set(id, new Set(open.keys()));
-    if (!before) return;
-    for (const [key, q] of open) {
-      if (before.has(key)) continue;
-      this.o.onQuestion?.({
-        project: id,
-        projectName: p.name,
-        card: q.card,
-        sessionId: q.session,
-        text: q.text,
-      });
-    }
   }
 
   /** LiveService's onInterrupted. it is called on every change with the same map, so the keys are copied */
@@ -203,7 +162,6 @@ export class ProjectsService {
           name: p.name,
           root: p.root,
           goal: p.goal,
-          prefix: p.prefix,
           workspaceFile: v.workspaceFile,
           longWork: v.longWork,
           folders: v.folders,
@@ -305,7 +263,6 @@ export class ProjectsService {
     this.timer = setTimeout(() => this.compute(), this.o.debounceMs ?? 100);
   }
 
-  /** never waits on a project's record: the inbox is built from sessions alone */
   private compute(): void {
     clearTimeout(this.timer);
     this.timer = undefined;
@@ -355,15 +312,13 @@ export class ProjectsService {
 
   // --- the pieces -----------------------------------------------------------
 
-  /** combos with a prefix, the first of any two whose roots share a basename */
+  /** every combo, the first of any two whose roots share a basename */
   private list(): { projects: Project[]; problem?: string } {
     const projects: Project[] = [];
     const problems: string[] = [];
     const combos = this.o.combos.problemMessage();
     if (combos) problems.push(combos);
     for (const c of this.o.combos.list()) {
-      // ponytail: a combo assignPrefixes could not name (a hundred sharing four letters) is left out
-      if (!c.prefix) continue;
       const id = projectIdOf(c);
       const first = projects.find((p) => p.id === id);
       if (first) {
@@ -372,7 +327,7 @@ export class ProjectsService {
         );
         continue;
       }
-      projects.push({ id, name: c.name, root: c.root, prefix: c.prefix, goal: c.note });
+      projects.push({ id, name: c.name, root: c.root, goal: c.note });
     }
     return { projects, problem: problems.join(" ") || undefined };
   }

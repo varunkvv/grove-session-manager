@@ -18,7 +18,6 @@ const project = (id: string): ProjectView => ({
   id,
   name: id,
   root: `/ws/${id}`,
-  prefix: id.slice(0, 4).toUpperCase(),
   workspaceFile: `/ws/${id}/${id}.code-workspace`,
   longWork: "foreground",
   folders: [],

@@ -25,7 +25,6 @@ import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier } from "./services/notify.ts";
-import { ProjectRecordService } from "./services/projectRecord.ts";
 import { ProjectsService } from "./services/projects.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
@@ -218,7 +217,6 @@ async function start(): Promise<void> {
   });
 
   const reviewed = new ReviewedService(appEnv.appRoot);
-  const record = new ProjectRecordService({ onChange: (id) => projects.recordChanged(id) });
 
   /** the last tray menu and title. kept so a test root can read and click them with no tray */
   let trayMenu: MenuItemConstructorOptions[] = [];
@@ -231,7 +229,6 @@ async function start(): Promise<void> {
 
   const projects = new ProjectsService({
     combos,
-    record,
     sessions,
     live,
     reviewed,
@@ -240,8 +237,6 @@ async function start(): Promise<void> {
       showInbox(inbox);
     },
     onSessions: () => pusher.send("sessions:changed", {}),
-    // the session that asked
-    onQuestion: (q) => notifier.question({ ...q, click: () => landOn(q.sessionId) }),
     onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId) }),
   });
 
@@ -274,7 +269,6 @@ async function start(): Promise<void> {
   denyAllPermissions();
 
   await combos.load();
-  await combos.backfillPrefixes();
   if (cleanRecord) {
     const gone = await removeRecordRuntime(appEnv.appRoot);
     if (gone.length) log.info("removed 0.10's record runtime:", gone.join(", "));
@@ -304,7 +298,6 @@ async function start(): Promise<void> {
     sessions,
     live,
     combos,
-    record,
     projects,
     background,
     reveals,
@@ -363,16 +356,12 @@ async function start(): Promise<void> {
     void combos.syncAll();
     void live.syncUserHooks();
     void background.read();
-    record.check();
   });
   // the page follows the media query on its own. this is only the frame behind it.
   electron.nativeTheme.on("updated", () => {
     win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors));
   });
-  electron.powerMonitor.on("resume", () => {
-    void sessions.refresh();
-    record.check();
-  });
+  electron.powerMonitor.on("resume", () => void sessions.refresh());
 
   electron.app.on("web-contents-created", (_event, contents) => {
     lockDown(contents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
@@ -384,7 +373,6 @@ async function start(): Promise<void> {
     quitting = true;
     combos.dispose();
     live.dispose();
-    record.dispose();
     projects.dispose();
     void sessions.dispose();
   });

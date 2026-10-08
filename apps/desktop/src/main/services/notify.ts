@@ -1,6 +1,6 @@
 // what grove notifies about, and when it holds one back. no electron import: main passes in how a
-// notification is made, and what a click does. the question and stopped diffs are the caller's.
-import { formatDuration, type LiveStatus, type ProjectId, squash } from "@grove/core";
+// notification is made, and what a click does. the stopped diff is the caller's.
+import { formatDuration, type LiveStatus, type ProjectId } from "@grove/core";
 import type { LandingTarget } from "../../shared/ipc.ts";
 
 /** electron's Notification, as far as this uses it. a test root passes a recorder */
@@ -28,7 +28,7 @@ export interface SessionNote {
   click: () => void;
 }
 
-/** a question and a finished turn from one session this close together notify once */
+/** two finished turns from one session this close together notify once */
 const ONCE_MS = 120_000;
 /** stopped ones this close together fold into one: quitting the editor with several tabs mid-turn */
 const FOLD_MS = 5_000;
@@ -51,7 +51,7 @@ export class Notifier {
   private readonly o: NotifyOptions;
   private visible: ProjectId | null = null;
   private all = false;
-  /** when each session last showed a question or a finished turn */
+  /** when each session last showed a finished turn */
   private asked = new Map<string, number>();
   private stops: Array<SessionNote & { project: ProjectId }> = [];
   private kept: Note[] = [];
@@ -76,20 +76,6 @@ export class Notifier {
     const show = () => this.post(s.project, s.title ?? "Claude session", body, s.click);
     if (status.state === "waiting") this.once(s.sessionId, show);
     else show();
-  }
-
-  /** a new open question to the person. `sessionId` is the agent that asked */
-  question(q: {
-    sessionId: string;
-    project: ProjectId;
-    projectName: string;
-    card: string;
-    text: string;
-    click: () => void;
-  }): void {
-    this.once(q.sessionId, () =>
-      this.post(q.project, `${q.projectName} · ${q.card}`, `Asks: ${squash(q.text, 160)}`, q.click),
-    );
   }
 
   /** a session in a project stopped mid-turn. waits FOLD_MS for others to join it */

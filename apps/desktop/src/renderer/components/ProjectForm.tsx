@@ -306,18 +306,16 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
   );
   const [form, setForm] = useState(initial);
   const [touched, setTouched] = useState(false);
-  /** main's last answer about the name and the prefix, and what it was asked */
+  /** main's last answer about the name, and the name it was asked about */
   const [check, setCheck] = useState<{
     name: string;
-    typed?: string;
     v: Awaited<ReturnType<Api["validateProjectName"]>>;
   }>();
-  const [showPrefix, setShowPrefix] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [frequent, setFrequent] = useState<FrequentFolder[]>([]);
 
-  const { name, prefix } = form;
+  const { name } = form;
   const self = original?.id;
 
   // always from the latest list: an answer from main can land between a render and a click
@@ -370,30 +368,26 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
     if (!name.trim()) return;
     let stale = false;
     const t = setTimeout(async () => {
-      const v = await window.grove.validateProjectName(name, self, prefix).catch(() => null);
+      const v = await window.grove.validateProjectName(name, self).catch(() => null);
       if (stale || !v) return;
-      setCheck({ name, typed: prefix, v });
-      // once it is drawn it stays for as long as the screen is open
-      if (v.prefixProblem) setShowPrefix(true);
+      setCheck({ name, v });
     }, 120);
     return () => {
       stale = true;
       clearTimeout(t);
     };
-  }, [name, prefix, self]);
+  }, [name, self]);
 
   if (mode === "edit" && !original) return null;
 
   // main answers 120ms after the last keystroke. until it has, a clash is not known, so no submit
-  const answered = check?.name === name && check.typed === prefix;
+  const answered = check?.name === name;
   const nameProblem = name.trim() ? check?.v.problem : undefined;
-  const prefixProblem = check?.v.prefixProblem;
   const hint = nameHint({
     mode,
     name,
     touched,
     problem: nameProblem,
-    prefix: original?.prefix ?? (answered ? check.v.prefix : ""),
     appRoot: env?.appRoot ?? "",
     home: env?.home ?? "",
     root: original?.root,
@@ -403,7 +397,6 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
     form,
     initial,
     nameProblem,
-    prefixProblem,
     running: running || !answered,
   });
 
@@ -448,7 +441,6 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
     (f) =>
       f.mode === "worktree" && !form.repos.some((r) => r.path === f.path && r.mode === "worktree"),
   );
-  const shownPrefix = prefix ?? check?.v.prefix ?? "";
 
   return (
     <div
@@ -480,29 +472,6 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
               data-testid="project-name"
             />
           </Field>
-
-          {mode === "new" && showPrefix && (
-            <Field
-              label="Card prefix"
-              hint={
-                prefixProblem ? (
-                  <span className="text-danger">{prefixProblem}</span>
-                ) : (
-                  `Cards will be ${check?.v.prefix}-1, ${check?.v.prefix}-2…`
-                )
-              }
-            >
-              <input
-                // inputClass is full width
-                className={cx(inputClass, "w-[120px]! uppercase")}
-                value={shownPrefix}
-                maxLength={8}
-                spellCheck={false}
-                onChange={(e) => patch({ prefix: e.target.value.toUpperCase() })}
-                data-testid="project-prefix"
-              />
-            </Field>
-          )}
 
           <Field
             label="Goal"

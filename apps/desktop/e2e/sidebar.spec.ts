@@ -25,10 +25,9 @@ function seed(): Fixture {
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
     name: "auth-sso",
-    prefix: "AUTH",
     goal: "SSO for the dashboard",
   });
-  writeProject(fx, { name: "billing-export", prefix: "BILL", goal: "Invoice exports" });
+  writeProject(fx, { name: "billing-export", goal: "Invoice exports" });
   writeSession(fx, { cwd: root, sessionId: IDP, title: "idp config" });
   writeSession(fx, { cwd: root, sessionId: QUIET, title: "okta research" });
   hookEvent(fx, IDP, "Stop", { last_assistant_message: "A dev tenant, or the prod one?" });
@@ -99,9 +98,7 @@ const NAMES = Array.from({ length: 26 }, (_, i) => `project-${String.fromCharCod
 
 test("the sidebar: the inbox on top, the projects in the file's order with their counts, and the one on screen marked", async () => {
   fx = makeFixture({ withCompanion: true });
-  const roots = NAMES.map(
-    (name, i) => writeProject(fx, { name, prefix: `P${String.fromCharCode(65 + i)}` }).root,
-  );
+  const roots = NAMES.map((name) => writeProject(fx, { name }).root);
   // the last project needs him, and nothing before it does
   const late = "cccccccc-0000-4000-8000-000000000003";
   writeSession(fx, { cwd: roots[25] as string, sessionId: late, title: "late one" });

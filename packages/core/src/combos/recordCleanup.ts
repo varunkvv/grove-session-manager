@@ -235,7 +235,8 @@ export async function recordPrefixes(combos: readonly Combo[]): Promise<Map<stri
   const ids = new Set(combos.map(projectIdOf));
   const out = new Map<string, string>();
   for (const c of combos) {
-    let prefix: unknown = c.prefix;
+    // 0.10 read a hand-written one upper-cased, and filed under that
+    let prefix: unknown = typeof c.prefix === "string" ? c.prefix.toUpperCase() : undefined;
     if (typeof prefix !== "string") {
       const file = await readJsonGuarded(path.join(c.root, ".claude", "grove-project.json"));
       prefix = file.status === "ok" && isObject(file.value) ? file.value.prefix : undefined;

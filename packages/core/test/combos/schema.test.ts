@@ -102,20 +102,17 @@ describe("combo model", () => {
     }
   });
 
-  it("a card prefix is kept upper-cased, a bad one is dropped, and loading never writes", async () => {
+  it("a key grove no longer reads, like 0.10's card prefix, stays with its combo, and loading never writes", async () => {
     const app = makeSandbox("grove-schema-");
-    const prefixes = ["auth", "BILL2", "D", "9x", "ABCDEFGHI", "a-b", 42, ""];
     const text = JSON.stringify({
-      combos: prefixes.map((prefix, n) => ({ name: `c${n}`, prefix, folders: [] })),
+      combos: [
+        { name: "auth-sso", prefix: "AUTH", folders: [] },
+        { name: "notes", folders: [] },
+      ],
     });
     writeFileSync(combosFilePath(app), text);
     const { combos } = await loadCombos(app);
-    expect(combos.map((c) => c.prefix)).toEqual([
-      "AUTH",
-      "BILL2",
-      ...prefixes.slice(2).map(() => undefined),
-    ]);
-    expect(combos.every((c, n) => n < 2 || !("prefix" in c))).toBe(true);
+    expect(combos.map((c) => c.prefix)).toEqual(["AUTH", undefined]);
     expect(readFileSync(combosFilePath(app), "utf8")).toBe(text);
   });
 });

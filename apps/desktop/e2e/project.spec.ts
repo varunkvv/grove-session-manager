@@ -45,7 +45,6 @@ const folderStates = async (page: Page, id: string) =>
 const combos = (): Array<{
   name: string;
   root: string;
-  prefix?: string;
   note?: string;
   folders: Array<{ path: string; mode: string }>;
 }> => JSON.parse(readFileSync(path.join(fx.root, "combos.json"), "utf8")).combos;
@@ -68,7 +67,7 @@ async function submit(page: Page): Promise<void> {
   await expect(page.getByTestId("project-form")).toHaveCount(0);
 }
 
-test("the first project: working copies, a reference, the prefix, and nothing of the record", async () => {
+test("the first project: working copies, a reference, and nothing of the record", async () => {
   fx = makeFixture({ withCompanion: true, withClaude: true });
   const apiRepo = makeRepo(fx, "api", { branches: ["release"] });
   const shared = makeRepo(fx, "shared");
@@ -83,12 +82,11 @@ test("the first project: working copies, a reference, the prefix, and nothing of
   await expect(form).toHaveAttribute("data-mode", "new");
   await expect(page.getByTestId("form-cancel")).toHaveCount(0);
   await expect(page.getByTestId("form-submit")).toBeDisabled();
-  await expect(form).toContainText("The folder and card prefix come from the name.");
+  await expect(form).toContainText("The folder comes from the name.");
   await expect(page.getByTestId("repos-empty")).toHaveText("Add at least one repo.");
 
   const rows = await fillNew(page, "Prod debug", 3);
-  await expect(form).toContainText(`Folder ${fx.root}/prod-debug · cards will be PROD-1, PROD-2…`);
-  await expect(page.getByTestId("project-prefix")).toHaveCount(0);
+  await expect(form).toContainText(`Folder ${fx.root}/prod-debug`);
   await page.getByTestId("project-goal").fill("Find why webhooks go missing");
 
   // a repo is a working copy unless it cannot be one
@@ -129,7 +127,7 @@ test("the first project: working copies, a reference, the prefix, and nothing of
     .poll(() => folderStates(page, "prod-debug"), { timeout: 30_000 })
     .toEqual(["ok", "ok", "reference"]);
   expect(combos()).toMatchObject([
-    { name: "Prod debug", root, prefix: "PROD", note: "Find why webhooks go missing" },
+    { name: "Prod debug", root, note: "Find why webhooks go missing" },
   ]);
   expect(git(path.join(root, "api"), "branch", "--show-current")).toBe("");
   expect(git(path.join(root, "shared"), "branch", "--show-current")).toBe("prod-debug");
@@ -169,16 +167,15 @@ test("the first project: working copies, a reference, the prefix, and nothing of
   ).toEqual([logs]);
 });
 
-test("a prefix another project uses brings up the prefix field, and Escape keeps a filled form", async () => {
+test("the + beside Projects is the form, a taken name is refused, and Escape keeps a filled form", async () => {
   fx = makeFixture({ withCompanion: true });
-  writeProject(fx, { name: "data-objects", prefix: "DATA", goal: "One schema for every object" });
+  writeProject(fx, { name: "data-objects", goal: "One schema for every object" });
   const pipelines = makeRepo(fx, "pipelines");
 
   app = await launchApp(fx);
   const { page } = app;
   await stubDirectoryPicker(app.app, [pipelines]);
 
-  // the + beside Projects
   await page.getByTestId("new-project").click();
   const form = page.getByTestId("project-form");
   await expect(form).toHaveAttribute("data-mode", "new");
@@ -187,36 +184,25 @@ test("a prefix another project uses brings up the prefix field, and Escape keeps
   await page.keyboard.press("Escape");
   await expect(form).toHaveCount(0);
 
-  // no clash, no field
   await fillNew(page, "billing", 1);
-  await expect(form).toContainText("cards will be BILL-1, BILL-2…");
-  await expect(page.getByTestId("project-prefix")).toHaveCount(0);
+  await expect(form).toContainText(`Folder ${fx.root}/billing`);
   await expect(page.getByTestId("form-submit")).toBeEnabled();
   // a stray Escape does not throw the form away
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("project-name")).toHaveValue("billing");
 
-  // DATA is taken: the field comes with the prefix in it, to edit
+  // another project's name, however it is cased
+  await page.getByTestId("project-name").fill("Data-Objects");
+  await expect(form).toContainText('"data-objects" already uses that name.');
+  await expect(page.getByTestId("form-submit")).toBeDisabled();
+
   await page.getByTestId("project-name").fill("data-objects-test");
-  const prefix = page.getByTestId("project-prefix");
-  await expect(prefix).toHaveValue("DATA");
-  await expect(form).toContainText('"data-objects" already uses the prefix DATA.');
-  await expect(page.getByTestId("form-submit")).toBeDisabled();
-
-  // conclusion ids own D, F and V
-  await prefix.fill("d");
-  await expect(form).toContainText(
-    "D is taken by conclusion ids (D-1, F-1, V-1). Pick another prefix.",
-  );
-  await expect(page.getByTestId("form-submit")).toBeDisabled();
-  await prefix.fill("dat2");
-  await expect(prefix).toHaveValue("DAT2");
-  await expect(form).toContainText("Cards will be DAT2-1, DAT2-2…");
-
   await submit(page);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
   await expect(page.getByTestId("project-name")).toHaveText("data-objects-test");
-  expect(combos().map((c) => c.prefix)).toEqual(["DATA", "DAT2"]);
+  expect(combos().map((c) => c.name)).toEqual(["data-objects", "data-objects-test"]);
+  // a project made by 0.11 has no card prefix
+  expect(readFileSync(path.join(fx.root, "combos.json"), "utf8")).not.toContain("prefix");
 });
 
 test("Edit project: repos that were in it are fixed, and an edited goal is saved", async () => {
@@ -225,7 +211,6 @@ test("Edit project: repos that were in it are fixed, and an edited goal is saved
   const docs = makePlainDir(fx, "docs");
   const { root } = writeProject(fx, {
     name: "auth-sso",
-    prefix: "AUTH",
     goal: "SSO for the dashboard",
     folders: [
       { path: apiRepo, mode: "worktree", branch: { kind: "detach" } },
@@ -241,10 +226,7 @@ test("Edit project: repos that were in it are fixed, and an edited goal is saved
   const form = page.getByTestId("project-form");
   await expect(form).toHaveAttribute("data-mode", "edit");
   await expect(form.getByRole("heading", { level: 1 })).toHaveText("Edit auth-sso");
-  await expect(form).toContainText(
-    `The folder stays at ${root}. Only the name changes, and cards keep the AUTH prefix.`,
-  );
-  await expect(page.getByTestId("project-prefix")).toHaveCount(0);
+  await expect(form).toContainText(`The folder stays at ${root}. Only the name changes.`);
   await expect(page.getByTestId("project-goal")).toHaveValue("SSO for the dashboard");
 
   // repos that were in the project are fixed: remove and add again to change one
@@ -288,7 +270,7 @@ test("Edit project: repos that were in it are fixed, and an edited goal is saved
 
 test("a project that has no repos can still be given a goal", async () => {
   fx = makeFixture({ withCompanion: true });
-  writeProject(fx, { name: "notes", prefix: "NOTE" });
+  writeProject(fx, { name: "notes" });
 
   app = await launchApp(fx);
   const { page } = app;
@@ -305,15 +287,14 @@ test("a project that has no repos can still be given a goal", async () => {
 });
 
 // the root check must leave the project's own entry out, or a rename "overlaps" with itself
-test("a rename keeps the folder, the id and the prefix", async () => {
+test("a rename keeps the folder and the id", async () => {
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
     name: "auth-sso",
-    prefix: "AUTH",
     goal: "SSO for the dashboard",
     folders: [{ path: makePlainDir(fx, "docs"), mode: "reference" }],
   });
-  writeProject(fx, { name: "billing-export", prefix: "BILL" });
+  writeProject(fx, { name: "billing-export" });
 
   app = await launchApp(fx);
   const { page } = app;
@@ -333,7 +314,7 @@ test("a rename keeps the folder, the id and the prefix", async () => {
     "Auth SSO",
   );
   await expect.poll(() => combos()[0]?.name).toBe("Auth SSO");
-  expect(combos()[0]).toMatchObject({ name: "Auth SSO", root, prefix: "AUTH" });
+  expect(combos()[0]).toMatchObject({ name: "Auth SSO", root });
   expect((await api(page).bootstrap()).projects.map((p) => p.id)).toEqual([
     "auth-sso",
     "billing-export",
@@ -350,7 +331,6 @@ test("a project as 0.10 left it: the record is taken out at launch, and what was
   fx = makeFixture({ withCompanion: true });
   const { root } = writeProject(fx, {
     name: "auth-sso",
-    prefix: "AUTH",
     goal: "SSO for the dashboard",
   });
   // the files 0.10 made and synced, with this machine's paths, and what an agent and the person left
@@ -366,7 +346,8 @@ test("a project as 0.10 left it: the record is taken out at launch, and what was
   mkdirSync(bin, { recursive: true });
   writeFileSync(path.join(bin, "record"), "#!/bin/sh\n");
   writeFileSync(path.join(bin, "record.cjs"), "// grove-record app=0.10.17\n");
-  // two sessions stopped mid-turn. he dismissed the first under 0.10, which filed it under AUTH
+  // two sessions stopped mid-turn. he dismissed the first under 0.10, which filed it under AUTH,
+  // the card prefix the project file in the folder still names
   const [seen, fresh] = [
     "aaaaaaaa-0000-4000-8000-000000000001",
     "bbbbbbbb-0000-4000-8000-000000000002",
@@ -564,7 +545,7 @@ test("removing working copies on Edit project takes the clean one down and keeps
 
 test("repos people keep using are one click away, and two with one name say where they are", async () => {
   fx = makeFixture({ withCompanion: true });
-  writeProject(fx, { name: "scratch", prefix: "SCRA" });
+  writeProject(fx, { name: "scratch" });
   const mine = makeRepo(fx, "mine/api");
   const theirs = makeRepo(fx, "theirs/api");
   const web = makeRepo(fx, "web");

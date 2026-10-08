@@ -18,10 +18,9 @@ function setup(): Fixture {
   fx = makeFixture({ withCompanion: true });
   const auth = writeProject(fx, {
     name: "auth-sso",
-    prefix: "AUTH",
     goal: "SSO for the dashboard",
   });
-  const billing = writeProject(fx, { name: "billing-export", prefix: "BILL" });
+  const billing = writeProject(fx, { name: "billing-export" });
   writeSession(fx, { cwd: auth.root, sessionId: IDP, title: "idp config" });
   writeSession(fx, { cwd: billing.root, sessionId: EXPORT, title: "export job" });
   hookEvent(fx, IDP, "Stop", { last_assistant_message: "A dev tenant, or the prod one?" });

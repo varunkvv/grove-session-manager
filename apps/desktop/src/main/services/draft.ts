@@ -7,8 +7,6 @@ import { type BranchSpec, type ComboFolder, isObject, validateBranchName } from 
 export interface CleanDraft {
   name: string;
   note?: string;
-  /** upper-cased, held to the rules with the other projects' prefixes in problemsWithDraft. create only */
-  prefix?: string;
   folders: ComboFolder[];
 }
 
@@ -72,17 +70,14 @@ export async function parseDraft(
     }
     folders.push(folder);
   }
-  // the goal is the note. agents read it as one line in the project file and the CLAUDE.md stub
+  // the goal is the note: one line, in the CLAUDE.md stub and in what a started agent is told
   const note =
     typeof raw.note === "string" ? raw.note.replace(/\s+/g, " ").trim() || undefined : undefined;
   if (note && note.length > 500) problems.push("Keep the goal under 500 characters.");
-  const prefix =
-    typeof raw.prefix === "string" ? raw.prefix.trim().toUpperCase() || undefined : undefined;
   return {
     draft: {
       name: raw.name.trim(),
       ...(note ? { note } : {}),
-      ...(prefix ? { prefix } : {}),
       folders,
     },
     problems,

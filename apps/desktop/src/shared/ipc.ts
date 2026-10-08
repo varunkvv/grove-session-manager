@@ -167,7 +167,6 @@ export interface ProjectView {
   root: string;
   /** combo.note */
   goal?: string;
-  prefix: string;
   workspaceFile: string;
   longWork: LongWorkMode;
   folders: FolderView[];
@@ -256,8 +255,6 @@ export interface ProjectDraft {
   name: string;
   /** the goal */
   note?: string;
-  /** create only. ignored on update */
-  prefix?: string;
   folders: FolderDraft[];
 }
 
@@ -324,14 +321,7 @@ export interface Api {
   validateProjectName(
     name: string,
     self?: ProjectId,
-    prefix?: string,
-  ): Promise<{
-    slug: string;
-    root: string;
-    prefix: string;
-    problem?: string;
-    prefixProblem?: string;
-  }>;
+  ): Promise<{ slug: string; root: string; problem?: string }>;
   validateProjectDraft(draft: ProjectDraft, self?: ProjectId): Promise<{ problems: string[] }>;
   pickDirectories(): Promise<string[]>;
   /** most used first. one click adds one to a project, no file picker. */

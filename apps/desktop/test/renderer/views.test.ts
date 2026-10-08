@@ -45,7 +45,6 @@ const project = (partial: Partial<ProjectView>): ProjectView => ({
   name: "auth",
   root: "/w/auth",
   goal: "ship sso",
-  prefix: "AUTH",
   workspaceFile: "/w/auth/auth.code-workspace",
   longWork: "foreground",
   folders: [],

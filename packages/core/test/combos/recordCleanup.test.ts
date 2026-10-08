@@ -293,15 +293,16 @@ describe("where 0.10's dismissals move to", () => {
   it("each card prefix to its project's id, from combos.json or the project file", async () => {
     const p = project();
     const combos: Combo[] = [
-      // 0.10 wrote the prefix into combos.json
-      { name: "Billing export", root: "/ws/billing-export", prefix: "BILL", folders: [] },
+      // 0.10 wrote the prefix into combos.json. one written by hand in lower case was read upper-cased
+      { name: "Billing export", root: "/ws/billing-export", prefix: "bill", folders: [] },
       // not there: the project file in the folder has it
       p.combo,
       { name: "new in 0.11", root: "/ws/fresh", folders: [] },
       // its prefix is its own id: nothing to move
       { name: "same", root: "/ws/SAME", prefix: "SAME", folders: [] },
-      // its prefix is another project's id: its keys cannot be told from that project's
-      { name: "clash", root: "/ws/clash", prefix: "fresh", folders: [] },
+      // its prefix is another project's id: its keys cannot be told from that project's own
+      { name: "upper", root: "/ws/OPS", folders: [] },
+      { name: "clash", root: "/ws/ops-jobs", prefix: "OPS", folders: [] },
     ];
     expect([...(await recordPrefixes(combos))]).toEqual([
       ["BILL", "billing-export"],

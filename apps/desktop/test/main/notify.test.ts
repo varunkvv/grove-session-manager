@@ -67,22 +67,6 @@ describe("the bodies", () => {
     ]);
   });
 
-  it("a question names the project and the card, and is cut at 160", () => {
-    const { notifier, shown } = setup();
-    notifier.question({
-      sessionId: "s1",
-      project: "chat",
-      projectName: "Chat features",
-      card: "CHAT-4",
-      text: `Round accrual to\n\nwhole hours? ${"x".repeat(200)}`,
-      click: () => {},
-    });
-    expect(shown[0]?.title).toBe("Chat features · CHAT-4");
-    expect(shown[0]?.body.startsWith("Asks: Round accrual to whole hours? xxx")).toBe(true);
-    expect(shown[0]?.body).toHaveLength("Asks: ".length + 160);
-    expect(shown[0]?.body.endsWith("…")).toBe(true);
-  });
-
   it("a click runs what the caller said, once per notification", () => {
     const { notifier, shown } = setup();
     const click = vi.fn();
@@ -92,37 +76,19 @@ describe("the bodies", () => {
   });
 });
 
-describe("one per session per two minutes between a question and a finished turn", () => {
-  const ask = (n: Notifier, sessionId = "s1") =>
-    n.question({
-      sessionId,
-      project: "chat",
-      projectName: "Chat",
-      card: "CHAT-4",
-      text: "8h or 7.5h?",
-      click: () => {},
-    });
-
-  it("a question, then the turn ends: one", () => {
-    const { notifier, shown } = setup();
-    ask(notifier);
-    vi.advanceTimersByTime(30_000);
-    notifier.live(finished(), S1);
-    expect(shown.map((s) => s.body)).toEqual(["Asks: 8h or 7.5h?"]);
-  });
-
-  it("a turn ends, then a question: one", () => {
+describe("one finished turn per session per two minutes", () => {
+  it("a second turn that ends within two minutes says nothing", () => {
     const { notifier, shown } = setup();
     notifier.live(finished(), S1);
     vi.advanceTimersByTime(119_000);
-    ask(notifier);
+    notifier.live(finished(90_000, "and the tests"), S1);
     expect(shown.map((s) => s.body)).toEqual(["Finished after 2m"]);
   });
 
   it("two minutes later, or another session: both", () => {
     const { notifier, shown } = setup();
-    ask(notifier);
-    ask(notifier, "s2");
+    notifier.live(finished(), S1);
+    notifier.live(finished(), { ...S1, sessionId: "s2" });
     vi.advanceTimersByTime(120_000);
     notifier.live(finished(), S1);
     expect(shown).toHaveLength(3);
@@ -130,7 +96,7 @@ describe("one per session per two minutes between a question and a finished turn
 
   it("permission and failed are never held back by it", () => {
     const { notifier, shown } = setup();
-    ask(notifier);
+    notifier.live(finished(), S1);
     notifier.live(status({ state: "permission", detail: "Bash" }), S1);
     notifier.live(status({ state: "permission", detail: "Bash" }), S1);
     notifier.live(status({ state: "failed" }), S1);
@@ -141,7 +107,7 @@ describe("one per session per two minutes between a question and a finished turn
     let focused = true;
     const { notifier, shown } = setup({ focused: () => focused });
     notifier.setVisible("chat", false);
-    ask(notifier);
+    notifier.live(finished(), S1);
     focused = false;
     notifier.live(finished(), S1);
     expect(shown.map((s) => s.body)).toEqual(["Finished after 2m"]);
@@ -185,7 +151,7 @@ describe("stopped mid-turn", () => {
     expect(shown.map((s) => s.body)).toEqual(["3 agents stopped mid-turn", "Stopped mid-turn"]);
   });
 
-  it("is never held back by a question or a finished turn", () => {
+  it("is never held back by a finished turn", () => {
     const { notifier, shown } = setup();
     notifier.live(finished(), S1);
     stop(notifier, "s1");

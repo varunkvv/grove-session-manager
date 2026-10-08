@@ -2,7 +2,6 @@
 import {
   type BranchSpec,
   comboDirSlug,
-  derivePrefix,
   type FolderMode,
   shortPath,
   validateBranchName,
@@ -30,8 +29,6 @@ export interface Form {
   name: string;
   goal: string;
   repos: Repo[];
-  /** new only, and only once main reported a prefix problem */
-  prefix?: string;
 }
 
 const baseName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
@@ -58,7 +55,6 @@ export function draftOf(form: Form): ProjectDraft {
   return {
     name: form.name.trim(),
     note: form.goal.trim() || undefined,
-    ...(form.prefix ? { prefix: form.prefix } : {}),
     folders: form.repos.map((r) => {
       if (r.mode === "reference") return { path: r.path, mode: "reference" };
       const branch: BranchSpec =
@@ -93,7 +89,6 @@ export function canSubmit(i: {
   /** edit: the form as the screen opened */
   initial?: Form;
   nameProblem?: string;
-  prefixProblem?: string;
   running: boolean;
 }): boolean {
   const { form } = i;
@@ -101,8 +96,7 @@ export function canSubmit(i: {
   // a project that already has no repos can still be renamed or given a goal. a new one needs one
   const none = form.repos.length === 0 && !(i.mode === "edit" && i.initial?.repos.length === 0);
   if (none || form.repos.some((r) => !r.info || branchInvalid(r))) return false;
-  if (i.mode === "edit") return !i.initial || changed(i.initial, form);
-  return !i.prefixProblem;
+  return i.mode === "new" || !i.initial || changed(i.initial, form);
 }
 
 /** the line under Name: what the name becomes, or main's problem with it */
@@ -112,8 +106,6 @@ export function nameHint(i: {
   /** something was typed: an empty name is a problem only after that */
   touched: boolean;
   problem?: string;
-  /** main's derived prefix (empty until it answers), or the project's on edit */
-  prefix: string;
   appRoot: string;
   home: string;
   /** edit: the project folder */
@@ -124,14 +116,12 @@ export function nameHint(i: {
   if (empty && i.touched) return { text: "Give the project a name.", problem: true };
   if (i.mode === "edit")
     return {
-      text: `The folder stays at ${shortPath(i.root ?? "", undefined, i.home)}. Only the name changes, and cards keep the ${i.prefix} prefix.`,
+      text: `The folder stays at ${shortPath(i.root ?? "", undefined, i.home)}. Only the name changes.`,
       problem: false,
     };
-  if (empty) return { text: "The folder and card prefix come from the name.", problem: false };
-  // main's answer can lag the keystroke. its rule without the clash check fills the gap
-  const prefix = i.prefix || derivePrefix(i.name);
+  if (empty) return { text: "The folder comes from the name.", problem: false };
   return {
-    text: `Folder ${shortPath(i.appRoot, undefined, i.home)}/${comboDirSlug(i.name)} · cards will be ${prefix}-1, ${prefix}-2…`,
+    text: `Folder ${shortPath(i.appRoot, undefined, i.home)}/${comboDirSlug(i.name)}`,
     problem: false,
   };
 }

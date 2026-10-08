@@ -13,7 +13,6 @@ const project = (id: string, partial: Partial<ProjectView> = {}): ProjectView =>
   name: id,
   root: `/w/${id}`,
   goal: "ship it",
-  prefix: id.slice(0, 4).toUpperCase(),
   workspaceFile: `/w/${id}/${id}.code-workspace`,
   longWork: "foreground",
   folders: [],

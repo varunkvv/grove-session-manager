@@ -40,7 +40,6 @@ async function start(o: FixtureOptions & { goal?: string } = {}): Promise<{
   fx = makeFixture({ withCompanion: true, ...o });
   const { root } = writeProject(fx, {
     name: "billing-export",
-    prefix: "BILL",
     goal: "goal" in o ? o.goal : GOAL,
   });
   const fake = writeFakeClaude(path.join(fx.dir, "bin"), []);
@@ -152,7 +151,7 @@ test("no goal: Edit project in place of the start buttons", async () => {
 
 test("a start that is known to fail is not offered: the folder is gone", async () => {
   fx = makeFixture({ withCompanion: true });
-  const gone = writeProject(fx, { name: "moved-away", prefix: "MOVE", goal: GOAL });
+  const gone = writeProject(fx, { name: "moved-away", goal: GOAL });
   rmSync(gone.root, { recursive: true });
   app = await launchApp(fx);
   const { page } = app;

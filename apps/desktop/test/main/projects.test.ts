@@ -1,17 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type Combo, type LiveStatus, projectIdOf, type RegistryEntry } from "@grove/core";
-import * as record from "@grove/record";
+import type { Combo, LiveStatus, RegistryEntry } from "@grove/core";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { Interruption } from "../../src/main/services/interrupted.ts";
-import type { ProjectSnapshot } from "../../src/main/services/projectRecord.ts";
 import { ProjectsService } from "../../src/main/services/projects.ts";
 import type { SearchHit } from "../../src/main/services/sessions.ts";
 import type { InboxView, SessionRow } from "../../src/shared/ipc.ts";
-
-// the record honours the GROVE_RECORD_SESSION / _AGENT / _PID overrides only with this set
-process.env.GROVE_RECORD_TEST = "1";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "grove-projects-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -37,14 +32,10 @@ function row(sessionId: string, o: Partial<SessionRow> = {}): SessionRow {
   };
 }
 
-/**
- * fakes for the sessions, the live state and the review marks. the record is real files in a temp
- * folder, read into snapshots by hand (no watchers): only the question notification reads it
- */
+/** fakes for the combos, the sessions, the live state and the dismissals */
 function setup() {
   const dir = mkdtempSync(path.join(tmp, "t-"));
   const combos: Combo[] = [];
-  const snaps = new Map<string, ProjectSnapshot>();
   const rows: SessionRow[] = [];
   const interrupted = new Map<string, Interruption>();
   const holders = new Map<string, RegistryEntry>();
@@ -55,20 +46,7 @@ function setup() {
   const got = {
     inbox: [] as InboxView[],
     sessions: 0,
-    questions: [] as unknown[],
     stopped: [] as unknown[],
-  };
-  const read = (id: string) => {
-    const c = combos.find((x) => projectIdOf(x) === id);
-    if (!c) return;
-    const r = record.readRecord(c.root);
-    snaps.set(id, {
-      root: c.root,
-      cards: new Map(r.cards.map((x) => [x.id, x])),
-      conclusions: r.conclusions,
-      problems: [],
-      readAt: 1,
-    });
   };
   const svc = new ProjectsService({
     combos: {
@@ -84,10 +62,6 @@ function setup() {
         })),
       syncReport: () => undefined,
       problemMessage: () => undefined,
-    },
-    record: {
-      setProjects: () => {},
-      snapshot: (id) => snaps.get(id),
     },
     sessions: {
       list: () => rows,
@@ -115,38 +89,15 @@ function setup() {
     },
     onInbox: (v) => got.inbox.push(v),
     onSessions: () => got.sessions++,
-    onQuestion: (q) => got.questions.push(q),
     onStopped: (s) => got.stopped.push(s),
   });
 
-  /** a project, and writers acting as an agent session or as the person */
-  const project = (name: string, prefix: string, goal = "Fix the rounding.") => {
+  /** a project, with its folder on disk */
+  const project = (name: string, goal = "Fix the rounding.") => {
     const root = path.join(dir, name);
     mkdirSync(root);
-    const made = record.syncProject(root, { prefix, name, goal });
-    if (!made.ok) throw new Error(made.text);
-    combos.push({ name, root, prefix, note: goal, folders: [] });
-    const as = (session: string, agent = session) => {
-      const env = {
-        GROVE_RECORD_TEST: "1",
-        GROVE_RECORD_SESSION: session,
-        GROVE_RECORD_AGENT: agent,
-        GROVE_RECORD_PID: String(process.pid),
-        GROVE_RECORD_REGISTRY: path.join(tmp, "no-registry"),
-      };
-      return (tool: string, args: Record<string, unknown>) => {
-        const r = record.runTool(tool, args, { root, env });
-        if (!r.ok) throw new Error(r.text);
-        // under a fake Date every write gets its own second, so orders by time are stable
-        if (vi.isFakeTimers()) vi.setSystemTime(Date.now() + 1000);
-      };
-    };
-    /** what ProjectRecordService does after a flush */
-    const changed = () => {
-      read(name);
-      svc.recordChanged(name);
-    };
-    return { id: name, root, as, changed };
+    combos.push({ name, root, note: goal, folders: [] });
+    return { id: name, root };
   };
 
   /** a session grove has indexed, in a project or not, with a live process */
@@ -173,18 +124,16 @@ function setup() {
     seen,
     hits,
     got,
-    snaps,
   };
 }
 
 const inChat = { comboName: "chat", comboRelation: "root" } as const;
 
 describe("the inbox", () => {
-  it("is every project's sessions that need the person, newest first, and waits on no record", () => {
+  it("is every project's sessions that need the person, newest first", () => {
     const t = setup();
-    // no record of either project has been read
-    t.project("chat", "CHAT");
-    t.project("ops", "OPS");
+    t.project("chat");
+    t.project("ops");
     t.session("s-perm", {
       ...inChat,
       title: "rounding fix",
@@ -240,7 +189,7 @@ describe("the inbox", () => {
 describe("dismiss", () => {
   it("stores a stop under the project's id, sends seen keys to the live state, and refuses bad keys", async () => {
     const t = setup();
-    t.project("chat", "CHAT");
+    t.project("chat");
     t.rows.push(row("s-cut", { ...inChat, interrupted: { why: "gone", at: 4000 } }));
     t.session("s-turn", { ...inChat, live: live("waiting", 5000) });
     const [turn, cut] = t.svc.inbox().rows;
@@ -265,35 +214,10 @@ describe("dismiss", () => {
   });
 });
 
-describe("the notification diffs", () => {
-  it("takes each project's first read as its question baseline", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    const ops = t.project("ops", "OPS");
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("question_ask", { card: "CHAT-1", text: "Old question", to: "person" });
-    chat.changed();
-    // ops has no record read yet: its compute says nothing about its questions
-    t.svc.recordChanged("ops");
-    expect(t.got.questions).toEqual([]);
-
-    chat.as("s-1")("question_ask", { card: "CHAT-1", text: "8h or 4h?", to: "person" });
-    chat.as("s-1")("question_ask", { card: "CHAT-1", text: "For the agent", to: "CHAT-1" });
-    chat.changed();
-    expect(t.got.questions).toEqual([
-      { project: "chat", projectName: "chat", card: "CHAT-1", sessionId: "s-1", text: "8h or 4h?" },
-    ]);
-
-    // a record that shows up later does not notify the questions it already had
-    ops.as("s-2")("card_create", { title: "Rotate keys" });
-    ops.as("s-2")("question_ask", { card: "OPS-1", text: "Which vault?", to: "person" });
-    ops.changed();
-    expect(t.got.questions).toHaveLength(1);
-  });
-
+describe("what a notification is about, and where it lands", () => {
   it("takes the interruptions at start() as the stopped baseline", () => {
     const t = setup();
-    t.project("chat", "CHAT");
+    t.project("chat");
     t.session("s-old", inChat);
     t.session("s-new", { ...inChat, title: "rounding fix" });
     t.session("s-nowhere");
@@ -314,7 +238,7 @@ describe("the notification diffs", () => {
 
   it("lands a click on the session's inbox row, else its row in its project's sessions, else nowhere", () => {
     const t = setup();
-    t.project("chat", "CHAT");
+    t.project("chat");
     const inside = { comboName: "chat", comboRelation: "inside" } as const;
     t.session("s-asks", { ...inside, live: live("permission") });
     t.session("s-quiet", inChat);
@@ -342,19 +266,18 @@ describe("the notification diffs", () => {
 describe("projects and sessions", () => {
   it("shows the first of two combos whose folders share a name, and says why", () => {
     const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.project("ops", "OPS");
+    const chat = t.project("chat");
+    t.project("ops");
     const views = () => t.svc.views();
     expect(views().projects.map((p) => p.id)).toEqual(["chat", "ops"]);
     expect(views().projects[0]).toMatchObject({
       root: chat.root,
       goal: "Fix the rounding.",
-      prefix: "CHAT",
       rootExists: true,
     });
     // a second combo on another folder called chat
     const other = path.join(mkdtempSync(path.join(tmp, "t-")), "chat");
-    t.combos.push({ name: "chat copy", root: other, prefix: "CHA2", folders: [] });
+    t.combos.push({ name: "chat copy", root: other, folders: [] });
     expect(views().projects.map((p) => p.name)).toEqual(["chat", "ops"]);
     expect(views().problem).toBe(
       'Two combos have folders called "chat". Only "chat" is shown. Move one of them.',
@@ -363,7 +286,7 @@ describe("projects and sessions", () => {
 
   it("finds sessions by their fields, then by full text, each with where it is and how it opens", async () => {
     const t = setup();
-    t.project("chat", "CHAT");
+    t.project("chat");
     t.session("s-1", { title: "rounding fix", comboName: "chat", activityMs: 5 });
     t.session("s-2", { firstPrompt: "look at the parser", activityMs: 9 });
     t.rows.push(row("s-3", { title: "deploy notes", activityMs: 7 }));
@@ -391,8 +314,8 @@ describe("projects and sessions", () => {
 
   it("lists every session started in a project's folder, newest first, and a subfolder's only while it needs the person or runs", () => {
     const t = setup();
-    t.project("chat", "CHAT");
-    t.project("ops", "OPS");
+    t.project("chat");
+    t.project("ops");
     const inOps = { comboName: "ops", comboRelation: "root" } as const;
     const inside = { comboName: "chat", comboRelation: "inside" } as const;
     t.session("s-open", {
@@ -458,7 +381,7 @@ describe("projects and sessions", () => {
 
   it("says the lists changed when what a row shows moved, not on every line an agent writes", () => {
     const t = setup();
-    t.project("chat", "CHAT");
+    t.project("chat");
     t.session("s-1", { ...inChat, live: live("running", 1000) });
     t.rows.push(row("s-nowhere"));
     const moved = () => {

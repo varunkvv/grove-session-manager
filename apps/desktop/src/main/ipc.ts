@@ -4,7 +4,6 @@ import path from "node:path";
 import {
   type Combo,
   classifyPath,
-  derivePrefix,
   isValidSessionId,
   openInEditor,
   prepareFolderOpen,
@@ -13,9 +12,7 @@ import {
   type Settings,
   saveSettings,
   sessionTail,
-  validatePrefix,
 } from "@grove/core";
-import { readProject } from "@grove/record";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
 import type {
@@ -41,7 +38,6 @@ import { frequentFolders } from "./services/frequentFolders.ts";
 import type { LiveService } from "./services/live.ts";
 import { backgroundArgs, NEW_CONVERSATION_COMPANION } from "./services/newSession.ts";
 import type { Notifier } from "./services/notify.ts";
-import type { ProjectRecordService } from "./services/projectRecord.ts";
 import type { ProjectsService } from "./services/projects.ts";
 import {
   claudeScriptBody,
@@ -64,7 +60,6 @@ export interface Deps {
   sessions: SessionService;
   live: LiveService;
   combos: ComboService;
-  record: ProjectRecordService;
   projects: ProjectsService;
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
@@ -236,9 +231,7 @@ function buildHandlers(deps: Deps): Handlers {
         (async () => {
           // hand-editable, so a refresh is how an edit made outside the app lands
           await combos.load(true);
-          await combos.backfillPrefixes();
           await combos.syncAll();
-          deps.record.check();
           await combos.reconcileAll();
         })(),
       ]);
@@ -343,7 +336,7 @@ function buildHandlers(deps: Deps): Handlers {
         };
       }
 
-      // the project root as the cwd, so its CLAUDE.md, hooks and the record's server load
+      // the project root as the cwd, so its CLAUDE.md and its hooks load
       const args = backgroundArgs({}, prompt);
       if (req.throughTerminal) {
         await openInTerminal(
@@ -387,16 +380,8 @@ function buildHandlers(deps: Deps): Handlers {
       deps.notifier.setVisible(typeof id === "string" ? id : null, all === true);
     },
 
-    async validateProjectName(name, self, prefix) {
-      const own = self ? combos.byId(self) : undefined;
-      const v = combos.validateName(String(name ?? ""), own?.name);
-      // the stored one never changes. else what the form says, what the folder's project file
-      // says (the record refuses a prefix change once there are cards), or one from the name
-      const given = typeof prefix === "string" ? prefix.trim().toUpperCase() : "";
-      const p =
-        own?.prefix ?? (given || readProject(v.root)?.prefix || derivePrefix(String(name ?? "")));
-      const prefixProblem = own ? undefined : validatePrefix(p, combos.list());
-      return { ...v, prefix: p, ...(prefixProblem ? { prefixProblem } : {}) };
+    async validateProjectName(name, self) {
+      return combos.validateName(String(name ?? ""), self ? combos.byId(self).name : undefined);
     },
 
     async validateProjectDraft(raw, self) {
@@ -483,7 +468,7 @@ function buildHandlers(deps: Deps): Handlers {
       const { remaining } = await combos.remove(combo.name);
       if (remaining.length > 0) return { remaining };
       if (trashRoot) {
-        // the root holds the person's CLAUDE.md, .claude settings and the record, so it goes to the Trash
+        // the root holds the person's CLAUDE.md, .claude settings, plans and notes, so it goes to the Trash
         await electron.shell.trashItem(combo.root).catch((e: unknown) => {
           log.warn("trash project root:", e);
         });

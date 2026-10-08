@@ -1,7 +1,6 @@
 import { type FSWatcher, watch } from "node:fs";
 import path from "node:path";
 import {
-  assignPrefixes,
   type Combo,
   type ComboFolder,
   type ComboSyncReport,
@@ -32,11 +31,9 @@ import {
   validateComboName,
   validateComboRoot,
   validateFolders,
-  validatePrefix,
   watchComboStatusHooks,
   workspaceFilePath,
 } from "@grove/core";
-import { readProject } from "@grove/record";
 import type { ToastMessage } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
@@ -159,27 +156,9 @@ export class ComboService {
 
   private async reloadFromDisk(): Promise<void> {
     await this.load(true);
-    await this.backfillPrefixes();
     // a combo added by hand reports its sessions without anyone opening it first
     void this.syncAll();
     void this.reconcileAll();
-  }
-
-  /**
-   * a card prefix for every combo that has none, in one write to combos.json. after load, never
-   * inside it: load never writes. the 0.5 app and the extension keep the key through their writes.
-   */
-  async backfillPrefixes(): Promise<void> {
-    const onDisk = new Map<string, string>();
-    for (const c of this.combos) {
-      const prefix = c.prefix ? undefined : readProject(c.root)?.prefix;
-      if (prefix) onDisk.set(c.root, prefix);
-    }
-    const assigned = assignPrefixes(this.combos, onDisk);
-    if (assigned.size === 0) return;
-    await this.save((combos) =>
-      combos.map((c) => (assigned.has(c.root) ? { ...c, prefix: assigned.get(c.root) } : c)),
-    ).catch((e) => log.warn("card prefixes:", e));
   }
 
   syncReport(root: string): ComboSyncReport | undefined {
@@ -393,9 +372,6 @@ export class ComboService {
         this.opts.appRoot,
       ).problems,
     );
-    // a prefix never changes once a project has cards, so only a new project's is looked at
-    const prefixProblem = !existing && draft.prefix && validatePrefix(draft.prefix, this.combos);
-    if (prefixProblem) problems.push(prefixProblem);
     return problems;
   }
 
@@ -414,11 +390,8 @@ export class ComboService {
       root,
       folders: draft.folders,
       ...(draft.note ? { note: draft.note } : {}),
-      ...(draft.prefix ? { prefix: draft.prefix } : {}),
     };
     await this.save((combos) => [...combos, combo]);
-    // no prefix from the form: the one in the folder's project file, else derived
-    await this.backfillPrefixes();
     return this.find(draft.name);
   }
 

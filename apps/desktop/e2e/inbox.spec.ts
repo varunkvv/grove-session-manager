@@ -45,8 +45,8 @@ test.afterEach(async () => {
  */
 function seed(): Fixture {
   fx = makeFixture({ withCompanion: true });
-  root = writeProject(fx, { name: "auth-sso", prefix: "AUTH", goal: "SSO for the dashboard" }).root;
-  const billing = writeProject(fx, { name: "billing-export", prefix: "BILL" }).root;
+  root = writeProject(fx, { name: "auth-sso", goal: "SSO for the dashboard" }).root;
+  const billing = writeProject(fx, { name: "billing-export" }).root;
 
   writeSession(fx, {
     cwd: root,

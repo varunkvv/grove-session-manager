@@ -108,8 +108,6 @@ export interface Combo {
   note?: string;
   /** absent means background */
   longWork?: LongWorkMode;
-  /** the card prefix (AUTH in AUTH-12). unique across combos. never changes once a project has cards */
-  prefix?: string;
   folders: ComboFolder[];
   [extra: string]: unknown;
 }

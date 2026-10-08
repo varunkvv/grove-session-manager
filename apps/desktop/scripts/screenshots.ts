@@ -118,19 +118,18 @@ function build(scheme: string) {
   const projects = Object.fromEntries(
     (
       [
-        ["auth-sso", "AUTH", "Single sign-on for the dashboard through okta, staging first."],
-        ["billing-export", "BILL", "Monthly invoice exports for finance, as csv."],
-        ["chat-features", "CHAT", "Threads and reactions in team chat."],
-        ["data-objects", "DATA", "Custom objects in the public api."],
-        ["infra-cleanup", "INFR", "Retire the old staging cluster."],
-        ["mobile-push", "PUSH", "Rich push on android."],
-        ["search-relevance", "SRCH", "Exact title matches rank first."],
+        ["auth-sso", "Single sign-on for the dashboard through okta, staging first."],
+        ["billing-export", "Monthly invoice exports for finance, as csv."],
+        ["chat-features", "Threads and reactions in team chat."],
+        ["data-objects", "Custom objects in the public api."],
+        ["infra-cleanup", "Retire the old staging cluster."],
+        ["mobile-push", "Rich push on android."],
+        ["search-relevance", "Exact title matches rank first."],
       ] as const
-    ).map(([name, prefix, goal]) => [
+    ).map(([name, goal]) => [
       name,
       writeProject(fx, {
         name,
-        prefix,
         goal,
         ...(name === "auth-sso"
           ? { folders: [{ path: api, mode: "worktree", branch: { kind: "detach" } }] }

@@ -319,14 +319,6 @@ describe("drafts from the renderer", () => {
     expect((await goal("ab     ".repeat(150))).problems).toEqual([]);
   });
 
-  it("the form's prefix is carried upper-cased, and an empty one means none", async () => {
-    const prefix = async (p: unknown) =>
-      (await parseDraft({ name: "p", prefix: p, folders: [] })).draft?.prefix;
-    expect(await prefix(" dat2 ")).toBe("DAT2");
-    expect(await prefix("  ")).toBeUndefined();
-    expect(await prefix(42)).toBeUndefined();
-  });
-
   it("a worktree with no branch means detached, and a reference never carries one", async () => {
     const dir = sandbox();
     const { draft } = await parseDraft({
