@@ -16,7 +16,8 @@ In the repo:
   window on a session, starting a conversation with a prompt waiting, syncing a project's references, showing drift
 
 Grove never types into a running session. It keeps files on disk, starts a session with one prompt when you ask for
-one, and hands off to the editor. You answer an agent in the agent's own chat.
+one, and hands off to the editor. You answer an agent in the agent's own chat. The one thing it asks a model for is a
+[recap](#recaps) of a session, through your own `claude`.
 
 ## First run
 
@@ -107,6 +108,9 @@ what it is at, its project, where it runs and when, then a line of what it asks.
 | Failed | it stopped on an API error | the error |
 | Stopped | it went away mid-turn: its window closed, it crashed, the machine rebooted, or its background run failed | what it was working on |
 
+Once a session has a [recap](#recaps), the line under Your turn, Failed and Stopped is what the recap says you have to
+do. A Needs permission row keeps the tool: that is exact, and it is what you answer.
+
 Each state keeps one colour everywhere: orange for permission, the accent for your turn, red for failed and stopped,
 green for working. **Dismiss** takes a row out. Opening the session in the editor does the same for Needs permission,
 Your turn and Failed, which come back on that session's next event. A Stopped row stays until it is dismissed, the
@@ -120,12 +124,16 @@ ones whose title, prompt or branch has every word typed. The top bar also has **
 background**, **Open in VS Code** for the project's window, and **Edit**. The list follows the sessions as they change,
 with no refresh.
 
-**The panel.** A click on a row, in either list, opens that session in a panel on the right half of the window. It
-shows the state, the title, the project, the branch, where it runs, what you last said to it (the first 4,000
-characters) and what it has said since (the last 20,000). It has **Open in VS Code** and, for a session that needs you,
-**Dismiss**. While it is open it follows the arrow keys, and when its row leaves the list it moves to the row that took
-its place. `Esc` closes it. A double-click on a row opens the session in the editor. The panel reads the end of the
-transcript, at most 8MB back, and never the whole file.
+**The panel.** A click on a row, in either list, opens that session in a panel on the right half of the window. Its
+head has the state, the title, **Open in VS Code**, the project, the branch, where it runs, and the session's
+[recap](#recaps): Goal, Done, Now, Needs you. Under that is the conversation, opened at its end. A turn is what you
+typed, one line for the work (`12 steps · 3 files edited · 4m`) and the message the turn ended on. A compaction, an
+interrupt and an API error are a line each. The steps inside a turn, its thinking and its tools' output are not shown:
+those are in the editor. The panel gets the last 100 turns, with a prompt cut at 4,000 characters and a message at
+8,000 (20,000 for the last one), and says how many older turns there are. It reads the transcript again when the
+session's state changes, so a new turn shows when it starts and when it ends. A session that needs you has **Dismiss**
+at the end. While the panel is open it follows the arrow keys, and when its row leaves the list it moves to the row
+that took its place. `Esc` closes it. A double-click on a row opens the session in the editor.
 
 **New project** and **Edit project** are one form: name, goal, repos. Edit project also shows drift per repo and, when
 Grove could not write the project's files, why.
@@ -140,7 +148,51 @@ The **menu bar** item shows how many sessions need you across all projects. Its 
 hides it: the app stays in the menu bar until it is quit.
 
 What an agent wrote is not trusted. It is rendered as markdown without any HTML (a `<script>` shows as text), images
-show their description, and only `http(s)` links open - in your browser, never in the app.
+show their description, and only `http(s)` links open - in your browser, never in the app. A recap is plain text: it
+is never markdown and never a link.
+
+## Recaps
+
+You run many sessions and forget what each one was for. A recap is four short lines Grove keeps for a session:
+
+- **Goal** - what you wanted from it
+- **Done** - what the agent did
+- **Now** - where it stands: finished, blocked, waiting, stopped half way through what
+- **Needs you** - what you have to do or decide, or nothing
+
+It is written by the haiku model through your own `claude`, on your Claude login:
+
+```
+claude -p --model claude-haiku-4-5-20251001 --no-session-persistence --restricted --strict-mcp-config --permission-prompts none --tools ""
+```
+
+run from an empty temp folder with the prompt on stdin. Nothing is left on disk, no settings file is read (so Grove's
+own status hooks do not fire for it), no MCP server starts, and the call has no tool: it can only answer. At most two
+run at once, each for at most 30 seconds. A call takes 8 to 20 seconds.
+
+What it is written from is a digest of the session, about 12KB at most: the title, the first three and the last eight
+things you typed, Claude Code's own summary of the part it compacted away, the names of the files edited, the last
+turn's tool calls by name and target, the message the last turn ended on, and what Grove knows about where the session
+stands. A tool's output is never in it.
+
+When one is written:
+
+- when a session's turn ends, when it fails and when it stops mid-turn, so it is there when you look
+- when you open the panel on a session that has none, or whose conversation has moved on since
+- when you press **Write again** under it
+- never while a session is working. its recap is from before the turn, and the panel says so
+
+A recap is kept in `.grove/recaps.v1.json` with where the conversation ended when it was written, the newest 500. It
+is old when the conversation has moved, not when the file has grown: Claude Code appends bookkeeping to a transcript
+long after a turn is over. While a new one is being written the panel keeps the old lines and says so, and the row
+goes back to the end of the last message.
+
+**Write recaps with Claude** in Settings switches all of it off. With it off, with no `claude` to run, or when a call
+fails or answers anything but the four lines, there is no recap and the panel is the conversation alone. A failed call
+says nothing. It is made again when the conversation moves, when you open the panel a minute later, or on Write again.
+
+The digest is an agent's words, file names and commands, so it is not trusted, and neither is what comes back. The
+worst a session can do through it is get a wrong recap written about itself.
 
 ## Notifications
 
@@ -149,7 +201,9 @@ Grove notifies when:
 - a session asks for permission
 - a session stops on an API error
 - a session in a project goes away mid-turn. several within five seconds fold into one
-- a turn that ran for over a minute finishes. one session notifies for this at most once in two minutes
+- a turn that ran for over a minute finishes. one session notifies for this at most once in two minutes. it says
+  what the session's recap says you have to do when the recap is there within 15 seconds, else the start of the last
+  message. the other three are never held back
 
 Nothing notifies about what the focused window already shows: on the inbox that is every project, on a project's
 sessions that project. What stopped while Grove was closed shows in the inbox and does not notify.
@@ -226,10 +280,11 @@ edited. The workspace file and the references are written when the project is op
 ~/claude-ws/
   combos.json       the projects. source of truth. hand-editable. unknown keys and formatting are preserved
   reviewed.json     what you dismissed, as `<project>/<key>`. hand-editable, same treatment
-  settings.json     optional: editor, binary paths, appearance, notifications
+  settings.json     optional: editor, binary paths, appearance, notifications, recaps
   .grove/           cache and runtime - safe to delete
     events/         where session status hooks write
     interrupted.json  sessions whose process went away mid-turn, kept for a week
+    recaps.v1.json  the recaps, by transcript. deleting it has them written again
 ```
 
 What you dismissed is a decision, not a cache, so it sits beside `combos.json` and not in `.grove/`. Entries the app
@@ -313,9 +368,10 @@ What is gone from the app:
 
 0.10.17 has all of it, if you want it back.
 
-Coming from 0.5: nothing of the record was ever installed, so there is nothing to remove. The conversation pane, the
-agent inspector, token counts, the archive and **New session...** went in 0.10 and are still gone. A project's sessions
-are a screen again.
+Coming from 0.5: nothing of the record was ever installed, so there is nothing to remove. The agent inspector, token
+counts, the archive and **New session...** went in 0.10 and are still gone. A project's sessions are a screen again,
+and the conversation is back in the panel as turns, without the steps, the outline and the search it had. The
+one-line summaries of subagents are not back: the model is asked for a session's recap instead.
 
 ## Limits
 
@@ -327,9 +383,15 @@ What did not run, or does not work:
 
 - no test drives a real editor tab, and the double-click was only driven by Playwright's mouse
 - you cannot answer from Grove, and Grove cannot wake an agent. you answer in the agent's chat
-- the panel shows the last exchange, not the conversation
-- a session whose last prompt is more than 8MB from the end of its transcript shows only the first 500 characters of
-  that prompt
+- no test runs the real `claude`. the recap prompt was tried by hand on six real sessions (13 calls): a short one, a
+  60MB one compacted four times, one that ended on a question, one stopped mid-turn, one cut at a permission prompt and
+  one with background tasks after its last message. Goal and Done were right in all six. Needs you was exact for the
+  question and the permission prompt, and listed later work as well in the long ones
+- a recap is a model's reading of a digest, and it can be wrong. the conversation under it is the session's own words
+- the conversation has no steps, no thinking, no search, and at most the last 100 turns
+- a working session's panel shows a new turn when the turn starts and ends, and otherwise catches up twice a minute
+- the panel folds the whole transcript each time it reads it: 90ms for a 60MB one
+- the notification with a recap's line was only run in unit tests
 - a session started in a subfolder that has finished is not in its project's list, only in `⌘K`
 - two quick VS Code starts in one project leave one conversation
 - a project's colour is one of nine. past nine projects two share one, and deleting a project can change the colour
@@ -426,6 +488,10 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
   VS Code tab looks like. Open resumes it
 - **a session says Stopped after its tab was closed** - it was mid-turn when the tab went
 - **a session is missing from its project's list** - it was started in a subfolder and has finished. it is in `⌘K`
+- **a session has no recap** - it is working, the switch is off, `claude` was not found (set its path in Settings), you
+  are not logged in to Claude Code, or the call failed. a failed one is tried again a minute later
+- **a recap says something the session did not** - it is haiku's reading of a digest. Write again asks once more
+- **`claude -p` runs show up in Activity Monitor** - those are the recap calls, two at most
 - **a session is missing from `⌘K`** - Claude Code deletes transcripts after 30 days (`cleanupPeriodDays`). the VS Code
   panel also archives sessions after 14 days idle (`claudeCode.archiveInactiveSessions`). those still show here
 - **an agent says the grove tools are gone** - it was open across the upgrade from 0.10. restart it

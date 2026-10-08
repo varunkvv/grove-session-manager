@@ -8,8 +8,12 @@ New:
 - a sidebar of your projects, each with the count of its sessions that need you
 - one inbox over every project: Needs permission, Your turn, Failed, Stopped
 - a project's sessions as a screen, all of them, with a filter. the ones that need you first, then the ones working
-- a click on a row opens the session in a panel beside the list, with what you last said to it and what it has said
-  since. a double-click opens it in VS Code
+- a click on a row opens the session in a panel beside the list. a double-click opens it in VS Code
+- a recap at the top of the panel: Goal, Done, Now, Needs you. four lines on what the session was for and what it
+  needs from you, written by haiku through your own `claude` when a session's turn ends and when you open it. an inbox
+  row says what the recap says you have to do, and so does the notification for a long turn
+- under the recap, the whole conversation: what you typed, one line for the work, and the message each turn ended on
+- **Write recaps with Claude** in Settings switches recaps off. they use your Claude login and the haiku model
 - a notification and a menu bar row open the window on that session, with the panel open
 - a colour per project, and one colour per state everywhere
 
