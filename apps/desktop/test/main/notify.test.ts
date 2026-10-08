@@ -76,6 +76,18 @@ describe("the bodies", () => {
   });
 });
 
+describe("a finished turn with a recap", () => {
+  it("says what the recap says the person has to do, and a permission prompt never does", () => {
+    const { notifier: n, shown } = setup();
+    n.live(finished(120_000, "Done with the fix"), { ...S1, needs: "Pick the tenant." });
+    n.live(status({ state: "permission", detail: "Bash" }), { ...S1, needs: "Pick." });
+    expect(shown.map((s) => s.body)).toEqual([
+      "Finished after 2m: Pick the tenant.",
+      "Needs permission: Bash",
+    ]);
+  });
+});
+
 describe("one finished turn per session per two minutes", () => {
   it("a second turn that ends within two minutes says nothing", () => {
     const { notifier, shown } = setup();

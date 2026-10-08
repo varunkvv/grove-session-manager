@@ -254,6 +254,25 @@ describe("a session's recap", () => {
     expect(h.svc.view(row.key)).toEqual({ lines: { ...LINES, needs: "call 3" }, at: NOW });
   });
 
+  it("gives a notification its line when it is there in time, and nothing when it is not", async () => {
+    let wait = 0;
+    const h = harness({
+      reply: async () => {
+        await new Promise((r) => setTimeout(r, wait));
+        return { code: 0, stdout: REPLY, stderr: "" };
+      },
+    });
+    expect(await h.svc.soon(session(h.dir, "quick"), 200)).toBe("pick the tenant");
+    wait = 120;
+    const slow = session(h.dir, "slow");
+    expect(await h.svc.soon(slow, 20)).toBeUndefined();
+    // it is still written, for the row and the panel
+    await new Promise((r) => setTimeout(r, 200));
+    expect(h.svc.view(slow.key)?.lines).toEqual(LINES);
+    h.state.enabled = false;
+    expect(await h.svc.soon(session(h.dir, "off"), 5000)).toBeUndefined();
+  });
+
   it("keeps what it has when the transcript is gone", async () => {
     const h = harness();
     const row = session(h.dir, "s1");

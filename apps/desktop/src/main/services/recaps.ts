@@ -16,6 +16,7 @@ import {
   readConversation,
   readJsonGuarded,
   recapDigest,
+  recapLine,
   recapPrompt,
   writeFileAtomic,
 } from "@grove/core";
@@ -33,6 +34,8 @@ const CONCURRENCY = 2;
 const TIMEOUT_MS = 30_000;
 /** a call that failed is not made again for the same conversation sooner than this */
 const RETRY_MS = 60_000;
+/** how long a finished turn's notification waits for its recap */
+const SOON_MS = 15_000;
 const MODEL = "claude-haiku-4-5-20251001";
 
 /**
@@ -151,9 +154,11 @@ export class RecapService {
     const key = row.key;
     if (!this.o.enabled() || row.live?.state === "running") return;
     if (this.looking.has(key)) {
-      // the person's Write again outlasts whatever else was asked meanwhile
+      // looked at again once this look is through: the transcript may have moved under it. the
+      // person's Write again is kept, `moved` is not: that look finds a move by itself, and
+      // taking a recap that was just written to be old again would blink it off its row
       const again = how.again || this.redo.get(key)?.how.again;
-      return void this.redo.set(key, { row, how: { ...how, again } });
+      return void this.redo.set(key, { row, how: again ? { again } : {} });
     }
     this.looking.add(key);
     if (how.moved && this.kept.has(key) && !this.old.has(key)) {
@@ -192,6 +197,21 @@ export class RecapService {
       this.redo.delete(key);
       if (next) void this.want(next.row, next.how);
     }
+  }
+
+  /**
+   * a session just started needing the person: its recap's line for the notification, when it is
+   * there within `ms`. undefined when it is not, when recaps are off, and when the call failed
+   */
+  async soon(row: SessionRow, ms = SOON_MS): Promise<string | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<void>((done) => {
+      timer = setTimeout(done, ms);
+    });
+    await Promise.race([this.want(row, { moved: true }), late]);
+    clearTimeout(timer);
+    const v = this.view(row.key);
+    return v?.lines && !v.old && !v.writing ? recapLine(v.lines) : undefined;
   }
 
   private now(): number {

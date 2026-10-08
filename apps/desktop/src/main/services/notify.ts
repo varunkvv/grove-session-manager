@@ -25,9 +25,13 @@ export interface SessionNote {
   title?: string;
   /** the project it is in */
   project?: ProjectId;
+  /** what its recap says the person has to do: what a finished turn's notification says */
+  needs?: string;
   click: () => void;
 }
 
+/** a turn shorter than this is one the person is probably watching: its end says nothing */
+export const LONG_TURN_MS = 60_000;
 /** two finished turns from one session this close together notify once */
 const ONCE_MS = 120_000;
 /** stopped ones this close together fold into one: quitting the editor with several tabs mid-turn */
@@ -36,13 +40,15 @@ const FOLD_MS = 5_000;
 const KEEP = 50;
 
 /** only what is worth interrupting someone for. a short turn they are probably watching is not */
-function liveBody(s: LiveStatus): string | null {
+function liveBody(s: LiveStatus, needs?: string): string | null {
   if (s.state === "permission")
     return s.detail ? `Needs permission: ${s.detail}` : "Needs permission";
   if (s.state === "failed") return "Stopped on an API error";
-  if (s.state === "waiting" && (s.turnMs ?? 0) >= 60_000) {
+  if (s.state === "waiting" && (s.turnMs ?? 0) >= LONG_TURN_MS) {
     const after = `Finished after ${formatDuration(s.turnMs ?? 0)}`;
-    return s.detail ? `${after}: ${s.detail}` : after;
+    // what is asked of the person, when a recap says. else the start of the last message
+    const says = needs ?? s.detail;
+    return says ? `${after}: ${says}` : after;
   }
   return null;
 }
@@ -71,7 +77,7 @@ export class Notifier {
 
   /** permission, failed, and a turn over a minute finished */
   live(status: LiveStatus, s: SessionNote): void {
-    const body = liveBody(status);
+    const body = liveBody(status, s.needs);
     if (!body) return;
     const show = () => this.post(s.project, s.title ?? "Claude session", body, s.click);
     if (status.state === "waiting") this.once(s.sessionId, show);

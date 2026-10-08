@@ -24,7 +24,7 @@ import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
-import { Notifier } from "./services/notify.ts";
+import { LONG_TURN_MS, Notifier } from "./services/notify.ts";
 import { ProjectsService } from "./services/projects.ts";
 import { RecapService } from "./services/recaps.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
@@ -135,11 +135,22 @@ async function start(): Promise<void> {
     onNeedsYou: (sessionId, status) => {
       const row = sessions.byId(sessionId)[0];
       if (!row) return;
-      notifier.live(status, {
-        sessionId,
-        title: row.title,
-        project: projects.projectOf(sessionId),
-        click: () => landOn(sessionId),
+      const note = (needs?: string) =>
+        notifier.live(status, {
+          sessionId,
+          title: row.title,
+          project: projects.projectOf(sessionId),
+          needs,
+          click: () => landOn(sessionId),
+        });
+      // a permission prompt and a failure are told at once. so is a turn too short to notify of
+      if (status.state !== "waiting" || (status.turnMs ?? 0) < LONG_TURN_MS) return note();
+      // a long turn's end waits a moment for its recap: what is asked of the person says more
+      // than the start of the last message
+      void recaps.soon(row).then((needs) => {
+        const now = live.list().get(sessionId);
+        // looked at, or moved on, while it waited
+        if (now?.at === status.at && !now.seen) note(needs);
       });
     },
     onBackgroundMoved: () => void background.read(),
