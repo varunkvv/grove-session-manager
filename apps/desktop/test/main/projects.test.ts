@@ -6,7 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { Interruption } from "../../src/main/services/interrupted.ts";
 import { ProjectsService } from "../../src/main/services/projects.ts";
 import type { SearchHit } from "../../src/main/services/sessions.ts";
-import type { InboxView, SessionRow } from "../../src/shared/ipc.ts";
+import type { InboxView, RecapView, SessionRow } from "../../src/shared/ipc.ts";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "grove-projects-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -43,6 +43,9 @@ function setup() {
   const marks = new Set<string>();
   const seen: string[] = [];
   const hits: SearchHit[] = [];
+  /** what the recap service would say of a session, by its key, and every recap asked for */
+  const recaps = new Map<string, RecapView>();
+  const wanted: Array<[string, unknown]> = [];
   const got = {
     inbox: [] as InboxView[],
     sessions: 0,
@@ -87,6 +90,12 @@ function setup() {
         for (const k of keys) on ? marks.add(k) : marks.delete(k);
       },
     },
+    recaps: {
+      view: (key) => recaps.get(key),
+      want: async (r, how) => {
+        wanted.push([r.sessionId, how]);
+      },
+    },
     onInbox: (v) => got.inbox.push(v),
     onSessions: () => got.sessions++,
     onStopped: (s) => got.stopped.push(s),
@@ -123,6 +132,8 @@ function setup() {
     marks,
     seen,
     hits,
+    recaps,
+    wanted,
     got,
   };
 }
@@ -130,6 +141,85 @@ function setup() {
 const inChat = { comboName: "chat", comboRelation: "root" } as const;
 
 describe("the inbox", () => {
+  it("says what a session's recap says it needs, and asks for one when a row comes in", () => {
+    const t = setup();
+    t.project("chat");
+    const lines = { goal: "g", done: "d", state: "tests pass", needs: "pick the tenant" };
+    t.session("s-turn", { ...inChat, live: live("waiting", 5000, { question: "Which vault?" }) });
+    t.session("s-perm", {
+      ...inChat,
+      live: live("permission", 4000, { detail: "Bash", target: "pnpm test" }),
+    });
+    t.rows.push(
+      row("s-cut", { ...inChat, lastPrompt: "wire it", interrupted: { why: "gone", at: 3000 } }),
+    );
+    t.session("s-done", { ...inChat, live: live("waiting", 2000, { question: "All done." }) });
+    t.session("s-old", { ...inChat, live: live("waiting", 1000, { question: "Ship it?" }) });
+    t.recaps.set("/claude/projects/s-turn.jsonl", { lines, at: 1 });
+    t.recaps.set("/claude/projects/s-perm.jsonl", { lines, at: 1 });
+    t.recaps.set("/claude/projects/s-done.jsonl", {
+      lines: { ...lines, needs: "Nothing." },
+      at: 1,
+    });
+    t.recaps.set("/claude/projects/s-old.jsonl", { lines, at: 1, old: true, writing: true });
+
+    const rows = t.svc.inbox().rows;
+    expect(rows.map((r) => [r.sessionId, r.summary])).toEqual([
+      ["s-turn", "pick the tenant"],
+      // a permission prompt is answered from its row: the tool and what it would act on
+      ["s-perm", "Bash pnpm test"],
+      // no recap yet: what it was working on
+      ["s-cut", "wire it"],
+      // nothing to do: where it stands
+      ["s-done", "tests pass"],
+      // the conversation moved on since its recap: the end of its last message, as before
+      ["s-old", "Ship it?"],
+    ]);
+    // the panel draws the recap from the row, a permission row's too
+    expect(rows[1]?.recap).toEqual({ lines, at: 1 });
+    expect(rows[2]?.recap).toBeUndefined();
+    // what was in the inbox when grove started is looked at. permission rows wait for their panel
+    expect(t.wanted).toEqual([
+      ["s-turn", { moved: false }],
+      ["s-cut", { moved: false }],
+      ["s-done", { moved: false }],
+      ["s-old", { moved: false }],
+    ]);
+
+    // the same rows again ask for nothing. a new turn's end does, as a session that moved
+    t.wanted.length = 0;
+    t.svc.sessionsChanged();
+    t.svc.inbox();
+    expect(t.wanted).toEqual([]);
+    t.rows[0] = { ...t.rows[0]!, live: live("waiting", 6000, { question: "And now?" }) };
+    t.session("s-new", { ...inChat, live: live("failed", 7000) });
+    t.svc.sessionsChanged();
+    t.svc.inbox();
+    expect(t.wanted).toEqual([
+      ["s-new", { moved: true }],
+      ["s-turn", { moved: true }],
+    ]);
+
+    // switched on or off: every row is looked at again
+    t.wanted.length = 0;
+    t.svc.recapsSwitched();
+    t.svc.inbox();
+    expect(t.wanted.map(([id]) => id)).toEqual(["s-new", "s-turn", "s-cut", "s-done", "s-old"]);
+  });
+
+  it("tells the sessions lists when a recap arrives", () => {
+    const t = setup();
+    t.project("chat");
+    t.session("s-quiet", { ...inChat });
+    t.svc.inbox();
+    const before = t.got.sessions;
+    t.recaps.set("/claude/projects/s-quiet.jsonl", { writing: true });
+    t.svc.sessionsChanged();
+    t.svc.inbox();
+    expect(t.got.sessions).toBe(before + 1);
+    expect(t.svc.projectSessions("chat")[0]?.recap).toEqual({ writing: true });
+  });
+
   it("is every project's sessions that need the person, newest first", () => {
     const t = setup();
     t.project("chat");

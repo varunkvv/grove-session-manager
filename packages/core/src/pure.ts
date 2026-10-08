@@ -6,6 +6,7 @@ export * from "./project/ids.ts";
 export * from "./project/inbox.ts";
 export * from "./sessions/conversation.ts";
 export * from "./sessions/needsYou.ts";
+export * from "./sessions/recap.ts";
 export * from "./sessions/resume.ts";
 export * from "./sessions/search.ts";
 export * from "./sessions/timeline.ts";

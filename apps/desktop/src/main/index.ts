@@ -26,6 +26,7 @@ import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier } from "./services/notify.ts";
 import { ProjectsService } from "./services/projects.ts";
+import { RecapService } from "./services/recaps.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
 import { ReviewedService } from "./services/reviewed.ts";
@@ -167,6 +168,17 @@ async function start(): Promise<void> {
     },
   });
 
+  const recaps = new RecapService({
+    stateDir: appEnv.stateDir,
+    claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
+    env: () => loginEnv.get(),
+    // a test root never runs the real claude, only a stub it names
+    enabled: () =>
+      settings.recaps !== false && (!appEnv.customRoot || appEnv.claudeBinOverride !== undefined),
+    // a recap reaches the page with its session's row
+    onChange: () => projects.sessionsChanged(),
+  });
+
   // packaged, or under GROVE_ROOT. a dev build next to the installed app leaves its projects, and
   // what 0.10 installed in them, alone
   const cleanRecord = electron.app.isPackaged || appEnv.customRoot;
@@ -232,6 +244,7 @@ async function start(): Promise<void> {
     sessions,
     live,
     reviewed,
+    recaps,
     onInbox: (inbox) => {
       pusher.send("inbox:changed", { ...inbox, rev: pusher.nextRev("inbox") });
       showInbox(inbox);
@@ -275,6 +288,7 @@ async function start(): Promise<void> {
   }
   // what was dismissed under 0.10 is filed under each project's card prefix: it moves to its id
   await reviewed.load(cleanRecord ? await recordPrefixes(combos.list()) : undefined);
+  await recaps.load();
   await sessions.loadCached(combos.list());
 
   const handlers = registerIpc({
@@ -292,13 +306,16 @@ async function start(): Promise<void> {
       }
       // File > Open Project in {editor} names it
       if (s.editor !== settings.editor) menu(resolveEditor(s).label);
+      const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       settings = s;
+      if (recapsMoved) projects.recapsSwitched();
       electron.nativeTheme.themeSource = s.appearance;
     },
     sessions,
     live,
     combos,
     projects,
+    recaps,
     background,
     reveals,
     notifier,

@@ -12,6 +12,7 @@ import type {
   LongWorkMode,
   ModelUsage,
   ProjectId,
+  Recap,
   Runtime,
   SessionAgent,
   TeardownOutcome,
@@ -141,6 +142,8 @@ export interface AppSettings {
   trackAllSessions?: boolean;
   /** a macOS notification when a session starts needing you. on unless switched off. */
   notifications?: boolean;
+  /** a recap of a session, written by haiku through the person's own claude. on unless switched off. */
+  recaps?: boolean;
 }
 
 export interface EnvInfo {
@@ -179,6 +182,21 @@ export interface ProjectView {
   syncProblem?: string;
 }
 
+/**
+ * a session's recap, as a row and the panel draw it. a model wrote the lines from the session's
+ * own words: they are plain text, never markdown and never a link
+ */
+export interface RecapView {
+  /** absent until one is written */
+  lines?: Recap;
+  /** when they were written */
+  at?: number;
+  /** the conversation has moved on since */
+  old?: boolean;
+  /** one is being written now */
+  writing?: boolean;
+}
+
 /** a session as every list names it, and what opening it takes */
 export interface SessionRef {
   key: SessionKey;
@@ -191,6 +209,8 @@ export interface SessionRef {
   runtime: Runtime;
   branch?: string;
   open: OpenPlan;
+  /** absent while recaps are off, and until one was asked for */
+  recap?: RecapView;
 }
 
 /** one session in a project's list, or found from the palette */
@@ -209,6 +229,7 @@ export interface InboxRowView extends SessionRef {
   project: ProjectId;
   kind: InboxKind;
   at: number;
+  /** what the recap says the person has to do, once there is one. a permission row keeps its tool */
   summary: string;
   /** what Dismiss sends to `review` */
   reviewKeys: string[];
@@ -309,6 +330,8 @@ export interface Api {
   projectSessions(project: ProjectId): Promise<SessionHit[]>;
   /** a bounded read of the transcript's end, now. null for a session grove does not list */
   sessionTail(key: SessionKey): Promise<SessionTail | null>;
+  /** Write again: a new recap whatever is kept. it arrives with the session's row */
+  writeRecap(key: SessionKey): Promise<void>;
 
   /** a landing the page has not taken yet. taken once. */
   takeLanding(): Promise<Landing | null>;
@@ -358,6 +381,7 @@ export const INVOKE_CHANNELS = [
   "findSessions",
   "projectSessions",
   "sessionTail",
+  "writeRecap",
   "takeLanding",
   "setVisibleProject",
   "validateProjectName",

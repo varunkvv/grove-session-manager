@@ -52,14 +52,15 @@ export interface ClaudeRun {
 export type RunClaude = (
   bin: string,
   args: readonly string[],
-  o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+  /** `input` is written to its stdin: a prompt for `claude -p` */
+  o: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; input?: string },
 ) => Promise<ClaudeRun>;
 
 /** argv, never a shell: a prompt is typed text. never rejects - a failure is a value. */
 export const runClaude: RunClaude = (bin, args, o) =>
   new Promise((resolve) => {
     try {
-      execFile(
+      const child = execFile(
         bin,
         [...args],
         { cwd: o.cwd, env: o.env, timeout: o.timeoutMs, maxBuffer: 4 << 20, encoding: "utf8" },
@@ -72,6 +73,11 @@ export const runClaude: RunClaude = (bin, args, o) =>
           });
         },
       );
+      if (o.input !== undefined) {
+        // a claude that is not there, or exits without reading, closes the pipe under the write
+        child.stdin?.on("error", () => {});
+        child.stdin?.end(o.input);
+      }
     } catch (e) {
       resolve({ code: null, stdout: "", stderr: String(e) });
     }

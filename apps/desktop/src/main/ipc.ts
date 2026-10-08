@@ -39,6 +39,7 @@ import type { LiveService } from "./services/live.ts";
 import { backgroundArgs, NEW_CONVERSATION_COMPANION } from "./services/newSession.ts";
 import type { Notifier } from "./services/notify.ts";
 import type { ProjectsService } from "./services/projects.ts";
+import type { RecapService } from "./services/recaps.ts";
 import {
   claudeScriptBody,
   isResumeScriptName,
@@ -61,6 +62,7 @@ export interface Deps {
   live: LiveService;
   combos: ComboService;
   projects: ProjectsService;
+  recaps: RecapService;
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
   /** where a notification click or a tray row is taking the page */
@@ -367,9 +369,16 @@ function buildHandlers(deps: Deps): Handlers {
       // only a transcript grove indexed is ever read: the key is a path, and the page sent it
       const row = typeof key === "string" ? sessions.get(key) : undefined;
       if (!row) return null;
+      // its panel opened: a recap is written when there is none for where it stands now
+      void deps.recaps.want(row);
       const tail = sessionTail(row.key);
       // past the reader's reach: the start of the turn's first prompt, from the index
       return { ...tail, prompt: tail.prompt ?? row.lastPrompt };
+    },
+
+    async writeRecap(key) {
+      const row = typeof key === "string" ? sessions.get(key) : undefined;
+      if (row) void deps.recaps.want(row, { again: true });
     },
 
     async takeLanding() {

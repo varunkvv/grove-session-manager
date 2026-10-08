@@ -9,6 +9,7 @@ import {
   type ProjectId,
   projectIdOf,
   type Runtime,
+  recapLine,
   runtimeOf,
   snippetAround,
   squash,
@@ -29,6 +30,7 @@ import type { ComboService } from "./combos.ts";
 import type { Interruption } from "./interrupted.ts";
 import type { LiveService } from "./live.ts";
 import { openPlanOf } from "./openPlan.ts";
+import type { RecapService } from "./recaps.ts";
 import type { SessionService } from "./sessions.ts";
 
 /** the person's dismissals: `<project id>/<key>` in reviewed.json (ReviewedService) */
@@ -43,6 +45,8 @@ export interface ProjectsOptions {
   sessions: Pick<SessionService, "list" | "get" | "search">;
   live: Pick<LiveService, "interruptions" | "holder" | "isAlive" | "markSeen">;
   reviewed: ReviewMarks;
+  /** each session's recap, and where to ask for one */
+  recaps?: Pick<RecapService, "view" | "want">;
   /** a row came, went or changed */
   onInbox?: (inbox: InboxView) => void;
   /** what a project's sessions list shows may have changed: the page asks again */
@@ -90,6 +94,8 @@ export class ProjectsService {
   private sessionsJson = "";
   /** interrupted session ids. undefined until start() takes the baseline */
   private stopped?: Set<string>;
+  /** the inbox rows of the last compute, as `id:kind:at`. undefined until the first one */
+  private entered?: Set<string>;
 
   constructor(o: ProjectsOptions) {
     this.o = o;
@@ -106,6 +112,12 @@ export class ProjectsService {
 
   /** a session's row, its status or where it runs moved */
   sessionsChanged(): void {
+    this.schedule();
+  }
+
+  /** recaps were switched on or off: every row is looked at again */
+  recapsSwitched(): void {
+    this.entered = undefined;
     this.schedule();
   }
 
@@ -275,19 +287,33 @@ export class ProjectsService {
       if (!sessions) continue;
       built.push(...buildInbox({ project: p.id, sessions, reviewed: this.o.reviewed.keys(p.id) }));
     }
+    const before = this.entered;
+    const entered = new Set<string>();
     const inbox: InboxView = {
-      rows: built.sort(inboxOrder).map(
-        (r): InboxRowView => ({
-          // a row is only ever built from an indexed session
-          ...this.ref(index.rows.get(r.id)!, index),
+      rows: built.sort(inboxOrder).map((r): InboxRowView => {
+        // a row is only ever built from an indexed session
+        const row = index.rows.get(r.id)!;
+        // a permission prompt is answered from its row, which says the tool and what it would act
+        // on, and a turn raises many of them: its recap waits for its panel to open
+        const told = r.kind !== "permission";
+        const entry = `${r.id}:${r.kind}:${r.at}`;
+        entered.add(entry);
+        // it just started needing the person: a recap is written, so it is there when they look.
+        // what was already in the inbox when grove started is only looked at
+        if (told && !before?.has(entry)) void this.o.recaps?.want(row, { moved: !!before });
+        const ref = this.ref(row, index);
+        const recap = told && !ref.recap?.old ? ref.recap?.lines : undefined;
+        return {
+          ...ref,
           project: r.project,
           kind: r.kind,
           at: r.at,
-          summary: r.summary,
+          summary: recap ? recapLine(recap) : r.summary,
           reviewKeys: r.reviewKeys,
-        }),
-      ),
+        };
+      }),
     };
+    this.entered = entered;
     const json = JSON.stringify(inbox);
     if (json !== this.inboxJson) {
       this.inboxJson = json;
@@ -361,6 +387,7 @@ export class ProjectsService {
       runtime,
       branch: row.gitBranch,
       open: openPlanOf(runtime, row),
+      recap: this.o.recaps?.view(row.key),
     };
   }
 
