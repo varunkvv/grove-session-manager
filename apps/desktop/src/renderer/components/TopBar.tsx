@@ -36,17 +36,19 @@ export function TopBar() {
             id="search"
             aria-label={`Filter the sessions in ${project.name}`}
             spellCheck={false}
-            // a field like the forms', a row lower. it takes what room is left, up to 220, so the
-            // project's name is only cut once the field is at its smallest
-            className="no-drag ml-2 h-7 max-w-[220px] min-w-[96px] flex-1 rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4"
-            placeholder="Filter sessions"
+            // a field like the forms', a row lower. it takes the room that is left, up to 220, so
+            // the project's name is only cut once the field is at its smallest: in the narrowest
+            // window that is a name past 16 letters. its placeholder is one word, to be whole there
+            className="no-drag ml-2 h-7 max-w-[220px] min-w-[64px] flex-1 rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4"
+            placeholder="Filter"
             data-testid="session-filter"
             value={filter}
             onChange={(e) => set({ filter: e.target.value })}
           />
         </>
       )}
-      <span className="flex-1" />
+      {/* an auto margin, not a growing spacer: it gets what the filter leaves, never half of it */}
+      <span className="ml-auto" />
       {project && (
         <>
           {(["editor", "background"] as const).map((where) => {
