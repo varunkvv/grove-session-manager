@@ -128,10 +128,9 @@ describe("the interrupted fact survives a restart", () => {
       return { live, seen: () => seen };
     };
     const file = () => JSON.parse(readFileSync(path.join(stateDir, INTERRUPTED_FILE), "utf8"));
-    /** dispose writes what it holds without waiting on it, as quitting does */
+    /** dispose has written what it holds when it returns: quitting waits for nothing */
     const stop = async (live: LiveService) => {
       live.dispose();
-      await new Promise((r) => setTimeout(r, 100));
     };
     return { event, register, registryDir, start, file, stop };
   }

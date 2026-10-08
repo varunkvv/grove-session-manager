@@ -1,4 +1,4 @@
-import { existsSync, type FSWatcher, watch } from "node:fs";
+import { existsSync, type FSWatcher, mkdirSync, renameSync, watch, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -413,8 +413,22 @@ export class LiveService {
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
-      void writeFileAtomic(this.stateFile, this.persistable()).catch(() => {});
-      void this.persistInterrupted();
+      // the app is quitting: a write that is only started is lost when the process goes, and the
+      // inbox comes back without what changed in its last second
+      writeNow(this.stateFile, this.persistable());
+      writeNow(this.interruptedFile, JSON.stringify(Object.fromEntries(this.interrupted)));
     }
+  }
+}
+
+/** writeFileAtomic without the waiting, for the one caller that has no later */
+function writeNow(file: string, data: string): void {
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, data, "utf8");
+    renameSync(tmp, file);
+  } catch (e) {
+    log.warn("status write on quit:", e);
   }
 }
