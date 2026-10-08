@@ -6,6 +6,7 @@ import {
   projectHues,
   sessionOrder,
   startBlocked,
+  workLine,
 } from "../../src/renderer/logic/views.ts";
 import type { InboxRowView, InboxView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
 
@@ -169,5 +170,20 @@ describe("startBlocked", () => {
   });
   it("none", () => {
     expect(startBlocked(project({}))).toBeNull();
+  });
+});
+
+describe("a turn's work, in one line", () => {
+  const work = (o: Partial<Parameters<typeof workLine>[0]>) =>
+    workLine({ tools: 0, files: 0, agents: 0, ...o });
+  it("counts the steps, the files edited and the agents, then says how long", () => {
+    expect(work({ tools: 12, files: 3, ms: 240_000 })).toBe("12 steps · 3 files edited · 4m");
+    expect(work({ tools: 1, files: 1, agents: 1, ms: 45_000 })).toBe(
+      "1 step · 1 file edited · 1 agent · 45s",
+    );
+    expect(work({ tools: 48, agents: 2 })).toBe("48 steps · 2 agents");
+  });
+  it("says nothing of a turn that only talked", () => {
+    expect(work({ ms: 9000 })).toBe("");
   });
 });

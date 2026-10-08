@@ -1,13 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import type {
-  InboxRowView,
-  ProjectId,
-  RecapView,
-  SessionRef,
-  SessionTail,
-} from "../../shared/ipc.ts";
+import type { ConversationView, TurnView } from "@grove/core/pure";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { InboxRowView, ProjectId, RecapView, SessionRef } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
-import type { SessionState } from "../logic/views.ts";
+import { type SessionState, workLine } from "../logic/views.ts";
 import { openWith, review } from "../state/actions.ts";
 import { type Section, useStore } from "../state/store.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -98,9 +93,68 @@ function Recap({
   );
 }
 
+/** one line of what happened, where there is nothing to read: a compaction, an interrupt */
+const QUIET = "text-sm text-fg-4";
+
 /**
- * a session, beside the list its row is in: a recap of what it was for and what it needs, then
- * what the person last said to it and what it has said since. both lists open this one panel
+ * one turn: what the person typed, the work in one line, and the message it ended on. the steps
+ * inside the work are in the editor. the message is an agent's and goes through Markdown, what
+ * the person typed is plain text
+ */
+function Turn({ turn, last, working }: { turn: TurnView; last: boolean; working: boolean }) {
+  const p = turn.prompt;
+  const typed =
+    "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
+  // the turn it is in now has no end yet, so no length either
+  const going = last && working;
+  const work = workLine(going ? { ...turn, ms: undefined } : turn);
+  // the last turn always says what the agent said, even when that is nothing yet
+  const talks = !!turn.text || !!work || (last && p?.kind !== "command");
+  return (
+    <section className="mt-6 first:mt-0" data-testid="turn">
+      {p?.kind === "human" ? (
+        <>
+          <h3 className="text-sm font-medium text-fg-4">You</h3>
+          {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near */}
+          <p className={typed} data-testid={last ? "panel-prompt" : undefined}>
+            {p.text}
+          </p>
+        </>
+      ) : (
+        // a slash command, or Claude Code saying a background task finished: nobody typed a prompt
+        p && <p className={`${QUIET} break-words`}>{p.text}</p>
+      )}
+      {turn.said?.map((said) => (
+        <div key={said} className="mt-3">
+          <h3 className="text-sm font-medium text-fg-4">You, while it worked</h3>
+          <p className={typed}>{said}</p>
+        </div>
+      ))}
+      {talks && (
+        <>
+          <h3 className="mt-3 text-sm font-medium text-fg-4" data-testid="turn-work">
+            Claude
+            <span className="font-normal">
+              {work ? ` · ${work}${going ? " so far" : ""}` : going ? " · working" : ""}
+            </span>
+          </h3>
+          <div className="mt-1" data-testid={last ? "panel-text" : undefined}>
+            {turn.text ? (
+              <Markdown text={turn.text} className={last ? "md-full" : undefined} />
+            ) : (
+              last && <p className="text-fg-4">Nothing said yet.</p>
+            )}
+          </div>
+        </>
+      )}
+      {turn.note && <p className={`${QUIET} mt-2 break-words`}>{turn.note}</p>}
+    </section>
+  );
+}
+
+/**
+ * a session, beside the list its row is in: a recap of what it was for and what it needs, and
+ * under it the conversation, opened at its end. both lists open this one panel
  */
 export function SessionPanel({
   session,
@@ -120,20 +174,30 @@ export function SessionPanel({
   onClose: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
-  /** null: main had nothing. undefined: it has not answered */
-  const [tail, setTail] = useState<SessionTail | null>();
+  /** null: the transcript is gone. undefined: main has not answered */
+  const [talk, setTalk] = useState<ConversationView | null>();
+  const scroller = useRef<HTMLDivElement>(null);
+  /** the conversation is at its end, which is where it opens: a new turn keeps it there */
+  const atEnd = useRef(true);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: read again when the session moves on, which its state and its time say
   useEffect(() => {
     let stale = false;
-    const got = (t: SessionTail | null) => {
-      if (!stale) setTail(t);
+    const got = (t: ConversationView | null) => {
+      if (!stale) setTalk(t);
     };
-    void window.grove.sessionTail(session.key).then(got, () => got(null));
+    void window.grove.sessionConversation(session.key).then(got, () => got(null));
     return () => {
       stale = true;
     };
   }, [session.key, state, at]);
+
+  // the recap arriving makes the room under it smaller: the end stays in sight through that too
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these are when to scroll, not what is read
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && atEnd.current) el.scrollTop = el.scrollHeight;
+  }, [talk, session.recap]);
 
   return (
     <div
@@ -186,30 +250,40 @@ export function SessionPanel({
           />
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line px-4 pt-4 pb-6 @md:px-6 @xl:px-10">
-        {tail?.prompt && (
-          <section>
-            <h3 className="text-sm font-medium text-fg-4">You</h3>
-            {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near */}
-            <p
-              className="selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2"
-              data-testid="panel-prompt"
-            >
-              {tail.prompt}
-            </p>
-          </section>
+      <div
+        ref={scroller}
+        className="min-h-0 flex-1 overflow-y-auto border-t border-line px-4 pt-4 pb-6 @md:px-6 @xl:px-10"
+        data-testid="conversation"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
+      >
+        {talk === null && (
+          <p className={QUIET} data-testid="panel-gone">
+            This session's transcript is gone. Claude Code deletes one after 30 days.
+          </p>
         )}
-        {tail !== undefined && (
-          <section className="mt-6 first:mt-0">
-            <h3 className="text-sm font-medium text-fg-4">Claude</h3>
-            <div className="mt-1" data-testid="panel-text">
-              {tail?.text ? (
-                <Markdown text={tail.text} className="md-full" />
-              ) : (
-                <p className="text-fg-4">Nothing said since.</p>
-              )}
-            </div>
-          </section>
+        {!!talk?.older && (
+          <p className={`${QUIET} mb-6`} data-testid="turns-older">
+            {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {editor}.
+          </p>
+        )}
+        {talk?.items.map((item, i) =>
+          item.kind === "compact" ? (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+            <p key={talk.older + i} className={`${QUIET} mt-6`} data-testid="turn-compact">
+              Compacted: what came before was summarised.
+            </p>
+          ) : (
+            <Turn
+              // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+              key={talk.older + i}
+              turn={item}
+              last={i === talk.items.length - 1}
+              working={state === "working"}
+            />
+          ),
         )}
         {row && (
           <Button

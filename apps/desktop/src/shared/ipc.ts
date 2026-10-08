@@ -3,6 +3,7 @@
 import type {
   BranchSpec,
   ComboRelation,
+  ConversationView,
   FolderMode,
   FolderOutcome,
   FolderState,
@@ -240,14 +241,6 @@ export interface InboxView {
   rows: InboxRowView[];
 }
 
-/** the end of a session's transcript, read when its panel opens. both are untrusted text */
-export interface SessionTail {
-  /** the newest thing the person typed, cut at 4,000 characters */
-  prompt?: string;
-  /** what the agent said last, after that. markdown, the last 20,000 characters */
-  text?: string;
-}
-
 /** what Open in {editor} needs to know before it is pressed. one label for every case */
 export interface OpenPlan {
   /** asked first: stopping a background agent that is working */
@@ -328,8 +321,11 @@ export interface Api {
   findSessions(query: string): Promise<SessionHit[]>;
   /** every session a project lists, newest first. asked again on `sessions:changed` */
   projectSessions(project: ProjectId): Promise<SessionHit[]>;
-  /** a bounded read of the transcript's end, now. null for a session grove does not list */
-  sessionTail(key: SessionKey): Promise<SessionTail | null>;
+  /**
+   * a session's turns, read from its transcript now: the last 100, each text cut. everything in
+   * it is untrusted. null when Claude Code has deleted the transcript, or grove does not list it
+   */
+  sessionConversation(key: SessionKey): Promise<ConversationView | null>;
   /** Write again: a new recap whatever is kept. it arrives with the session's row */
   writeRecap(key: SessionKey): Promise<void>;
 
@@ -380,7 +376,7 @@ export const INVOKE_CHANNELS = [
   "startAgent",
   "findSessions",
   "projectSessions",
-  "sessionTail",
+  "sessionConversation",
   "writeRecap",
   "takeLanding",
   "setVisibleProject",

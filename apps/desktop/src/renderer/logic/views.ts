@@ -1,6 +1,12 @@
 // what the screens compute from main's views. pure: every fact here was derived in main, this is
 // only filtering, order and words.
-import { dayBucket, type InboxKind, tokenize } from "@grove/core/pure";
+import {
+  dayBucket,
+  formatDuration,
+  type InboxKind,
+  type TurnView,
+  tokenize,
+} from "@grove/core/pure";
 import type {
   InboxRowView,
   InboxView,
@@ -140,4 +146,16 @@ export function startBlocked(
   if (!project.goal)
     return { case: "goal", line: "Add a goal so agents know what to work toward." };
   return null;
+}
+
+const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** `12 steps · 3 files edited · 4m`: a turn's work in one line. nothing for a turn that only talked */
+export function workLine(t: Pick<TurnView, "tools" | "files" | "agents" | "ms">): string {
+  if (!t.tools) return "";
+  const parts = [count(t.tools, "step")];
+  if (t.files) parts.push(`${count(t.files, "file")} edited`);
+  if (t.agents) parts.push(count(t.agents, "agent"));
+  if (t.ms !== undefined && t.ms >= 1000) parts.push(formatDuration(t.ms));
+  return parts.join(" · ");
 }

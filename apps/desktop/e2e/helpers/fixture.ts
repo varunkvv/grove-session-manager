@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
@@ -182,6 +183,110 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
   const when = new Date(at);
   utimesSync(file, when, when);
   return file;
+}
+
+export interface TurnSpec {
+  /** what the person typed */
+  prompt: string;
+  /** the tool calls of the work, each with a result */
+  tools?: Array<{ name: string; input: Record<string, unknown> }>;
+  /** the message it ended on. absent while the turn is under way */
+  reply?: string;
+  /** how long ago it started, and how long it took. now and 30s unless given */
+  ageMs?: number;
+  tookMs?: number;
+}
+
+let turns = 0;
+/**
+ * appends lines to a transcript the way a later turn does. `turn` writes a prompt, its tool calls
+ * and the message it ended on, `reply` only the closing message of a turn that was under way
+ */
+export function appendTurn(file: string, o: { sessionId: string; cwd: string }, t: TurnSpec): void;
+export function appendTurn(
+  file: string,
+  o: { sessionId: string; cwd: string },
+  t: { reply: string },
+): void;
+export function appendTurn(
+  file: string,
+  o: { sessionId: string; cwd: string },
+  t: Partial<TurnSpec>,
+): void {
+  const n = ++turns;
+  const start = Date.now() - (t.ageMs ?? 0);
+  const took = t.tookMs ?? 30_000;
+  const steps = t.tools ?? [];
+  // the calls spread over the turn, the message at its end
+  const at = (i: number) => new Date(start + (took * i) / (steps.length + 1)).toISOString();
+  const envelope = {
+    isSidechain: false,
+    userType: "external",
+    entrypoint: "claude-vscode",
+    cwd: o.cwd,
+    sessionId: o.sessionId,
+    version: "2.1.278",
+  };
+  const id = (kind: string, i = 0) =>
+    `${o.sessionId.slice(0, 8)}-${String(n).padStart(4, "0")}-4000-8000-${kind}${String(i).padStart(11 - kind.length, "0")}`;
+  const lines: object[] = [];
+  if (t.prompt !== undefined) {
+    lines.push({
+      type: "user",
+      ...envelope,
+      uuid: id("a"),
+      timestamp: at(0),
+      origin: { kind: "human" },
+      message: { role: "user", content: [{ type: "text", text: t.prompt }] },
+    });
+  }
+  steps.forEach((tool, i) => {
+    const toolId = `toolu_${n}_${i}`;
+    lines.push(
+      {
+        type: "assistant",
+        ...envelope,
+        uuid: id("b", i),
+        timestamp: at(i + 1),
+        message: {
+          role: "assistant",
+          id: `msg_${n}_${i}`,
+          model: "claude-opus-5",
+          content: [{ type: "tool_use", id: toolId, name: tool.name, input: tool.input }],
+        },
+      },
+      {
+        type: "user",
+        ...envelope,
+        uuid: id("c", i),
+        timestamp: at(i + 1),
+        toolUseResult: { stdout: "ok" },
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: toolId, content: "ok" }],
+        },
+      },
+    );
+  });
+  if (t.reply !== undefined) {
+    lines.push({
+      type: "assistant",
+      ...envelope,
+      uuid: id("d"),
+      timestamp: at(steps.length + 1),
+      message: {
+        role: "assistant",
+        id: `msg_${n}_end`,
+        model: "claude-opus-5",
+        content: [{ type: "text", text: t.reply }],
+      },
+    });
+  }
+  appendFileSync(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  if (t.ageMs !== undefined) {
+    const when = new Date(start + took);
+    utimesSync(file, when, when);
+  }
 }
 
 export type AgentStepSpec =

@@ -6,7 +6,9 @@ import {
   ConversationFold,
   type ConversationItem,
   type ConversationState,
+  conversationView,
   type Turn,
+  type TurnView,
   turnNumbers,
 } from "../../src/sessions/conversation.ts";
 import { readConversation } from "../../src/sessions/conversationFile.ts";
@@ -499,5 +501,159 @@ describe("what the real stretch does not have", () => {
       kind: "compact",
       summary: expect.stringContaining("reading files"),
     });
+  });
+});
+
+describe("the conversation as the page gets it", () => {
+  const view = async (lines: object[]) =>
+    conversationView(await readConversation(sandboxFile(jsonl(lines))));
+  const turnsOf = (v: { items: Array<TurnView | { kind: "compact" }> }) =>
+    v.items.filter((i): i is TurnView => i.kind === "turn");
+
+  it("is every turn of a real session without the steps inside it", async () => {
+    const v = conversationView(await readConversation(FIXTURE));
+    expect(v.older).toBe(0);
+    expect(v.items.filter((i) => i.kind === "compact")).toHaveLength(3);
+    const t = turnsOf(v);
+    expect(t).toHaveLength(30);
+    expect(t.filter((x) => x.prompt?.kind === "human").length).toBeGreaterThan(10);
+    expect(t.filter((x) => x.text).length).toBeGreaterThan(20);
+    // no step, no thinking, no tool's name or output: the numbers of the work and nothing else
+    for (const x of t) {
+      expect(Object.keys(x).every((k) => TURN_KEYS.includes(k))).toBe(true);
+    }
+  });
+  const TURN_KEYS = [
+    "kind",
+    "prompt",
+    "said",
+    "tools",
+    "files",
+    "agents",
+    "ms",
+    "text",
+    "open",
+    "note",
+  ];
+
+  it("says who started a turn, the work in numbers, and the message it ended on", async () => {
+    const v = await view([
+      prompt("fix the parser", 0),
+      says("m1", thinking("the loop allocates"), 1),
+      says("m1", text("Looking at the parser."), 1),
+      says("m2", call("t1", "Edit", { file_path: "/work/api/parse.ts" }), 2),
+      result("t1", "THE TOOL OUTPUT", 3),
+      queued("and the tests too", 4),
+      says("m3", call("t2", "Edit", { file_path: "/work/api/parse.ts" }), 5),
+      result("t2", "ok", 6),
+      says("m4", call("t3", "Agent", { description: "run the suite" }), 7),
+      result("t3", "40 passed", 8),
+      says("m5", text("Fixed, and all 40 pass."), 9),
+      turnDuration(240_000, 9),
+      command("model", "opus", 20),
+      stdout("Set model to opus", 20),
+      taskNotification("Background command pnpm build completed", 30),
+      says("m6", text("The build is green."), 31),
+    ]);
+    expect(v).toEqual({
+      older: 0,
+      items: [
+        {
+          kind: "turn",
+          prompt: { kind: "human", text: "fix the parser" },
+          said: ["and the tests too"],
+          tools: 3,
+          files: 1,
+          agents: 1,
+          ms: 240_000,
+          text: "Fixed, and all 40 pass.",
+        },
+        {
+          kind: "turn",
+          prompt: { kind: "command", text: "/model opus" },
+          tools: 0,
+          files: 0,
+          agents: 0,
+          ms: 0,
+        },
+        {
+          kind: "turn",
+          prompt: { kind: "task", text: "Background command pnpm build completed" },
+          tools: 0,
+          files: 0,
+          agents: 0,
+          ms: 1000,
+          text: "The build is green.",
+        },
+      ],
+    });
+    expect(JSON.stringify(v)).not.toContain("THE TOOL OUTPUT");
+    expect(JSON.stringify(v)).not.toContain("the loop allocates");
+  });
+
+  it("marks a compaction, an interrupt and an api error, and what the last turn said so far", async () => {
+    const v = await view([
+      prompt("refactor it", 0),
+      userLine([text("[Request interrupted by user]")], 1),
+      prompt("go on", 5),
+      says("m1", text("Starting."), 6),
+      apiErrorMessage(7),
+      prompt("again", 10),
+      says("m2", call("t1", "Read", { file_path: "/work/api/a.ts" }), 11),
+      compactBoundary(12),
+      compactSummary("Summary: reading files.", 12),
+      result("t1", "x", 13),
+      says("m3", text("Reading the second file now."), 14),
+      says("m3", call("t2", "Read", { file_path: "/work/api/b.ts" }), 15),
+    ]);
+    expect(
+      v.items.map((i) => (i.kind === "turn" ? [i.prompt?.text, i.text, i.note, i.open] : "|")),
+    ).toEqual([
+      ["refactor it", undefined, "Interrupted", undefined],
+      // what it said before the error is not what it ended on, so only the last turn would show it
+      ["go on", undefined, "API Error: 529 Overloaded", undefined],
+      ["again", undefined, undefined, undefined],
+      "|",
+      // the work that carried on after the compaction: nobody asked, and it has not ended
+      [undefined, "Reading the second file now.", undefined, true],
+    ]);
+  });
+
+  it("sends the last 100 turns, and how many came before them", async () => {
+    const lines: object[] = [];
+    for (let i = 0; i < 130; i++) {
+      lines.push(prompt(`prompt ${i}`, i * 10), says(`m${i}`, text(`answer ${i}`), i * 10 + 1));
+      if (i === 20 || i === 60) lines.push(compactBoundary(i * 10 + 2));
+    }
+    const v = await view(lines);
+    expect(v.older).toBe(30);
+    expect(turnsOf(v)).toHaveLength(100);
+    expect(turnsOf(v)[0]?.prompt?.text).toBe("prompt 30");
+    expect(turnsOf(v).at(-1)?.text).toBe("answer 129");
+    // a compaction among the turns that are sent stays where it happened. one before them is gone
+    expect(v.items.filter((i) => i.kind === "compact")).toHaveLength(1);
+    expect(v.items[31]).toEqual({ kind: "compact" });
+  });
+
+  it("keeps the start of a long prompt and the end of a long message", async () => {
+    const v = await view([
+      prompt(`START ${"p".repeat(6000)}`, 0),
+      says("m1", text(`${"a".repeat(9000)} END ONE`), 1),
+      prompt("next", 10),
+      says("m2", text(`${"b".repeat(19_000)} END TWO`), 11),
+    ]);
+    const [a, b] = turnsOf(v);
+    expect(a?.prompt?.text).toHaveLength(4000);
+    expect(a?.prompt?.text.startsWith("START")).toBe(true);
+    expect(a?.text).toHaveLength(8000);
+    expect(a?.text?.startsWith("…")).toBe(true);
+    expect(a?.text?.endsWith("END ONE")).toBe(true);
+    // the last message is what the panel is for: it gets more
+    expect(b?.text?.endsWith("END TWO")).toBe(true);
+    expect(b?.text?.startsWith("b")).toBe(true);
+  });
+
+  it("is empty for a transcript nobody said anything in", async () => {
+    expect(await view([title("a title")])).toEqual({ older: 0, items: [] });
   });
 });

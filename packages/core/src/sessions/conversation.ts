@@ -516,6 +516,8 @@ export class ConversationFold {
   /** something typed or delivered while it worked. only what a person typed is the conversation. */
   private queued(attachment: Record<string, unknown>, at: number): void {
     if (attachment.commandMode !== "prompt") return;
+    // a subagent's hand-back report is queued the same way, with `origin.kind: "peer"`
+    if (isObject(attachment.origin) && attachment.origin.kind !== "human") return;
     const open = this.current();
     if (!open) return;
     const text = typed(attachment.prompt);
@@ -537,6 +539,16 @@ export class ConversationFold {
 export function answerSteps(work: TimelineState): number[] {
   const last = work.last;
   return last && !last.tool && !last.error ? last.texts : [];
+}
+
+/** the message a turn ended on, whole. empty when it ended on a tool call, an error or nothing */
+export function answerOf(work: TimelineState): string {
+  return answerSteps(work)
+    .flatMap((n) => {
+      const step = work.steps[n];
+      return step?.kind === "text" ? [step.text] : [];
+    })
+    .join("\n\n");
 }
 
 /** the tools that change a file. a run of edits to one file is one file edited. */
@@ -571,4 +583,80 @@ export function turnNumbers(turn: Turn): TurnNumbers {
     (startedAt !== undefined && endedAt !== undefined ? endedAt - startedAt : undefined);
   if (ms !== undefined) out.durationMs = ms;
   return out;
+}
+
+// ---------- what the page gets: the turns without the steps inside them
+
+/** how many turns the page gets. the ones before them are in the editor */
+export const VIEW_TURNS = 100;
+/** a prompt keeps its start. a message keeps its end, where the question is */
+const VIEW_PROMPT = 4000;
+const VIEW_TEXT = 8000;
+/** the last message is what the panel is for */
+const VIEW_LAST_TEXT = 20_000;
+
+export interface TurnView {
+  kind: "turn";
+  /** what started it. absent when the work carried on after a compaction */
+  prompt?: { kind: Prompt["kind"]; text: string };
+  /** what the person typed while it worked */
+  said?: string[];
+  /** tool calls, files edited, subagents started, and how long it took */
+  tools: number;
+  files: number;
+  agents: number;
+  ms?: number;
+  /** the message it ended on. markdown, and an agent's: untrusted */
+  text?: string;
+  /** it did not end on a message, and `text` is the last thing it said: the last turn only */
+  open?: boolean;
+  /** how it ended when not on a message: an interrupt, an api error */
+  note?: string;
+}
+
+export type ConversationViewItem = TurnView | { kind: "compact" };
+
+export interface ConversationView {
+  items: ConversationViewItem[];
+  /** turns before these, not sent */
+  older: number;
+}
+
+/** the last VIEW_TURNS turns, each text cut. compactions between them stay where they happened */
+export function conversationView(state: ConversationState): ConversationView {
+  const turns = state.items.filter((i) => i.kind === "turn").length;
+  const older = Math.max(0, turns - VIEW_TURNS);
+  let skip = older;
+  const from = state.items.findIndex((i) => i.kind === "turn" && skip-- === 0);
+  const items = from < 0 ? [] : state.items.slice(from);
+  return {
+    older,
+    items: items.map((item, i): ConversationViewItem => {
+      if (item.kind === "compact") return { kind: "compact" };
+      const last = i === items.length - 1;
+      const n = turnNumbers(item);
+      const said = item.marks.flatMap((m) => (m.kind === "said" ? [cut(m.text, VIEW_PROMPT)] : []));
+      const answer = answerOf(item.work);
+      // a turn still under way, or one that stopped: the last thing it said, as the panel always showed
+      const words =
+        last && !answer ? item.work.steps.findLast((s) => s.kind === "text") : undefined;
+      const text = answer || (words?.kind === "text" ? words.text : "");
+      const max = last ? VIEW_LAST_TEXT : VIEW_TEXT;
+      const error = item.work.last?.error ?? (answer ? undefined : item.apiError);
+      return {
+        kind: "turn",
+        ...(item.prompt
+          ? { prompt: { kind: item.prompt.kind, text: cut(item.prompt.text, VIEW_PROMPT) } }
+          : {}),
+        ...(said.length ? { said } : {}),
+        tools: n.tools,
+        files: n.filesEdited,
+        agents: n.agents,
+        ...(n.durationMs !== undefined ? { ms: n.durationMs } : {}),
+        ...(text ? { text: text.length > max ? `…${text.slice(1 - max)}` : text } : {}),
+        ...(text && !answer ? { open: true } : {}),
+        ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
+      };
+    }),
+  };
 }

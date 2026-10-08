@@ -4,14 +4,15 @@ import path from "node:path";
 import {
   type Combo,
   classifyPath,
+  conversationView,
   isValidSessionId,
   openInEditor,
   prepareFolderOpen,
   projectIdOf,
+  readConversation,
   runDetached,
   type Settings,
   saveSettings,
-  sessionTail,
 } from "@grove/core";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
@@ -365,15 +366,14 @@ function buildHandlers(deps: Deps): Handlers {
       return typeof project === "string" ? projects.projectSessions(project) : [];
     },
 
-    async sessionTail(key) {
+    async sessionConversation(key) {
       // only a transcript grove indexed is ever read: the key is a path, and the page sent it
       const row = typeof key === "string" ? sessions.get(key) : undefined;
       if (!row) return null;
       // its panel opened: a recap is written when there is none for where it stands now
       void deps.recaps.want(row);
-      const tail = sessionTail(row.key);
-      // past the reader's reach: the start of the turn's first prompt, from the index
-      return { ...tail, prompt: tail.prompt ?? row.lastPrompt };
+      // folded whole on every look: 60MB takes 90ms. it throws when Claude Code has deleted it
+      return readConversation(row.key).then(conversationView, () => null);
     },
 
     async writeRecap(key) {

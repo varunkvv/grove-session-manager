@@ -1,7 +1,7 @@
 // the refresher of a session: four lines a small model writes from a digest of the conversation.
 // pure: the digest, the prompt and the parse. the call and the cache are the app's.
 import { squash } from "../transcript/title.ts";
-import { answerSteps, type ConversationState, EDITS, type Turn } from "./conversation.ts";
+import { answerOf, type ConversationState, EDITS, type Turn } from "./conversation.ts";
 import { toolLabel } from "./timeline.ts";
 
 /** what the person reads before going back to a session */
@@ -57,12 +57,9 @@ function ending(
 ): { text: string; what: string; stale?: boolean } | undefined {
   for (let i = turns.length - 1; i >= 0; i--) {
     const work = turns[i]!.work;
-    const answer = answerSteps(work).flatMap((n) => {
-      const step = work.steps[n];
-      return step?.kind === "text" ? [step.text] : [];
-    });
+    const answer = answerOf(work);
     const said = work.steps.findLast((s) => s.kind === "text");
-    const text = answer.length ? answer.join("\n\n") : said?.kind === "text" ? said.text : "";
+    const text = answer || (said?.kind === "text" ? said.text : "");
     if (!text) continue;
     if (i < asked) {
       return { text, what: "the message it ended on BEFORE the person last typed:", stale: true };
@@ -71,7 +68,7 @@ function ending(
       text,
       // a background task's news starts a turn of its own, often one with nothing said in it:
       // the message before it is still the last thing the person was told
-      what: answer.length
+      what: answer
         ? "the message its last turn ended on:"
         : "its last turn did not end on a message. the last thing it said in it:",
     };
