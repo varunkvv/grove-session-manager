@@ -132,19 +132,15 @@ export function sessionOrder(
 }
 
 export interface StartBlock {
-  case: "root" | "goal";
+  case: "root";
   /** why, as a start button's hint */
   line: string;
 }
 
-/** why a start would fail, first that applies. it never offers a start that is known to fail */
-export function startBlocked(
-  project: Pick<ProjectView, "root" | "rootExists" | "goal">,
-): StartBlock | null {
+/** why a start would fail. it never offers a start that is known to fail */
+export function startBlocked(project: Pick<ProjectView, "root" | "rootExists">): StartBlock | null {
   if (!project.rootExists)
     return { case: "root", line: `The project folder is missing: ${project.root}` };
-  if (!project.goal)
-    return { case: "goal", line: "Add a goal so agents know what to work toward." };
   return null;
 }
 

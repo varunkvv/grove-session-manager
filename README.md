@@ -25,18 +25,18 @@ Needs macOS on Apple Silicon, git, VS Code or Cursor with the Claude Code extens
 the background. Checked against Claude Code 2.1.286 and 2.1.287.
 
 1. [Install it](#install-it) and open it. With no project yet, the window is the **New project** form
-2. Give the project a name, a one-line goal and the repos the work needs, then **Create project**. Grove makes the
-   project's folder under `~/claude-ws/`, with a working copy of each repo
+2. Give the project a name and the repos the work needs, then **Create project**. Grove makes the project's folder
+   under `~/claude-ws/`, with a working copy of each repo
 3. If a banner offers to install the Grove extension into your editor, take it: landing on a session and starting a
    conversation both go through it
-4. **Start an agent in VS Code** opens the project on a new Claude conversation with a prompt in the input box. Send
-   it. The prompt tells the agent to work toward the project's goal and to read `context/` first
+4. **New session** asks what the session should do. **Start in VS Code** opens the project on a new Claude
+   conversation with that in the input box. Send it
 5. Watch the **Inbox**: every session that needs you, in any project. A click opens it in a panel beside the list, a
    double-click opens it in the editor, which is where you answer. **Dismiss** clears a row
 
 ## A project is a folder
 
-A project has a name, a one-line goal and the repos the work needs. It owns a directory, `~/claude-ws/<project>/`. That
+A project has a name, a line about what it is for and the repos the work needs. It owns a directory, `~/claude-ws/<project>/`. That
 directory - not any of your repos - is the primary workspace folder, so it is Claude's working directory. It follows
 that:
 
@@ -61,7 +61,9 @@ only be a reference.
 
 A working copy starts clean. Your uncommitted changes, dev servers and editor state stay in the original clone.
 
-The goal is one line, under 500 characters. An agent started from Grove is told to work toward it.
+**About** is one line on what the project is for, under 500 characters. It opens the project's `CLAUDE.md` when the
+project is made. A session does not start from it: a project is the folders work happens in, and each session has its
+own ask.
 
 ### The project's CLAUDE.md
 
@@ -120,8 +122,8 @@ A click on a project shows **its sessions**, all of them: Needs you first, then 
 Yesterday and Earlier, newest first. A row has the title, the state, where it runs, the branch and the time. The list
 is the sessions started in the project's folder, plus any started in a subfolder or a working copy that needs you or is
 running now. A finished session in a subfolder is found from `⌘K`. The filter in the top bar narrows the rows to the
-ones whose title, prompt or branch has every word typed. The top bar also has **Start in VS Code**, **Start in
-background**, **Open in VS Code** for the project's window, and **Edit**. The list follows the sessions as they change,
+ones whose title, prompt or branch has every word typed. The top bar also has **New session**, **Open in VS Code** for the project's
+window, and **Edit**. The list follows the sessions as they change,
 with no refresh.
 
 **The panel.** A click on a row, in either list, opens that session in a panel on the right half of the window. Its
@@ -135,10 +137,10 @@ session's state changes, so a new turn shows when it starts and when it ends. A 
 at the end. While the panel is open it follows the arrow keys, and when its row leaves the list it moves to the row
 that took its place. `Esc` closes it. A double-click on a row opens the session in the editor.
 
-**New project** and **Edit project** are one form: name, goal, repos. Edit project also shows drift per repo and, when
+**New project** and **Edit project** are one form: name, about, repos. Edit project also shows drift per repo and, when
 Grove could not write the project's files, why.
 
-`⌘K` opens the palette: go to the inbox or a project, start an agent, switch long work, repair working copies, delete
+`⌘K` opens the palette: go to the inbox or a project, start a session, switch long work, repair working copies, delete
 the project, settings. Typing also searches every Claude Code session on the machine, in a project or not: titles and
 prompts first, then everything that was said in each session and by its subagents. `↵` on a session opens it in the
 editor.
@@ -225,15 +227,16 @@ the same count as the menu bar. **Notifications** in Settings switches them off.
 
 Landing needs the companion extension in that editor. Without it the window opens and Grove says it could not land.
 
-**Start an agent** is in a project's top bar, on a project with no sessions, and in `⌘K`:
+**New session** is in a project's top bar, on a project with no sessions, and in `⌘K`. It asks one thing, what the
+session should do, and then where it starts:
 
 | where | what happens |
 | --- | --- |
-| VS Code (or Cursor) | the project opens on a new conversation in the Claude panel, the prompt waiting in its input box - you send it. The panel takes a prompt from outside but cannot be made to send it |
-| Background | `claude --bg -- <prompt>` in the project root |
+| VS Code (or Cursor), or `Enter` | the project opens on a new conversation in the Claude panel, what you typed waiting in its input box - you send it. The panel takes a prompt from outside but cannot be made to send it. With nothing typed it is a plain new conversation |
+| Background | `claude --bg -- <what you typed>` in the project root. It needs something typed: a background session has nothing else to start from |
 
-The prompt tells the agent to work toward the project's goal and to read `context/` first. Grove does not start what it
-knows will fail: no goal, or a missing project folder. The new session shows in the project's list once it runs.
+What you typed is sent as it is, with nothing added. Grove does not start what it knows will fail: a missing project
+folder. The new session shows in the project's list once it runs.
 
 Starting a conversation in the editor needs Grove Companion 0.3.0 or later. With an older one, or none, the project
 still opens and the prompt is put on the clipboard to paste into a new conversation.

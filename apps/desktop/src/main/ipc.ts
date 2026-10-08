@@ -51,7 +51,7 @@ import {
 } from "./services/resumeScript.ts";
 import type { Reveals } from "./services/reveal.ts";
 import type { SessionService } from "./services/sessions.ts";
-import { parseStartAgent, startPrompt } from "./services/startAgent.ts";
+import { parseStartAgent } from "./services/startAgent.ts";
 import { keptFolderToast } from "./services/views.ts";
 
 export interface Deps {
@@ -302,11 +302,11 @@ function buildHandlers(deps: Deps): Handlers {
     async startAgent(raw) {
       const req = parseStartAgent(raw);
       const combo = combos.byId(req.project);
-      const prompt = startPrompt({
-        root: combo.root,
-        rootExists: await isDirectory(combo.root),
-        goal: combo.note,
-      });
+      if (!(await isDirectory(combo.root))) {
+        throw new AppError("cwd-missing", `${combo.root} does not exist.`);
+      }
+      // what the person typed, and nothing added: the project's CLAUDE.md says the rest
+      const prompt = req.prompt;
       const label = editor.current().label;
 
       if (req.where === "editor") {
@@ -318,15 +318,20 @@ function buildHandlers(deps: Deps): Handlers {
           compareVersions(companionVersion, NEW_CONVERSATION_COMPANION) < 0
         ) {
           await openWindow(combo);
-          electron.clipboard.writeText(prompt);
+          if (prompt) electron.clipboard.writeText(prompt);
           return {
-            message: "Prompt copied - paste it into a new Claude conversation",
+            message: prompt
+              ? "Prompt copied - paste it into a new Claude conversation"
+              : `Opened ${combo.name} - start a new Claude conversation there`,
             body: companionVersion
               ? `The Grove extension in ${label} is older than ${NEW_CONVERSATION_COMPANION}, so it cannot start the conversation.`
               : `The Grove extension is not installed in ${label}, so it cannot start the conversation.`,
           };
         }
-        const report = await combos.open(combo, undefined, { newConversation: true, prompt });
+        const report = await combos.open(combo, undefined, {
+          newConversation: true,
+          ...(prompt ? { prompt } : {}),
+        });
         const launched = await openInEditor(report.workspaceFile, editor.current());
         if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
         for (const warning of report.warnings) {
@@ -335,7 +340,9 @@ function buildHandlers(deps: Deps): Handlers {
         return {
           message: `Opening ${combo.name} in ${label} on a new conversation`,
           // the panel only fills the box
-          body: "The prompt is in the Claude panel. Send it to start the agent.",
+          ...(prompt
+            ? { body: "The prompt is in the Claude panel. Send it to start the agent." }
+            : {}),
         };
       }
 

@@ -1,11 +1,11 @@
 import { startBlocked } from "../logic/views.ts";
-import { editProject, openProject, startAgent } from "../state/actions.ts";
+import { editProject, openProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { Button, Icon, Kbd, ProjectMark } from "./ui.tsx";
 
 /**
  * what the screen beside the sidebar is, and what can be done with all of it: a project's filter,
- * its window in the editor, a new agent in it
+ * its window in the editor, a new session in it
  */
 export function TopBar() {
   const view = useStore((s) => s.view.name);
@@ -27,7 +27,7 @@ export function TopBar() {
           <ProjectMark id={project.id} />
           <h1
             className="min-w-[48px] shrink truncate font-medium"
-            title={project.goal ? `${project.name}: ${project.goal}` : project.name}
+            title={project.name}
             data-testid="project-name"
           >
             {project.name}
@@ -51,29 +51,18 @@ export function TopBar() {
       <span className="ml-auto" />
       {project && (
         <>
-          {(["editor", "background"] as const).map((where) => {
-            const short = where === "editor" ? editor : "Background";
-            const long = where === "editor" ? `Start in ${editor}` : "Start in background";
-            return (
-              <Button
-                key={where}
-                variant="quiet"
-                size="sm"
-                disabled={!!blocked}
-                title={
-                  blocked?.line ??
-                  `Start an agent in ${short === editor ? editor : "the background"}`
-                }
-                onClick={() => void startAgent({ project: project.id, where })}
-                data-testid={`start-${where}`}
-              >
-                <Icon name="plus" size={10} />
-                {/* the words give way before the filter does */}
-                <span className="@3xl:hidden">{short}</span>
-                <span className="hidden @3xl:inline">{long}</span>
-              </Button>
-            );
-          })}
+          {/* what it should do is asked next: a session starts from an ask, not from the project */}
+          <Button
+            variant="quiet"
+            size="sm"
+            disabled={!!blocked}
+            title={blocked?.line ?? `Start a session in ${project.name}`}
+            onClick={() => set({ dialog: { kind: "start", project: project.id } })}
+            data-testid="new-session"
+          >
+            <Icon name="plus" size={10} />
+            New session
+          </Button>
           {/* the project's window in the editor. cmd-O does the same */}
           <Button
             size="sm"

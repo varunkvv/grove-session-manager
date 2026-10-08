@@ -70,10 +70,10 @@ export async function parseDraft(
     }
     folders.push(folder);
   }
-  // the goal is the note: one line, in the CLAUDE.md stub and in what a started agent is told
+  // what the form calls About is the note: one line, in the CLAUDE.md stub
   const note =
     typeof raw.note === "string" ? raw.note.replace(/\s+/g, " ").trim() || undefined : undefined;
-  if (note && note.length > 500) problems.push("Keep the goal under 500 characters.");
+  if (note && note.length > 500) problems.push("Keep About under 500 characters.");
   return {
     draft: {
       name: raw.name.trim(),

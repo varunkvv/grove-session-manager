@@ -2,14 +2,12 @@ import { useEffect, useMemo } from "react";
 import type { ProjectView, SessionHit } from "../../shared/ipc.ts";
 import { groupSessions, type SessionItem, startBlocked } from "../logic/views.ts";
 import {
-  editProject,
   focusScreen,
   loadSessions,
   openRow,
   openWith,
   optionId,
   perform,
-  startAgent,
 } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
@@ -90,9 +88,7 @@ function SessionRow({
 
 /** a project nobody has worked in yet. it never offers a start that is known to fail */
 function NoSessions({ project }: { project: ProjectView }) {
-  const editor = useStore((s) => s.editor?.label ?? "the editor");
   const blocked = startBlocked(project);
-  const start = (where: "editor" | "background") => void startAgent({ project: project.id, where });
   return (
     <div
       className="pt-24 text-center"
@@ -103,33 +99,20 @@ function NoSessions({ project }: { project: ProjectView }) {
       <p className="mt-1 text-body text-fg-4">
         {blocked?.line ?? "Sessions started in this project's folder show here."}
       </p>
-      <div className="mt-5 flex justify-center gap-2">
-        {!blocked && (
-          <>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => start("editor")}
-              data-testid="empty-start-editor"
-            >
-              Start an agent in {editor}
-            </Button>
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={() => start("background")}
-              data-testid="empty-start-background"
-            >
-              Start in the background
-            </Button>
-          </>
-        )}
-        {blocked?.case === "goal" && (
-          <Button variant="primary" size="lg" onClick={editProject} data-testid="empty-edit">
-            Edit project
+      {!blocked && (
+        <div className="mt-5 flex justify-center">
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() =>
+              useStore.getState().set({ dialog: { kind: "start", project: project.id } })
+            }
+            data-testid="empty-new-session"
+          >
+            New session
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

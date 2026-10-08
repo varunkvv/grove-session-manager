@@ -68,10 +68,7 @@ function commands(ctx: PaletteContext): PaletteItem[] {
       keywords,
     });
     if (!startBlocked(p)) {
-      items.push(
-        mine("start-editor", `Start an agent in ${ctx.editor}`, "new agent session claude"),
-        mine("start-background", "Start an agent in the background", "new agent session claude"),
-      );
+      items.push(mine("new-session", "New session…", "start agent claude background"));
     }
     items.push(
       mine(

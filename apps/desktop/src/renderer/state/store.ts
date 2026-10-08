@@ -26,6 +26,8 @@ export type DialogState =
   | null
   | { kind: "settings" }
   | { kind: "delete"; project: ProjectId }
+  /** what a new session in this project should do, and where it starts */
+  | { kind: "start"; project: ProjectId }
   /** one question before something that interrupts or costs. it carries its own words and what to run */
   | { kind: "confirm"; title: string; body: string; label: string; run: () => void };
 

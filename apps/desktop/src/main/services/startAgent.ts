@@ -1,8 +1,11 @@
-// what an agent started from grove is told, or why it is not started. pure: the startAgent handler
-// resolves the project and its root, then runs the editor or the background path.
+// a session started from grove, as the page asked for it. pure: the startAgent handler resolves
+// the project and its root, then runs the editor or the background path.
 import { isObject } from "@grove/core";
 import type { StartAgentRequest } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
+
+/** a prompt is typed text. past this it was pasted by mistake */
+const PROMPT_MAX = 20_000;
 
 /** the request as the page sent it */
 export function parseStartAgent(raw: unknown): StartAgentRequest {
@@ -12,26 +15,15 @@ export function parseStartAgent(raw: unknown): StartAgentRequest {
   if (raw.where !== "editor" && raw.where !== "background") {
     throw new AppError("invalid", "Start it in the editor or in the background.");
   }
-  const req: StartAgentRequest = { project: raw.project, where: raw.where };
+  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim().slice(0, PROMPT_MAX) : "";
+  // `claude --bg` has nothing to do without one
+  if (raw.where === "background" && !prompt) {
+    throw new AppError(
+      "no-prompt",
+      "Say what it should do. A background session starts from that.",
+    );
+  }
+  const req: StartAgentRequest = { project: raw.project, where: raw.where, prompt };
   if (raw.where === "background" && raw.throughTerminal === true) req.throughTerminal = true;
   return req;
-}
-
-export interface StartFacts {
-  root: string;
-  /** checked at call time */
-  rootExists: boolean;
-  goal?: string;
-}
-
-/** the agent's first message */
-export function startPrompt(f: StartFacts): string {
-  if (!f.rootExists) throw new AppError("cwd-missing", `${f.root} does not exist.`);
-  const goal = f.goal?.trim();
-  if (!goal) {
-    throw new AppError("no-goal", "Write the project's goal first. Agents start from it.");
-  }
-  return `Work toward this project's goal: ${goal}
-
-Read context/ first: it holds what other sessions here decided and learned. Write what you decide or learn there as you go.`;
 }

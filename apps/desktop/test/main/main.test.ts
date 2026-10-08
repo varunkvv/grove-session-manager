@@ -314,7 +314,7 @@ describe("drafts from the renderer", () => {
     expect((await goal("  ship\n\n the\tthing  ")).draft?.note).toBe("ship the thing");
     expect((await goal(" \n ")).draft?.note).toBeUndefined();
     expect((await goal("x".repeat(500))).problems).toEqual([]);
-    expect((await goal("x".repeat(501))).problems).toEqual(["Keep the goal under 500 characters."]);
+    expect((await goal("x".repeat(501))).problems).toEqual(["Keep About under 500 characters."]);
     // the collapsed length counts: 300 words with runs of spaces fit
     expect((await goal("ab     ".repeat(150))).problems).toEqual([]);
   });

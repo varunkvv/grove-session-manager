@@ -60,8 +60,7 @@ describe("paletteItems", () => {
       "go-inbox",
       "project:auth",
       "project:data",
-      "start-editor",
-      "start-background",
+      "new-session",
       "long-work",
       "delete-project",
       "settings",
@@ -106,16 +105,12 @@ describe("paletteItems", () => {
     );
   });
 
-  it("the start rows follow startBlocked", () => {
-    expect(ids(ctx())).toContain("start-editor");
-    for (const p of [
-      project("auth", { goal: undefined }),
-      project("auth", { rootExists: false }),
-    ]) {
-      const got = ids(ctx({ project: p }));
-      expect(got).not.toContain("start-editor");
-      expect(got).not.toContain("start-background");
-    }
+  it("the start row follows startBlocked", () => {
+    expect(ids(ctx())).toContain("new-session");
+    expect(ids(ctx({ project: project("auth", { goal: undefined }) }))).toContain("new-session");
+    expect(ids(ctx({ project: project("auth", { rootExists: false }) }))).not.toContain(
+      "new-session",
+    );
   });
 
   it("a query keeps the section order and drops empty sections", () => {

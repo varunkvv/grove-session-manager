@@ -1,7 +1,12 @@
 import { useEffect } from "react";
 import type { MenuCommandId } from "../shared/ipc.ts";
 import { Banner, Toasts } from "./components/Chrome.tsx";
-import { ConfirmDialog, DeleteProjectDialog, SettingsDialog } from "./components/Dialogs.tsx";
+import {
+  ConfirmDialog,
+  DeleteProjectDialog,
+  SettingsDialog,
+  StartDialog,
+} from "./components/Dialogs.tsx";
 import { Inbox } from "./components/Inbox.tsx";
 import { Palette } from "./components/Palette.tsx";
 import { ProjectForm } from "./components/ProjectForm.tsx";
@@ -167,6 +172,7 @@ export function App() {
       <Palette />
       <DeleteProjectDialog />
       <SettingsDialog />
+      <StartDialog />
       <ConfirmDialog />
       <Toasts />
     </div>

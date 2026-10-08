@@ -1,67 +1,61 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../src/main/errors.ts";
-import {
-  parseStartAgent,
-  type StartFacts,
-  startPrompt,
-} from "../../src/main/services/startAgent.ts";
-
-const BASE: StartFacts = {
-  root: "/ws/chat",
-  rootExists: true,
-  goal: "Ship the leave planner to the pilot team",
-};
-
-function refusal(f: StartFacts): { code: string; message: string } {
-  try {
-    startPrompt(f);
-  } catch (e) {
-    expect(e).toBeInstanceOf(AppError);
-    return { code: (e as AppError).code, message: (e as AppError).message };
-  }
-  throw new Error("started");
-}
-
-describe("the prompt an agent started from grove gets", () => {
-  it("works the goal", () => {
-    expect(startPrompt(BASE)).toBe(
-      "Work toward this project's goal: Ship the leave planner to the pilot team\n\nRead context/ first: it holds what other sessions here decided and learned. Write what you decide or learn there as you go.",
-    );
-  });
-});
-
-describe("what it refuses", () => {
-  it("a root that is gone, before anything else", () => {
-    expect(refusal({ ...BASE, rootExists: false, goal: "" })).toEqual({
-      code: "cwd-missing",
-      message: "/ws/chat does not exist.",
-    });
-  });
-
-  it("no goal", () => {
-    const noGoal = {
-      code: "no-goal",
-      message: "Write the project's goal first. Agents start from it.",
-    };
-    expect(refusal({ root: "/ws/chat", rootExists: true })).toEqual(noGoal);
-    expect(refusal({ ...BASE, goal: "  \n " })).toEqual(noGoal);
-  });
-});
+import { parseStartAgent } from "../../src/main/services/startAgent.ts";
 
 describe("the request as the page sent it", () => {
-  it("keeps what it knows", () => {
-    expect(parseStartAgent({ project: "chat", where: "editor", cardId: "chat-4" })).toEqual({
-      project: "chat",
-      where: "editor",
-    });
+  it("keeps the ask as typed, trimmed", () => {
     expect(
-      parseStartAgent({ project: "chat", where: "background", throughTerminal: true }),
-    ).toEqual({ project: "chat", where: "background", throughTerminal: true });
-    // the editor path has no terminal
-    expect(parseStartAgent({ project: "chat", where: "editor", throughTerminal: true })).toEqual({
+      parseStartAgent({ project: "chat", where: "editor", prompt: "  fix the login page\n" }),
+    ).toEqual({ project: "chat", where: "editor", prompt: "fix the login page" });
+    expect(
+      parseStartAgent({
+        project: "chat",
+        where: "background",
+        prompt: "run the suite",
+        throughTerminal: true,
+      }),
+    ).toEqual({
       project: "chat",
-      where: "editor",
+      where: "background",
+      prompt: "run the suite",
+      throughTerminal: true,
     });
+  });
+
+  it("the editor takes no ask: a plain new conversation", () => {
+    for (const raw of [
+      { project: "chat", where: "editor" },
+      { project: "chat", where: "editor", prompt: "   " },
+      // the editor path has no terminal, and a prompt is text or nothing
+      { project: "chat", where: "editor", prompt: 4, throughTerminal: true },
+    ]) {
+      expect(parseStartAgent(raw), JSON.stringify(raw)).toEqual({
+        project: "chat",
+        where: "editor",
+        prompt: "",
+      });
+    }
+  });
+
+  it("the background needs one: claude --bg has nothing to do without it", () => {
+    for (const raw of [
+      { project: "chat", where: "background" },
+      { project: "chat", where: "background", prompt: " \n " },
+    ]) {
+      try {
+        parseStartAgent(raw);
+      } catch (e) {
+        expect(e).toBeInstanceOf(AppError);
+        expect((e as AppError).code).toBe("no-prompt");
+        continue;
+      }
+      throw new Error(`started: ${JSON.stringify(raw)}`);
+    }
+  });
+
+  it("a pasted wall of text is cut", () => {
+    const got = parseStartAgent({ project: "chat", where: "editor", prompt: "x".repeat(30_000) });
+    expect(got.prompt).toHaveLength(20_000);
   });
 
   it("refuses anything else", () => {

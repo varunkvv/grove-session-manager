@@ -155,20 +155,15 @@ describe("a project's sessions", () => {
 });
 
 describe("startBlocked", () => {
-  it("a missing root first", () => {
-    const p = project({ rootExists: false, goal: undefined });
+  it("a missing root", () => {
+    const p = project({ rootExists: false });
     expect(startBlocked(p)).toEqual({
       case: "root",
       line: "The project folder is missing: /w/auth",
     });
   });
-  it("no goal", () => {
-    expect(startBlocked(project({ goal: undefined }))).toEqual({
-      case: "goal",
-      line: "Add a goal so agents know what to work toward.",
-    });
-  });
-  it("none", () => {
+  it("a project with no goal starts like any other: a session starts from an ask", () => {
+    expect(startBlocked(project({ goal: undefined }))).toBeNull();
     expect(startBlocked(project({}))).toBeNull();
   });
 });

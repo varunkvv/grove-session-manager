@@ -474,17 +474,17 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
           </Field>
 
           <Field
-            label="Goal"
+            label="About"
             hint={
               mode === "new"
-                ? "Every agent in the project starts from this."
-                : "What an agent started from Grove is told to work toward."
+                ? "One line on what the project is for. It opens the project's CLAUDE.md."
+                : "One line on what the project is for."
             }
           >
             <input
               className={inputClass}
               value={form.goal}
-              placeholder="What does done look like?"
+              placeholder="What is this project for?"
               onChange={(e) => patch({ goal: e.target.value })}
               data-testid="project-goal"
             />

@@ -1,6 +1,7 @@
 import type { TeardownOutcome } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
+import { startAgent } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Button, cx, Field, inputClass, Modal, Select, Switch } from "./ui.tsx";
 
@@ -144,6 +145,85 @@ export function ConfirmDialog() {
       }
     >
       <p className="text-fg-2">{confirm?.body}</p>
+    </Modal>
+  );
+}
+
+/**
+ * what a new session should do, and where it starts. a session starts from an ask, not from its
+ * project: a project is only the folders it works in
+ */
+export function StartDialog() {
+  const dialog = useStore((s) => s.dialog);
+  const projects = useStore((s) => s.projects);
+  const editor = useStore((s) => s.editor?.label ?? "the editor");
+  const set = useStore((s) => s.set);
+  const project =
+    dialog?.kind === "start" ? projects.find((p) => p.id === dialog.project) : undefined;
+  const open = !!project;
+  const [prompt, setPrompt] = useState("");
+  const typed = prompt.trim();
+
+  // every open starts empty
+  useEffect(() => {
+    if (open) setPrompt("");
+  }, [open]);
+
+  const close = () => set({ dialog: null });
+  const start = (where: "editor" | "background") => {
+    if (!project) return;
+    // closed first: a folder the CLI has not trusted answers with a dialog of its own
+    close();
+    void startAgent({ project: project.id, where, prompt: typed });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      title={`New session in ${project?.name ?? ""}`}
+      width={520}
+      testId="start-dialog"
+      footer={
+        <>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!typed}
+            title={typed ? undefined : "A background session starts from what you type here"}
+            onClick={() => start("background")}
+            data-testid="start-background"
+          >
+            Start in background
+          </Button>
+          <Button variant="primary" onClick={() => start("editor")} data-testid="start-editor">
+            Start in {editor}
+          </Button>
+        </>
+      }
+    >
+      <textarea
+        data-autofocus
+        aria-label="What should it do?"
+        spellCheck={false}
+        className={cx(inputClass, "h-24 resize-none py-2")}
+        placeholder="What should it do?"
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onKeyDown={(e) => {
+          // Enter starts it, shift-Enter is a new line. an Enter that ends an IME composition is neither
+          if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+          e.preventDefault();
+          start("editor");
+        }}
+        data-testid="start-prompt"
+      />
+      <p className="mt-2 text-sm text-fg-4">
+        In {editor} it waits in the Claude panel for you to send. Leave it empty for a plain new
+        conversation.
+      </p>
     </Modal>
   );
 }

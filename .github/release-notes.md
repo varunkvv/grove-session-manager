@@ -15,6 +15,8 @@ New:
 - under the recap, the whole conversation: what you typed, one line for the work, and the message each turn ended on
 - **Write recaps with Claude** in Settings switches recaps off. they use your Claude login and the haiku model
 - a notification and a menu bar row open the window on that session, with the panel open
+- **New session** asks what the session should do, then starts it in VS Code with that in the Claude panel, or in the
+  background. a project needs no goal for it: a project is the folders, each session has its own ask
 - a colour per project, and one colour per state everywhere
 
 Gone: the Cards and Conclusions screens, card pages, inbox rows about cards and conclusions, starting an agent on a
