@@ -4,6 +4,7 @@ export * from "./git/branch.ts";
 export * from "./project/derive.ts";
 export * from "./project/ids.ts";
 export * from "./project/inbox.ts";
+export * from "./sessions/conversation.ts";
 export * from "./sessions/needsYou.ts";
 export * from "./sessions/resume.ts";
 export * from "./sessions/search.ts";
