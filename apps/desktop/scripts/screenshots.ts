@@ -3,11 +3,12 @@
 //   node scripts/screenshots.ts <outDir> [light|dark]  ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
-import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { recapSays, setFakeRecaps, writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
 import {
+  appendTurn,
   type Fixture,
   hookEvent,
   makeFixture,
@@ -204,18 +205,95 @@ function build(scheme: string) {
   const vscode = (sessionId: string, status: "busy" | "idle" = "idle") =>
     liveSession(fx, { sessionId, kind: "interactive", entrypoint: "claude-vscode", status });
 
-  // ---- auth-sso: the four that need him
+  // ---- auth-sso: the four that need him. the first has a conversation behind it: five turns, a
+  // compaction, one it was stopped in, and something typed while it worked
   const turn = sid();
-  writeSession(fx, {
+  const talk = writeSession(fx, {
     cwd: auth,
     sessionId: turn,
     title: "auth-sso-12",
     branch: "feat/okta-staging",
+    prompt: "what does staging use for sign-in today?",
+    reply:
+      "Staging signs in with the local password form only. There is no identity provider wired in:\n\n- `api/src/auth/local.ts` is the one strategy passport loads\n- the SAML strategy from last year is still in the tree, and nothing imports it\n\nProduction is the same.",
+    ageMs: 3 * HOUR,
+  });
+  const o = { sessionId: turn, cwd: auth };
+  const at = (minutes: number) => new Date(Date.now() - minutes * MIN).toISOString();
+  const lines = (...entries: object[]) =>
+    appendFileSync(talk, `${entries.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  appendTurn(talk, o, {
+    prompt: "draft the terraform for an okta app. dev tenant, not prod",
+    tools: [
+      { name: "Read", input: { file_path: path.join(auth, "infra/main.tf") } },
+      { name: "Write", input: { file_path: path.join(auth, "infra/okta.tf") } },
+      { name: "Edit", input: { file_path: path.join(auth, "infra/variables.tf") } },
+      { name: "Bash", input: { command: "terraform validate" } },
+    ],
+    reply:
+      'The app is drafted in `infra/okta.tf`, pointed at the dev tenant:\n\n```hcl\nresource "okta_app_oauth" "dashboard" {\n  label       = "dashboard"\n  type        = "web"\n  grant_types = ["authorization_code"]\n}\n```\n\n`terraform validate` passes. It has no redirect URIs yet.',
+    ageMs: 170 * MIN,
+    tookMs: 6 * MIN,
+  });
+  lines(
+    {
+      type: "system",
+      subtype: "compact_boundary",
+      uuid: "c0000000-0000-4000-8000-000000000001",
+      timestamp: at(120),
+      compactMetadata: { trigger: "auto", preTokens: 164_000, postTokens: 31_000 },
+    },
+    {
+      type: "user",
+      isCompactSummary: true,
+      uuid: "c0000000-0000-4000-8000-000000000002",
+      timestamp: at(120),
+      message: {
+        role: "user",
+        content:
+          "This session is being continued from a previous conversation that ran out of context.\n\nSummary:\n1. Primary Request and Intent: single sign-on for the dashboard through okta, staging first.",
+      },
+    },
+  );
+  appendTurn(talk, o, {
+    prompt: "add the callback route while you are there",
+    tools: [{ name: "Read", input: { file_path: path.join(auth, "api/src/auth/routes.ts") } }],
+    ageMs: 110 * MIN,
+    tookMs: MIN,
+  });
+  lines({
+    type: "user",
+    uuid: "c0000000-0000-4000-8000-000000000003",
+    timestamp: at(108),
+    message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user]" }] },
+  });
+  appendTurn(talk, o, {
     prompt:
       "register the okta app for staging and production in the dev tenant. one app, a redirect URI per environment. do not put the secret in the repo",
+    tools: [
+      { name: "Edit", input: { file_path: path.join(auth, "infra/okta.tf") } },
+      { name: "Bash", input: { command: "terraform plan" } },
+      { name: "Agent", input: { description: "check the okta admin console" } },
+      { name: "Edit", input: { file_path: path.join(auth, "docs/sso.md") } },
+      { name: "Bash", input: { command: "terraform apply" } },
+    ],
     reply: REPLY,
-    ageMs: MIN,
+    ageMs: 13 * MIN,
+    tookMs: 12 * MIN,
   });
+  // typed while it worked: Claude Code writes it as an attachment, never as a user line
+  lines({
+    type: "attachment",
+    attachment: {
+      type: "queued_command",
+      commandMode: "prompt",
+      origin: { kind: "human" },
+      prompt: "and say where the secret went",
+    },
+    uuid: "c0000000-0000-4000-8000-000000000004",
+    timestamp: at(8),
+  });
+  utimesSync(talk, new Date(Date.now() - MIN), new Date(Date.now() - MIN));
   vscode(turn);
   event(fx, turn, "Stop", 1, { last_assistant_message: REPLY });
 
@@ -438,6 +516,10 @@ for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
     await page.getByTestId("panel-text").waitFor();
     await page.getByTestId("recap").waitFor();
     await shot("inbox-panel");
+    // the conversation, scrolled back to where it starts
+    await page.getByTestId("conversation").evaluate((el) => el.scrollTo({ top: 0 }));
+    await shot("inbox-panel-conversation-up");
+    await page.getByTestId("conversation").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
     await page.keyboard.press("ArrowDown");
     await page.getByTestId("panel-text").waitFor();
     // a permission row's recap is written when its panel opens
