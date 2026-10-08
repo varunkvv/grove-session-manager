@@ -1,31 +1,25 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import type { InboxRowView } from "../../shared/ipc.ts";
-import { nextActiveKey } from "../logic/rows.ts";
-import { projectRows } from "../logic/views.ts";
-import { whoView } from "../logic/who.ts";
 import { focusScreen, openRow, openWith, optionId, perform, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { CardPage } from "./CardPage.tsx";
+import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
 import {
-  Avatar,
   Button,
-  ConclusionChip,
   cx,
-  EscButton,
   Icon,
-  KindLabel,
-  kindWord,
+  ProjectMark,
   RuntimeChip,
   Split,
+  StateLabel,
+  stateWord,
   Time,
   useRowDoubleClick,
 } from "./ui.tsx";
 
 /** what Open in {editor} and a double-click go to */
-const openSession = (row: InboxRowView) =>
-  openWith(row.sessionKey, row.open, row.card?.id ?? row.title);
+const openSession = (row: InboxRowView) => openWith(row.key, row.open, row.title);
 
-/** two lines: what it is and whose, then the summary at full width */
+/** two lines: which session and what it is at, then what it asks at full width */
 function InboxRow({
   row,
   active,
@@ -39,16 +33,16 @@ function InboxRow({
   onClick: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
-  const who = whoView(row.who);
   return (
     <li
-      id={optionId(row.id)}
+      id={optionId(row.sessionId)}
       role="option"
       aria-selected={active}
-      aria-label={`${kindWord(row.kind)}: ${row.card?.id ?? ""} ${row.title}. ${row.summary}`}
+      aria-label={`${stateWord(row.kind)}: ${row.title}, in ${row.where}. ${row.summary}`}
       data-testid="inbox-row"
       data-kind={row.kind}
-      data-card={row.card?.id}
+      data-id={row.sessionId}
+      data-project={row.project}
       data-active={active || undefined}
       data-open={open || undefined}
       className={cx(
@@ -60,79 +54,69 @@ function InboxRow({
       // the row under the mouse is the one the next key acts on
       onMouseMove={() => {
         const s = useStore.getState();
-        if (s.active.inbox !== row.id) s.set({ active: { ...s.active, inbox: row.id } });
+        if (s.active.inbox !== row.sessionId) {
+          s.set({ active: { ...s.active, inbox: row.sessionId } });
+        }
       }}
     >
       <div className="flex h-5 items-center gap-3">
-        <KindLabel kind={row.kind} className="w-[84px]" />
-        <span className="min-w-0 flex-1 truncate text-fg-3" title={row.title}>
-          {row.card && <span className="mr-1.5 tabular-nums text-fg-4">{row.card.id}</span>}
+        <span className="min-w-0 flex-1 truncate font-medium text-fg" title={row.title}>
           {row.title}
         </span>
+        <StateLabel state={row.kind} within="list" className="@xl:w-[128px]" />
         {/* the buttons take its place under the mouse and on the keyboard's row */}
         <span className="flex shrink-0 items-center gap-3 group-hover:hidden group-data-[active]:hidden">
-          {/* who and where give way to the title in a narrow list, beside the panel */}
-          {/* avatar 16 + 6 + the name: `chat-features-35`, a real tab name, is 103.9 */}
-          <span className="hidden w-[126px] min-w-0 items-center gap-1.5 @3xl:flex">
-            {who && (
-              <>
-                <Avatar who={who} />
-                {/* a session with no card is titled by its own name: the title already says it */}
-                {(row.card || who.name !== row.title) && (
-                  <span className="truncate text-fg-2">{who.name}</span>
-                )}
-              </>
-            )}
+          {/* where it is gives way to the title as the list narrows: first where it runs, then
+              beside the panel the project's name. the project's colour stays */}
+          <span className="flex min-w-0 items-center gap-1.5 @xl:w-[132px]" title={row.where}>
+            <ProjectMark id={row.project} />
+            <span className="hidden truncate text-fg-3 @xl:inline" data-testid="inbox-project">
+              {row.where}
+            </span>
           </span>
           <span className="hidden w-[80px] @3xl:block">
-            {row.runtime && <RuntimeChip runtime={row.runtime} />}
+            <RuntimeChip runtime={row.runtime} />
           </span>
           <Time at={row.at} className="w-[60px] text-right" />
         </span>
-        {/* a click in here is a button's, never the row's. 290 is the three cells it replaces
-            (126 + 80 + 60 and two gaps), so the title of a wide row does not move. in a narrow
-            list they are wider than the time: the title gives way, and Open drops the editor's name */}
+        {/* a click in here is a button's, never the row's. 296 is the three cells it replaces (132
+            + 80 + 60 and two gaps) and 204 the two of a list without the runtime, so the title of
+            a row does not move. beside the panel they are wider than what they replace: the title
+            gives way, and Open drops the editor's name */}
         <span
-          className="hidden shrink-0 items-center justify-end gap-1.5 self-start group-hover:flex group-data-[active]:flex @3xl:min-w-[290px]"
+          className="hidden shrink-0 items-center justify-end gap-1.5 group-hover:flex group-data-[active]:flex @xl:min-w-[204px] @3xl:min-w-[296px]"
           onClick={(e) => e.stopPropagation()}
         >
-          {row.sessionKey && row.open && (
-            <Button
-              size="sm"
-              tabIndex={-1}
-              disabled={!!row.open.disabled}
-              title={row.open.disabled}
-              data-testid="inbox-open"
-              onClick={() => openSession(row)}
-            >
-              {/* one span: the button is a flex row, and two would get its gap between them */}
-              <span>
-                Open<span className="hidden @3xl:inline"> in {editor}</span>
-              </span>
-            </Button>
-          )}
-          {row.reviewKeys.length > 0 && (
-            <Button
-              size="sm"
-              tabIndex={-1}
-              data-testid="inbox-review"
-              onClick={() => void review(row.project, row.reviewKeys)}
-            >
-              <Icon name="check" size={10} />
-              Reviewed
-            </Button>
-          )}
+          <Button
+            size="sm"
+            tabIndex={-1}
+            disabled={!!row.open.disabled}
+            title={row.open.disabled}
+            data-testid="inbox-open"
+            onClick={() => openSession(row)}
+          >
+            {/* one span: the button is a flex row, and two would get its gap between them */}
+            <span>
+              Open<span className="hidden @3xl:inline"> in {editor}</span>
+            </span>
+          </Button>
+          <Button
+            size="sm"
+            tabIndex={-1}
+            data-testid="inbox-dismiss"
+            onClick={() => void review(row.project, row.reviewKeys)}
+          >
+            <Icon name="check" size={10} />
+            Dismiss
+          </Button>
         </span>
       </div>
       {row.summary && (
         <p
-          className="mt-0.5 line-clamp-2 pl-[18px] text-fg"
+          className="mt-0.5 line-clamp-2 text-fg-2"
           title={row.summary}
           data-testid="inbox-summary"
         >
-          {row.conclusionId && (
-            <span className="mr-1.5 font-mono text-sm text-fg-4">{row.conclusionId}</span>
-          )}
           {row.summary}
         </p>
       )}
@@ -140,120 +124,48 @@ function InboxRow({
   );
 }
 
-/** a row with no card has no page to show: the row itself, with its summary whole */
-function RowPanel({ row, onClose }: { row: InboxRowView; onClose: () => void }) {
-  const editor = useStore((s) => s.editor?.label ?? "the editor");
-  const who = whoView(row.who);
-  return (
-    <div className="flex h-full flex-col" data-testid="row-panel">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
-        <EscButton label="Close" onClick={onClose} />
-        <KindLabel kind={row.kind} />
-        <h2 className="min-w-0 flex-1 truncate font-semibold" title={row.title}>
-          {row.title}
-        </h2>
-        {row.sessionKey && row.open && (
-          <Button
-            variant="primary"
-            disabled={!!row.open.disabled}
-            title={row.open.disabled}
-            data-testid="panel-open"
-            onClick={() => openSession(row)}
-          >
-            Open in {editor}
-          </Button>
-        )}
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-10 py-7">
-        <div className="flex h-5 items-center gap-3">
-          {who && (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Avatar who={who} />
-              {/* a session is titled by its own name: the header already says it */}
-              {who.name !== row.title && <span className="truncate text-fg-2">{who.name}</span>}
-            </span>
-          )}
-          {row.runtime && <RuntimeChip runtime={row.runtime} />}
-          <Time at={row.at} />
-        </div>
-        <p
-          className="selectable mt-3 whitespace-pre-wrap break-words text-fg"
-          data-testid="panel-summary"
-        >
-          {row.summary}
-        </p>
-        <div className="mt-5 flex items-center gap-2">
-          {row.reviewKeys.length > 0 && (
-            <Button
-              size="sm"
-              data-testid="panel-review"
-              onClick={() => void review(row.project, row.reviewKeys)}
-            >
-              <Icon name="check" size={10} />
-              Reviewed
-            </Button>
-          )}
-          {/* the conclusion with its why, its sources and the turn it was recorded in */}
-          {row.conclusionId && <ConclusionChip id={row.conclusionId} />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
- * the inbox screen (ui.md 4.1): this project's rows in main's order, Asked and Stopped first. a
- * click opens a row in the panel beside the list
+ * the inbox: every project's sessions that need the person, newest first, in main's order. a
+ * click opens a session in the panel beside the list
  */
 export function Inbox() {
-  const inbox = useStore((s) => s.inbox);
-  const project = useStore((s) => s.project);
+  const rows = useStore((s) => s.inbox.rows);
   // no row looks like the keyboard's until a key says so
   const active = useStore((s) => (s.keys ? s.active.inbox : null));
   const peek = useStore((s) => s.peek);
-  const rows = useMemo(() => projectRows(inbox, project), [inbox, project]);
-  const before = useRef<string[]>([]);
+  const ids = useMemo(() => rows.map((r) => r.sessionId), [rows]);
   const some = rows.length > 0;
-  const open = rows.find((r) => r.id === peek);
+  const open = rows.find((r) => r.sessionId === peek);
   const pair = useRowDoubleClick(openSession);
-  // the same as Escape
-  const close = () => perform({ type: "close-panel" });
 
-  // the list holds the keyboard: when the screen mounts, and when the first row arrives after it
-  // (the record is read once the page is up). never from under a dialog or the palette
+  // the list holds the keyboard: when the screen mounts, and when the first row arrives after it.
+  // never from under a dialog or the palette
   useEffect(() => {
     const s = useStore.getState();
     if (some && !s.overlay && !s.dialog) focusScreen();
   }, [some]);
-
-  // a row that left hands the keyboard to the one that took its place, and the panel with it
-  useEffect(() => {
-    const ids = rows.map((r) => r.id);
-    const s = useStore.getState();
-    const next = nextActiveKey(before.current, ids, s.active.inbox, false);
-    // a closed panel stays closed: for a null, nextActiveKey answers the first row
-    const peek = s.peek && nextActiveKey(before.current, ids, s.peek, false);
-    before.current = ids;
-    if (next !== s.active.inbox || peek !== s.peek) {
-      s.set({ active: { ...s.active, inbox: next }, peek });
-    }
-  }, [rows]);
+  useHandoff("inbox", ids);
 
   return (
     <Split
       testId="inbox"
       root={pair.root}
-      label={open && `${kindWord(open.kind)}: ${open.card?.id ?? open.title}`}
+      label={open && `${stateWord(open.kind)}: ${open.title}`}
       panel={
-        open &&
-        (open.card ? (
-          <CardPage key={open.card.id} cardId={open.card.id} onClose={close} />
-        ) : (
-          <RowPanel row={open} onClose={close} />
-        ))
+        open && (
+          <SessionPanel
+            key={open.sessionId}
+            session={open}
+            project={open.project}
+            state={open.kind}
+            at={open.at}
+            row={open}
+            // the same as Escape
+            onClose={() => perform({ type: "close-panel" })}
+          />
+        )
       }
     >
-      <h1 className="sr-only">Inbox</h1>
       {some ? (
         <ul
           role="listbox"
@@ -265,13 +177,13 @@ export function Inbox() {
         >
           {rows.map((r) => (
             <InboxRow
-              key={r.id}
+              key={r.sessionId}
               row={r}
-              active={r.id === active}
-              open={r.id === peek}
+              active={r.sessionId === active}
+              open={r.sessionId === peek}
               onClick={() => {
                 pair.clicked(r);
-                openRow("inbox", r.id);
+                openRow("inbox", r.sessionId);
               }}
             />
           ))}

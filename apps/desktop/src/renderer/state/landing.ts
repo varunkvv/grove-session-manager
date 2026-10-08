@@ -1,34 +1,22 @@
 import type { Landing } from "../../shared/ipc.ts";
-import { go, openCard, openConclusion, switchProject } from "./actions.ts";
+import { go, switchProject } from "./actions.ts";
 import { useStore } from "./store.ts";
 
 /**
- * a notification click or a tray row, in the page: the card, with the screen main named behind it
- * so Back goes there, or that row of the inbox, or that conclusion. looking is not reviewing:
- * nothing is marked.
+ * a notification click or a tray row, in the page: that session's row in the list main named, with
+ * its panel open. looking is not dismissing: nothing is marked.
  */
 export function applyLanding(landing: Landing): void {
   const s = useStore.getState();
   const t = landing.target;
-  s.set({ overlay: null, dialog: null });
-  // the project went while the click was on its way: the inbox of the one on screen
-  if (t.project && !s.projects.some((p) => p.id === t.project)) {
-    go("inbox");
-    return;
-  }
-  if (t.project && t.project !== s.project) switchProject(t.project);
-  if (t.view === "card") {
-    go(t.back);
-    openCard(t.cardId);
-  } else if (t.view === "conclusions") {
-    go("conclusions");
-    if (t.conclusionId) openConclusion(t.conclusionId);
-  } else {
-    go("inbox");
-    // that row is the keyboard's, and shows it: its buttons are what the click was about
-    if (t.rowId) {
-      s.set({ active: { ...useStore.getState().active, inbox: t.rowId }, keys: true });
-    }
+  s.set({ dialog: null });
+  // the project went while the click was on its way: the inbox still lists what needs him
+  if (t.view === "sessions" && s.projects.some((p) => p.id === t.project)) switchProject(t.project);
+  else go("inbox");
+  // that row is the keyboard's, and shows it. the list closes the panel again if the row has left
+  if (t.session) {
+    const now = useStore.getState();
+    now.set({ peek: t.session, active: { ...now.active, [now.section]: t.session }, keys: true });
   }
 }
 

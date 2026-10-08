@@ -1,13 +1,12 @@
 import { useEffect } from "react";
 import type { MenuCommandId } from "../shared/ipc.ts";
-import { CardPage } from "./components/CardPage.tsx";
-import { Cards } from "./components/Cards.tsx";
 import { Banner, Toasts } from "./components/Chrome.tsx";
-import { Conclusions } from "./components/Conclusions.tsx";
 import { ConfirmDialog, DeleteProjectDialog, SettingsDialog } from "./components/Dialogs.tsx";
 import { Inbox } from "./components/Inbox.tsx";
 import { Palette } from "./components/Palette.tsx";
 import { ProjectForm } from "./components/ProjectForm.tsx";
+import { Sessions } from "./components/Sessions.tsx";
+import { Sidebar } from "./components/Sidebar.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { type Intent, interpret } from "./logic/keyboard.ts";
 import { focusScreen, perform } from "./state/actions.ts";
@@ -20,8 +19,7 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "open-project": { type: "open-project" },
   "edit-project": { type: "edit-project" },
   "go-inbox": { type: "go", section: "inbox" },
-  "go-cards": { type: "go", section: "cards" },
-  "go-conclusions": { type: "go", section: "conclusions" },
+  "go-sessions": { type: "go", section: "sessions" },
   palette: { type: "palette" },
   "focus-search": { type: "focus-search" },
   refresh: { type: "refresh" },
@@ -36,12 +34,9 @@ function Screen() {
   switch (view.name) {
     case "inbox":
       return <Inbox />;
-    case "cards":
-      return <Cards />;
-    case "card":
-      return <CardPage key={view.cardId} cardId={view.cardId} />;
-    case "conclusions":
-      return <Conclusions />;
+    case "sessions":
+      // keyed, so one project's list never keeps another's scroll or keyboard
+      return <Sessions key={project} />;
     case "new-project":
       return <ProjectForm mode="new" />;
     case "edit-project":
@@ -91,10 +86,9 @@ export function App() {
             target?.tagName === "SELECT",
           inSearch: target?.id === "search",
           inControl: !!target?.closest?.(
-            'button, a[href], [role="button"], [role="menuitem"], [role="menuitemradio"], [role="radio"]',
+            'button, a[href], [role="button"], [role="menuitem"], [role="radio"]',
           ),
-          query: s.conclusions.query,
-          expanded: s.conclusions.open !== null,
+          query: s.filter,
           panel: s.peek !== null,
           canGoBack: s.back.length > 0,
           // the form says so itself, on any element: its fields are its own state
@@ -114,8 +108,7 @@ export function App() {
       if (!intent) return;
       // a dialog closes itself through the platform's cancel event
       if (intent.type === "close-overlay" && s.dialog) return;
-      // let the character land in the search field it is being redirected to
-      if (intent.type !== "type-through") e.preventDefault();
+      e.preventDefault();
       perform(intent);
     };
     window.addEventListener("keydown", onKey);
@@ -155,20 +148,22 @@ export function App() {
   if (!ready) return <div className="drag h-full bg-canvas" />;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="app-ready">
-      <TopBar />
-      <Banner />
-      <main
-        className="min-h-0 flex-1 overflow-hidden"
-        data-testid="screen"
-        data-view={view}
-        // the mouse moved: no row looks like the keyboard's until a key says so again
-        onPointerMove={() => {
-          if (useStore.getState().keys) useStore.getState().set({ keys: false });
-        }}
-      >
-        <Screen />
-      </main>
+    <div
+      className="flex h-full min-h-0 overflow-hidden"
+      data-testid="app-ready"
+      // the mouse moved: no row looks like the keyboard's until a key says so again
+      onPointerMove={() => {
+        if (useStore.getState().keys) useStore.getState().set({ keys: false });
+      }}
+    >
+      <Sidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        <Banner />
+        <main className="min-h-0 flex-1 overflow-hidden" data-testid="screen" data-view={view}>
+          <Screen />
+        </main>
+      </div>
       <Palette />
       <DeleteProjectDialog />
       <SettingsDialog />

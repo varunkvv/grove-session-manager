@@ -8,7 +8,6 @@ const ctx = (o: Partial<KeyContext> = {}): KeyContext => ({
   inSearch: false,
   inControl: false,
   query: "",
-  expanded: false,
   panel: false,
   canGoBack: false,
   formDirty: false,
@@ -26,7 +25,7 @@ const key = (k: string, o: Partial<KeyInput> = {}): KeyInput => ({
   ...o,
 });
 const cmd = (k: string, o: Partial<KeyInput> = {}) => key(k, { meta: true, ...o });
-const search = { view: "conclusions", inText: true, inSearch: true } as const;
+const search = { view: "sessions", inText: true, inSearch: true } as const;
 
 describe("what a key means", () => {
   it("nothing while an IME composes", () => {
@@ -35,33 +34,24 @@ describe("what a key means", () => {
   });
 
   it("Escape: one step at a time, by screen", () => {
-    expect(interpret(ctx({ overlay: true, view: "card" }), key("Escape"))).toEqual({
-      type: "close-overlay",
-    });
-    const conclusions = (o: Partial<KeyContext>) =>
-      interpret(ctx({ view: "conclusions", ...o }), key("Escape"));
-    // the open row, then the search, then back
-    expect(conclusions({ expanded: true, query: "redis", canGoBack: true })).toEqual({
-      type: "collapse",
-    });
-    expect(conclusions({ query: "redis", canGoBack: true })).toEqual({ type: "clear-query" });
-    expect(conclusions({ canGoBack: true })).toEqual({ type: "back" });
-    expect(conclusions({})).toBeNull();
-    expect(interpret(ctx({ view: "card" }), key("Escape"))).toEqual({ type: "back" });
-    expect(interpret(ctx({ view: "inbox" }), key("Escape"))).toBeNull();
-    // Inbox or Cards with a row open in the panel: the panel closes, before anything goes back
-    for (const view of ["inbox", "cards"] as const) {
-      expect(interpret(ctx({ view, panel: true, canGoBack: true }), key("Escape")), view).toEqual({
-        type: "close-panel",
-      });
-    }
-    expect(interpret(ctx({ view: "conclusions", panel: true }), key("Escape"))).toBeNull();
-    // the panel is kept across a trip to a card page: there Escape is still Back
-    expect(interpret(ctx({ view: "card", panel: true }), key("Escape"))).toEqual({ type: "back" });
     expect(interpret(ctx({ overlay: true, panel: true }), key("Escape"))).toEqual({
       type: "close-overlay",
     });
-    expect(interpret(ctx({ view: "cards", canGoBack: true }), key("Escape"))).toEqual({
+    const sessions = (o: Partial<KeyContext>) =>
+      interpret(ctx({ view: "sessions", ...o }), key("Escape"));
+    // the panel, then what was typed in the filter, then nothing: a list has nowhere to go back to
+    expect(sessions({ panel: true, query: "login" })).toEqual({ type: "close-panel" });
+    expect(sessions({ query: "login" })).toEqual({ type: "clear-query" });
+    expect(sessions({ ...search, query: "login" })).toEqual({ type: "clear-query" });
+    expect(sessions({})).toBeNull();
+    expect(interpret(ctx({ view: "inbox" }), key("Escape"))).toBeNull();
+    expect(interpret(ctx({ view: "inbox", panel: true }), key("Escape"))).toEqual({
+      type: "close-panel",
+    });
+    // the inbox has no filter: text left in a project's is not its to clear
+    expect(interpret(ctx({ view: "inbox", query: "login" }), key("Escape"))).toBeNull();
+    // a panel left open under a form is not what Escape is about there
+    expect(interpret(ctx({ view: "new-project", panel: true }), key("Escape"))).toEqual({
       type: "back",
     });
   });
@@ -73,7 +63,7 @@ describe("what a key means", () => {
     }
   });
 
-  it("an open dialog, palette or project menu owns every other key", () => {
+  it("an open dialog or palette owns every other key", () => {
     const open = ctx({ overlay: true });
     for (const k of [key("ArrowDown"), key("Enter"), cmd("k"), cmd("1"), cmd("Enter"), key("a")]) {
       expect(interpret(open, k), k.key).toBeNull();
@@ -84,8 +74,7 @@ describe("what a key means", () => {
     const table: Array<[string, unknown]> = [
       ["k", { type: "palette" }],
       ["1", { type: "go", section: "inbox" }],
-      ["2", { type: "go", section: "cards" }],
-      ["3", { type: "go", section: "conclusions" }],
+      ["2", { type: "go", section: "sessions" }],
       ["n", { type: "new-project" }],
       ["e", { type: "edit-project" }],
       ["o", { type: "open-project" }],
@@ -105,12 +94,12 @@ describe("what a key means", () => {
   it("cmd keys still act while a field or a button has focus", () => {
     const field = ctx({ view: "edit-project", inText: true });
     expect(interpret(field, cmd("k"))).toEqual({ type: "palette" });
-    expect(interpret(field, cmd("2"))).toEqual({ type: "go", section: "cards" });
+    expect(interpret(field, cmd("2"))).toEqual({ type: "go", section: "sessions" });
     expect(interpret(ctx({ inControl: true }), cmd("Enter"))).toEqual({ type: "open-editor" });
   });
 
   it("cmd keys that are gone, and the ones a field keeps for itself", () => {
-    for (const k of ["t", "4", "i", "g", "j", "a", "c", "v", "z"]) {
+    for (const k of ["t", "3", "4", "i", "g", "j", "a", "c", "v", "z"]) {
       expect(interpret(ctx(), cmd(k)), k).toBeNull();
     }
     // cmd-shift is selection and redo, and the old shift shortcuts are gone
@@ -119,7 +108,6 @@ describe("what a key means", () => {
     }
     // in a form's field cmd-arrows move the caret: there is no list to jump through
     expect(interpret(ctx({ view: "new-project", inText: true }), cmd("ArrowUp"))).toBeNull();
-    expect(interpret(ctx({ view: "card" }), cmd("ArrowDown"))).toBeNull();
   });
 
   it("a text field swallows plain keys", () => {
@@ -131,7 +119,7 @@ describe("what a key means", () => {
   });
 
   it("Enter and Space on a focused control are the control's own", () => {
-    const button = ctx({ view: "cards", inControl: true });
+    const button = ctx({ view: "sessions", inControl: true });
     expect(interpret(button, key("Enter"))).toBeNull();
     expect(interpret(button, key(" "))).toBeNull();
     // the arrows still move the list behind it
@@ -143,7 +131,7 @@ describe("what a key means", () => {
       type: "project-step",
       delta: 1,
     });
-    expect(interpret(ctx({ view: "card" }), key("ArrowUp", { alt: true }))).toEqual({
+    expect(interpret(ctx({ view: "sessions" }), key("ArrowUp", { alt: true }))).toEqual({
       type: "project-step",
       delta: -1,
     });
@@ -151,8 +139,8 @@ describe("what a key means", () => {
     expect(interpret(ctx(), key("ArrowDown", { ctrl: true }))).toBeNull();
   });
 
-  it("Inbox and Cards: arrows, pages, Home, End and Enter. no letter acts", () => {
-    for (const view of ["inbox", "cards"] as const) {
+  it("the two lists: arrows, pages, Home, End and Enter. no letter acts", () => {
+    for (const view of ["inbox", "sessions"] as const) {
       const c = ctx({ view });
       expect(interpret(c, key("ArrowDown"))).toEqual({ type: "move", delta: 1 });
       expect(interpret(c, key("ArrowUp"))).toEqual({ type: "move", delta: -1 });
@@ -168,7 +156,7 @@ describe("what a key means", () => {
     expect(interpret(ctx({ pageSize: 1 }), key("PageDown"))).toEqual({ type: "move", delta: 1 });
   });
 
-  it("in the Conclusions search the arrows and Enter drive the list, and everything else types", () => {
+  it("in the sessions filter the arrows and Enter drive the list, and everything else types", () => {
     const c = ctx(search);
     expect(interpret(c, key("ArrowDown"))).toEqual({ type: "move", delta: 1 });
     expect(interpret(c, key("PageUp"))).toEqual({ type: "move", delta: -9 });
@@ -177,24 +165,6 @@ describe("what a key means", () => {
       expect(interpret(c, key(k)), k).toBeNull();
     }
     expect(interpret(c, cmd("d"))).toEqual({ type: "review" });
-  });
-
-  it("on Conclusions outside the search, a letter goes to the search", () => {
-    const c = ctx({ view: "conclusions" });
-    expect(interpret(c, key("ArrowDown"))).toEqual({ type: "move", delta: 1 });
-    expect(interpret(c, key("End"))).toEqual({ type: "move-to", where: "last" });
-    expect(interpret(c, key("Enter"))).toEqual({ type: "open" });
-    expect(interpret(c, key("/"))).toEqual({ type: "focus-search" });
-    expect(interpret(c, key("r"))).toEqual({ type: "type-through" });
-    expect(interpret(c, key("Tab"))).toBeNull();
-    expect(interpret(c, key("Shift"))).toBeNull();
-  });
-
-  it("a card leaves arrows, space and the page keys to the browser, which scrolls it", () => {
-    const c = ctx({ view: "card" });
-    for (const k of ["ArrowDown", "ArrowUp", " ", "PageDown", "Home", "Enter", "a", "/"]) {
-      expect(interpret(c, key(k)), k).toBeNull();
-    }
     expect(interpret(c, cmd("Enter"))).toEqual({ type: "open-editor" });
   });
 });

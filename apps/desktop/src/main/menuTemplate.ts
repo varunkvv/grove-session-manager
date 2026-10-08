@@ -72,8 +72,7 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     label: "View",
     submenu: [
       command("Inbox", "CmdOrCtrl+1", "go-inbox"),
-      command("Cards", "CmdOrCtrl+2", "go-cards"),
-      command("Conclusions", "CmdOrCtrl+3", "go-conclusions"),
+      command("Sessions", "CmdOrCtrl+2", "go-sessions"),
       separator,
       // the page owns cmd-K, so it works while a field has focus. a toggle the page and the menu
       // both acted on would open the palette and close it again
@@ -103,21 +102,14 @@ function line(s: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 }
 
-/**
- * the menu bar item's menu: the first three inbox rows across every project (Asked and Stopped come
- * first already), then Open Grove and Quit
- */
+/** the menu bar item's menu: the three newest inbox rows across every project, then Open Grove and Quit */
 export function trayTemplate(inbox: InboxView, a: TrayActions): MenuItemConstructorOptions[] {
   const rows = inbox.rows.slice(0, 3).map(
     (r): MenuItemConstructorOptions => ({
-      label: line(`${KIND_WORD[r.kind]}  ${r.card ? `${r.card.id} ` : ""}${r.title}`, 60),
-      sublabel: line(r.summary ? `${r.projectName} · ${r.summary}` : r.projectName, 80),
-      click: () =>
-        a.land(
-          r.card
-            ? { view: "card", project: r.project, cardId: r.card.id, back: "inbox" }
-            : { view: "inbox", project: r.project, rowId: r.id },
-        ),
+      label: line(`${KIND_WORD[r.kind]}  ${r.title}`, 60),
+      sublabel: line(r.summary ? `${r.where} · ${r.summary}` : r.where, 80),
+      // its row, with its panel open
+      click: () => a.land({ view: "inbox", session: r.sessionId }),
     }),
   );
   return [

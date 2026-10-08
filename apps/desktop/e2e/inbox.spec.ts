@@ -1,29 +1,35 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { readCard } from "@grove/record";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { reviewAllKeys } from "../src/renderer/logic/palette.ts";
 import {
   type Fixture,
   hookEvent,
   makeFixture,
+  makePlainDir,
   readExecLog,
   writeSession,
 } from "./helpers/fixture.ts";
-import { api, groveTest, type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
-import { asAgent, asPerson, interrupted, liveSession, writeProject } from "./helpers/project.ts";
+import { groveTest, type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
+import { interrupted, liveSession, writeProject } from "./helpers/project.ts";
 
 const SID = {
-  idp: "aaaaaaaa-0000-4000-8000-000000000001",
-  login: "bbbbbbbb-0000-4000-8000-000000000002",
-  callback: "cccccccc-0000-4000-8000-000000000003",
-  tokens: "dddddddd-0000-4000-8000-000000000004",
-  /** in the project, holding no card */
-  chat: "eeeeeeee-0000-4000-8000-000000000005",
+  /** its turn ended on a question. in the editor */
+  turn: "aaaaaaaa-0000-4000-8000-000000000001",
+  /** waits on a permission prompt. held by the supervisor, which has not said which session it is */
+  permission: "bbbbbbbb-0000-4000-8000-000000000002",
+  /** its process went away mid-turn while grove was closed */
+  stopped: "cccccccc-0000-4000-8000-000000000003",
+  /** in the other project, stopped on an api error */
+  failed: "dddddddd-0000-4000-8000-000000000004",
+  /** in the project, and needs nothing */
+  quiet: "eeeeeeee-0000-4000-8000-000000000005",
+  /** in no project */
+  loose: "ffffffff-0000-4000-8000-000000000006",
 };
 
-const QUESTION =
-  "Staging has no okta tenant. Create a dev tenant, or point staging at the prod tenant with its own app? I would create a dev tenant.";
+const QUESTION = "Create a dev tenant, or point staging at the prod tenant with its own app?";
+// what an agent wrote is untrusted: the tag must come out as the text it is
+const REPLY = `Staging has no okta tenant.\n\n- one app per **environment**\n- no wildcard <b id="evil">hosts</b>\n\n${QUESTION}`;
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -34,75 +40,42 @@ test.afterEach(async () => {
 });
 
 /**
- * one project with a row of every kind: Asked, Stopped, Decided, Verdict, Found, New card,
- * Finished. the person wrote the backlog, so only the card an agent made is a New card. the other
- * Asked row, a session with no card, comes from a hook event. the second project has nothing
+ * two projects and a row of every kind: Your turn, Needs permission and Stopped in auth-sso,
+ * Failed in billing-export. the events were written while grove was closed
  */
 function seed(): Fixture {
   fx = makeFixture({ withCompanion: true });
   root = writeProject(fx, { name: "auth-sso", prefix: "AUTH", goal: "SSO for the dashboard" }).root;
-  const you = asPerson(root);
-  for (const title of [
-    "Point staging at okta",
-    "Login page with the SSO button",
-    "Callback handler",
-    "Token storage",
-  ]) {
-    you("card_create", { title });
-  }
-  const agent = (sessionId: string, name: string, lastPrompt?: string) => {
-    writeSession(fx, { cwd: root, sessionId, title: name, lastPrompt });
-    return asAgent(fx, root, { sessionId, name });
-  };
+  const billing = writeProject(fx, { name: "billing-export", prefix: "BILL" }).root;
 
-  const idp = agent(SID.idp, "idp config");
-  idp("card_claim", { card: "AUTH-1" });
-  idp("question_ask", { card: "AUTH-1", text: QUESTION, to: "person" });
-  liveSession(fx, { sessionId: SID.idp, kind: "interactive", entrypoint: "claude-vscode" });
-
-  const login = agent(SID.login, "login page");
-  login("card_claim", { card: "AUTH-2" });
-  login("conclusion_record", {
-    kind: "decision",
-    what: "State and nonce go in a signed cookie.",
-    why: "No redis round trip on the callback.",
-    by: "agent",
-    card: "AUTH-2",
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID.turn,
+    title: "idp config",
+    branch: "feat/okta-staging",
+    prompt: "point staging at okta",
+    reply: REPLY,
   });
-  login("conclusion_record", {
-    kind: "verdict",
-    what: "The saml strategy cannot be reused for oidc.",
-    why: "It assumes a POST binding.",
-    by: "agent",
-    card: "AUTH-2",
+  liveSession(fx, { sessionId: SID.turn, kind: "interactive", entrypoint: "claude-vscode" });
+  writeSession(fx, { cwd: root, sessionId: SID.permission, title: "login page" });
+  liveSession(fx, { sessionId: SID.permission, kind: "bg" });
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID.stopped,
+    title: "callback handler",
+    lastPrompt: "Wire the callback route",
   });
-  login("card_create", {
-    title: "Error page for a disabled org",
-    body: "Found while doing AUTH-2. A disabled org lands on a blank page.",
-    from: "AUTH-2",
+  interrupted(fx, { [SID.stopped]: Date.now() - 60_000 });
+  writeSession(fx, { cwd: root, sessionId: SID.quiet, title: "chat-features-35" });
+  writeSession(fx, { cwd: billing, sessionId: SID.failed, title: "export job" });
+  writeSession(fx, { cwd: makePlainDir(fx, "scratch"), sessionId: SID.loose, title: "notes" });
+
+  hookEvent(fx, SID.turn, "Stop", { last_assistant_message: REPLY });
+  hookEvent(fx, SID.permission, "PermissionRequest", {
+    tool_name: "Bash",
+    tool_input: { command: "pnpm test --filter login" },
   });
-  // held by the supervisor, and Claude Code has not said which background session it is
-  liveSession(fx, { sessionId: SID.login, kind: "bg" });
-
-  const callback = agent(SID.callback, "callback handler", "Wire the callback route");
-  callback("card_claim", { card: "AUTH-3" });
-  // its process went away mid-turn while grove was closed
-  interrupted(fx, { [SID.callback]: Date.now() - 60_000 });
-
-  const tokens = agent(SID.tokens, "token storage");
-  tokens("card_claim", { card: "AUTH-4" });
-  tokens("conclusion_record", {
-    kind: "finding",
-    what: "Staging has no okta tenant in terraform state.",
-    why: "terraform state list shows none.",
-    by: "agent",
-    card: "AUTH-4",
-    changes_plan: true,
-  });
-  tokens("card_done", { card: "AUTH-4", summary: "Refresh tokens stay on the server (D-1)." });
-
-  writeSession(fx, { cwd: root, sessionId: SID.chat, title: "chat-features-35" });
-  writeProject(fx, { name: "billing-export", prefix: "BILL", goal: "Invoice exports" });
+  hookEvent(fx, SID.failed, "StopFailure", { message: "API Error: 529 Overloaded" });
   return fx;
 }
 
@@ -111,14 +84,18 @@ const row = (page: Page, kind: string) =>
   page.locator(`[data-testid="inbox-row"][data-kind="${kind}"]`);
 /** the row in the panel */
 const openRow = (page: Page) => page.locator('[data-testid="inbox-row"][data-open]');
+const panel = (page: Page) => page.getByTestId("session-panel");
 /** every time the editor was run */
 const code = () => readExecLog(fx).filter((l) => l.bin === "code");
 const kinds = (page: Page) =>
   rows(page).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.kind));
+const count = (item: Locator) => item.getByTestId("count");
+const projectItem = (page: Page, id: string) =>
+  page.locator(`[data-testid="project-item"][data-id="${id}"]`);
 
-/** the record is read after the page is up */
-async function ready(page: Page, count = 7): Promise<void> {
-  await expect(rows(page)).toHaveCount(count, { timeout: 15_000 });
+/** the statuses are read after the page is up */
+async function ready(page: Page, n = 4): Promise<void> {
+  await expect(rows(page)).toHaveCount(n, { timeout: 15_000 });
 }
 
 /**
@@ -132,152 +109,270 @@ async function under(target: Locator, then: () => Promise<unknown>): Promise<voi
   }).toPass({ timeout: 30_000 });
 }
 
-const reviewed = (target: Locator) =>
-  under(target, () => target.getByTestId("inbox-review").click({ timeout: 2_000 }));
+const dismiss = (target: Locator) =>
+  under(target, () => target.getByTestId("inbox-dismiss").click({ timeout: 2_000 }));
 
-test("one row of every kind, Asked and Stopped first, each with its summary on a second line", async () => {
+test("one row for each session that needs him, from every project, and the sidebar counts them by project", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
 
+  // newest first: the one that stopped a minute ago is last
   const got = await kinds(page);
-  expect(got.slice(0, 2).sort()).toEqual(["asked", "stopped"]);
-  expect(got.slice(2).sort()).toEqual(["decided", "finished", "found", "new", "verdict"]);
-  // the nav counts every row. the tray only the two that wait on the person
-  await expect(page.getByTestId("inbox-count")).toHaveText("7");
-  expect(await groveTest(app.app).trayTitle()).toBe("2");
+  expect([...got].sort()).toEqual(["failed", "permission", "stopped", "turn"]);
+  expect(got[3]).toBe("stopped");
+  // the sidebar: every row on the inbox, and each project's own. the tray counts them all
+  await expect(count(page.getByTestId("nav-inbox"))).toHaveText("4");
+  await expect(page.getByTestId("nav-inbox")).toHaveAttribute("aria-current", "page");
+  await expect(count(projectItem(page, "auth-sso"))).toHaveText("3");
+  await expect(count(projectItem(page, "billing-export"))).toHaveText("1");
+  expect(await groveTest(app.app).trayTitle()).toBe("4");
 
-  const asked = row(page, "asked");
-  await expect(asked).toHaveAttribute("data-card", "AUTH-1");
-  await expect(asked).toContainText("AUTH-1Point staging at okta");
-  await expect(asked.getByTestId("inbox-summary")).toHaveText(QUESTION);
-  await expect(asked.getByTestId("runtime-chip")).toHaveText("VS Code");
-  await expect(row(page, "decided").getByTestId("inbox-summary")).toHaveText(
-    "D-1State and nonce go in a signed cookie.",
-  );
-  await expect(row(page, "found").getByTestId("inbox-summary")).toContainText("F-1");
-  await expect(row(page, "new")).toContainText("AUTH-5Error page for a disabled org");
+  const turn = row(page, "turn");
+  await expect(turn).toHaveAttribute("data-id", SID.turn);
+  await expect(turn).toContainText("idp config");
+  await expect(turn.getByTestId("state")).toHaveText("Your turn");
+  // the end of its last message, where the question is
+  await expect(turn.getByTestId("inbox-summary")).toHaveText(QUESTION);
+  await expect(turn.getByTestId("inbox-project")).toHaveText("auth-sso");
+  await expect(turn.getByTestId("runtime-chip")).toHaveText("VS Code");
+  const permission = row(page, "permission");
+  await expect(permission.getByTestId("state")).toHaveText("Needs permission");
+  await expect(permission.getByTestId("inbox-summary")).toHaveText("Bash pnpm test --filter login");
   await expect(row(page, "stopped").getByTestId("inbox-summary")).toHaveText(
-    "Stopped mid-turn. It was working on: Wire the callback route",
+    "Wire the callback route",
   );
+  await expect(row(page, "stopped").getByTestId("runtime-chip")).toHaveText("Closed");
+  const failed = row(page, "failed");
+  await expect(failed).toContainText("export job");
+  await expect(failed.getByTestId("inbox-project")).toHaveText("billing-export");
+  await expect(failed.getByTestId("inbox-summary")).toHaveText("API Error: 529 Overloaded");
+  // each project has its own colour, on its rows and beside its name
+  const hue = (l: Locator) => l.getByTestId("project-mark").getAttribute("data-hue");
+  expect(await hue(turn)).toBe(await hue(projectItem(page, "auth-sso")));
+  expect(await hue(failed)).toBe(await hue(projectItem(page, "billing-export")));
+  expect(await hue(failed)).not.toBe(await hue(turn));
 
-  // who, where and when give way to the two buttons under the mouse
-  await expect(asked.getByTestId("inbox-review")).toBeHidden();
-  await under(asked, async () => {
-    await expect(asked.getByTestId("inbox-review")).toBeVisible({ timeout: 2_000 });
-    await expect(asked.getByTestId("inbox-open")).toHaveText("Open in VS Code", { timeout: 2_000 });
-    await expect(asked.getByTestId("avatar")).toBeHidden({ timeout: 2_000 });
+  // where it is and when give way to the two buttons under the mouse
+  await expect(turn.getByTestId("inbox-dismiss")).toBeHidden();
+  await under(turn, async () => {
+    await expect(turn.getByTestId("inbox-dismiss")).toHaveText("Dismiss", { timeout: 2_000 });
+    await expect(turn.getByTestId("inbox-open")).toHaveText("Open in VS Code", { timeout: 2_000 });
+    await expect(turn.getByTestId("runtime-chip")).toBeHidden({ timeout: 2_000 });
   });
 
   // an agent grove cannot open yet: the button says why, and a click on it is not a click on the row
-  const held = row(page, "decided");
-  await expect(held.getByTestId("runtime-chip")).toHaveText("Background");
-  await expect(held.getByTestId("inbox-open")).toBeDisabled();
-  await expect(held.getByTestId("inbox-open")).toHaveAttribute(
+  await expect(permission.getByTestId("runtime-chip")).toHaveText("Background");
+  await expect(permission.getByTestId("inbox-open")).toBeDisabled();
+  await expect(permission.getByTestId("inbox-open")).toHaveAttribute(
     "title",
     "running in the background",
   );
   // force: playwright would wait for the button to be enabled
-  await under(held, () => held.getByTestId("inbox-open").click({ force: true, timeout: 2_000 }));
+  await under(permission, () =>
+    permission.getByTestId("inbox-open").click({ force: true, timeout: 2_000 }),
+  );
   await expect(page.getByTestId("panel")).toHaveCount(0);
-
-  // the other project's inbox is its own: nothing, and no count in the nav
-  await page.keyboard.press("Alt+ArrowDown");
-  await expect(page.getByTestId("project-switcher")).toContainText("billing-export");
-  await expect(page.getByTestId("inbox-empty")).toHaveText("Nothing needs you.");
-  await expect(page.getByTestId("inbox-count")).toHaveCount(0);
 });
 
-test("Reviewed takes a row out and writes reviewed.json, and marking all leaves Asked and Stopped", async () => {
+test("Dismiss takes a row out: a stop is written down, a turn is only seen until its next event", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-
-  await reviewed(row(page, "decided"));
-  await ready(page, 6);
-  await expect(row(page, "decided")).toHaveCount(0);
-  // the row leaves the page at once, before main has written the file, and a poll that throws ends
   const file = path.join(fx.root, "reviewed.json");
-  const marks = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {});
-  await expect.poll(() => Object.keys(marks())).toEqual(["AUTH/conclusion:D-1"]);
+  const marks = () => (existsSync(file) ? Object.keys(JSON.parse(readFileSync(file, "utf8"))) : []);
 
-  // the palette's `Mark all reviewed in auth-sso` (its own piece) makes this same call
-  const boot = await api(page).bootstrap();
-  const keys = reviewAllKeys(boot.inbox.rows);
-  expect(keys).toHaveLength(4);
-  await page.evaluate((k) => window.grove.review("auth-sso", k, true), keys);
+  await dismiss(row(page, "turn"));
+  await ready(page, 3);
+  await expect(row(page, "turn")).toHaveCount(0);
+  await expect(count(projectItem(page, "auth-sso"))).toHaveText("2");
+  // nothing was stored: looking at a session is not a decision
+  expect(marks()).toEqual([]);
+
+  // the row leaves the page at once, before main has written the file, and a poll that throws ends
+  await dismiss(row(page, "stopped"));
   await ready(page, 2);
-  expect((await kinds(page)).sort()).toEqual(["asked", "stopped"]);
+  await expect.poll(marks).toHaveLength(1);
+  expect(marks()[0]).toMatch(new RegExp(`^AUTH/stopped:${SID.stopped}@\\d+$`));
+
+  // its next turn brings the session back, with what it asks now
+  hookEvent(fx, SID.turn, "UserPromptSubmit");
+  hookEvent(fx, SID.turn, "Stop", { last_assistant_message: "Opened it. Merge now?" });
+  await expect(row(page, "turn").getByTestId("inbox-summary")).toHaveText("Opened it. Merge now?");
+  await expect(count(page.getByTestId("nav-inbox"))).toHaveText("3");
+
+  // the last rows go, and so do the counts
+  await dismiss(row(page, "turn"));
+  await dismiss(row(page, "permission"));
+  await dismiss(row(page, "failed"));
+  await expect(page.getByTestId("inbox-empty")).toHaveText("Nothing needs you.");
+  await expect(page.getByTestId("count")).toHaveCount(0);
+  expect(await groveTest(app.app).trayTitle()).toBe("");
 });
 
-test("Reviewed on a question answers it as the person, and the card stops waiting on you", async () => {
+test("a click opens the session in a panel beside the list, another row swaps it, Escape closes it", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-  const status = async () =>
-    (await api(page).bootstrap()).record["auth-sso"]?.cards.find((c) => c.id === "AUTH-1")?.status;
-  expect(await status()).toBe("waiting");
+  const chips = page.getByTestId("inbox").getByTestId("runtime-chip");
+  // at most one row is under a pointer, and that one shows its buttons instead
+  await expect(chips.filter({ visible: true })).not.toHaveCount(0);
 
-  await reviewed(row(page, "asked"));
-  await expect(row(page, "asked")).toHaveCount(0);
-  await expect.poll(status).toBe("in_progress");
-  const card = readCard(root, "AUTH-1");
-  expect(card?.asksPerson).toBe(false);
-  expect(card?.comments.at(-1)).toMatchObject({
-    kind: "answer",
-    by: "person",
-    answers: card?.questions[0]?.seq,
-    text: "answered in the agent's chat",
-  });
-});
+  await row(page, "turn").click();
+  await expect(panel(page)).toHaveAttribute("data-id", SID.turn);
+  await expect(panel(page).getByRole("heading", { level: 2 })).toHaveText("idp config");
+  await expect(panel(page).getByTestId("state")).toHaveAttribute("data-state", "turn");
+  // where it is: the project, the branch, where it runs
+  const meta = panel(page).getByTestId("panel-meta");
+  await expect(meta).toContainText("auth-sso");
+  await expect(meta).toContainText("feat/okta-staging");
+  await expect(meta.getByTestId("runtime-chip")).toHaveText("VS Code");
+  // what he last said to it, and what it said last in full, drawn as markdown
+  await expect(panel(page).getByTestId("panel-prompt")).toHaveText("point staging at okta");
+  const said = panel(page).getByTestId("panel-text");
+  await expect(said).toContainText("Staging has no okta tenant.");
+  await expect(said).toContainText(QUESTION);
+  await expect(said.locator("li")).toHaveCount(2);
+  await expect(said.locator("strong")).toHaveText("environment");
+  // an agent's html is its text, never an element
+  await expect(said).toContainText('<b id="evil">hosts</b>');
+  await expect(page.locator("#evil")).toHaveCount(0);
+  await expect(panel(page).getByTestId("panel-open")).toHaveText("Open in VS Code");
+  await expect(panel(page).getByTestId("panel-dismiss")).toHaveText("Dismiss");
 
-test("a Stop event from a session with no card makes an Asked row, and Reviewed clears it until its next event", async () => {
-  app = await launchApp(seed());
-  const { page } = app;
-  await ready(page);
-  const session = page.locator('[data-testid="inbox-row"][data-kind="asked"]:not([data-card])');
+  // the list is still there, with that row marked, and it kept the keyboard
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await expect(rows(page)).toHaveCount(4);
+  await expect(openRow(page)).toHaveAttribute("data-kind", "turn");
+  await expect(page.getByRole("listbox")).toBeFocused();
+  // half the window is not room for where it is: the title keeps it, and the state is its mark
+  await expect(chips.filter({ visible: true })).toHaveCount(0);
+  await expect(row(page, "stopped").getByTestId("inbox-project")).toBeHidden();
+  await expect(row(page, "stopped").getByTestId("project-mark")).toBeVisible();
+  await expect(row(page, "stopped").getByTestId("state")).toBeVisible();
+  await expect(row(page, "stopped").getByTestId("state").getByText("Stopped")).toBeHidden();
+  await expect(row(page, "stopped")).toContainText("callback handler");
 
-  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Done. Want me to open the PR?" });
-  await expect(session).toHaveCount(1);
-  await expect(session).toContainText("chat-features-35");
-  // its title is its own name, so the agent cell keeps the avatar and leaves the name out
-  await expect(session.getByText("chat-features-35", { exact: true })).toHaveCount(1);
-  await expect(session.getByTestId("avatar")).toHaveCount(1);
-  await expect(session.getByTestId("inbox-summary")).toHaveText("Done. Want me to open the PR?");
+  // a second click on it is not a toggle, and a click on another row swaps the session
+  await row(page, "turn").click();
+  await expect(panel(page)).toHaveAttribute("data-id", SID.turn);
+  await row(page, "stopped").click();
+  await expect(panel(page)).toHaveAttribute("data-id", SID.stopped);
+  await expect(openRow(page)).toHaveCount(1);
+  await expect(openRow(page)).toHaveAttribute("data-kind", "stopped");
+  // one grove cannot open says why on its button
+  await row(page, "permission").click();
+  await expect(panel(page).getByTestId("panel-open")).toBeDisabled();
+  await expect(panel(page).getByTestId("panel-open")).toHaveAttribute(
+    "title",
+    "running in the background",
+  );
 
-  await reviewed(session);
-  await expect(session).toHaveCount(0);
-  // nothing was stored: looking at a session is not a decision about the record
-  expect(existsSync(path.join(fx.root, "reviewed.json"))).toBe(false);
+  // no click opened the editor
+  expect(code()).toHaveLength(0);
 
-  hookEvent(fx, SID.chat, "UserPromptSubmit");
-  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Opened it. Merge now?" });
-  await expect(session.getByTestId("inbox-summary")).toHaveText("Opened it. Merge now?");
-});
-
-test("a notification click lands on the card, or on the inbox row of a session with none", async () => {
-  app = await launchApp(seed());
-  const { page } = app;
-  await ready(page);
-  const g = groveTest(app.app);
-
-  // the card page is its own piece: the shell says which screen is on
-  await g.reveal(SID.idp);
-  await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached();
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("inbox")).toBeVisible();
-
-  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Which branch?" });
-  const session = page.locator('[data-testid="inbox-row"]:not([data-card])');
-  await expect(session).toHaveCount(1);
-  await page.getByTestId("nav-cards").click();
-  await g.reveal(SID.chat);
-  // that row is the keyboard's, with its buttons showing
-  await expect(session).toHaveAttribute("data-active", "true");
-  await expect(session.getByTestId("inbox-review")).toBeVisible();
+  await expect(page.getByTestId("panel")).toHaveCount(0);
+  await expect(openRow(page)).toHaveCount(0);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await row(page, "turn").click();
+  await page.getByTestId("panel-close").click();
+  await expect(page.getByTestId("panel")).toHaveCount(0);
 });
 
-test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Enter opens the panel", async () => {
+test("a double-click opens the row's session in the editor, once, wherever the panel lands under it", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+  // a stop stays in the inbox when its session is opened, so it can be opened again and again
+  const stopped = row(page, "stopped");
+
+  // the middle of a row: the first click opens the panel, whose edge is then under the pointer
+  await stopped.dblclick();
+  await expect.poll(() => code().length).toBe(1);
+  await expect(panel(page)).toHaveAttribute("data-id", SID.stopped);
+  await expect(openRow(page)).toHaveAttribute("data-kind", "stopped");
+  await expect(page.getByTestId("toast")).toHaveText(["Opening callback handler in VS Code"]);
+
+  // the right of a closed list's row: the second click lands in the panel
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("panel")).toHaveCount(0);
+  // on its second line: under the mouse the first line's right is the row's buttons
+  const box = (await stopped.boundingBox()) as { x: number; y: number; width: number };
+  const at = [box.x + box.width * 0.8, box.y + 40] as const;
+  await page.mouse.dblclick(...at);
+  await expect.poll(() => code().length).toBe(2);
+  expect(
+    await page.evaluate(
+      ([x, y]) =>
+        document.elementFromPoint(x, y)?.closest("[data-testid]")?.closest("section")?.dataset
+          .testid,
+      at,
+    ),
+  ).toBe("panel");
+  // the second click was nobody's: the panel is still on that row, and on the inbox
+  await expect(panel(page)).toHaveAttribute("data-id", SID.stopped);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+
+  // with the panel open nothing moves, and it is still one open
+  await stopped.dblclick();
+  await expect.poll(() => code().length).toBe(3);
+  await expect(rows(page)).toHaveCount(4);
+
+  // two clicks on a row's button are that button's, twice: no third open for the row
+  await under(stopped, () => stopped.getByTestId("inbox-open").dblclick({ timeout: 2_000 }));
+  await expect.poll(() => code().length).toBe(5);
+  // a double-click in the panel is the panel's: it selects a word
+  await panel(page).getByTestId("panel-prompt").dblclick();
+  // an agent grove cannot open: the double-click says why, like the key does
+  await row(page, "permission").dblclick({ position: { x: 200, y: 12 } });
+  await expect(
+    page.getByTestId("toast").filter({ hasText: "running in the background" }),
+  ).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(code()).toHaveLength(5);
+
+  // opening a session that waited on him is looking at it: its row leaves, and the panel moves on
+  const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+  const was = order.indexOf((await row(page, "turn").getAttribute("id")) as string);
+  await row(page, "turn").dblclick({ position: { x: 200, y: 12 } });
+  await expect.poll(() => code().length).toBe(6);
+  await expect(row(page, "turn")).toHaveCount(0);
+  await expect(openRow(page)).toHaveAttribute("id", order[was + 1] as string);
+});
+
+test("the panel's own buttons: Dismiss hands it to the row that took the place, and the last row closes it", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+
+  const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+  await rows(page).nth(1).click();
+  await expect(openRow(page)).toHaveAttribute("id", order[1] as string);
+  await panel(page).getByTestId("panel-dismiss").click();
+  await ready(page, 3);
+  await expect(openRow(page)).toHaveAttribute("id", order[2] as string);
+  await expect(panel(page)).toHaveAttribute(
+    "data-id",
+    (await openRow(page).getAttribute("data-id")) as string,
+  );
+
+  // the panel's Open is the editor
+  await row(page, "stopped").click();
+  await panel(page).getByTestId("panel-open").click();
+  await expect.poll(() => code().length).toBe(1);
+
+  // the last rows go: the panel closes with the list, and a new row does not open it again
+  for (const _ of [1, 2, 3]) await panel(page).getByTestId("panel-dismiss").click();
+  await expect(page.getByTestId("inbox-empty")).toBeVisible();
+  await expect(page.getByTestId("panel")).toHaveCount(0);
+  hookEvent(fx, SID.quiet, "Stop", { last_assistant_message: "Merged. Anything else?" });
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page)).toContainText("chat-features-35");
+  await expect(page.getByTestId("panel")).toHaveCount(0);
+});
+
+test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, Enter opens the panel", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
@@ -308,33 +403,29 @@ test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Ente
     await at(order[2]!);
   });
 
-  // the row that takes a reviewed row's place is the keyboard's next
+  // the row that takes a dismissed row's place is the keyboard's next
   await step(async () => {
-    if ((await rows(page).count()) === 7) {
+    if ((await rows(page).count()) === 4) {
       await press("Meta+ArrowUp", "ArrowDown", "ArrowDown", "Meta+d");
     }
-    await expect(rows(page)).toHaveCount(6, { timeout: 3_000 });
+    await expect(rows(page)).toHaveCount(3, { timeout: 3_000 });
     await show();
     await at(order[3]!);
   });
 
-  const opens = await rows(page).first().getAttribute("data-card");
-  const opened = () => readExecLog(fx).filter((l) => l.bin === "code").length;
+  // the last row is the stop: cmd-Enter opens it, and it stays
+  const opened = () => code().length;
   await step(async () => {
-    if (opened() === 0) await press("Meta+ArrowUp", "Meta+Enter");
+    if (opened() === 0) await press("Meta+ArrowDown", "Meta+Enter");
     await expect.poll(opened, { timeout: 3_000 }).toBe(1);
   });
 
   // the arrows alone never open the panel. Enter does, on the keyboard's row, and the list stays
-  const panel = page.getByTestId("panel");
-  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("panel")).toHaveCount(0);
   await step(async () => {
-    await press("Meta+ArrowUp", "Enter");
-    await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", opens as string, {
-      timeout: 2_000,
-    });
+    await press("Meta+ArrowDown", "Enter");
+    await expect(panel(page)).toHaveAttribute("data-id", SID.stopped, { timeout: 2_000 });
   });
-  expect(opens).toMatch(/^AUTH-[13]$/);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
   await expect(page.getByRole("listbox")).toBeFocused();
   expect(opened()).toBe(1);
@@ -345,193 +436,45 @@ test("the keyboard: arrows move, cmd-D reviews, cmd-Enter opens the editor, Ente
     await press("Meta+ArrowUp", "ArrowDown");
     await expect(openRow(page)).toHaveAttribute("id", left[1] as string, { timeout: 2_000 });
   });
-  await expect(panel.getByTestId("card-page")).toHaveAttribute(
+  await expect(panel(page)).toHaveAttribute(
     "data-id",
-    (await openRow(page).getAttribute("data-card")) as string,
+    (await openRow(page).getAttribute("data-id")) as string,
   );
   await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("panel")).toHaveCount(0);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
 });
 
-test("a click opens the row's card in a panel beside the list, another row swaps it, Escape closes it", async () => {
+test("a notification click lands on the session with its panel open, wherever its row is", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-  const panel = page.getByTestId("panel");
-  const card = panel.getByTestId("card-page");
-  const chips = page.getByTestId("inbox").getByTestId("runtime-chip");
-  // at most one row is under a pointer, and that one shows its buttons instead
-  await expect(chips.filter({ visible: true })).not.toHaveCount(0);
+  const g = groveTest(app.app);
 
-  await row(page, "asked").click();
-  await expect(card).toHaveAttribute("data-id", "AUTH-1");
-  await expect(panel.getByTestId("card-side")).toBeVisible();
-  await expect(panel.getByTestId("thread-item").first()).toBeVisible();
-  // the list is still there, with that row marked, and it kept the keyboard
+  // from another screen, onto its inbox row: the row is the keyboard's and its panel is open
+  await projectItem(page, "billing-export").click();
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
+  await g.reveal(SID.turn);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
-  await expect(rows(page)).toHaveCount(7);
-  await expect(row(page, "asked")).toBeVisible();
-  await expect(openRow(page)).toHaveAttribute("data-kind", "asked");
-  await expect(page.getByRole("listbox")).toBeFocused();
-  // half the window is not room for who and where: the title keeps it
-  await expect(chips.filter({ visible: true })).toHaveCount(0);
-  await expect(row(page, "finished")).toContainText("AUTH-4");
+  await expect(panel(page)).toHaveAttribute("data-id", SID.turn);
+  await expect(openRow(page)).toHaveAttribute("data-kind", "turn");
+  await expect(row(page, "turn")).toHaveAttribute("data-active", "true");
+  // looking is not dismissing
+  await expect(rows(page)).toHaveCount(4);
 
-  // a second click on it is not a toggle, and a click on another row swaps the card
-  await row(page, "asked").click();
-  await expect(card).toHaveAttribute("data-id", "AUTH-1");
-  await row(page, "stopped").click();
-  await expect(card).toHaveAttribute("data-id", "AUTH-3");
-  await expect(openRow(page)).toHaveCount(1);
-  await expect(openRow(page)).toHaveAttribute("data-kind", "stopped");
-
-  // a chip in the panel still goes to the full page, and Back returns to the list and its panel
-  await row(page, "new").click();
-  await expect(card).toHaveAttribute("data-id", "AUTH-5");
-  await panel.getByTestId("side-links").getByTestId("card-chip").click();
-  await expect(page.locator('[data-testid="screen"][data-view="card"]')).toBeAttached();
-  await expect(page.locator('[data-testid="card-page"][data-id="AUTH-2"]')).toBeVisible();
-  await page.getByTestId("back").click();
-  await expect(card).toHaveAttribute("data-id", "AUTH-5");
-  await expect(openRow(page)).toHaveAttribute("data-kind", "new");
-
-  // no click opened the editor
+  // one that needs nothing any more has no inbox row: its row in its project's sessions
+  await g.reveal(SID.quiet);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
+  await expect(page.getByTestId("project-name")).toHaveText("auth-sso");
+  await expect(panel(page)).toHaveAttribute("data-id", SID.quiet);
+  await expect(page.locator('[data-testid="session-row"][data-open]')).toHaveAttribute(
+    "data-id",
+    SID.quiet,
+  );
   expect(code()).toHaveLength(0);
 
-  await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
-  await expect(openRow(page)).toHaveCount(0);
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
-  await row(page, "asked").click();
-  await panel.getByTestId("panel-close").click();
-  await expect(panel).toHaveCount(0);
-});
-
-test("a double-click opens the row's session in the editor, once, wherever the panel lands under it", async () => {
-  app = await launchApp(seed());
-  const { page } = app;
-  await ready(page);
-  const panel = page.getByTestId("panel");
-  const asked = row(page, "asked");
-
-  // the middle of a row: the first click opens the panel, whose edge is then under the pointer
-  await asked.dblclick();
+  // a session in no project has no screen in grove: it opens in the editor
+  await g.reveal(SID.loose);
   await expect.poll(() => code().length).toBe(1);
-  await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-1");
-  await expect(openRow(page)).toHaveAttribute("data-kind", "asked");
-  await expect(page.getByTestId("toast")).toHaveText(["Opening AUTH-1 in VS Code"]);
-
-  // the right of a closed list's row: the second click lands in the panel, on the card
-  await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
-  const box = (await asked.boundingBox()) as { x: number; y: number; width: number };
-  const at = [box.x + box.width * 0.62, box.y + 12] as const;
-  await page.mouse.dblclick(...at);
-  await expect.poll(() => code().length).toBe(2);
-  expect(
-    await page.evaluate(
-      ([x, y]) =>
-        document.elementFromPoint(x, y)?.closest("[data-testid]")?.closest("section")?.dataset
-          .testid,
-      at,
-    ),
-  ).toBe("panel");
-  // the second click was nobody's: the panel is still on that row, and on the inbox
-  await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-1");
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
-
-  // with the panel open nothing moves, and it is still one open
-  await asked.dblclick();
-  await expect.poll(() => code().length).toBe(3);
-  await expect(rows(page)).toHaveCount(7);
-
-  // two clicks on a row's button are that button's, twice: no third open for the row
-  await under(asked, () => asked.getByTestId("inbox-open").dblclick({ timeout: 2_000 }));
-  await expect.poll(() => code().length).toBe(5);
-  // a double-click in the panel is the panel's: it selects a word
-  await panel.getByTestId("thread-item").first().dblclick();
-  // an agent grove cannot open: the double-click says why, like the key does
-  const held = row(page, "decided");
-  await held.dblclick({ position: { x: 200, y: 12 } });
-  await expect(
-    page.getByTestId("toast").filter({ hasText: "running in the background" }),
-  ).toBeVisible();
-  await page.waitForTimeout(500);
-  expect(code()).toHaveLength(5);
-});
-
-test("a row with no card opens in full in the panel, and a row that leaves hands the panel on", async () => {
-  app = await launchApp(seed());
-  const { page } = app;
-  await ready(page);
-  const panel = page.getByTestId("panel");
-  const session = page.locator('[data-testid="inbox-row"]:not([data-card])');
-  const said = `Done with the first pass. ${"The callback route now checks the state cookie before it trades the code. ".repeat(4)}Want me to open the PR?`;
-
-  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: said });
-  await expect(session).toHaveCount(1);
-  await session.click();
-  const small = panel.getByTestId("row-panel");
-  await expect(small.getByRole("heading")).toHaveText("chat-features-35");
-  await expect(small.getByTestId("kind")).toHaveText("Asked");
-  // the row clamps it at two lines. here it is whole
-  await expect(small.getByTestId("panel-summary")).toHaveText(said);
-  expect(
-    await small.getByTestId("panel-summary").evaluate((e) => e.scrollHeight <= e.clientHeight),
-  ).toBe(true);
-  await expect(small.getByTestId("panel-open")).toHaveText("Open in VS Code");
-  await expect(openRow(page)).not.toHaveAttribute("data-card");
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
-  // a click never opens the editor, on a row with no card either
-  expect(code()).toHaveLength(0);
-
-  // Reviewed in the panel takes the row out, and the row that took its place is the open one
-  const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
-  const at = order.indexOf((await session.getAttribute("id")) as string);
-  await small.getByTestId("panel-review").click();
-  await expect(session).toHaveCount(0);
-  await expect(openRow(page)).toHaveAttribute("id", order[at + 1] as string);
-  await expect(panel.getByTestId("card-page")).toHaveAttribute(
-    "data-id",
-    (await openRow(page).getAttribute("data-card")) as string,
-  );
-
-  // its next event brings the row back, and the panel stays on the card it moved to
-  hookEvent(fx, SID.chat, "UserPromptSubmit");
-  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Opened it. Merge now?" });
-  await expect(session).toHaveCount(1);
-  await expect(openRow(page)).toHaveAttribute("id", order[at + 1] as string);
-  // the panel's Open is the editor. opening a session is looking at it, so its row leaves as well
-  await session.click();
-  await small.getByTestId("panel-open").click();
-  await expect.poll(() => code().length).toBe(1);
-  await expect(session).toHaveCount(0);
-  await expect(small).toHaveCount(0);
-
-  // the same from a row's own button, with the panel on that row
-  await row(page, "decided").click();
-  await expect(panel.getByTestId("card-page")).toHaveAttribute("data-id", "AUTH-2");
-  const before = await rows(page).evaluateAll((els) => els.map((e) => e.id));
-  const was = before.indexOf((await row(page, "decided").getAttribute("id")) as string);
-  await reviewed(row(page, "decided"));
-  await ready(page, 6);
-  await expect(openRow(page)).toHaveAttribute("id", before[was + 1] as string);
-
-  // the last rows go: the panel closes with the list, and a new row does not open it again
-  const boot = await api(page).bootstrap();
-  await page.evaluate(
-    (k) => window.grove.review("auth-sso", k, true),
-    reviewAllKeys(boot.inbox.rows),
-  );
-  await ready(page, 2);
-  await expect(openRow(page)).toHaveCount(1);
-  await reviewed(row(page, "asked"));
-  await reviewed(row(page, "stopped"));
-  await expect(page.getByTestId("inbox-empty")).toBeVisible();
-  await expect(panel).toHaveCount(0);
-  hookEvent(fx, SID.chat, "UserPromptSubmit");
-  hookEvent(fx, SID.chat, "Stop", { last_assistant_message: "Merged. Anything else?" });
-  await expect(session).toHaveCount(1);
-  await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
 });

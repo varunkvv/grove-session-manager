@@ -49,22 +49,20 @@ describe("design lint", () => {
     }
   });
 
-  it("a kind, a status and an avatar get their colour from ui.tsx and nowhere else", () => {
-    const HUE = /\b(?:bg|text|border|fill|stroke)-(?:hue-[a-z]+|agent-(?:[1-9]|you))\b/g;
+  it("a state and a project get their colour from ui.tsx and nowhere else", () => {
+    const HUE = /\b(?:bg|text|border|fill|stroke)-(?:hue-[a-z]+|project-[1-9])\b/g;
     for (const [f, src] of files) {
       if (f === UI) continue;
-      expect(src.match(HUE) ?? [], `${f} picks a kind, status or avatar colour itself`).toEqual([]);
+      expect(src.match(HUE) ?? [], `${f} picks a state or project colour itself`).toEqual([]);
     }
     // every hue the stylesheet defines is drawn by a primitive, and none is drawn that is not defined
-    const defined = [...css.matchAll(/--color-(hue-[a-z]+|agent-(?:[1-9]|you)):/g)].map(
-      (m) => m[1],
-    );
+    const defined = [...css.matchAll(/--color-(hue-[a-z]+|project-[1-9]):/g)].map((m) => m[1]);
     const ui = files.find(([f]) => f === UI)?.[1] ?? "";
     const drawn = [...ui.matchAll(HUE)].map((m) => m[0].replace(/^[a-z]+-/, ""));
     expect([...new Set(drawn)].sort()).toEqual([...new Set(defined)].sort());
   });
 
-  it("the accent is the primary action, a link, focus and the not-reviewed dot: all of them primitives", () => {
+  it("the accent is the primary action, a link, focus, a count, the selected item and your turn: all of them primitives", () => {
     const ACCENT = /\b(?:bg|text|border|outline|fill|stroke)-accent(?:-solid|-soft|-line)?\b/g;
     for (const [f, src] of files) {
       if (f === UI) continue;

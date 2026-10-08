@@ -23,7 +23,7 @@ import {
   repoNote,
   repoOf,
 } from "../logic/projectForm.ts";
-import { back, go, switchProject } from "../state/actions.ts";
+import { back, switchProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import {
   Button,
@@ -440,9 +440,8 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
       if (!res.ok) return setProblems([res.error.message]);
       if (self) back();
       else {
-        // the new project's start state
+        // the new project's sessions: none yet, and how to start one
         switchProject(res.value.id);
-        go("cards");
       }
     } catch (err) {
       setProblems([err instanceof Error ? err.message : String(err)]);

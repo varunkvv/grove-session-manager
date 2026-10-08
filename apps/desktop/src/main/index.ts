@@ -113,11 +113,11 @@ async function start(): Promise<void> {
     land: (target) => reveals.land(target),
   });
   /**
-   * a click on a notification about a session: the card it holds, else its row in its project's
-   * inbox. a session in no project has no screen in grove, so it opens in the editor
+   * a click on a notification about a session: its row, with its panel open. a session in no
+   * project has no screen in grove, so it opens in the editor
    */
-  const landOn = (sessionId: string, row: "asked" | "stopped") => {
-    const target = projects.landing(sessionId, row);
+  const landOn = (sessionId: string) => {
+    const target = projects.landing(sessionId);
     if (target) return void reveals.land(target);
     const session = sessions.byId(sessionId)[0];
     if (session) handlers.openSession(session.key).catch((e) => log.warn("open session:", e));
@@ -127,15 +127,19 @@ async function start(): Promise<void> {
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
     registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
-    onChange: (statuses, agentRuns, alive) => sessions.setLive(statuses, agentRuns, alive),
+    onChange: (statuses, agentRuns, alive) => {
+      sessions.setLive(statuses, agentRuns, alive);
+      // a session that closed while idle changes no row, and its list still has to say Closed
+      projects.sessionsChanged();
+    },
     onNeedsYou: (sessionId, status) => {
       const row = sessions.byId(sessionId)[0];
       if (!row) return;
       notifier.live(status, {
         sessionId,
         title: row.title,
-        project: projects.landing(sessionId, "asked")?.project,
-        click: () => landOn(sessionId, "asked"),
+        project: projects.projectOf(sessionId),
+        click: () => landOn(sessionId),
       });
     },
     onBackgroundMoved: () => void background.read(),
@@ -258,7 +262,7 @@ async function start(): Promise<void> {
   let trayTitle = "";
   const showInbox = (inbox: InboxView) => {
     trayMenu = updateTray(tray, inbox, { land: (target) => void reveals.land(target), showMain });
-    trayTitle = inbox.tray > 0 ? String(inbox.tray) : "";
+    trayTitle = inbox.rows.length > 0 ? String(inbox.rows.length) : "";
     electron.app.dock?.setBadge(trayTitle);
   };
 
@@ -269,27 +273,20 @@ async function start(): Promise<void> {
     sessions,
     live,
     reviewed,
-    onRecord: (project, patch) =>
-      pusher.send("record:changed", { rev: pusher.nextRev("record"), project, ...patch }),
     onInbox: (inbox) => {
       pusher.send("inbox:changed", { ...inbox, rev: pusher.nextRev("inbox") });
       showInbox(inbox);
     },
-    onProjects: pushProjects,
-    onQuestion: (q) =>
-      notifier.question({
-        ...q,
-        click: () =>
-          reveals.land({ view: "card", project: q.project, cardId: q.card, back: "inbox" }),
-      }),
-    onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId, "stopped") }),
+    onSessions: () => pusher.send("sessions:changed", {}),
+    // the session that asked
+    onQuestion: (q) => notifier.question({ ...q, click: () => landOn(q.sessionId) }),
+    onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId) }),
   });
 
   // a test root lands the way a notification click or a tray row does, with neither to click
   if (appEnv.customRoot) {
     (globalThis as { groveTest?: unknown }).groveTest = {
-      reveal: (sessionId: string) =>
-        landOn(sessionId, live.interruptions().has(sessionId) ? "stopped" : "asked"),
+      reveal: (sessionId: string) => landOn(sessionId),
       trayTitle: () => trayTitle,
       trayMenu: () =>
         trayMenu.map(({ label, sublabel, enabled, role }) => ({ label, sublabel, enabled, role })),

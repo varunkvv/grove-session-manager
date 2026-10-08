@@ -140,7 +140,7 @@ describe("one per session per two minutes between a question and a finished turn
   it("one that was not shown does not count", () => {
     let focused = true;
     const { notifier, shown } = setup({ focused: () => focused });
-    notifier.setVisibleProject("chat");
+    notifier.setVisible("chat", false);
     ask(notifier);
     focused = false;
     notifier.live(finished(), S1);
@@ -166,7 +166,7 @@ describe("stopped mid-turn", () => {
     expect(click).toHaveBeenCalledOnce();
   });
 
-  it("three within five seconds fold into one that lands on the newest one's inbox", () => {
+  it("three within five seconds fold into one that lands on the inbox", () => {
     const { notifier, shown, landed } = setup();
     stop(notifier, "s1", "chat");
     vi.advanceTimersByTime(2_000);
@@ -178,7 +178,7 @@ describe("stopped mid-turn", () => {
       { title: "Grove", body: "3 agents stopped mid-turn" },
     ]);
     shown[0]?.click();
-    expect(landed).toEqual([{ view: "inbox", project: "data" }]);
+    expect(landed).toEqual([{ view: "inbox" }]);
     // the next one starts a new window
     stop(notifier, "s4", "chat");
     vi.advanceTimersByTime(5_000);
@@ -194,10 +194,10 @@ describe("stopped mid-turn", () => {
   });
 });
 
-describe("a focused window holds back only the project on screen", () => {
+describe("a focused window holds back only what is on screen", () => {
   it("the visible project's waits, another project's shows, one in no project waits", () => {
     const { notifier, shown } = setup({ focused: () => true });
-    notifier.setVisibleProject("chat");
+    notifier.setVisible("chat", false);
     notifier.live(status({ state: "failed" }), { ...S1, project: "chat" });
     notifier.live(status({ state: "failed" }), { ...S1, title: "data agent", project: "data" });
     notifier.live(status({ state: "failed" }), {
@@ -208,17 +208,32 @@ describe("a focused window holds back only the project on screen", () => {
     expect(shown.map((s) => s.title)).toEqual(["data agent"]);
   });
 
+  it("the inbox is every project's: all of them wait while it is on screen", () => {
+    let focused = true;
+    const { notifier, shown } = setup({ focused: () => focused });
+    notifier.setVisible("chat", true);
+    notifier.live(status({ state: "failed" }), { ...S1, project: "chat" });
+    notifier.live(status({ state: "failed" }), { ...S1, project: "data" });
+    notifier.stopped({ ...S1, project: "data" });
+    vi.advanceTimersByTime(5_000);
+    expect(shown).toHaveLength(0);
+    // he looked away: the inbox on screen holds nothing back
+    focused = false;
+    notifier.live(status({ state: "failed" }), { ...S1, project: "data" });
+    expect(shown).toHaveLength(1);
+  });
+
   it("nothing on screen: every project's shows", () => {
     const { notifier, shown } = setup({ focused: () => true });
-    notifier.setVisibleProject("chat");
-    notifier.setVisibleProject(null);
+    notifier.setVisible("chat", false);
+    notifier.setVisible(null, false);
     notifier.live(status({ state: "failed" }), S1);
     expect(shown).toHaveLength(1);
   });
 
   it("not focused: everything shows", () => {
     const { notifier, shown } = setup({ focused: () => false });
-    notifier.setVisibleProject("chat");
+    notifier.setVisible("chat", false);
     notifier.live(status({ state: "failed" }), S1);
     notifier.live(status({ state: "failed" }), { sessionId: "s9", click: () => {} });
     expect(shown).toHaveLength(2);
@@ -226,7 +241,7 @@ describe("a focused window holds back only the project on screen", () => {
 
   it("stopped ones on screen leave the fold, the rest still notify", () => {
     const { notifier, shown } = setup({ focused: () => true });
-    notifier.setVisibleProject("chat");
+    notifier.setVisible("chat", false);
     notifier.stopped({ sessionId: "s1", title: "a", project: "chat", click: () => {} });
     notifier.stopped({ sessionId: "s2", title: "b", project: "data", click: () => {} });
     vi.advanceTimersByTime(5_000);

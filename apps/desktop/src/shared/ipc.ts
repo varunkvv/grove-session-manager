@@ -1,10 +1,7 @@
 // the contract between the main process and the renderer. types only, plus the channel lists
 // the preload uses as its allowlist. nothing here may import node or electron.
 import type {
-  AgentRef,
-  AgentState,
   BranchSpec,
-  CardDisplayStatus,
   ComboRelation,
   FolderMode,
   FolderOutcome,
@@ -20,7 +17,6 @@ import type {
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
-import type { CardStatus, ConclusionKind, Source, Turn } from "@grove/record/types";
 
 export type { ProjectId };
 
@@ -197,204 +193,46 @@ export interface ProjectView {
   shadowed: string[];
   /** a file grove could not write, from the sync's warnings */
   syncProblem?: string;
-  /** agents started from grove that have not claimed a card yet */
-  starting: PendingStart[];
 }
 
-export interface PendingStart {
-  id: string;
-  where: "editor" | "background";
-  cardId?: string;
-  at: number;
-}
-
-export interface CardHead {
-  id: string;
-  title: string;
-  status: CardDisplayStatus;
-  at: number;
-  lastActivity: number;
-  /** the holder only */
-  agent?: { ref: AgentRef; runtime: Runtime; state: AgentState; stateAt?: number };
-  /**
-   * what a double-click on its row opens, the session its page's Open button goes to: the holder's,
-   * or the last agent's on a done or canceled card. both absent on a todo card, whose page offers a
-   * start, and until grove has indexed the session
-   */
-  sessionKey?: SessionKey;
-  open?: OpenPlan;
-  /** changes whenever anything on the card does. the card page re-fetches on a change */
-  version: string;
-  problems: number;
-}
-
-export interface ConclusionView {
-  id: string;
-  kind: ConclusionKind;
-  what: string;
-  why: string;
-  by: "agent" | "person";
-  /** the session that recorded it. for by: person, the agent whose chat it was said in */
-  who?: AgentRef;
-  card?: { id: string; title?: string };
-  replaces?: string;
-  replacedBy: string[];
-  superseded: boolean;
-  related: string[];
-  changesPlan: boolean;
-  area?: string;
-  /** what it was based on: urls, and files as paths from the project root. an agent wrote them */
-  sources: Source[];
-  /** the last thing the person typed in that session before it was recorded */
-  said?: string;
-  at: number;
-  /** it would enter the inbox: by an agent, a decision or verdict, or a finding that changes the plan */
-  needsReview: boolean;
-  reviewed: boolean;
-  sessionKey?: SessionKey;
-  open?: OpenPlan;
-  problems: number;
-}
-
-/** a record file that did not parse whole, relative to the project root */
-export interface RecordProblem {
-  file: string;
-  problems: string[];
-}
-
-export interface ProjectRecordView {
-  cards: CardHead[];
-  conclusions: ConclusionView[];
-  problems: RecordProblem[];
-  /** absent until the first read finished */
-  readAt?: number;
-}
-
-export interface InboxRowView {
-  /** InboxRow.id */
-  id: string;
-  project: ProjectId;
-  projectName: string;
-  kind: InboxKind;
-  at: number;
-  card?: { id: string; title: string };
-  conclusionId?: string;
-  title: string;
-  who?: AgentRef;
-  /** where `who` runs now */
-  runtime?: Runtime;
-  summary: string;
-  reviewKeys: string[];
-  sessionKey?: SessionKey;
-  open?: OpenPlan;
-}
-
-export interface InboxView {
-  /** every project, Asked and Stopped first, then newest first. the page filters by project */
-  rows: InboxRowView[];
-  /** trayCount over all rows */
-  tray: number;
-}
-
-export interface CardView {
-  project: ProjectId;
-  id: string;
-  title: string;
-  /** markdown, untrusted */
-  body: string;
-  status: CardDisplayStatus;
-  /** the record's own status. the card page's role keys on it with agent.holding */
-  recordStatus: CardStatus;
-  /** the holder, else the last agent that wrote a claim event */
-  agent?: AgentPanel;
-  /** oldest first */
-  thread: ThreadItem[];
-  artifacts: ArtifactView[];
-  /** the card's own links. no reverse links */
-  from?: string;
-  needs: string[];
-  /** the ones naming this card, newest first */
-  conclusions: ConclusionView[];
-  problems: RecordProblem[];
-  version: string;
-}
-
-export interface AgentPanel {
-  ref: AgentRef;
-  /** absent until grove indexes the transcript */
-  sessionKey?: SessionKey;
-  runtime: Runtime;
-  /** modelLabel of the session's own model: "opus 5.5" */
-  model?: string;
-  state: AgentState;
-  stateAt?: number;
-  subagents: SubagentView[];
-  open: OpenPlan;
-  /** false when this is the last agent of a card nobody holds (done, canceled, released) */
-  holding: boolean;
-}
-
-export interface SubagentView {
-  id: string;
-  /** SessionAgent.agentType */
-  type: string;
-  /** description ?? asked ?? type */
-  label: string;
-  state: "running" | "done";
-  lastActivityAt: number;
-  lastTool?: string;
-}
-
-export type ThreadItem =
-  | {
-      kind: "comment" | "question" | "answer";
-      seq: number;
-      at: number;
-      who: AgentRef | "person";
-      /** markdown, untrusted */
-      text: string;
-      /** a question's: "person" or a card id */
-      to?: string;
-      /** a question's */
-      open?: boolean;
-      /** a question's */
-      answeredBy?: number[];
-      /** an answer's */
-      answers?: number;
-      artifacts: ArtifactView[];
-    }
-  | {
-      kind: "event";
-      seq: number;
-      at: number;
-      who: AgentRef | "person";
-      event: "claim" | "release" | "takeover" | "done" | "cancel" | string;
-      /** the done summary, the cancel reason, the release note. may be empty */
-      text: string;
-    };
-
-export interface ArtifactView {
-  type: "file" | "branch" | "pr" | "link";
-  ref: string;
-  at: number;
-  who?: AgentRef | "person";
-}
-
-/** one session found from the palette, or listed under a project's cards */
-export interface SessionHit {
+/** a session as every list names it, and what opening it takes */
+export interface SessionRef {
   key: SessionKey;
+  /** what names it in a list, the panel and a landing. one row per id, the newest transcript's */
   sessionId: string;
   /** row.title ?? the first prompt squashed ?? "Untitled session" */
   title: string;
-  project?: ProjectId;
   /** the project name, else row.projectLabel */
   where: string;
-  activityMs: number;
   runtime: Runtime;
+  branch?: string;
+  open: OpenPlan;
+}
+
+/** one session in a project's list, or found from the palette */
+export interface SessionHit extends SessionRef {
+  project?: ProjectId;
+  activityMs: number;
   live?: LiveState;
+  /** its first and last prompts, cut: what a sessions list's filter also looks in */
+  prompt?: string;
   /** only for a full-text match */
   snippet?: string;
-  open: OpenPlan;
+}
+
+/** a session that needs the person: InboxRow joined with the session it is about */
+export interface InboxRowView extends SessionRef {
+  project: ProjectId;
+  kind: InboxKind;
+  at: number;
+  summary: string;
+  /** what Dismiss sends to `review` */
+  reviewKeys: string[];
+}
+
+export interface InboxView {
+  /** every project's rows, newest first. the tray counts them all */
+  rows: InboxRowView[];
 }
 
 /** the end of a session's transcript, read when its panel opens. both are untrusted text */
@@ -416,16 +254,17 @@ export interface OpenPlan {
 export interface StartAgentRequest {
   project: ProjectId;
   where: "editor" | "background";
-  cardId?: string;
   /** background only: run it in Terminal, where the CLI's trust prompt is answered once */
   throughTerminal?: boolean;
 }
 
-/** where a notification click, a tray row or a palette row takes the page */
+/**
+ * where a notification click or a tray row takes the page: a session, with its panel open. main
+ * says which list it is in
+ */
 export type LandingTarget =
-  | { view: "inbox"; project?: ProjectId; rowId?: string }
-  | { view: "card"; project: ProjectId; cardId: string; back: "inbox" | "cards" }
-  | { view: "conclusions"; project: ProjectId; conclusionId?: string };
+  | { view: "inbox"; session?: string }
+  | { view: "sessions"; project: ProjectId; session: string };
 
 /** was ComboDraft */
 export interface ProjectDraft {
@@ -437,7 +276,7 @@ export interface ProjectDraft {
   folders: FolderDraft[];
 }
 
-/** where the page goes when a notification, a tray row or a palette row asked for it */
+/** where the page goes when a notification or a tray row asked for it */
 export interface Landing {
   target: LandingTarget;
   /** when it was asked for: a second click on the same thing lands again */
@@ -449,8 +288,7 @@ export type MenuCommandId =
   | "open-project"
   | "edit-project"
   | "go-inbox"
-  | "go-cards"
-  | "go-conclusions"
+  | "go-sessions"
   | "palette"
   | "focus-search"
   | "refresh"
@@ -464,18 +302,14 @@ export interface ToastMessage {
 }
 
 export interface Bootstrap {
-  revs: { projects: number; record: number; inbox: number };
+  revs: { projects: number; inbox: number };
   env: EnvInfo;
   settings: AppSettings;
   editor: EditorStatus;
   projects: ProjectView[];
   projectsProblem?: string;
-  record: Record<ProjectId, ProjectRecordView>;
   inbox: InboxView;
 }
-
-/** how many sessions `projectSessions` sends. the page says where the older ones are when it gets this many */
-export const PROJECT_SESSIONS_MAX = 30;
 
 /** request/response. every call resolves quickly or reports progress through the push events below. */
 export interface Api {
@@ -483,28 +317,24 @@ export interface Api {
   /** Cmd-R: rescan sessions, reload combos.json, run the record backstop, sync every project, rerun its self-check */
   refresh(): Promise<Outcome>;
 
-  /** a card with its thread. null for an unknown project or card */
-  card(project: ProjectId, cardId: string): Promise<CardView | null>;
-  /**
-   * the turn a conclusion was recorded in: the person's message and the agent's words before the
-   * call. read from the session's transcript now. null when the transcript or the call is gone
-   */
-  conclusionTurn(project: ProjectId, conclusionId: string): Promise<Turn | null>;
-  /** marks, a seen session, or an open question answered as the person. at most 2,000 keys */
+  /** Dismiss: a row's keys. a stop is marked, a status that needs the person is seen. at most 2,000 keys */
   review(project: ProjectId, keys: string[], reviewed: boolean): Promise<Outcome>;
 
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   findSessions(query: string): Promise<SessionHit[]>;
-  /** the sessions started in a project's folder that hold no in-progress card, newest first, at most PROJECT_SESSIONS_MAX */
+  /** every session a project lists, newest first. asked again on `sessions:changed` */
   projectSessions(project: ProjectId): Promise<SessionHit[]>;
   /** a bounded read of the transcript's end, now. null for a session grove does not list */
   sessionTail(key: SessionKey): Promise<SessionTail | null>;
 
   /** a landing the page has not taken yet. taken once. */
   takeLanding(): Promise<Landing | null>;
-  /** the project on screen in the main window, or null. notifications for it wait while the window is focused */
-  setVisibleProject(id: ProjectId | null): Promise<void>;
+  /**
+   * what the main window shows: a project, or with `all` the inbox, which is every project's.
+   * notifications for what is on screen wait while the window is focused
+   */
+  setVisibleProject(id: ProjectId | null, all?: boolean): Promise<void>;
 
   validateProjectName(
     name: string,
@@ -539,9 +369,6 @@ export interface Api {
   editorStatus(refresh?: boolean): Promise<EditorStatus>;
   installCompanion(): Promise<Outcome>;
   updateSettings(patch: Partial<AppSettings>): Promise<Outcome<AppSettings>>;
-  /** a file artifact, in Finder. the path is relative to the project root */
-  reveal(project: ProjectId, path: string): Promise<Outcome>;
-  copyText(text: string): Promise<Outcome>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
   openExternal(url: string): Promise<Outcome>;
   reportCspViolation(detail: string): Promise<void>;
@@ -550,8 +377,6 @@ export interface Api {
 export const INVOKE_CHANNELS = [
   "bootstrap",
   "refresh",
-  "card",
-  "conclusionTurn",
   "review",
   "openSession",
   "startAgent",
@@ -574,8 +399,6 @@ export const INVOKE_CHANNELS = [
   "editorStatus",
   "installCompanion",
   "updateSettings",
-  "reveal",
-  "copyText",
   "openExternal",
   "reportCspViolation",
 ] as const satisfies ReadonlyArray<keyof Api>;
@@ -590,18 +413,9 @@ export interface PushEvents {
     checkedAt?: number;
     folders: FolderView[];
   };
-  /** `cards` holds only the heads that changed, or every one with `replace`. `conclusions` is whole */
-  "record:changed": {
-    rev: number;
-    project: ProjectId;
-    cards?: CardHead[];
-    removedCards?: string[];
-    replace?: boolean;
-    conclusions?: ConclusionView[];
-    problems?: RecordProblem[];
-    readAt?: number;
-  };
   "inbox:changed": InboxView & { rev: number };
+  /** what a project's sessions list shows moved: `projectSessions` has the new list */
+  "sessions:changed": Record<string, never>;
   "editor:status": EditorStatus;
   "menu:command": { id: MenuCommandId };
   toast: ToastMessage;
@@ -612,8 +426,8 @@ export interface PushEvents {
 export const PUSH_CHANNELS = [
   "projects:changed",
   "projects:folders",
-  "record:changed",
   "inbox:changed",
+  "sessions:changed",
   "editor:status",
   "menu:command",
   "toast",

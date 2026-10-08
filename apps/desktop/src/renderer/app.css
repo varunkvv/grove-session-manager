@@ -35,7 +35,7 @@
   /* icons, rings and chevrons only. 3:1, never words */
   --color-faint: light-dark(#80858e, #747982);
 
-  /* the accent: the primary action, a link, focus, the not-reviewed dot */
+  /* the accent: the primary action, a link, focus, a count, the selected item, "your turn" */
   --color-accent: light-dark(#6726e1, #a48bfa);
   --color-accent-solid: light-dark(#6726e1, #6e3ae6);
   --color-on-solid: light-dark(#ffffff, #ffffff);
@@ -43,30 +43,26 @@
   --color-accent-line: light-dark(#b9a3ee, #5b3fb0);
   --color-ring: light-dark(rgb(103 38 225 / 0.4), rgb(155 123 255 / 0.5));
 
-  /* words that carry a state */
+  /* words that carry a state: failed and stopped, needs permission, working. 4.5:1 on every ground */
   --color-danger: light-dark(#c2263f, #f0647a);
   --color-waiting: light-dark(#b8490f, #f0854d);
+  --color-working: light-dark(#17794e, #3fb984);
 
-  /* one hue per meaning. drawn only by ui.tsx (KindLabel, StatusIcon) */
+  /* the same states as marks, where 3:1 is enough. drawn only by ui.tsx (StateLabel) */
   --color-hue-orange: light-dark(#dd5f1f, #f0854d);
-  --color-hue-violet: light-dark(#7c5cfc, #9a82ff);
-  --color-hue-teal: light-dark(#08848e, #2bb6c0);
-  --color-hue-blue: light-dark(#2f6fed, #5b8ff5);
   --color-hue-green: light-dark(#1f8a5b, #35a873);
   --color-hue-red: light-dark(#d32f4c, #ec5a72);
-  --color-hue-yellow: light-dark(#a87e00, #e0b32b);
 
-  /* avatars. drawn only by ui.tsx (Avatar). the same in both appearances: they are mid-tones */
-  --color-agent-1: light-dark(#0b817d, #0b817d);
-  --color-agent-2: light-dark(#cb3682, #cb3682);
-  --color-agent-3: light-dark(#4f6bed, #4f6bed);
-  --color-agent-4: light-dark(#9c6614, #9c6614);
-  --color-agent-5: light-dark(#61769f, #61769f);
-  --color-agent-6: light-dark(#3478b8, #3478b8);
-  --color-agent-7: light-dark(#8e5bd6, #8e5bd6);
-  --color-agent-8: light-dark(#26855a, #26855a);
-  --color-agent-9: light-dark(#6f7b00, #6f7b00);
-  --color-agent-you: light-dark(#dadce0, #3a3c43);
+  /* a project's own colour. drawn only by ui.tsx (ProjectMark). the same in both appearances: they are mid-tones */
+  --color-project-1: light-dark(#0b817d, #0b817d);
+  --color-project-2: light-dark(#cb3682, #cb3682);
+  --color-project-3: light-dark(#4f6bed, #4f6bed);
+  --color-project-4: light-dark(#9c6614, #9c6614);
+  --color-project-5: light-dark(#61769f, #61769f);
+  --color-project-6: light-dark(#3478b8, #3478b8);
+  --color-project-7: light-dark(#8e5bd6, #8e5bd6);
+  --color-project-8: light-dark(#26855a, #26855a);
+  --color-project-9: light-dark(#6f7b00, #6f7b00);
 
   --color-scrim: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.5));
   --color-thumb: light-dark(rgb(0 0 0 / 0.16), rgb(255 255 255 / 0.1));
@@ -202,10 +198,14 @@ input[type="checkbox"]:focus-visible {
   border-color: var(--color-line);
 }
 
-/* a long list only lays out the rows near the window */
+/* a long list only lays out the rows near the window. two lines in the inbox, one in a project's sessions */
 .cv-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 57px;
+}
+.cv-line {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 36px;
 }
 
 ::-webkit-scrollbar {
@@ -401,7 +401,7 @@ dialog::backdrop {
   color: var(--color-fg);
   font-weight: 500;
 }
-/* a card's body and its thread are what the page is for: full strength */
+/* what the agent last said is what the panel is for: full strength */
 .md-full {
   color: var(--color-fg);
 }

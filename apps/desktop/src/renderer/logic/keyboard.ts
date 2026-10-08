@@ -7,7 +7,6 @@ export type Intent =
   | { type: "open-editor" }
   | { type: "review" }
   | { type: "back" }
-  | { type: "collapse" }
   | { type: "close-panel" }
   | { type: "clear-query" }
   | { type: "close-overlay" }
@@ -19,24 +18,21 @@ export type Intent =
   | { type: "open-project" }
   | { type: "refresh" }
   | { type: "settings" }
-  | { type: "focus-search" }
-  | { type: "type-through" };
+  | { type: "focus-search" };
 
 export interface KeyContext {
-  /** a dialog, the palette or the project menu is open. they own their keys. */
+  /** a dialog or the palette is open. they own their keys. */
   overlay: boolean;
   view: View["name"];
-  /** focus is in an input, textarea or select. the Conclusions search counts. */
+  /** focus is in an input, textarea or select. the sessions filter counts. */
   inText: boolean;
-  /** focus is in the Conclusions search (#search) */
+  /** focus is in the sessions filter (#search) */
   inSearch: boolean;
-  /** focus is on a control that answers Enter itself: a button, a link, or anything with role button, menuitem, menuitemradio or radio */
+  /** focus is on a control that answers Enter itself: a button, a link, or anything with role button, menuitem or radio */
   inControl: boolean;
-  /** the Conclusions search text */
+  /** the sessions filter's text */
   query: string;
-  /** a Conclusions row is open */
-  expanded: boolean;
-  /** a row is open in the panel beside the Inbox or the Cards list */
+  /** a session is open in the panel beside its list */
   panel: boolean;
   /** Back has somewhere to go: the stack is not empty */
   canGoBack: boolean;
@@ -54,8 +50,7 @@ export interface KeyInput {
   composing: boolean;
 }
 
-const isList = (view: View["name"]) =>
-  view === "inbox" || view === "cards" || view === "conclusions";
+const isList = (view: View["name"]) => view === "inbox" || view === "sessions";
 
 /** arrows, page keys, Home, End and Enter on a list */
 function listKey(ctx: KeyContext, key: string, withEnds: boolean): Intent | null {
@@ -78,17 +73,16 @@ function listKey(ctx: KeyContext, key: string, withEnds: boolean): Intent | null
 }
 
 /**
- * one place that decides what a key means. no single letter acts on any screen: Inbox, Cards and
- * the card page have no field to type into, and a letter on Conclusions goes to its search.
+ * one place that decides what a key means. no single letter acts on any screen: a letter only ever
+ * types, in the sessions filter or a form.
  */
 export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (e.composing) return null;
   if (e.key === "Escape") {
     if (ctx.overlay) return { type: "close-overlay" };
-    if (ctx.view === "conclusions" && ctx.expanded) return { type: "collapse" };
-    if (ctx.view === "conclusions" && ctx.query) return { type: "clear-query" };
-    if ((ctx.view === "inbox" || ctx.view === "cards") && ctx.panel) return { type: "close-panel" };
-    if (ctx.view === "card") return { type: "back" };
+    // one step at a time: the panel, then what was typed in the filter
+    if (isList(ctx.view) && ctx.panel) return { type: "close-panel" };
+    if (ctx.view === "sessions" && ctx.query) return { type: "clear-query" };
     // a form with changes is not thrown away by a stray Escape
     if (ctx.view === "new-project" || ctx.view === "edit-project") {
       return ctx.formDirty ? null : { type: "back" };
@@ -106,9 +100,7 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
       case "1":
         return { type: "go", section: "inbox" };
       case "2":
-        return { type: "go", section: "cards" };
-      case "3":
-        return { type: "go", section: "conclusions" };
+        return { type: "go", section: "sessions" };
       case "n":
         return { type: "new-project" };
       case "e":
@@ -145,15 +137,7 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   }
   if (e.ctrl) return null;
 
-  // everything else types
-  if (ctx.inSearch) return listKey(ctx, e.key, false);
-  if (ctx.view === "inbox" || ctx.view === "cards") return listKey(ctx, e.key, true);
-  if (ctx.view === "conclusions") {
-    const list = listKey(ctx, e.key, true);
-    if (list) return list;
-    if (e.key === "/") return { type: "focus-search" };
-    return e.key.length === 1 ? { type: "type-through" } : null;
-  }
-  // a card: arrows, space and the page keys scroll its main column
+  // in the filter everything else types. Home and End move its caret
+  if (isList(ctx.view)) return listKey(ctx, e.key, !ctx.inSearch);
   return null;
 }

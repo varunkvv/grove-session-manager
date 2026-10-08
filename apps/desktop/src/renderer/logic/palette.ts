@@ -1,12 +1,12 @@
 // what cmd-K lists for a query. pure: the palette draws the items and runs them by id.
 import { tokenize } from "@grove/core/pure";
-import type { CardHead, InboxRowView, ProjectView, SessionHit } from "../../shared/ipc.ts";
+import type { ProjectView, SessionHit } from "../../shared/ipc.ts";
 import { startBlocked } from "./views.ts";
 
 export type PaletteSection = "Go to" | "Projects" | "This project" | "App" | "Sessions";
 
 export interface PaletteItem {
-  /** what it runs: `go-inbox`, `project:{id}`, `takeover:{card}`, `session:{key}` ... */
+  /** what it runs: `go-inbox`, `project:{id}`, `session:{key}` ... */
   id: string;
   section: PaletteSection;
   label: string;
@@ -21,21 +21,17 @@ export interface PaletteItem {
 }
 
 export interface PaletteContext {
-  /** the project on screen */
+  /** the project on screen. none while the inbox is, which is every project's */
   project: ProjectView | null;
   /** every project, in combos.json order */
   projects: readonly ProjectView[];
   /** `VS Code` or `Cursor` */
   editor: string;
-  /** the project's inbox rows */
-  rows: readonly InboxRowView[];
-  /** the project's cards */
-  cards: readonly CardHead[];
   /** findSessions' newest answer and the query it answered */
   sessions?: { query: string; hits: readonly SessionHit[] };
 }
 
-/** every word starts a word of the text: `conc` finds Conclusions, `lusions` does not */
+/** every word starts a word of the text: `sess` finds Sessions, `ssions` does not */
 export function matchCommand(text: string, words: readonly string[]): boolean {
   const hay = text.toLowerCase();
   return words.every((w) => {
@@ -46,37 +42,21 @@ export function matchCommand(text: string, words: readonly string[]): boolean {
   });
 }
 
-const REVIEWABLE = new Set(["decided", "verdict", "found", "new", "finished"]);
-
-/** what `Mark all reviewed` marks: never an Asked or a Stopped row */
-export function reviewAllKeys(rows: readonly InboxRowView[]): string[] {
-  return rows.filter((r) => REVIEWABLE.has(r.kind)).flatMap((r) => r.reviewKeys);
-}
-
 const REPAIRABLE = new Set(["absent", "stale", "foreign"]);
 
-function commands(ctx: PaletteContext, typed: boolean): PaletteItem[] {
+function commands(ctx: PaletteContext): PaletteItem[] {
   const p = ctx.project;
   const items: PaletteItem[] = [];
-  if (p) {
-    items.push(
-      { id: "go-inbox", section: "Go to", label: "Inbox", keywords: "go", kbd: "⌘1" },
-      { id: "go-cards", section: "Go to", label: "Cards", keywords: "go", kbd: "⌘2" },
-      {
-        id: "go-conclusions",
-        section: "Go to",
-        label: "Conclusions",
-        keywords: "go decisions findings verdicts",
-        kbd: "⌘3",
-      },
-    );
+  if (ctx.projects.length > 0) {
+    items.push({ id: "go-inbox", section: "Go to", label: "Inbox", keywords: "go", kbd: "⌘1" });
   }
+  // a project is its sessions
   for (const q of ctx.projects) {
     items.push({
       id: `project:${q.id}`,
       section: "Projects",
       label: q.name,
-      keywords: "switch project",
+      keywords: "switch project sessions",
       current: q.id === p?.id,
     });
   }
@@ -87,7 +67,7 @@ function commands(ctx: PaletteContext, typed: boolean): PaletteItem[] {
       label,
       keywords,
     });
-    if (!startBlocked(p, true)) {
+    if (!startBlocked(p)) {
       items.push(
         mine("start-editor", `Start an agent in ${ctx.editor}`, "new agent session claude"),
         mine("start-background", "Start an agent in the background", "new agent session claude"),
@@ -104,21 +84,6 @@ function commands(ctx: PaletteContext, typed: boolean): PaletteItem[] {
     );
     if (p.folders.some((f) => REPAIRABLE.has(f.state)))
       items.push(mine("repair", "Repair working copies", "worktree fix drift"));
-    if (reviewAllKeys(ctx.rows).length > 0)
-      items.push(mine("review-all", `Mark all reviewed in ${p.name}`, "mark read clear inbox"));
-    // a row per card can be long on a busy project, so these wait for a word, like Sessions
-    if (typed) {
-      for (const c of ctx.cards) {
-        if (c.agent?.state !== "closed") continue;
-        items.push(
-          mine(
-            `takeover:${c.id}`,
-            `Start a new agent on ${c.id}`,
-            `takeover reassign card ${c.id} ${c.title}`,
-          ),
-        );
-      }
-    }
     items.push(mine("delete-project", "Delete project…", "remove"));
   }
   items.push({
@@ -142,7 +107,7 @@ export interface PaletteList {
 export function paletteItems(ctx: PaletteContext, query: string): PaletteList {
   const words = tokenize(query);
   const typed = words.length > 0;
-  const items = commands(ctx, typed).filter(
+  const items = commands(ctx).filter(
     (i) => !typed || matchCommand(`${i.label} ${i.keywords ?? ""}`, words),
   );
   const answered = ctx.sessions?.query === query;

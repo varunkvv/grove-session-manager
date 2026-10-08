@@ -2,27 +2,23 @@ import { create } from "zustand";
 import type {
   AppSettings,
   Bootstrap,
-  CardView,
   EditorStatus,
   EnvInfo,
   InboxView,
   ProjectId,
-  ProjectRecordView,
   ProjectView,
-  PushEvents,
+  SessionHit,
   ToastMessage,
 } from "../../shared/ipc.ts";
-import type { ConclusionControls } from "../logic/views.ts";
-import { switchProject } from "./actions.ts";
+import { loadSessions, switchProject } from "./actions.ts";
 import { takeLanding } from "./landing.ts";
 
-export type Section = "inbox" | "cards" | "conclusions";
+/** the two lists: every project's inbox, and one project's sessions */
+export type Section = "inbox" | "sessions";
 
 export type View =
   | { name: "inbox" }
-  | { name: "cards" }
-  | { name: "card"; cardId: string }
-  | { name: "conclusions" }
+  | { name: "sessions" }
   | { name: "new-project" }
   | { name: "edit-project" };
 
@@ -45,31 +41,32 @@ export interface State {
   /** in combos.json order */
   projects: ProjectView[];
   projectsProblem?: string;
-  /** the project on screen. null only when there are no projects at all. */
+  /**
+   * the project whose sessions are on screen, or were last: the inbox is every project's. null
+   * only when there are no projects at all
+   */
   project: ProjectId | null;
   section: Section;
   view: View;
-  /** what Back and Escape return to. a new screen from the nav, the palette or a project switch clears it. */
+  /** what Back and Escape return to. a new screen from the sidebar, the menu or the palette clears it. */
   back: View[];
-  /** every project's inbox rows, Asked and Stopped first, and the tray count */
+  /** every project's sessions that need the person, newest first */
   inbox: InboxView;
-  /** every project's cards and conclusions. `readAt` is absent until the first read */
-  records: Record<ProjectId, ProjectRecordView>;
-  /** the card on screen with its thread. null until `card()` has answered */
-  card: CardView | null;
-  /** the keyboard's row on each list screen, by id */
-  active: { inbox: string | null; cards: string | null; conclusions: string | null };
+  /** the sessions of one project, newest first. null until main has answered for `project` */
+  sessions: { project: ProjectId; hits: SessionHit[] } | null;
+  /** what is typed in the sessions list's filter */
+  filter: string;
+  /** the keyboard's row in each list, by session id */
+  active: Record<Section, string | null>;
   /** the keyboard moved last. while false no row looks active and only hover shows a row's buttons */
   keys: boolean;
   /**
-   * the inbox row or the card open in the panel beside its list, by id. one for both screens: only
-   * one list is on screen, and `go` clears it. a trip to a card page and Back keeps it
+   * the session open in the panel beside its list, by id. one for both lists: only one is on
+   * screen, and going to another clears it
    */
   peek: string | null;
-  /** the Conclusions screen's controls. they outlive a trip to a card and back. */
-  conclusions: ConclusionControls;
   /** a popover the global key handler must leave alone */
-  overlay: null | "palette" | "switcher";
+  overlay: null | "palette";
   dialog: DialogState;
   toasts: Toast[];
   /** the banner reason that was dismissed. it comes back when its reason changes */
@@ -93,13 +90,12 @@ export const useStore = create<State>((set) => ({
   section: "inbox",
   view: { name: "inbox" },
   back: [],
-  inbox: { rows: [], tray: 0 },
-  records: {},
-  card: null,
-  active: { inbox: null, cards: null, conclusions: null },
+  inbox: { rows: [] },
+  sessions: null,
+  filter: "",
+  active: { inbox: null, sessions: null },
   keys: false,
   peek: null,
-  conclusions: { query: "", kind: "all", open: null },
   overlay: null,
   dialog: null,
   toasts: [],
@@ -132,35 +128,14 @@ function rememberedProject(): string | null {
   }
 }
 
-/** one project's record after a push: changed heads are upserts unless `replace`, the rest comes whole */
-export function applyRecord(
-  had: ProjectRecordView | undefined,
-  p: Omit<PushEvents["record:changed"], "rev" | "project">,
-): ProjectRecordView {
-  const base = had ?? { cards: [], conclusions: [], problems: [] };
-  let cards = base.cards;
-  if (p.replace) cards = p.cards ?? [];
-  else if (p.cards || p.removedCards) {
-    const byId = new Map(cards.map((c) => [c.id, c]));
-    for (const id of p.removedCards ?? []) byId.delete(id);
-    for (const c of p.cards ?? []) byId.set(c.id, c);
-    cards = [...byId.values()];
-  }
-  return {
-    cards,
-    conclusions: p.conclusions ?? base.conclusions,
-    problems: p.problems ?? base.problems,
-    readAt: p.readAt ?? base.readAt,
-  };
-}
-
-/** the project on screen left the list, or the first one arrived */
+/** the project the sessions screen is on left the list, or the first one arrived */
 function followProjects(projects: ProjectView[]): void {
-  const { project, set } = useStore.getState();
-  if (project !== null && projects.some((p) => p.id === project)) return;
-  const first = projects[0]?.id;
-  if (first) switchProject(first);
-  else set({ project: null });
+  const s = useStore.getState();
+  if (s.project !== null && projects.some((p) => p.id === s.project)) return;
+  const first = projects[0]?.id ?? null;
+  // its screen went with it. the inbox is every project's, so it stays
+  if (first && s.view.name !== "inbox") switchProject(first);
+  else s.set({ project: first, sessions: null });
 }
 
 /**
@@ -199,15 +174,13 @@ export async function connect(): Promise<() => void> {
         }),
       ),
     ),
-    window.grove.on("record:changed", (p) =>
-      gate("record", p.rev, () => {
-        const { records } = useStore.getState();
-        set({ records: { ...records, [p.project]: applyRecord(records[p.project], p) } });
-      }),
-    ),
     window.grove.on("inbox:changed", (p) =>
-      gate("inbox", p.rev, () => set({ inbox: { rows: p.rows, tray: p.tray } })),
+      gate("inbox", p.rev, () => set({ inbox: { rows: p.rows } })),
     ),
+    // a nudge with nothing in it: the list on screen asks main again
+    window.grove.on("sessions:changed", () => {
+      if (useStore.getState().view.name === "sessions") void loadSessions();
+    }),
     window.grove.on("editor:status", (editor) => set({ editor })),
     window.grove.on("toast", (t) => toast(t)),
     // a notification or a tray row was clicked: take where it lands, now that the page is here
@@ -225,7 +198,6 @@ export async function connect(): Promise<() => void> {
     editor: boot.editor,
     projects: boot.projects,
     projectsProblem: boot.projectsProblem,
-    records: boot.record,
     inbox: boot.inbox,
     project: boot.projects.some((p) => p.id === saved) ? saved : (boot.projects[0]?.id ?? null),
   });

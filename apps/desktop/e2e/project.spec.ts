@@ -27,6 +27,9 @@ test.afterEach(async () => {
   await app?.close();
 });
 
+/** a project's screen, from the sidebar */
+const show = (page: Page, id: string) =>
+  page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
 const project = async (page: Page, id: string) =>
   (await api(page).bootstrap()).projects.find((p) => p.id === id);
 const folderStates = async (page: Page, id: string) =>
@@ -99,11 +102,19 @@ test("the first project: working copies, a reference, the prefix and the record'
 
   await expect(page.getByTestId("form-submit")).toHaveText("Create project");
   await submit(page);
-  // the new project's start state
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "cards");
-  await expect(page.getByTestId("project-switcher")).toContainText("Prod debug");
-  await expect(page.getByTestId("goal")).toHaveText("Find why webhooks go missing");
-  await expect(page.getByTestId("start-state")).toBeVisible();
+  // the new project's screen: no sessions yet, and how to start one
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
+  await expect(page.getByTestId("project-name")).toHaveText("Prod debug");
+  await expect(page.getByTestId("project-name")).toHaveAttribute(
+    "title",
+    "Prod debug: Find why webhooks go missing",
+  );
+  await expect(page.getByTestId("sessions-empty")).toBeVisible();
+  // it is in the sidebar, and marked
+  await expect(page.locator('[data-testid="project-item"][data-id="prod-debug"]')).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   const root = path.join(fx.root, "prod-debug");
   await expect
@@ -162,7 +173,7 @@ test("a prefix another project uses brings up the prefix field, and Escape keeps
   const { page } = app;
   await stubDirectoryPicker(app.app, [pipelines]);
 
-  await page.getByTestId("project-switcher").click();
+  // the + beside Projects
   await page.getByTestId("new-project").click();
   const form = page.getByTestId("project-form");
   await expect(form).toHaveAttribute("data-mode", "new");
@@ -198,8 +209,8 @@ test("a prefix another project uses brings up the prefix field, and Escape keeps
   await expect(form).toContainText("Cards will be DAT2-1, DAT2-2…");
 
   await submit(page);
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "cards");
-  await expect(page.getByTestId("project-switcher")).toContainText("data-objects-test");
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
+  await expect(page.getByTestId("project-name")).toHaveText("data-objects-test");
   expect(combos().map((c) => c.prefix)).toEqual(["DATA", "DAT2"]);
   const root = path.join(fx.root, "data-objects-test");
   await waitFor(async () => readProject(root)?.prefix === "DAT2", 30_000);
@@ -221,7 +232,7 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
 
   app = await launchApp(fx);
   const { page } = app;
-  await page.getByTestId("nav-cards").click();
+  await show(page, "auth-sso");
   await page.getByTestId("edit-project").click();
 
   const form = page.getByTestId("project-form");
@@ -255,8 +266,11 @@ test("Edit project: repos that were in it are fixed, and an edited goal bumps th
   // Enter in a field is the button
   await expect(save).toBeEnabled();
   await page.getByTestId("project-goal").press("Enter");
-  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "cards");
-  await expect(page.getByTestId("goal")).toHaveText("SSO for the dashboard, okta first");
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
+  await expect(page.getByTestId("project-name")).toHaveAttribute(
+    "title",
+    "auth-sso: SSO for the dashboard, okta first",
+  );
   await waitFor(async () => readProject(root)?.rev === before + 1, 30_000);
   expect(readProject(root)).toMatchObject({
     name: "auth-sso",
@@ -277,7 +291,7 @@ test("a project that has no repos can still be given a goal", async () => {
 
   app = await launchApp(fx);
   const { page } = app;
-  await page.getByTestId("nav-cards").click();
+  await show(page, "notes");
   await page.getByTestId("edit-project").click();
   await expect(page.getByTestId("repos-empty")).toHaveText("This project has no repos.");
   const save = page.getByTestId("form-submit");
@@ -303,7 +317,7 @@ test("a rename keeps the folder, the id and the prefix", async () => {
 
   app = await launchApp(fx);
   const { page } = app;
-  await page.getByTestId("nav-cards").click();
+  await show(page, "auth-sso");
   await page.getByTestId("edit-project").click();
   const form = page.getByTestId("project-form");
 
@@ -314,8 +328,10 @@ test("a rename keeps the folder, the id and the prefix", async () => {
 
   await page.getByTestId("project-name").fill("Auth SSO");
   await page.getByTestId("form-submit").click();
-  await expect(page.getByTestId("cards-header")).toContainText("Auth SSO");
-  await expect(page.getByTestId("project-switcher")).toContainText("Auth SSO");
+  await expect(page.getByTestId("project-name")).toHaveText("Auth SSO");
+  await expect(page.locator('[data-testid="project-item"][data-id="auth-sso"]')).toHaveText(
+    "Auth SSO",
+  );
   await waitFor(async () => readProject(root)?.name === "Auth SSO", 30_000);
   expect(combos()[0]).toMatchObject({ name: "Auth SSO", root, prefix: "AUTH" });
   expect((await api(page).bootstrap()).projects.map((p) => p.id)).toEqual([
@@ -367,6 +383,8 @@ test("an invalid .mcp.json is a config problem on Edit project, until it is fixe
   await expect(banner).toContainText("Agents in auth-sso cannot reach the record.", {
     timeout: 30_000,
   });
+  // Details is the project's form
+  await show(page, "auth-sso");
   await page.getByTestId("banner-action").click();
   const check = page.getByTestId("record-check");
   await expect(check).toHaveAttribute("data-state", "failed");

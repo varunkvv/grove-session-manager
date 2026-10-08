@@ -6,11 +6,7 @@ import * as record from "@grove/record";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { Interruption } from "../../src/main/services/interrupted.ts";
 import type { ProjectSnapshot } from "../../src/main/services/projectRecord.ts";
-import {
-  ProjectsService,
-  type RecordPatch,
-  START_TTL_MS,
-} from "../../src/main/services/projects.ts";
+import { ProjectsService } from "../../src/main/services/projects.ts";
 import type { SearchHit } from "../../src/main/services/sessions.ts";
 import type { InboxView, SessionRow } from "../../src/shared/ipc.ts";
 
@@ -23,10 +19,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const running = (o: Partial<LiveStatus> = {}): LiveStatus => ({
-  state: "running",
-  at: 1000,
-  lastEventAt: 1000,
+const live = (state: LiveStatus["state"], at = 1000, o: Partial<LiveStatus> = {}): LiveStatus => ({
+  state,
+  at,
+  lastEventAt: at,
   ...o,
 });
 
@@ -42,15 +38,14 @@ function row(sessionId: string, o: Partial<SessionRow> = {}): SessionRow {
 }
 
 /**
- * real record files in a temp folder, read into snapshots by hand (no watchers), and fakes for the
- * sessions, the live state and the review marks
+ * fakes for the sessions, the live state and the review marks. the record is real files in a temp
+ * folder, read into snapshots by hand (no watchers): only the question notification reads it
  */
 function setup() {
   const dir = mkdtempSync(path.join(tmp, "t-"));
   const combos: Combo[] = [];
   const snaps = new Map<string, ProjectSnapshot>();
   const rows: SessionRow[] = [];
-  const live = new Map<string, LiveStatus>();
   const interrupted = new Map<string, Interruption>();
   const holders = new Map<string, RegistryEntry>();
   const alive = new Set<string>();
@@ -58,9 +53,8 @@ function setup() {
   const seen: string[] = [];
   const hits: SearchHit[] = [];
   const got = {
-    record: [] as Array<[string, RecordPatch]>,
     inbox: [] as InboxView[],
-    projects: 0,
+    sessions: 0,
     questions: [] as unknown[],
     stopped: [] as unknown[],
   };
@@ -95,9 +89,6 @@ function setup() {
     record: {
       setProjects: () => {},
       snapshot: (id) => snaps.get(id),
-      check: (id) => {
-        if (id) read(id);
-      },
     },
     sessions: {
       list: () => rows,
@@ -105,7 +96,6 @@ function setup() {
       search: async () => hits,
     },
     live: {
-      list: () => live,
       interruptions: () => interrupted,
       holder: (id) => holders.get(id),
       isAlive: (id) => alive.has(id),
@@ -124,9 +114,8 @@ function setup() {
         for (const k of keys) on ? marks.add(k) : marks.delete(k);
       },
     },
-    onRecord: (p, patch) => got.record.push([p, patch]),
     onInbox: (v) => got.inbox.push(v),
-    onProjects: () => got.projects++,
+    onSessions: () => got.sessions++,
     onQuestion: (q) => got.questions.push(q),
     onStopped: (s) => got.stopped.push(s),
   });
@@ -172,15 +161,12 @@ function setup() {
     alive.add(id);
   };
 
-  const heads = (id: string) => svc.recordViews()[id]?.cards ?? [];
   return {
     svc,
     combos,
     project,
     session,
-    heads,
     rows,
-    live,
     interrupted,
     holders,
     alive,
@@ -192,412 +178,91 @@ function setup() {
   };
 }
 
-describe("card heads and conclusion rows", () => {
-  it("joins the record with the holder's session", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.session("s-1", { title: "rounding fix", comboName: "chat" });
-    chat.as("s-1", "fixer")("card_create", { title: "Fix rounding", body: "Half to even.\nmore" });
-    chat.as("s-1")("card_claim", { card: "CHAT-1" });
-    chat.as("s-1")("question_ask", { card: "CHAT-1", text: "8h or 4h?", to: "person" });
-    record.callAsPerson(chat.root, "card_create", { title: "Write the release note" });
-    chat.changed();
-
-    const [one, two] = t.heads("chat");
-    expect(one).toMatchObject({
-      id: "CHAT-1",
-      title: "Fix rounding",
-      status: "waiting",
-      agent: {
-        ref: { sessionId: "s-1", name: "rounding fix" },
-        runtime: "vscode",
-        state: "idle",
-      },
-      problems: 0,
-    });
-    expect(two).toMatchObject({ id: "CHAT-2", status: "todo", agent: undefined });
-  });
-
-  it("marks the conclusions that would enter the inbox, and the ones reviewed", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    const agent = chat.as("s-1", "fixer");
-    agent("card_create", { title: "Fix rounding" });
-    agent("conclusion_record", { kind: "decision", what: "Round half up.", by: "agent" });
-    agent("conclusion_record", { kind: "finding", what: "Only one caller.", by: "agent" });
-    agent("conclusion_record", {
-      kind: "finding",
-      what: "The parser rounds too.",
-      by: "agent",
-      changes_plan: true,
-      card: "CHAT-1",
-    });
-    agent("conclusion_record", {
-      kind: "decision",
-      what: "8h, to match the policy.",
-      by: "person",
-    });
-    agent("conclusion_record", {
-      kind: "decision",
-      what: "Round half to even.",
-      by: "agent",
-      replaces: "D-1",
-    });
-    t.marks.add("CHAT/conclusion:D-3");
-    chat.changed();
-
-    const rows = Object.fromEntries(
-      t.svc.recordViews().chat?.conclusions.map((c) => [c.id, c]) ?? [],
-    );
-    expect(rows["D-1"]).toMatchObject({
-      superseded: true,
-      replacedBy: ["D-3"],
-      needsReview: false,
-    });
-    expect(rows["F-1"]).toMatchObject({ needsReview: false });
-    expect(rows["F-2"]).toMatchObject({
-      needsReview: true,
-      card: { id: "CHAT-1", title: "Fix rounding" },
-      who: { sessionId: "s-1", name: "fixer" },
-    });
-    expect(rows["D-2"]).toMatchObject({ by: "person", needsReview: false });
-    expect(rows["D-3"]).toMatchObject({ needsReview: true, reviewed: true, replaces: "D-1" });
-  });
-
-  it("carries what a double-click opens: the holder's session, the last agent's on a closed card, else nothing", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.session("s-1", { comboName: "chat" });
-    // in the background, and Claude Code has not said which background session it is
-    t.session("s-2", { background: { held: true } });
-    const a = chat.as("s-1");
-    for (const title of [
-      "held",
-      "done",
-      "nobody was on it",
-      "held, not indexed yet",
-      "given back",
-    ]) {
-      a("card_create", { title });
-    }
-    a("card_claim", { card: "CHAT-1" });
-    chat.as("s-2")("card_claim", { card: "CHAT-2" });
-    chat.as("s-2")("card_done", { card: "CHAT-2", summary: "Done." });
-    chat.as("s-3")("card_claim", { card: "CHAT-4" });
-    a("card_claim", { card: "CHAT-5" });
-    a("card_release", { card: "CHAT-5", note: "Not started." });
-    chat.changed();
-    const head = (id: string) => t.heads("chat").find((h) => h.id === id);
-
-    expect(head("CHAT-1")).toMatchObject({ sessionKey: "/claude/projects/s-1.jsonl", open: {} });
-    // nobody holds a done card: the agent that finished it, with the plan its page's button has
-    expect(head("CHAT-2")).toMatchObject({
-      status: "done",
-      agent: undefined,
-      sessionKey: "/claude/projects/s-2.jsonl",
-      open: { disabled: "running in the background" },
-    });
-    expect(head("CHAT-2")?.sessionKey).toBe(t.svc.card("chat", "CHAT-2")?.agent?.sessionKey);
-    expect(head("CHAT-2")?.open).toEqual(t.svc.card("chat", "CHAT-2")?.agent?.open);
-    expect(head("CHAT-3")).toMatchObject({ sessionKey: undefined, open: undefined });
-    // its page offers a start, not an open: the row opens nothing, though s-1 was on it
-    expect(head("CHAT-5")).toMatchObject({
-      status: "todo",
-      sessionKey: undefined,
-      open: undefined,
-    });
-
-    // a session grove has not indexed has neither. when it is, that head is sent again
-    expect(head("CHAT-4")).toMatchObject({
-      agent: { ref: { sessionId: "s-3" } },
-      sessionKey: undefined,
-      open: undefined,
-    });
-    const pushes = t.got.record.length;
-    t.session("s-3");
-    t.svc.sessionsChanged();
-    expect(head("CHAT-4")).toMatchObject({ sessionKey: "/claude/projects/s-3.jsonl", open: {} });
-    expect(t.got.record.slice(pushes)).toMatchObject([["chat", { cards: [{ id: "CHAT-4" }] }]]);
-    expect(t.got.record.at(-1)?.[1].cards).toHaveLength(1);
-  });
-
-  it("gives each of the five runtimes", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    const cases: Array<[string, () => void]> = [
-      ["vscode", () => t.session("s-vscode")],
-      ["terminal", () => t.session("s-terminal", { entrypoint: "cli" })],
-      ["elsewhere", () => t.session("s-elsewhere", { entrypoint: "sdk-cli" })],
-      ["background", () => t.session("s-background", { background: { held: true } })],
-      [
-        "closed",
-        () => {
-          t.session("s-closed");
-          t.alive.delete("s-closed");
-        },
-      ],
-    ];
-    for (const [i, [, make]] of cases.entries()) {
-      make();
-      const id = `s-${cases[i]?.[0]}`;
-      chat.as(id)("card_create", { title: id });
-      chat.as(id)("card_claim", { card: `CHAT-${i + 1}` });
-    }
-    chat.changed();
-    expect(t.heads("chat").map((h) => [h.title.slice(2), h.agent?.runtime])).toEqual(
-      cases.map(([r]) => [r, r]),
-    );
-  });
-
-  it("keeps stateAt and version through a tool call, and moves them on a state change", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.session("s-1", { live: running({ at: 1000 }) });
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("card_claim", { card: "CHAT-1" });
-    chat.changed();
-    const first = t.heads("chat")[0];
-    expect(first?.agent).toMatchObject({ state: "working", stateAt: 1000 });
-    const pushes = t.got.record.length;
-
-    // a tool call moves live.at and nothing else
-    t.rows[0] = { ...(t.rows[0] as SessionRow), live: running({ at: 2000, lastEventAt: 2000 }) };
-    t.svc.sessionsChanged();
-    const second = t.heads("chat")[0];
-    expect(second?.version).toBe(first?.version);
-    expect(second?.agent?.stateAt).toBe(1000);
-    expect(t.got.record.length).toBe(pushes);
-
-    t.rows[0] = {
-      ...(t.rows[0] as SessionRow),
-      live: { state: "waiting", at: 3000, lastEventAt: 3000 },
-    };
-    t.svc.sessionsChanged();
-    const third = t.heads("chat")[0];
-    expect(third?.status).toBe("waiting");
-    expect(third?.agent).toMatchObject({ state: "waiting", stateAt: 3000 });
-    expect(third?.version).not.toBe(first?.version);
-    expect(t.got.record.at(-1)).toEqual(["chat", { cards: [third], readAt: 1 }]);
-
-    // someone looked: the status moves while the agent's state does not, and the version follows
-    t.rows[0] = {
-      ...(t.rows[0] as SessionRow),
-      live: { state: "waiting", at: 3000, lastEventAt: 3000, seen: true },
-    };
-    t.svc.sessionsChanged();
-    const fourth = t.heads("chat")[0];
-    expect(fourth?.status).toBe("in_progress");
-    expect(fourth?.version).not.toBe(third?.version);
-
-    // the card page lists the conclusions that name the card: a new one moves its version too
-    chat.as("s-1")("conclusion_record", {
-      kind: "decision",
-      what: "Round half up.",
-      by: "agent",
-      card: "CHAT-1",
-    });
-    chat.changed();
-    expect(t.heads("chat")[0]?.version).not.toBe(fourth?.version);
-  });
-
-  it("sends a project's heads whole once, then only the ones that changed", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("card_create", { title: "Write the release note" });
-    chat.changed();
-    t.svc.inbox();
-    expect(t.got.record).toHaveLength(1);
-    expect(t.got.record[0]?.[1]).toMatchObject({ replace: true, conclusions: [], problems: [] });
-    expect(t.got.record[0]?.[1].cards).toHaveLength(2);
-
-    chat.as("s-1")("comment_add", { card: "CHAT-2", text: "Draft is in." });
-    chat.changed();
-    t.svc.inbox();
-    expect(t.got.record).toHaveLength(2);
-    expect(t.got.record[1]?.[1].cards?.map((h) => h.id)).toEqual(["CHAT-2"]);
-    expect(t.got.record[1]?.[1].conclusions).toBeUndefined();
-  });
-});
-
-describe("the card view", () => {
-  it("shows the last agent of a done card, not holding, and the thread in order", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    // usage counts subagents, so its biggest spender is not the session's own model
-    t.session("s-1", {
-      title: "rounding fix",
-      model: "claude-opus-5-5",
-      usage: [{ model: "claude-sonnet-5" } as never],
-    });
-    const agent = chat.as("s-1", "fixer");
-    agent("card_create", { title: "Fix rounding", needs: [] });
-    agent("card_claim", { card: "CHAT-1" });
-    agent("question_ask", { card: "CHAT-1", text: "8h or 4h?", to: "person" });
-    agent("question_answer", { card: "CHAT-1", question: 1, text: "8h.", by: "person" });
-    agent("comment_add", {
-      card: "CHAT-1",
-      text: "Notes written.",
-      artifacts: [{ type: "file", ref: "artifacts/notes.md" }],
-    });
-    agent("conclusion_record", { kind: "decision", what: "8h.", by: "person", card: "CHAT-1" });
-    agent("card_done", { card: "CHAT-1", summary: "Fixed, see D-1." });
-    chat.changed();
-
-    const view = t.svc.card("chat", "chat-1");
-    expect(view).toMatchObject({
-      id: "CHAT-1",
-      status: "done",
-      recordStatus: "done",
-      agent: {
-        ref: { sessionId: "s-1", name: "rounding fix" },
-        holding: false,
-        runtime: "vscode",
-        model: expect.any(String),
-        sessionKey: "/claude/projects/s-1.jsonl",
-      },
-      artifacts: [{ type: "file", ref: "artifacts/notes.md" }],
-      conclusions: [{ id: "D-1", by: "person" }],
-      problems: [],
-    });
-    expect(view?.thread.map((x) => (x.kind === "event" ? x.event : x.kind))).toEqual([
-      "claim",
-      "question",
-      "answer",
-      "comment",
-      "done",
-    ]);
-    expect(view?.thread[1]).toMatchObject({ to: "person", open: false, answeredBy: [2] });
-    expect(view?.thread[2]).toMatchObject({ who: "person", answers: 1 });
-    expect(view?.version).toBe(t.heads("chat")[0]?.version);
-    expect(t.svc.card("chat", "CHAT-9")).toBeNull();
-    expect(t.svc.card("nope", "CHAT-1")).toBeNull();
-  });
-});
+const inChat = { comboName: "chat", comboRelation: "root" } as const;
 
 describe("the inbox", () => {
-  it("builds every project's rows, Asked first, with the session's runtime and open plan", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+  it("is every project's sessions that need the person, newest first, and waits on no record", () => {
     const t = setup();
-    const chat = t.project("chat", "CHAT");
-    const ops = t.project("ops", "OPS");
-    t.session("s-1", { comboName: "chat" });
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("conclusion_record", { kind: "decision", what: "Half to even.", by: "agent" });
-    chat.changed();
-    ops.as("s-2")("card_create", { title: "Rotate keys" });
-    ops.as("s-2")("question_ask", { card: "OPS-1", text: "Which vault?", to: "person" });
-    ops.changed();
+    // no record of either project has been read
+    t.project("chat", "CHAT");
+    t.project("ops", "OPS");
+    t.session("s-perm", {
+      ...inChat,
+      title: "rounding fix",
+      gitBranch: "fix/rounding",
+      live: live("permission", 3000, { detail: "Bash", target: "pnpm test" }),
+    });
+    t.session("s-turn", {
+      comboName: "ops",
+      comboRelation: "inside",
+      firstPrompt: "rotate the keys",
+      live: live("waiting", 5000, { question: "Which vault?" }),
+    });
+    t.session("s-failed", { ...inChat, kind: "bg", live: live("failed", 2000) });
+    t.rows.push(row("s-cut", { ...inChat, interrupted: { why: "gone", at: 4000 } }));
+    t.session("s-working", { ...inChat, live: live("running", 9000) });
+    t.session("s-seen", { ...inChat, live: live("waiting", 9000, { seen: true }) });
+    // a session in no project is listed nowhere
+    t.session("s-nowhere", { live: live("permission", 9000) });
 
     const inbox = t.svc.inbox();
-    expect(inbox.rows.map((r) => r.id)).toEqual([
-      "asked:OPS-1",
-      "new:OPS-1",
-      "decided:D-1",
-      "new:CHAT-1",
+    expect(inbox.rows.map((r) => [r.sessionId, r.kind, r.project])).toEqual([
+      ["s-turn", "turn", "ops"],
+      ["s-cut", "stopped", "chat"],
+      ["s-perm", "permission", "chat"],
+      ["s-failed", "failed", "chat"],
     ]);
-    expect(inbox.tray).toBe(1);
-    expect(inbox.rows.find((r) => r.id === "new:CHAT-1")).toMatchObject({
-      project: "chat",
-      projectName: "chat",
+    expect(inbox.rows[2]).toEqual({
+      key: "/claude/projects/s-perm.jsonl",
+      sessionId: "s-perm",
+      title: "rounding fix",
+      where: "chat",
       runtime: "vscode",
-      sessionKey: "/claude/projects/s-1.jsonl",
+      branch: "fix/rounding",
       open: {},
+      project: "chat",
+      kind: "permission",
+      at: 3000,
+      summary: "Bash pnpm test",
+      reviewKeys: ["seen:s-perm"],
     });
-    expect(inbox.rows[0]).not.toHaveProperty("sessionId");
-    expect(t.got.inbox.at(-1)).toEqual(inbox);
+    expect(inbox.rows[0]).toMatchObject({ title: "rotate the keys", summary: "Which vault?" });
+    expect(inbox.rows[1]).toMatchObject({ runtime: "closed", at: 4000 });
+    // Claude Code has not said which background session it is: no way to open it yet
+    expect(inbox.rows[3]?.open).toEqual({ disabled: "running in the background" });
+    expect(t.got.inbox).toEqual([inbox]);
+    // nothing moved: nothing is sent again
+    t.svc.sessionsChanged();
+    t.svc.inbox();
+    expect(t.got.inbox).toHaveLength(1);
   });
 });
 
-describe("review", () => {
-  it("answers an open question as the person, once, and the card leaves waiting", async () => {
+describe("dismiss", () => {
+  it("stores a stop under the prefix, sends seen keys to the live state, and refuses bad keys", async () => {
     const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.session("s-1", { comboName: "chat" });
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("card_claim", { card: "CHAT-1" });
-    chat.as("s-1")("question_ask", { card: "CHAT-1", text: "8h or 4h?", to: "person" });
-    chat.changed();
-    expect(t.heads("chat")[0]?.status).toBe("waiting");
-    const asked = t.svc.inbox().rows.find((r) => r.id === "asked:CHAT-1");
-    expect(asked?.reviewKeys).toEqual(["question:CHAT-1#1"]);
+    t.project("chat", "CHAT");
+    t.rows.push(row("s-cut", { ...inChat, interrupted: { why: "gone", at: 4000 } }));
+    t.session("s-turn", { ...inChat, live: live("waiting", 5000) });
+    const [turn, cut] = t.svc.inbox().rows;
+    expect(cut?.reviewKeys).toEqual(["stopped:s-cut@4000"]);
 
-    await t.svc.review("chat", asked?.reviewKeys ?? [], true);
-    const answers = () =>
-      record.readCard(chat.root, "CHAT-1")?.comments.filter((c) => c.kind === "answer");
-    expect(answers()).toMatchObject([
-      { by: "person", session: "person", answers: 1, text: "answered in the agent's chat" },
-    ]);
-    expect(t.heads("chat")[0]?.status).toBe("in_progress");
-    expect(t.svc.inbox().rows.some((r) => r.id === "asked:CHAT-1")).toBe(false);
+    await t.svc.review("chat", [...(cut?.reviewKeys ?? []), ...(turn?.reviewKeys ?? [])], true);
+    expect([...t.marks]).toEqual(["CHAT/stopped:s-cut@4000"]);
+    // looking at a session is not stored: the live state forgets it at its next event
+    expect(t.seen).toEqual(["s-turn"]);
+    expect(t.svc.inbox().rows.map((r) => r.sessionId)).toEqual(["s-turn"]);
 
-    // a second Reviewed (a stale row, a double click) adds no second answer
-    await t.svc.review("chat", ["question:CHAT-1#1"], true);
-    expect(answers()).toHaveLength(1);
-    expect(t.marks.size).toBe(0);
-  });
+    await t.svc.review("chat", ["stopped:s-cut@4000"], false);
+    expect([...t.marks]).toEqual([]);
+    expect(t.svc.inbox().rows.map((r) => r.sessionId)).toEqual(["s-turn", "s-cut"]);
 
-  it("stores marks under the prefix, sends seen keys to the live state, and refuses bad keys", async () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("conclusion_record", { kind: "decision", what: "Half to even.", by: "agent" });
-    chat.changed();
-    expect(t.svc.inbox().rows.map((r) => r.id)).toEqual(["decided:D-1", "new:CHAT-1"]);
-
-    await t.svc.review("chat", ["conclusion:D-1", "card:CHAT-1", "seen:s-2"], true);
-    expect([...t.marks].sort()).toEqual(["CHAT/card:CHAT-1", "CHAT/conclusion:D-1"]);
-    expect(t.seen).toEqual(["s-2"]);
-    expect(t.svc.inbox().rows).toEqual([]);
-    expect(t.svc.recordViews().chat?.conclusions[0]?.reviewed).toBe(true);
-
-    await t.svc.review("chat", ["card:CHAT-1"], false);
-    expect([...t.marks]).toEqual(["CHAT/conclusion:D-1"]);
-    expect(t.svc.inbox().rows.map((r) => r.id)).toEqual(["new:CHAT-1"]);
-
-    await expect(t.svc.review("chat", ["card:CHAT-1; rm -rf"], true)).rejects.toMatchObject({
-      code: "invalid",
-    });
-    await expect(t.svc.review("chat", Array(2001).fill("card:CHAT-1"), true)).rejects.toMatchObject(
-      {
-        code: "invalid",
-      },
-    );
-    await expect(t.svc.review("nope", ["card:CHAT-1"], true)).rejects.toMatchObject({
+    for (const bad of [["stopped:s-cut; rm -rf"], ["card:CHAT-1"], Array(2001).fill("seen:s-1")]) {
+      await expect(t.svc.review("chat", bad, true)).rejects.toMatchObject({ code: "invalid" });
+    }
+    await expect(t.svc.review("nope", ["seen:s-1"], true)).rejects.toMatchObject({
       code: "no-project",
     });
-  });
-});
-
-describe("pending starts", () => {
-  it("clears a start on a card when that card is claimed after it", () => {
-    const t = setup();
-    const chat = t.project("chat", "CHAT");
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.changed();
-    const start = t.svc.addStart("chat", "editor", "CHAT-1");
-    expect(t.got.projects).toBe(1);
-    expect(t.svc.views().projects[0]?.starting).toEqual([start]);
-
-    chat.as("s-2")("card_claim", { card: "CHAT-1" });
-    chat.changed();
-    t.svc.inbox();
-    expect(t.svc.views().projects[0]?.starting).toEqual([]);
-    expect(t.got.projects).toBe(2);
-  });
-
-  it("drops a start nobody claimed from after 30 minutes", () => {
-    vi.useFakeTimers();
-    const t = setup();
-    const ops = t.project("ops", "OPS");
-    ops.changed();
-    t.svc.addStart("ops", "background");
-    vi.advanceTimersByTime(START_TTL_MS - 60_000);
-    expect(t.svc.views().projects[0]?.starting).toHaveLength(1);
-    vi.advanceTimersByTime(60_000 + 1000 + 200);
-    expect(t.svc.views().projects[0]?.starting).toEqual([]);
-    expect(t.got.projects).toBe(2);
   });
 });
 
@@ -629,14 +294,10 @@ describe("the notification diffs", () => {
 
   it("takes the interruptions at start() as the stopped baseline", () => {
     const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.session("s-old", { comboName: "chat" });
-    t.session("s-new", { comboName: "chat", title: "rounding fix" });
-    t.session("s-holder");
+    t.project("chat", "CHAT");
+    t.session("s-old", inChat);
+    t.session("s-new", { ...inChat, title: "rounding fix" });
     t.session("s-nowhere");
-    chat.as("s-holder")("card_create", { title: "Fix rounding" });
-    chat.as("s-holder")("card_claim", { card: "CHAT-1" });
-    chat.changed();
 
     t.interrupted.set("s-old", { at: 1 });
     t.svc.interruptedChanged(t.interrupted);
@@ -645,37 +306,37 @@ describe("the notification diffs", () => {
     expect(t.got.stopped).toEqual([]);
 
     t.interrupted.set("s-new", { at: 2 });
-    t.interrupted.set("s-holder", { at: 2 });
     t.interrupted.set("s-nowhere", { at: 2 });
     t.svc.interruptedChanged(t.interrupted);
-    expect(t.got.stopped).toEqual([
-      { sessionId: "s-new", title: "rounding fix", project: "chat" },
-      { sessionId: "s-holder", title: undefined, project: "chat" },
-    ]);
+    expect(t.got.stopped).toEqual([{ sessionId: "s-new", title: "rounding fix", project: "chat" }]);
     t.svc.interruptedChanged(t.interrupted);
-    expect(t.got.stopped).toHaveLength(2);
+    expect(t.got.stopped).toHaveLength(1);
   });
 
-  it("lands a click on the held card, else the project's row, else nowhere", () => {
+  it("lands a click on the session's inbox row, else its row in its project's sessions, else nowhere", () => {
     const t = setup();
-    const chat = t.project("chat", "CHAT");
-    t.session("s-1", { comboName: "chat" });
-    t.session("s-2", { comboName: "chat" });
-    chat.as("s-1")("card_create", { title: "Fix rounding" });
-    chat.as("s-1")("card_claim", { card: "CHAT-1" });
-    chat.changed();
-    expect(t.svc.landing("s-1", "asked")).toEqual({
-      view: "card",
+    t.project("chat", "CHAT");
+    const inside = { comboName: "chat", comboRelation: "inside" } as const;
+    t.session("s-asks", { ...inside, live: live("permission") });
+    t.session("s-quiet", inChat);
+    t.session("s-runs", { ...inside, live: live("running") });
+    // finished in a subfolder: its project's list leaves it to the palette
+    t.session("s-sub", inside);
+    t.session("s-nowhere", { live: live("permission") });
+
+    expect(t.svc.landing("s-asks")).toEqual({ view: "inbox", session: "s-asks" });
+    expect(t.svc.landing("s-quiet")).toEqual({
+      view: "sessions",
       project: "chat",
-      cardId: "CHAT-1",
-      back: "inbox",
+      session: "s-quiet",
     });
-    expect(t.svc.landing("s-2", "stopped")).toEqual({
-      view: "inbox",
-      project: "chat",
-      rowId: "stopped:s-2",
-    });
-    expect(t.svc.landing("s-3", "asked")).toBeUndefined();
+    expect(t.svc.landing("s-runs")).toMatchObject({ view: "sessions", session: "s-runs" });
+    // these open in the editor
+    expect(t.svc.landing("s-sub")).toBeUndefined();
+    expect(t.svc.landing("s-nowhere")).toBeUndefined();
+    expect(t.svc.landing("s-unknown")).toBeUndefined();
+    expect(t.svc.projectOf("s-sub")).toBe("chat");
+    expect(t.svc.projectOf("s-nowhere")).toBeUndefined();
   });
 });
 
@@ -693,7 +354,6 @@ describe("projects and sessions", () => {
       rootExists: true,
       server: { state: "unknown" },
       shadowed: [],
-      starting: [],
     });
     // a second combo on another folder called chat
     const other = path.join(mkdtempSync(path.join(tmp, "t-")), "chat");
@@ -732,53 +392,102 @@ describe("projects and sessions", () => {
     });
   });
 
-  it("lists the sessions started in a project's folder that hold no in-progress card, newest first, at most 30", () => {
+  it("lists every session started in a project's folder, newest first, and a subfolder's only while it needs the person or runs", () => {
     const t = setup();
-    const chat = t.project("chat", "CHAT");
-    const ops = t.project("ops", "OPS");
-    const inChat = { comboName: "chat", comboRelation: "root" } as const;
+    t.project("chat", "CHAT");
+    t.project("ops", "OPS");
     const inOps = { comboName: "ops", comboRelation: "root" } as const;
-    t.session("s-holds", { ...inChat, activityMs: 50 });
-    t.session("s-done", { ...inChat, title: "rounding fix", activityMs: 20 });
-    t.rows.push(row("s-free", { ...inChat, firstPrompt: "look at the parser", activityMs: 40 }));
+    const inside = { comboName: "chat", comboRelation: "inside" } as const;
+    t.session("s-open", {
+      ...inChat,
+      title: "rounding fix",
+      gitBranch: "fix/rounding",
+      activityMs: 20,
+    });
+    t.rows.push(
+      row("s-closed", {
+        ...inChat,
+        firstPrompt: "look at  the parser",
+        lastPrompt: "then the lexer",
+        activityMs: 40,
+      }),
+    );
     // the same session in an older transcript is not a second row
-    t.rows.push(row("s-free", { ...inChat, key: "/moved/s-free.jsonl", activityMs: 5 }));
+    t.rows.push(row("s-closed", { ...inChat, key: "/moved/s-closed.jsonl", activityMs: 5 }));
     // started in a subfolder: Open takes it to that folder's window, so the palette has it
-    t.rows.push(row("s-sub", { comboName: "chat", comboRelation: "inside", activityMs: 90 }));
+    t.rows.push(row("s-sub", { ...inside, activityMs: 90 }));
+    t.session("s-sub-runs", { ...inside, live: live("running"), activityMs: 80 });
+    t.session("s-sub-asks", { ...inside, live: live("waiting"), activityMs: 70 });
+    t.session("s-sub-seen", { ...inside, live: live("waiting", 1000, { seen: true }) });
     t.session("s-ops", { ...inOps, activityMs: 60 });
     t.rows.push(row("s-nowhere", { activityMs: 70 }));
-    chat.as("s-holds")("card_create", { title: "Fix rounding" });
-    chat.as("s-holds")("card_claim", { card: "CHAT-1" });
-    // a card that is done is held by nobody
-    chat.as("s-done")("card_create", { title: "Pick the rounding mode" });
-    chat.as("s-done")("card_claim", { card: "CHAT-2" });
-    chat.as("s-done")("card_done", { card: "CHAT-2", summary: "Half even." });
-    // a card of another project is on that project's screen, not on the session's own
-    chat.as("s-ops")("card_create", { title: "Rotate the keys" });
-    chat.as("s-ops")("card_claim", { card: "CHAT-3" });
-    chat.changed();
-    ops.changed();
 
-    expect(t.svc.projectSessions("chat")).toMatchObject([
-      {
-        sessionId: "s-free",
-        key: "/claude/projects/s-free.jsonl",
-        title: "look at the parser",
-        project: "chat",
-        runtime: "closed",
-        open: {},
-      },
-      { sessionId: "s-done", title: "rounding fix", runtime: "vscode" },
+    const chat = t.svc.projectSessions("chat");
+    expect(chat.map((h) => h.sessionId)).toEqual([
+      "s-sub-runs",
+      "s-sub-asks",
+      "s-closed",
+      "s-open",
     ]);
+    expect(chat[2]).toMatchObject({
+      key: "/claude/projects/s-closed.jsonl",
+      title: "look at the parser",
+      project: "chat",
+      runtime: "closed",
+      prompt: "look at the parser\nthen the lexer",
+      open: {},
+    });
+    expect(chat[3]).toMatchObject({
+      title: "rounding fix",
+      runtime: "vscode",
+      branch: "fix/rounding",
+    });
+    expect(chat[0]?.live).toBe("running");
+    // every row of the inbox is in its project's list
+    const ids = new Set(chat.map((h) => h.sessionId));
+    expect(t.svc.inbox().rows.every((r) => ids.has(r.sessionId))).toBe(true);
     expect(t.svc.projectSessions("ops").map((h) => h.sessionId)).toEqual(["s-ops"]);
     expect(t.svc.projectSessions("no-such-project")).toEqual([]);
 
-    for (let i = 0; i < 35; i++) {
+    // he has many: no cap
+    for (let i = 0; i < 135; i++) {
       t.rows.push(row(`s-many-${i}`, { ...inOps, activityMs: 100 + i }));
     }
     const many = t.svc.projectSessions("ops").map((h) => h.sessionId);
-    expect(many).toHaveLength(30);
-    expect(many[0]).toBe("s-many-34");
-    expect(many[29]).toBe("s-many-5");
+    expect(many).toHaveLength(136);
+    expect(many[0]).toBe("s-many-134");
+    expect(many.at(-1)).toBe("s-ops");
+  });
+
+  it("says the lists changed when what a row shows moved, not on every line an agent writes", () => {
+    const t = setup();
+    t.project("chat", "CHAT");
+    t.session("s-1", { ...inChat, live: live("running", 1000) });
+    t.rows.push(row("s-nowhere"));
+    const moved = () => {
+      const before = t.got.sessions;
+      t.svc.sessionsChanged();
+      t.svc.inbox();
+      return t.got.sessions - before;
+    };
+    const set = (o: Partial<SessionRow>) => Object.assign(t.rows[0] as SessionRow, o);
+    expect(moved()).toBe(1);
+    expect(moved()).toBe(0);
+
+    // a tool call: the status's time and the transcript's move, the row does not
+    set({ live: live("running", 2000), activityMs: 2000 });
+    expect(moved()).toBe(0);
+    set({ live: live("waiting", 3000) });
+    expect(moved()).toBe(1);
+    set({ title: "rounding fix" });
+    expect(moved()).toBe(1);
+    // its window closed
+    t.alive.delete("s-1");
+    expect(moved()).toBe(1);
+    // a session outside every project is in no list
+    Object.assign(t.rows[1] as SessionRow, { title: "elsewhere" });
+    expect(moved()).toBe(0);
+    t.rows.push(row("s-2", inChat));
+    expect(moved()).toBe(1);
   });
 });

@@ -1,12 +1,4 @@
-import {
-  type CardDisplayStatus,
-  formatRelativeTime,
-  highlightRanges,
-  type InboxKind,
-  KIND_WORD,
-  type Runtime,
-} from "@grove/core/pure";
-import type { ConclusionKind } from "@grove/record/types";
+import { formatRelativeTime, highlightRanges, KIND_WORD, type Runtime } from "@grove/core/pure";
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,
@@ -18,10 +10,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ArtifactView, ProjectId } from "../../shared/ipc.ts";
-import { artifactName, cardTitle } from "../logic/views.ts";
-import { agentHue, initials, type WhoView } from "../logic/who.ts";
-import { openArtifact, openCard, openConclusion, optionId } from "../state/actions.ts";
+import type { ProjectId } from "../../shared/ipc.ts";
+import { projectHues, type SessionState } from "../logic/views.ts";
+import { optionId } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -29,45 +20,19 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
 }
 
 export type IconName =
-  | "arrow-left"
-  | "file"
-  | "pr"
-  | "split"
-  | "verdict"
+  | "inbox"
   | "branch"
   | "folder"
   | "plus"
   | "search"
   | "chevron"
   | "x"
-  | "external"
   | "warning"
   | "check";
 
 const PATHS: Record<IconName, ReactNode> = {
-  "arrow-left": <path d="M13 8H3M7 4 3 8l4 4" />,
-  file: (
-    <>
-      <path d="M4.25 1.75h5l3 3v8.5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1Z" />
-      <path d="M9.25 1.75v3h3M5.75 8.5h4.5M5.75 11h4.5" />
-    </>
-  ),
-  pr: (
-    <>
-      <circle cx="4.5" cy="3.5" r="1.5" />
-      <circle cx="4.5" cy="12.5" r="1.5" />
-      <circle cx="11.5" cy="12.5" r="1.5" />
-      <path d="M4.5 5v6M11.5 11V6.5a2 2 0 0 0-2-2h-2M9 3 7.5 4.5 9 6" />
-    </>
-  ),
-  // a decision: one way in, two ways out
-  split: <path d="M8 14V9.5L3.5 5M8 9.5 12.5 5M3.5 8.25V5h3.25M12.5 8.25V5H9.25" />,
-  // a verdict: something looked at and ruled on
-  verdict: (
-    <>
-      <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5" />
-      <path d="m5.25 8.25 2 2 3.5-4" />
-    </>
+  inbox: (
+    <path d="M2.25 9.25 4.4 3.5h7.2l2.15 5.75v2.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1v-2.5ZM2.25 9.25h3.25a2.5 2.5 0 0 0 5 0h3.25" />
   ),
   branch: (
     <>
@@ -89,9 +54,6 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   chevron: <path d="m6 4 4 4-4 4" />,
   x: <path d="m4 4 8 8M12 4l-8 8" />,
-  external: (
-    <path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2.5" />
-  ),
   warning: <path d="M8 2.25 14.25 13H1.75L8 2.25ZM8 6.5v3M8 11.25v.01" />,
   check: <path d="m3.5 8.5 3 3 6-7" />,
 };
@@ -245,17 +207,17 @@ export function Kbd({ children }: { children: ReactNode }) {
   );
 }
 
-/** the way out of a page or a panel, with the key that does the same */
-export function EscButton({ label, onClick }: { label: "Back" | "Close"; onClick: () => void }) {
+/** the way out of a panel, with the key that does the same */
+export function EscButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
-      aria-label={label}
+      aria-label="Close"
       onClick={onClick}
-      data-testid={label === "Back" ? "back" : "panel-close"}
+      data-testid="panel-close"
       className="no-drag fade flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-fg-3 hover:bg-raised hover:text-fg"
     >
-      <Icon name={label === "Back" ? "arrow-left" : "x"} size={12} />
+      <Icon name="x" size={12} />
       <Kbd>esc</Kbd>
     </button>
   );
@@ -294,14 +256,16 @@ export function useRowDoubleClick<T>(run: (row: T) => void) {
 
 /**
  * a list screen and the row that is open in it. the list keeps the left and scrolls by itself, the
- * panel takes the right half behind a line. the list is a container: a row drops its who and where
- * cells when the panel leaves it narrow. `root` is what `useRowDoubleClick` gives
+ * panel takes the right half behind a line. the list is a container: a row drops its where cells
+ * as it narrows, and beside the panel its state is the mark alone. `root` is what
+ * `useRowDoubleClick` gives
  */
 export function Split({
   panel,
   label,
   testId,
   root,
+  from,
   children,
 }: {
   /** what is open, or nothing */
@@ -310,17 +274,28 @@ export function Split({
   /** the list's scroller */
   testId?: string;
   root: ReturnType<typeof useRowDoubleClick>["root"];
+  /** what the list was narrowed by. a new one starts it over from its top */
+  from?: string;
   children: ReactNode;
 }) {
   const peek = useStore((s) => s.peek);
-  // the list narrows when the panel opens and the rows above the open one grow: it stays on screen
+  const scroller = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `from` is when, not what
   useEffect(() => {
-    if (peek) document.getElementById(optionId(peek))?.scrollIntoView({ block: "nearest" });
-  }, [peek]);
+    scroller.current?.scrollTo({ top: 0 });
+  }, [from]);
+  const shown = !!panel;
+  // the list narrows when the panel opens and the rows above the open one grow: it stays on
+  // screen. a landing names the row before its list has arrived, so this waits for the panel
+  useEffect(() => {
+    if (peek && shown)
+      document.getElementById(optionId(peek))?.scrollIntoView({ block: "nearest" });
+  }, [peek, shown]);
   return (
     <div className="flex h-full" {...root}>
       {/* the gutter stays, so the column does not move when the list grows long enough to scroll */}
       <div
+        ref={scroller}
         className="@container h-full min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
         data-testid={testId}
       >
@@ -571,8 +546,8 @@ export function Highlighted({ text, tokens }: { text: string; tokens: readonly s
   return <>{out}</>;
 }
 
-// ---------- a kind, a status and an avatar get their colour here and nowhere else: a screen passes
-// a kind or a status, never a colour.
+// ---------- colour means something, and is given here and nowhere else: a screen passes a state,
+// a project or a count, never a colour.
 
 /** a tooltip-dated relative time: `3m ago`, core's words */
 export function Time({ at, className }: { at: number; className?: string }) {
@@ -587,198 +562,168 @@ export function Time({ at, className }: { at: number; className?: string }) {
   );
 }
 
-type DiscKind = "asked" | "new" | "finished" | "stopped";
+type Glyph = Exclude<SessionState, "working">;
 
-const DISC: Record<DiscKind, ReactNode> = {
-  asked: <path d="M6.2 6.3a1.9 1.9 0 1 1 2.9 1.6c-.7.45-1.1.85-1.1 1.6M8 11.7v.01" />,
-  new: <path d="M8 5v6M5 8h6" />,
-  finished: <path d="m5 8.2 2.1 2.1L11 6" />,
+const GLYPH: Record<Glyph, ReactNode> = {
+  permission: <path d="M8 4.5v4.2M8 11.4v.01" />,
+  turn: <path d="M6.2 6.3a1.9 1.9 0 1 1 2.9 1.6c-.7.45-1.1.85-1.1 1.6M8 11.7v.01" />,
+  failed: <path d="m5.8 5.8 4.4 4.4M10.2 5.8l-4.4 4.4" />,
   stopped: <rect x="5.75" y="5.75" width="4.5" height="4.5" rx="0.75" fill="black" />,
 };
 
 /**
- * a mask that keeps everything but the glyph, so the cut-out is a real hole that shows whatever is
- * behind it: white, the hover grey or the dark ground. white and black are mask luminance, not colours
+ * a disc with its glyph cut out of it. the mask keeps everything but the glyph, so the cut-out is
+ * a real hole that shows whatever is behind it: white, the hover grey or the dark ground. white
+ * and black are mask luminance, not colours
  */
-function Hole({ id, children }: { id: string; children: ReactNode }) {
-  return (
-    <mask id={id}>
-      <rect width="16" height="16" fill="white" />
-      <g fill="none" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        {children}
-      </g>
-    </mask>
-  );
-}
-
-/** ids must be unique per svg on the page, and some useId characters do not survive `url(#…)` */
-const maskId = (prefix: string, id: string) => `${prefix}${id.replace(/[^\w-]/g, "")}`;
-
-export function KindIcon({ kind, size = 12 }: { kind: DiscKind; size?: number }) {
-  const id = maskId("k", useId());
+function Disc({ glyph, size }: { glyph: Glyph; size: number }) {
+  // ids must be unique per svg on the page, and some useId characters do not survive `url(#…)`
+  const id = `g${useId().replace(/[^\w-]/g, "")}`;
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" className="shrink-0" aria-hidden="true">
-      <Hole id={id}>{DISC[kind]}</Hole>
+      <mask id={id}>
+        <rect width="16" height="16" fill="white" />
+        <g
+          fill="none"
+          stroke="black"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {GLYPH[glyph]}
+        </g>
+      </mask>
       <circle cx="8" cy="8" r="7" fill="currentColor" mask={`url(#${id})`} />
     </svg>
   );
 }
 
-export type Kind = InboxKind | ConclusionKind;
-
-const KINDS: Record<Kind, { word: string; tone: string; disc?: DiscKind; icon?: IconName }> = {
-  asked: { word: KIND_WORD.asked, tone: "text-hue-orange", disc: "asked" },
-  decided: { word: KIND_WORD.decided, tone: "text-hue-violet", icon: "split" },
-  decision: { word: "Decision", tone: "text-hue-violet", icon: "split" },
-  verdict: { word: KIND_WORD.verdict, tone: "text-hue-teal", icon: "verdict" },
-  found: { word: KIND_WORD.found, tone: "text-hue-blue", icon: "search" },
-  finding: { word: "Finding", tone: "text-hue-blue", icon: "search" },
-  new: { word: KIND_WORD.new, tone: "text-fg-3", disc: "new" },
-  finished: { word: KIND_WORD.finished, tone: "text-hue-green", disc: "finished" },
-  stopped: { word: KIND_WORD.stopped, tone: "text-hue-red", disc: "stopped" },
+/** one colour per state, everywhere it shows: the mark takes the hue, the word its 4.5:1 twin */
+const STATES: Record<SessionState, { word: string; mark: string; tone: string }> = {
+  permission: { word: KIND_WORD.permission, mark: "text-hue-orange", tone: "text-waiting" },
+  turn: { word: KIND_WORD.turn, mark: "text-accent", tone: "text-accent" },
+  failed: { word: KIND_WORD.failed, mark: "text-hue-red", tone: "text-danger" },
+  stopped: { word: KIND_WORD.stopped, mark: "text-hue-red", tone: "text-danger" },
+  working: { word: "Working", mark: "text-hue-green", tone: "text-working" },
 };
 
-/** the kind's word, for aria labels */
-export const kindWord = (kind: Kind): string => KINDS[kind].word;
+/** the state's word, for aria labels */
+export const stateWord = (state: SessionState): string => STATES[state].word;
 
-/** only the icon takes the hue. the word stays grey */
-export function KindLabel({
-  kind,
+/** where the word gives way to its mark alone: a list beside the panel, the head of a narrow panel */
+const WORD = { list: "hidden @xl:inline", panel: "hidden @md:inline" };
+
+/** what a session is at */
+export function StateLabel({
+  state,
+  within,
   className,
-  iconSize = 12,
 }: {
-  kind: Kind;
+  state: SessionState;
+  within: keyof typeof WORD;
   className?: string;
-  iconSize?: number;
 }) {
-  const k = KINDS[kind];
+  const s = STATES[state];
   return (
     <span
-      data-testid="kind"
-      data-kind={kind}
-      className={cx("inline-flex shrink-0 items-center gap-1.5 text-fg-2", className)}
+      data-testid="state"
+      data-state={state}
+      title={s.word}
+      className={cx(
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium",
+        s.tone,
+        className,
+      )}
     >
-      <span className={cx("flex", k.tone)}>
-        {k.disc ? (
-          <KindIcon kind={k.disc} size={iconSize} />
+      <span className={cx("flex size-3 items-center justify-center", s.mark)}>
+        {state === "working" ? (
+          // a running session breathes
+          <span className="live-pulse size-2 rounded-full bg-hue-green" />
         ) : (
-          k.icon && <Icon name={k.icon} size={iconSize} />
+          <Disc glyph={state} size={12} />
         )}
       </span>
-      {k.word}
+      <span className={WORD[within]}>{s.word}</span>
     </span>
-  );
-}
-
-export const STATUS_LABEL: Record<CardDisplayStatus, string> = {
-  waiting: "In progress, waiting on you",
-  stopped: "Stopped",
-  in_progress: "In progress",
-  todo: "Todo",
-  done: "Done",
-  canceled: "Canceled",
-};
-
-const ring = (tone: string) => (
-  <circle cx="7" cy="7" r="5.5" fill="none" className={tone} strokeWidth="1.5" />
-);
-
-/** waiting and in progress share a shape and differ by colour: their groups and the header say it in words */
-export function StatusIcon({ status, size = 14 }: { status: CardDisplayStatus; size?: number }) {
-  const id = maskId("s", useId());
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 14 14"
-      className="shrink-0"
-      aria-hidden="true"
-      data-testid="status-icon"
-      data-status={status}
-    >
-      {status === "done" && (
-        <>
-          <Hole id={id}>
-            <path d="M4.3 7.2 6.2 9l3.5-3.8" />
-          </Hole>
-          <circle cx="7" cy="7" r="6" className="fill-hue-green" mask={`url(#${id})`} />
-        </>
-      )}
-      {status === "todo" && ring("stroke-faint")}
-      {status === "in_progress" && (
-        <>
-          {ring("stroke-hue-yellow")}
-          <path d="M7 3.5a3.5 3.5 0 0 1 0 7Z" className="fill-hue-yellow" />
-        </>
-      )}
-      {status === "waiting" && (
-        <>
-          {ring("stroke-hue-orange")}
-          <path d="M7 3.5a3.5 3.5 0 0 1 0 7Z" className="fill-hue-orange" />
-        </>
-      )}
-      {status === "stopped" && (
-        <>
-          {ring("stroke-hue-red")}
-          <rect x="4.75" y="4.75" width="4.5" height="4.5" rx="0.75" className="fill-hue-red" />
-        </>
-      )}
-      {status === "canceled" && (
-        <>
-          {ring("stroke-faint")}
-          <path
-            d="m4.6 9.4 4.8-4.8"
-            fill="none"
-            className="stroke-faint"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </>
-      )}
-    </svg>
   );
 }
 
 /** written out whole: tailwind only emits the classes it can see */
-const AGENT_FILL = [
-  "bg-agent-1",
-  "bg-agent-2",
-  "bg-agent-3",
-  "bg-agent-4",
-  "bg-agent-5",
-  "bg-agent-6",
-  "bg-agent-7",
-  "bg-agent-8",
-  "bg-agent-9",
+const PROJECT_FILL = [
+  "bg-project-1",
+  "bg-project-2",
+  "bg-project-3",
+  "bg-project-4",
+  "bg-project-5",
+  "bg-project-6",
+  "bg-project-7",
+  "bg-project-8",
+  "bg-project-9",
 ];
 
-/** the person is a grey Y. an agent's fill is hashed from its session id, which outlives its name */
-export function Avatar({ who, size = 16 }: { who: WhoView; size?: 16 | 18 | 20 }) {
-  const person = who.kind === "person";
+/** a project's own colour, beside its name wherever a row says which project it is */
+export function ProjectMark({ id }: { id: ProjectId }) {
+  const hue = useStore((s) => projectHues(s.projects).get(id)) ?? 1;
   return (
     <span
       aria-hidden="true"
-      data-testid="avatar"
-      className={cx(
-        "inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold leading-none tracking-[0.01em]",
-        person ? "bg-agent-you text-fg-2" : cx(AGENT_FILL[agentHue(who.id) - 1], "text-on-solid"),
-      )}
-      style={{ width: size, height: size, fontSize: Math.max(7, Math.round(size * 0.42)) }}
+      data-testid="project-mark"
+      data-hue={hue}
+      className={cx("size-2 shrink-0 rounded-[2px]", PROJECT_FILL[hue - 1])}
+    />
+  );
+}
+
+/** how many sessions need the person: filled, so it is found in a column of names */
+function CountPill({ n, testId }: { n: number; testId?: string }) {
+  if (n <= 0) return null;
+  return (
+    <span
+      data-testid={testId}
+      className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent-solid px-1.5 text-meta font-semibold leading-none tabular-nums text-on-solid"
     >
-      {person ? "Y" : initials(who.name)}
+      {n}
     </span>
   );
 }
 
-/** in your inbox, or waiting on you. role img because biome refuses aria-label on a bare span */
-export function Dot({ label }: { label: string }) {
+/** a row of the sidebar. the one on screen is tinted with the accent, not grey */
+export function SideItem({
+  selected,
+  mark,
+  label,
+  count,
+  onClick,
+  testId,
+  id,
+}: {
+  selected: boolean;
+  /** an icon, or a project's mark */
+  mark: ReactNode;
+  label: string;
+  count: number;
+  onClick: () => void;
+  testId: string;
+  id?: string;
+}) {
   return (
-    <span
-      role="img"
-      aria-label={label}
-      data-testid="dot"
-      className="size-1.5 shrink-0 rounded-full bg-accent"
-    />
+    <button
+      type="button"
+      aria-current={selected ? "page" : undefined}
+      title={label}
+      data-testid={testId}
+      data-id={id}
+      data-count={count}
+      onClick={onClick}
+      className={cx(
+        "no-drag fade flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-body",
+        selected ? "bg-accent-soft font-medium text-fg" : "text-fg-2 hover:bg-active hover:text-fg",
+      )}
+    >
+      <span className="flex w-3.5 shrink-0 justify-center">{mark}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <CountPill n={count} testId="count" />
+    </button>
   );
 }
 
@@ -799,46 +744,6 @@ export function RuntimeChip({ runtime }: { runtime: Runtime }) {
       className="inline-flex h-[18px] shrink-0 items-center whitespace-nowrap rounded-sm border border-line-strong bg-raised px-1.5 text-meta leading-none text-fg-3"
     >
       {runtime === "vscode" ? editor : RUNTIME_WORD[runtime]}
-    </span>
-  );
-}
-
-export function GroveMark({ size = 12 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <circle cx="4.6" cy="6" r="3" />
-      <circle cx="11.4" cy="6" r="3" />
-      <circle cx="8" cy="11.4" r="3" />
-    </svg>
-  );
-}
-
-/**
- * a record file edited by hand or cut short. the readers show what they could read and never throw,
- * so it is a warning, not an error. `count` is for a row, where main sends a number
- */
-export function ProblemMark({
-  problems,
-  file,
-  count,
-}: {
-  problems?: string[];
-  file?: string;
-  count?: number;
-}) {
-  if (!problems?.length && !count) return null;
-  const title = problems?.length
-    ? `Grove read what it could${file ? ` from ${file}` : ""}: ${problems.join("; ")}.`
-    : `Grove read its files with ${count === 1 ? "1 problem" : `${count} problems`}. Open it to see which.`;
-  return (
-    <span
-      role="img"
-      aria-label="Read with problems"
-      title={title}
-      data-testid="problem"
-      className="inline-flex shrink-0 text-waiting"
-    >
-      <Icon name="warning" size={12} />
     </span>
   );
 }
@@ -891,88 +796,3 @@ export function Overlay({
 /** a row inside an Overlay. `data-active` is the keyboard's row */
 export const menuItemClass =
   "fade flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body text-fg-2 data-[active]:bg-raised data-[active]:text-fg";
-
-// ---------- chips: a button that sits in a line of prose. a click never reaches the row it is in
-
-const CHIP =
-  "no-drag fade mx-0.5 inline-flex h-5 max-w-full items-center gap-1 rounded-sm border border-line-strong bg-raised px-1.5 align-bottom text-sm leading-none text-fg hover:bg-active";
-
-/** a control inside a list row is not a tab stop. in a thread and the side panel it is */
-const chipProps = (inRow: boolean | undefined, run: () => void) => ({
-  type: "button" as const,
-  className: CHIP,
-  tabIndex: inRow ? -1 : undefined,
-  onClick: (e: { stopPropagation(): void }) => {
-    e.stopPropagation();
-    run();
-  },
-});
-
-/** an id the record does not have stays plain text */
-export function CardChip({
-  cardId,
-  withTitle,
-  inRow,
-}: {
-  cardId: string;
-  withTitle?: boolean;
-  inRow?: boolean;
-}) {
-  const card = useStore((s) =>
-    s.project ? s.records[s.project]?.cards.find((c) => c.id === cardId) : undefined,
-  );
-  if (!card) return <>{cardId}</>;
-  return (
-    <button
-      {...chipProps(inRow, () => openCard(card.id))}
-      title={`${card.id} ${card.title}`}
-      data-testid="card-chip"
-      data-id={card.id}
-    >
-      <StatusIcon status={card.status} size={11} />
-      <span className="min-w-0 truncate whitespace-nowrap font-medium tabular-nums">{card.id}</span>
-      {withTitle && <span className="truncate text-fg-3">{cardTitle(card)}</span>}
-    </button>
-  );
-}
-
-export function ConclusionChip({ id, inRow }: { id: string; inRow?: boolean }) {
-  const c = useStore((s) =>
-    s.project ? s.records[s.project]?.conclusions.find((x) => x.id === id) : undefined,
-  );
-  if (!c) return <>{id}</>;
-  return (
-    <button
-      {...chipProps(inRow, () => openConclusion(c.id))}
-      title={`${c.id} ${c.what}`}
-      data-testid="conclusion-chip"
-      data-id={c.id}
-    >
-      <span
-        className={cx("font-mono text-meta", c.superseded ? "text-fg-4 line-through" : "text-fg-2")}
-      >
-        {c.id}
-      </span>
-    </button>
-  );
-}
-
-const ARTIFACT_ICON: Record<ArtifactView["type"], IconName> = {
-  file: "file",
-  branch: "branch",
-  pr: "pr",
-  link: "external",
-};
-
-export function FileChip({ artifact, project }: { artifact: ArtifactView; project: ProjectId }) {
-  return (
-    <button
-      {...chipProps(false, () => void openArtifact(project, artifact))}
-      title={artifact.ref}
-      data-testid="file-chip"
-    >
-      <Icon name={ARTIFACT_ICON[artifact.type]} size={10} faint />
-      <span className="min-w-0 truncate">{artifactName(artifact)}</span>
-    </button>
-  );
-}

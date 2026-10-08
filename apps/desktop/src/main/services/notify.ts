@@ -23,7 +23,7 @@ export interface SessionNote {
   sessionId: string;
   /** the session's title */
   title?: string;
-  /** the project it is in, or that holds the card it holds */
+  /** the project it is in */
   project?: ProjectId;
   click: () => void;
 }
@@ -50,6 +50,7 @@ function liveBody(s: LiveStatus): string | null {
 export class Notifier {
   private readonly o: NotifyOptions;
   private visible: ProjectId | null = null;
+  private all = false;
   /** when each session last showed a question or a finished turn */
   private asked = new Map<string, number>();
   private stops: Array<SessionNote & { project: ProjectId }> = [];
@@ -59,9 +60,13 @@ export class Notifier {
     this.o = o;
   }
 
-  /** the project on screen in the main window. while it has focus, that project's notifications wait */
-  setVisibleProject(id: ProjectId | null): void {
-    this.visible = id;
+  /**
+   * what the main window shows: a project, or with `all` the inbox, which lists every project's.
+   * while the window has focus, notifications about what is on screen wait
+   */
+  setVisible(project: ProjectId | null, all: boolean): void {
+    this.visible = project;
+    this.all = all;
   }
 
   /** permission, failed, and a turn over a minute finished */
@@ -103,13 +108,13 @@ export class Notifier {
       return;
     }
     this.post(newest.project, "Grove", `${left.length} agents stopped mid-turn`, () =>
-      this.o.land({ view: "inbox", project: newest.project }),
+      this.o.land({ view: "inbox" }),
     );
   }
 
-  /** the window is focused on this project, or this is a session in no project */
+  /** the window is focused on this project or on the inbox, or this is a session in no project */
   private holds(project: ProjectId | undefined): boolean {
-    return this.o.focused() && (project === undefined || project === this.visible);
+    return this.o.focused() && (this.all || project === undefined || project === this.visible);
   }
 
   private once(sessionId: string, show: () => boolean): void {

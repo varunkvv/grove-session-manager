@@ -6,7 +6,7 @@ export interface PushTarget {
   send(channel: string, ...args: unknown[]): void;
 }
 
-export type RevDomain = "projects" | "record" | "inbox";
+export type RevDomain = "projects" | "inbox";
 
 /**
  * main -> renderer events. a rev is taken at the moment a payload is built, so the renderer can
@@ -14,7 +14,7 @@ export type RevDomain = "projects" | "record" | "inbox";
  */
 export class Pusher {
   private readonly target: () => PushTarget | null;
-  private readonly revs: Record<RevDomain, number> = { projects: 0, record: 0, inbox: 0 };
+  private readonly revs: Record<RevDomain, number> = { projects: 0, inbox: 0 };
 
   constructor(target: () => PushTarget | null) {
     this.target = target;

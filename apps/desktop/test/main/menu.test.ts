@@ -29,7 +29,7 @@ describe("the menu", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("every command, with its key, as app.md 3.9 lists them", () => {
+  it("every command, with its key", () => {
     const sent: MenuCommandId[] = [];
     const commands = items(sent).filter((i) => i.click);
     expect(commands.map((i) => [i.label, i.accelerator])).toEqual([
@@ -39,8 +39,7 @@ describe("the menu", () => {
       ["Edit Project…", "CmdOrCtrl+E"],
       ["Find", "CmdOrCtrl+F"],
       ["Inbox", "CmdOrCtrl+1"],
-      ["Cards", "CmdOrCtrl+2"],
-      ["Conclusions", "CmdOrCtrl+3"],
+      ["Sessions", "CmdOrCtrl+2"],
       ["Go to…", "CmdOrCtrl+K"],
       ["Refresh", "CmdOrCtrl+R"],
     ]);
@@ -52,8 +51,7 @@ describe("the menu", () => {
       "edit-project",
       "focus-search",
       "go-inbox",
-      "go-cards",
-      "go-conclusions",
+      "go-sessions",
       "palette",
       "refresh",
     ]);
@@ -67,9 +65,14 @@ describe("the menu", () => {
 });
 
 describe("the tray menu", () => {
-  const row = (o: Partial<InboxRowView> & Pick<InboxRowView, "id" | "kind">): InboxRowView => ({
+  const row = (
+    o: Partial<InboxRowView> & Pick<InboxRowView, "sessionId" | "kind">,
+  ): InboxRowView => ({
+    key: `/claude/projects/${o.sessionId}.jsonl`,
     project: "chat",
-    projectName: "Chat features",
+    where: "Chat features",
+    runtime: "vscode",
+    open: {},
     at: 0,
     title: "",
     summary: "",
@@ -78,37 +81,31 @@ describe("the tray menu", () => {
   });
   const ROWS: InboxRowView[] = [
     row({
-      id: "asked:CHAT-4",
-      kind: "asked",
-      card: { id: "CHAT-4", title: "Fix the accrual rounding" },
+      sessionId: "s4",
+      kind: "turn",
       title: "Fix the accrual rounding",
       summary: "Round accrual to whole hours,\nor keep the half?",
     }),
     row({
-      id: "stopped:s9",
+      sessionId: "s9",
       kind: "stopped",
       project: "data",
-      projectName: "Data objects",
+      where: "Data objects",
       title: "load test",
-      summary: "Stopped mid-turn.",
+      summary: "Run the load test again",
     }),
     row({
-      id: "decided:D-12",
-      kind: "decided",
-      card: { id: "CHAT-7", title: "x".repeat(70) },
+      sessionId: "s7",
+      kind: "permission",
       title: "x".repeat(70),
-      summary: `Use the policy's 8h day ${"y".repeat(80)}`,
-      conclusionId: "D-12",
+      summary: `Bash ${"y".repeat(80)}`,
     }),
-    row({ id: "new:CHAT-8", kind: "new", title: "fourth" }),
+    row({ sessionId: "s8", kind: "failed", title: "fourth" }),
   ];
   const menu = (rows: InboxRowView[]) => {
     const landed: LandingTarget[] = [];
     let shown = 0;
-    const items = trayTemplate(
-      { rows, tray: 2 },
-      { land: (t) => landed.push(t), showMain: () => shown++ },
-    );
+    const items = trayTemplate({ rows }, { land: (t) => landed.push(t), showMain: () => shown++ });
     const click = (i: number) => (items[i]?.click as (() => void) | undefined)?.();
     return { items, landed, click, shown: () => shown };
   };
@@ -116,17 +113,17 @@ describe("the tray menu", () => {
   it("the first three rows in the order the inbox gives, then Open Grove and Quit", () => {
     const { items } = menu(ROWS);
     expect(items.map((i) => i.label ?? i.type ?? i.role)).toEqual([
-      "Asked  CHAT-4 Fix the accrual rounding",
+      "Your turn  Fix the accrual rounding",
       "Stopped  load test",
-      `Decided  CHAT-7 ${"x".repeat(43)}…`,
+      `Needs permission  ${"x".repeat(41)}…`,
       "separator",
       "Open Grove",
       "quit",
     ]);
     expect(items.map((i) => i.sublabel)).toEqual([
       "Chat features · Round accrual to whole hours, or keep the half?",
-      "Data objects · Stopped mid-turn.",
-      `Chat features · Use the policy's 8h day ${"y".repeat(39)}…`,
+      "Data objects · Run the load test again",
+      `Chat features · Bash ${"y".repeat(58)}…`,
       undefined,
       undefined,
       undefined,
@@ -135,13 +132,13 @@ describe("the tray menu", () => {
     expect(items[2]?.sublabel).toHaveLength(80);
   });
 
-  it("a card row lands on the card with the inbox behind it, a cardless one on its row", () => {
+  it("a row lands on its session in the inbox", () => {
     const { click, landed, shown } = menu(ROWS);
     click(0);
     click(1);
     expect(landed).toEqual([
-      { view: "card", project: "chat", cardId: "CHAT-4", back: "inbox" },
-      { view: "inbox", project: "data", rowId: "stopped:s9" },
+      { view: "inbox", session: "s4" },
+      { view: "inbox", session: "s9" },
     ]);
     click(4);
     expect(shown()).toBe(1);
@@ -158,7 +155,7 @@ describe("the tray menu", () => {
   });
 
   it("a row with no summary is the project name alone", () => {
-    const { items } = menu([row({ id: "asked:session:s1", kind: "asked", title: "session" })]);
+    const { items } = menu([row({ sessionId: "s1", kind: "turn", title: "session" })]);
     expect(items[0]?.sublabel).toBe("Chat features");
   });
 });

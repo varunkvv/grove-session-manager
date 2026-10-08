@@ -1,55 +1,51 @@
-// every screen as the real app draws it, light and dark, against fixture projects written with the
-// record's own library. `pnpm --filter @grove/desktop build` first, then
-//   node scripts/screenshots.ts <outDir>     ->  <outDir>/{light,dark}/*.png
+// every screen as the real app draws it, light and dark, at the default window and at its smallest,
+// against fixture projects. `pnpm --filter @grove/desktop build` first, then
+//   node scripts/screenshots.ts <outDir>     ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
 import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { mock } from "node:test";
-import type { Page } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import { writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
 import {
   type Fixture,
   hookEvent,
   makeFixture,
   makeRepo,
-  writeAgent,
   writeSession,
 } from "../e2e/helpers/fixture.ts";
-import { groveTest, launchApp, stubDirectoryPicker } from "../e2e/helpers/launchApp.ts";
-import {
-  asAgent,
-  asPerson,
-  interrupted,
-  liveSession,
-  writeProject,
-} from "../e2e/helpers/project.ts";
+import { groveTest, launchApp } from "../e2e/helpers/launchApp.ts";
+import { interrupted, liveSession, writeProject } from "../e2e/helpers/project.ts";
 
 const out = process.argv[2];
 if (!out) throw new Error("usage: node scripts/screenshots.ts <outDir>");
 
 const MIN = 60_000;
-// an avatar's colour is hashed from the session id. these are picked so each agent gets its own,
-// as real ids mostly do
-const SID = {
-  idp: "aaaaaaaa-0000-4000-8000-000000000002",
-  callback: "bbbbbbbb-0000-4000-8000-000000000002",
-  store: "cccccccc-0000-4000-8000-000000000003",
-  research: "dddddddd-0000-4000-8000-000000000003",
-  login: "eeeeeeee-0000-4000-8000-000000000009",
-  tab: "ffffffff-0000-4000-8000-000000000006",
-  threads: "abababab-0000-4000-8000-000000000004",
-};
+const HOUR = 60 * MIN;
+const SIZES = [
+  [1280, 800],
+  // the smallest the window goes: with the sidebar and the panel open the list is 330 wide
+  [880, 600],
+] as const;
+
+let ids = 0;
+const sid = () => `${String(++ids).padStart(8, "0")}-0000-4000-8000-000000000000`;
 
 /** a hook event that happened `minutes` ago: the app reads when from the file */
-function event(fx: Fixture, sessionId: string, minutes: number, extra: Record<string, unknown>) {
+function event(
+  fx: Fixture,
+  sessionId: string,
+  name: string,
+  minutes: number,
+  extra: Record<string, unknown> = {},
+) {
   const dir = path.join(fx.root, ".grove", "events");
-  const had = new Set(readdirSyncOr(dir));
-  hookEvent(fx, sessionId, "Stop", extra);
+  const had = new Set(names(dir));
+  hookEvent(fx, sessionId, name, extra);
   const when = new Date(Date.now() - minutes * MIN);
-  for (const f of readdirSyncOr(dir)) if (!had.has(f)) utimesSync(path.join(dir, f), when, when);
+  for (const f of names(dir)) if (!had.has(f)) utimesSync(path.join(dir, f), when, when);
 }
-const readdirSyncOr = (dir: string) => {
+const names = (dir: string) => {
   try {
     return readdirSync(dir);
   } catch {
@@ -57,9 +53,60 @@ const readdirSyncOr = (dir: string) => {
   }
 };
 
+const REPLY = `The okta app is created in the dev tenant, with one redirect URI per environment:
+
+- \`https://staging.dash.example.com/auth/callback\`
+- \`https://dash.example.com/auth/callback\`
+
+The client secret is in 1Password under **okta-dev**, not in the repo. \`terraform plan\` for the app is clean on \`feat/okta-staging\`.
+
+Want me to open the PR now, or wait for the callback route to land first?`;
+
+const QUIET = [
+  "why is the staging deploy red",
+  "sketch the login page states",
+  "okta research",
+  "read the SAML strategy",
+  "terraform state for staging",
+  "draft the rollout note",
+  "rate limit the callback endpoint",
+  "log out everywhere when the okta session ends",
+  "move SSO settings into the admin panel",
+  "compare okta and auth0 pricing for 400 seats, and what each wants for SCIM provisioning",
+  "bump passport to 0.7",
+  "flaky test in the session middleware",
+  "what does the redirect URI check do",
+  "rename AUTH_PROVIDER to IDP",
+  "audit log for sign-ins",
+  "why does the cookie drop on safari",
+  "okta group to role mapping",
+  "delete the legacy saml routes",
+  "docs for the dev tenant",
+  "csp header for the login page",
+  "review the callback PR",
+  "session length for admins",
+  "idle timeout copy",
+  "seed users for staging",
+  "remove the feature flag",
+  "trace a 502 on /auth/callback",
+  "pkce for the mobile client",
+  "runbook for an okta outage",
+  "sso for the internal tools",
+  "rotate the signing keys",
+  "error page for a disabled org",
+  "who owns the okta admin account",
+  "jwks cache ttl",
+  "local login for the e2e suite",
+  "state cookie same-site",
+  "clean up the env example",
+  "logout redirect",
+  "backfill okta ids",
+];
+const BRANCHES = ["feat/okta-staging", "auth-sso", "fix/callback-state", undefined, undefined];
+
 /**
- * three projects. auth-sso has a card in every status, a row of every inbox kind and conclusions
- * of every kind, one of them replaced. billing-export is empty. chat-features has one question
+ * seven projects. auth-sso has 44 sessions: one of each kind that needs the person, two working,
+ * the rest spread over today, yesterday and the weeks before. billing-export has none
  */
 function build(scheme: string) {
   const fx = makeFixture({ withCompanion: true });
@@ -68,359 +115,187 @@ function build(scheme: string) {
     JSON.stringify({ editor: "vscode", appearance: scheme }),
   );
   const api = makeRepo(fx, "api");
-  const web = makeRepo(fx, "web");
-  const runbooks = makeRepo(fx, "runbooks");
-  const auth = writeProject(fx, {
-    name: "auth-sso",
-    prefix: "AUTH",
-    goal: "Single sign-on for the dashboard through okta, staging first.",
-    folders: [
-      { path: api, mode: "worktree", branch: { kind: "detach" } },
-      { path: web, mode: "worktree", branch: { kind: "new", name: "auth-sso" } },
-      { path: runbooks, mode: "reference" },
-    ],
-  });
-  const billing = writeProject(fx, {
-    name: "billing-export",
-    prefix: "BILL",
-    goal: "Monthly invoice exports for finance, as csv.",
-  });
-  const chat = writeProject(fx, {
-    name: "chat-features",
-    prefix: "CHAT",
-    goal: "Threads and reactions in team chat.",
-  });
-
-  // the record stamps what it writes with the clock, so the clock is what the fixture moves
-  const now = Date.now();
-  mock.timers.enable({ apis: ["Date"], now });
-  const ago = (minutes: number) => mock.timers.setTime(now - minutes * MIN);
-
-  const you = asPerson(auth.root);
-  const agent = (sessionId: string, name: string) => asAgent(fx, auth.root, { sessionId, name });
-  const research = agent(SID.research, "okta research");
-  const callback = agent(SID.callback, "callback route");
-  const idp = agent(SID.idp, "idp config");
-  const store = agent(SID.store, "session store");
-  const login = agent(SID.login, "login page");
-
-  // AUTH-1, done yesterday
-  ago(26 * 60);
-  you("card_create", {
-    title: "Find out how okta wants the app registered",
-    body: "We have never registered an OIDC app with okta. Find out what it needs from us before anyone writes code:\n\n- the grant type and the scopes for a server-side web app\n- what a redirect URI may look like\n- whether one app can serve staging and production",
-  });
-  ago(25 * 60);
-  research("card_claim", { card: "AUTH-1" });
-  ago(24 * 60 + 20);
-  research("conclusion_record", {
-    kind: "finding",
-    what: "Okta matches redirect URIs exactly. A wildcard host is refused for a web app.",
-    why: "Tried `https://*.dash.example.com/auth/callback` in a developer org: the app could not be saved.",
-    card: "AUTH-1",
-    by: "agent",
-    area: "infra",
-  });
-  ago(24 * 60);
-  research("conclusion_record", {
-    kind: "decision",
-    what: "Authorization code flow with PKCE, scopes `openid profile email`.",
-    why: "It is what okta recommends for a server-side web app, and the dashboard needs nothing but the email.",
-    card: "AUTH-1",
-    by: "agent",
-    area: "api",
-  });
-  ago(23 * 60 + 40);
-  research("card_done", {
-    card: "AUTH-1",
-    summary:
-      "Okta wants a **web** app with the authorization code flow and PKCE (D-1). Redirect URIs are matched exactly (F-1), so staging and production each need their own entry.\n\nNot done: nothing was registered. That is AUTH-4.\n\nChecked against a developer org, not ours.",
-    artifacts: [{ type: "file", ref: "artifacts/okta-app-registration.md" }],
-  });
-
-  // AUTH-2, held by an agent in a terminal. the person's first answer, later replaced
-  ago(23 * 60);
-  you("card_create", {
-    title: "Callback route and session cookie",
-    body: "The `/auth/callback` route: exchange the code, set the session cookie, redirect to where the person was going.",
-    from: "AUTH-1",
-  });
-  ago(22 * 60);
-  callback("card_claim", { card: "AUTH-2" });
-  callback("conclusion_record", {
-    kind: "decision",
-    what: "Keep sessions in the existing signed cookie.",
-    why: "No new infrastructure.",
-    card: "AUTH-2",
-    by: "person",
-    area: "api",
-  });
-  // AUTH-3, made by an agent, nobody on it
-  ago(4 * 60 + 30);
-  callback("card_create", {
-    title: "Rate limit the callback endpoint",
-    body: "Found while doing AUTH-2. The callback takes a code from anyone. It needs the same limit as `/login`.",
-    from: "AUTH-2",
-  });
-
-  // AUTH-4, held and waiting on the person
-  ago(4 * 60);
-  you("card_create", {
-    title: "Point staging at okta",
-    body: "Register the dashboard with okta for **staging** and wire the settings in, so AUTH-2 can be tried end to end.\n\n- one okta app, redirect URIs per D-1 and F-1\n- client id and secret into the staging secrets, never into the repo\n- done when a login on staging reaches the callback route",
-    from: "AUTH-1",
-    needs: ["AUTH-2"],
-  });
-  ago(3 * 60 + 10);
-  idp("card_claim", { card: "AUTH-4" });
-
-  // AUTH-5, its agent stopped mid-turn. the person changed their mind here
-  ago(3 * 60 + 5);
-  you("card_create", {
-    title: "Keep sessions in redis",
-    body: "Sessions live in process memory today, so a deploy logs everyone out. Move them to the redis the API already has.",
-  });
-  ago(3 * 60);
-  store("card_claim", { card: "AUTH-5" });
-  store("conclusion_record", {
-    kind: "decision",
-    what: "Sessions move to redis, on the server.",
-    why: "A cookie cannot be revoked, and SSO logout needs revoke.",
-    card: "AUTH-5",
-    by: "person",
-    area: "api",
-    replaces: "D-2",
-  });
-
-  ago(2 * 60 + 50);
-  idp("conclusion_record", {
-    kind: "finding",
-    what: "Staging has no okta tenant in terraform state.",
-    why: "`terraform state list | grep okta` is empty in staging and lists 14 resources in production.",
-    card: "AUTH-4",
-    by: "agent",
-    changes_plan: true,
-    area: "infra",
-  });
-  ago(2 * 60 + 30);
-  idp("question_ask", {
-    card: "AUTH-4",
-    to: "AUTH-2",
-    text: "Which redirect URI does the callback route expect? I need the exact path for the okta app.",
-  });
-  ago(2 * 60 + 5);
-  callback("question_answer", {
-    card: "AUTH-4",
-    question: 1,
-    text: "`/auth/callback` on the dashboard host, no trailing slash. Staging is `https://staging.dash.example.com/auth/callback`.",
-  });
-  ago(110);
-  callback("conclusion_record", {
-    kind: "finding",
-    what: "The api suite takes 11 minutes on CI.",
-    why: "Median of the last 20 runs on main.",
-    by: "agent",
-    area: "tests",
-  });
-  ago(95);
-  idp("conclusion_record", {
-    kind: "decision",
-    what: "One okta app with a redirect URI per environment, no wildcard.",
-    why: "F-1: okta matches them exactly. A second app per environment would double the secrets to rotate.",
-    card: "AUTH-4",
-    by: "agent",
-    area: "infra",
-  });
-
-  // AUTH-6, held by a background agent
-  ago(90);
-  you("card_create", {
-    title: "Login page with the SSO button",
-    body: "An email-first login: the SSO button shows for an org that has it on.",
-  });
-  ago(80);
-  login("card_claim", { card: "AUTH-6" });
-
-  ago(48);
-  store("conclusion_record", {
-    kind: "decision",
-    what: "Sessions expire after 8 hours without activity.",
-    why: "It matches the okta session policy, so the two never disagree.",
-    card: "AUTH-5",
-    by: "agent",
-    area: "api",
-    related: ["D-3"],
-  });
-  ago(40);
-  idp("comment_add", {
-    card: "AUTH-4",
-    text: "The okta app settings per environment are written up, and the terraform for the app is on a branch. AUTH-3 should use the same host list.",
-    artifacts: [
-      { type: "file", ref: "artifacts/okta-app-settings.md" },
-      { type: "branch", ref: "feat/okta-staging" },
-      { type: "pr", ref: "https://github.com/acme/dashboard/pull/412" },
-      { type: "link", ref: "https://developer.okta.com/docs/guides/sign-into-web-app-redirect/" },
-    ],
-  });
-  ago(35);
-  login("conclusion_record", {
-    kind: "verdict",
-    what: "The SAML strategy cannot be reused for OIDC: it validates a signed assertion on every request, and OIDC needs a place where the code is traded in once.",
-    why: "Read passport-saml's strategy and our wrapper around it.",
-    card: "AUTH-6",
-    by: "agent",
-    area: "web",
-  });
-  ago(31);
-  store("comment_add", {
-    card: "AUTH-5",
-    text: "The store is written and its tests pass. Wiring it into the middleware is next.",
-    artifacts: [{ type: "branch", ref: "feat/redis-sessions" }],
-  });
-  ago(3);
-  idp("question_ask", {
-    card: "AUTH-4",
-    to: "person",
-    text: "Staging has no okta tenant (F-2). Create a dev tenant, or point staging at the production tenant with its own app? I would create a dev tenant: a mistake there cannot lock anyone out.",
-  });
-
-  // the backlog and a card the person dropped
-  ago(22 * 60);
-  you("card_create", { title: "Log out everywhere when the okta session ends" });
-  you("card_create", {
-    title: "Move SSO settings into the admin panel",
-    body: "Org admins edit their okta settings themselves.",
-  });
-  ago(21 * 60);
-  you("card_cancel", { card: "AUTH-8", reason: "Out of scope. Support configures SSO per org." });
-
-  // another project asks too: the switcher and the tray say so
-  ago(20);
-  const threads = asAgent(fx, chat.root, { sessionId: SID.threads, name: "thread composer" });
-  threads("card_create", { title: "Thread replies in the composer" });
-  threads("card_claim", { card: "CHAT-1" });
-  threads("question_ask", {
-    card: "CHAT-1",
-    to: "person",
-    text: "Should a reply in a thread also post to the channel, or only when the box is ticked?",
-  });
-  mock.timers.reset();
-
-  // the research's own decision was looked at yesterday
-  writeFileSync(
-    path.join(fx.root, "reviewed.json"),
-    JSON.stringify({ "AUTH/conclusion:D-1": { at: now - 20 * 60 * MIN } }),
+  const projects = Object.fromEntries(
+    (
+      [
+        ["auth-sso", "AUTH", "Single sign-on for the dashboard through okta, staging first."],
+        ["billing-export", "BILL", "Monthly invoice exports for finance, as csv."],
+        ["chat-features", "CHAT", "Threads and reactions in team chat."],
+        ["data-objects", "DATA", "Custom objects in the public api."],
+        ["infra-cleanup", "INFR", "Retire the old staging cluster."],
+        ["mobile-push", "PUSH", "Rich push on android."],
+        ["search-relevance", "SRCH", "Exact title matches rank first."],
+      ] as const
+    ).map(([name, prefix, goal]) => [
+      name,
+      writeProject(fx, {
+        name,
+        prefix,
+        goal,
+        ...(name === "auth-sso"
+          ? { folders: [{ path: api, mode: "worktree", branch: { kind: "detach" } }] }
+          : {}),
+      }).root,
+    ]),
   );
-  // the files the artifacts name, so Finder has something to show
-  mkdirSync(path.join(auth.root, "artifacts"), { recursive: true });
-  for (const f of ["okta-app-registration.md", "okta-app-settings.md"]) {
-    writeFileSync(path.join(auth.root, "artifacts", f), "# notes\n");
-  }
+  const auth = projects["auth-sso"] as string;
+  const vscode = (sessionId: string, status: "busy" | "idle" = "idle") =>
+    liveSession(fx, { sessionId, kind: "interactive", entrypoint: "claude-vscode", status });
 
-  const session = (sessionId: string, title: string, minutes: number, more: object = {}) =>
-    writeSession(fx, { cwd: auth.root, sessionId, title, ageMs: minutes * MIN, ...more });
-  session(SID.idp, "idp config", 3, { reply: "The okta app settings are written up." });
-  session(SID.callback, "callback route", 9);
-  session(SID.store, "session store", 25, {
-    lastPrompt: "Wire the redis store into the session middleware and run the api suite",
-  });
-  session(SID.research, "okta research", 23 * 60);
-  session(SID.login, "login page", 12);
-  session(SID.tab, "auth-sso-12", 1, { prompt: "Create the okta app in the dev tenant" });
+  // ---- auth-sso: the four that need him
+  const turn = sid();
   writeSession(fx, {
-    cwd: chat.root,
-    sessionId: SID.threads,
-    title: "thread composer",
-    ageMs: 20 * MIN,
+    cwd: auth,
+    sessionId: turn,
+    title: "auth-sso-12",
+    branch: "feat/okta-staging",
+    prompt:
+      "register the okta app for staging and production in the dev tenant. one app, a redirect URI per environment. do not put the secret in the repo",
+    reply: REPLY,
+    ageMs: MIN,
   });
-  // sessions that hold no card: the Cards screen lists them under the groups, and under the start
-  // state of a project that has no cards yet
-  const loose = (root: string, n: number, titles: string[]) => {
+  vscode(turn);
+  event(fx, turn, "Stop", 1, { last_assistant_message: REPLY });
+
+  const permission = sid();
+  writeSession(fx, {
+    cwd: auth,
+    sessionId: permission,
+    title: "callback route",
+    branch: "fix/callback-state",
+    prompt:
+      "the callback has to check the state cookie before it trades the code. add the test first",
+    reply: "The test is written and fails for the right reason. Running the callback suite.",
+    ageMs: 3 * MIN,
+  });
+  vscode(permission, "busy");
+  event(fx, permission, "PermissionRequest", 3, {
+    tool_name: "Bash",
+    tool_input: { command: "pnpm test --filter callback" },
+  });
+
+  const stopped = sid();
+  writeSession(fx, {
+    cwd: auth,
+    sessionId: stopped,
+    title: "session store",
+    branch: "auth-sso",
+    prompt: "Wire the redis store into the session middleware and run the api suite",
+    reply: "Reading the middleware.",
+    lastPrompt: "Wire the redis store into the session middleware and run the api suite",
+    ageMs: 25 * MIN,
+  });
+
+  const failed = sid();
+  writeSession(fx, {
+    cwd: auth,
+    sessionId: failed,
+    title: "token rotation",
+    prompt: "rotate refresh tokens on every use, and revoke the family on reuse",
+    reply: "API Error: 529 Overloaded",
+    ageMs: 40 * MIN,
+  });
+  liveSession(fx, { sessionId: failed, kind: "interactive", entrypoint: "cli" });
+  event(fx, failed, "StopFailure", 40, { message: "API Error: 529 Overloaded" });
+
+  // ---- two working
+  const login = sid();
+  writeSession(fx, {
+    cwd: auth,
+    sessionId: login,
+    title: "login page",
+    branch: "auth-sso",
+    prompt: "build the login page with the SSO button, and the error state for a disabled org",
+    reply: "The button and the three states are in. Writing the story for the disabled org.",
+    ageMs: 20_000,
+  });
+  liveSession(fx, { sessionId: login, kind: "bg", status: "busy" });
+  event(fx, login, "UserPromptSubmit", 12);
+  const idp = sid();
+  writeSession(fx, {
+    cwd: auth,
+    sessionId: idp,
+    title: "idp config",
+    branch: "feat/okta-staging",
+    prompt: "point staging at the dev tenant",
+    ageMs: 40_000,
+  });
+  vscode(idp, "busy");
+  event(fx, idp, "UserPromptSubmit", 6);
+
+  // ---- the rest: today, yesterday, and further back
+  QUIET.forEach((title, i) => {
+    const sessionId = sid();
+    const ageMs = i < 6 ? (i + 1) * 70 * MIN : i < 13 ? (20 + i) * HOUR : (i - 10) * 26 * HOUR;
+    writeSession(fx, {
+      cwd: auth,
+      sessionId,
+      title,
+      branch: BRANCHES[i % BRANCHES.length],
+      prompt: title,
+      reply: `Done: ${title}.`,
+      ageMs,
+    });
+    if (i < 2) vscode(sessionId);
+  });
+
+  // ---- the other projects: a few sessions each, two of them waiting
+  const chat = projects["chat-features"] as string;
+  const threads = sid();
+  writeSession(fx, {
+    cwd: chat,
+    sessionId: threads,
+    title: "threads backend",
+    branch: "threads",
+    prompt: "add the reply_to column and backfill it",
+    reply: "The migration is written. Run the backfill on staging now, or tonight?",
+    ageMs: 8 * MIN,
+  });
+  vscode(threads);
+  event(fx, threads, "Stop", 8, {
+    last_assistant_message:
+      "The migration is written. Run the backfill on staging now, or tonight?",
+  });
+  const data = projects["data-objects"] as string;
+  const schema = sid();
+  writeSession(fx, {
+    cwd: data,
+    sessionId: schema,
+    title: "schema validation for custom objects",
+    prompt: "validate the schema on write",
+    ageMs: 14 * MIN,
+  });
+  vscode(schema, "busy");
+  event(fx, schema, "PermissionRequest", 14, {
+    cwd: data,
+    tool_name: "Edit",
+    tool_input: { file_path: path.join(data, "src/objects/schema.ts") },
+  });
+  for (const [root, titles] of [
+    [chat, ["reactions picker", "emoji search", "unread counts"]],
+    [data, ["pagination for list objects", "rate limits"]],
+    [projects["infra-cleanup"], ["drain the old node pool", "dns cutover plan"]],
+    [projects["mobile-push"], ["image attachments on android"]],
+    [projects["search-relevance"], ["title boost", "eval set from the support tickets"]],
+  ] as const) {
     for (const [i, title] of titles.entries()) {
       writeSession(fx, {
-        cwd: root,
-        sessionId: `34343434-0000-4000-8000-0000000000${n}${i}`,
+        cwd: root as string,
+        sessionId: sid(),
         title,
-        ageMs: (i + 1) * (i + 2) * 3 * 60 * MIN,
+        prompt: title,
+        ageMs: (i + 2) * 5 * HOUR,
       });
     }
-  };
-  loose(auth.root, 1, [
-    "why is the staging deploy red",
-    "sketch the login page states",
-    "auth-sso-9",
-    "read the SAML strategy",
-    "terraform state for staging",
-    "draft the rollout note",
-    "check the session cookie flags",
-    "auth-sso-3",
-    "compare the two IdP price lists",
-  ]);
-  loose(billing.root, 2, [
-    "which invoices does finance need",
-    "invoice csv columns",
-    "billing-export-2",
-  ]);
-  // sessions in repos no project has: the form suggests their folders
-  for (const [i, name] of ["infra", "design-system", "pipelines"].entries()) {
-    writeSession(fx, {
-      cwd: makeRepo(fx, name),
-      sessionId: `12121212-0000-4000-8000-00000000000${i}`,
-      title: `${name} cleanup`,
-      ageMs: (i + 2) * 60 * MIN,
-    });
   }
-  // idp config's subagents. they spent more than it did, on another model
-  writeAgent(fx, {
-    cwd: auth.root,
-    sessionId: SID.idp,
-    id: "a1b2c3",
-    agentType: "Explore",
-    description: "Find the okta resources in terraform",
-    prompt: "List every okta resource in the terraform state of staging and production.",
-    startedAgoMs: 170 * MIN,
-    steps: [{ tool: "Bash", input: { command: "terraform state list" }, result: "", at: 5 }],
-    result: { text: "Staging has none. Production has 14.", at: 60 },
-  });
-  writeAgent(fx, {
-    cwd: auth.root,
-    sessionId: SID.idp,
-    id: "d4e5f6",
-    agentType: "general-purpose",
-    description: "Draft the terraform for the okta app",
-    prompt: "Write the okta_app_oauth resource for the dashboard.",
-    startedAgoMs: 45 * MIN,
-    steps: [{ tool: "Write", input: { file_path: "infra/okta.tf" }, result: "ok", at: 30 }],
-    result: { text: "Written to infra/okta.tf.", at: 300 },
-  });
-
-  // where each one runs: idp config and the tab in the editor, both waiting. callback route in a
-  // terminal. login page in the background. session store was mid-turn when its process went.
-  // okta research is long closed
-  liveSession(fx, { sessionId: SID.idp, kind: "interactive", entrypoint: "claude-vscode" });
-  liveSession(fx, { sessionId: SID.tab, kind: "interactive", entrypoint: "claude-vscode" });
-  liveSession(fx, { sessionId: SID.threads, kind: "interactive", entrypoint: "claude-vscode" });
-  liveSession(fx, {
-    sessionId: SID.callback,
-    kind: "interactive",
-    entrypoint: "cli",
-    status: "busy",
-  });
-  liveSession(fx, { sessionId: SID.login, kind: "bg", status: "busy" });
-  event(fx, SID.idp, 3, { cwd: auth.root });
-  event(fx, SID.tab, 1, {
-    cwd: auth.root,
-    last_assistant_message:
-      "The okta app is created in the dev tenant. Want me to open the PR now, or wait for the callback route to land first?",
-  });
-  interrupted(fx, { [SID.store]: Date.now() - 25 * MIN });
-  return { fx, api, runbooks };
+  interrupted(fx, { [stopped]: Date.now() - 25 * MIN });
+  return { fx, turn };
 }
 
-/** the built app on the fixture, every project read, checked and with its working copies made */
+/** the built app on the fixture, with every session indexed and every status read */
 async function launch(fx: Fixture) {
   const fake = writeFakeClaude(path.join(fx.dir, "bin"), []);
-  // HOME is the fixture's, so paths read ~/src/api and nothing reaches the real home
+  // HOME is the fixture's, so nothing reaches the real home
   const app = await launchApp(fx, { HOME: fx.dir, GROVE_CLAUDE_BIN: fake.bin });
   const { page } = app;
   page.on("pageerror", (e) => console.log("PAGE ERROR", e.message));
@@ -429,164 +304,129 @@ async function launch(fx: Fixture) {
     async () => {
       const b = await window.grove.bootstrap();
       return (
-        b.projects.every((p) => p.server.state !== "unknown" && !!b.record[p.id]?.readAt) &&
-        b.projects[0]?.folders.every((f) => f.state === "ok" || f.state === "reference") &&
-        (await window.grove.frequentFolders()).length >= 3 &&
+        b.inbox.rows.length === 6 &&
+        b.projects[0]?.folders.every((f) => f.state === "ok") &&
         // the sessions are indexed after the page is up
-        (await window.grove.projectSessions("billing-export")).length === 3
+        (await window.grove.projectSessions("auth-sso")).length === 44
       );
     },
     undefined,
     { timeout: 30_000 },
   );
-  await page.getByTestId("inbox-row").nth(8).waitFor();
   return app;
 }
+
+const resize = async (app: ElectronApplication, page: Page, width: number, height: number) => {
+  await app.evaluate(
+    ({ BrowserWindow }, [w, h]) =>
+      BrowserWindow.getAllWindows()[0]?.setSize(w as number, h as number),
+    [width, height],
+  );
+  await page.waitForFunction((w) => window.innerWidth === w, width);
+};
 
 for (const scheme of ["light", "dark"]) {
   const dir = path.join(out, scheme);
   mkdirSync(dir, { recursive: true });
-  let page: Page;
+  const { fx, turn } = build(scheme);
+  const app = await launch(fx);
+  const { page } = app;
+  const g = groveTest(app.app);
+  if (scheme === "light") {
+    console.log("tray title:", JSON.stringify(await g.trayTitle()));
+    console.log("tray menu:", JSON.stringify(await g.trayMenu(), null, 2));
+  }
+  let width = 0;
   /** the pointer out of the way, the last transition over */
   const shot = async (name: string, rest = true) => {
-    if (rest) await page.mouse.move(640, 22);
+    if (rest) await page.mouse.move(width - 200, 22);
     await page.waitForTimeout(350);
-    await page.screenshot({ path: path.join(dir, `${name}.png`) });
+    await page.screenshot({ path: path.join(dir, `${name}-${width}.png`) });
     // anything wider than its box that does not say so with an ellipsis or a scrollbar
     const spills = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>("#root *")]
         .filter(
           (e) =>
-            // a side panel row reaches 6px into its section's padding on purpose
-            e.scrollWidth > e.clientWidth + 6 &&
+            e.scrollWidth > e.clientWidth + 1 &&
             getComputedStyle(e).textOverflow !== "ellipsis" &&
             getComputedStyle(e).overflowX === "visible",
         )
         .map((e) => `${e.tagName}.${String(e.className).slice(0, 60)}`),
     );
-    console.log(scheme, name, spills.length ? `SPILLS ${JSON.stringify(spills)}` : "ok");
+    console.log(scheme, width, name, spills.length ? `SPILLS ${JSON.stringify(spills)}` : "ok");
   };
-  const card = (id: string) => page.locator(`[data-testid="card-page"][data-id="${id}"]`).waitFor();
-  const project = async (id: string) => {
-    await page.getByTestId("project-switcher").click();
-    await page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
-  };
+  const project = (id: string) =>
+    page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
+  const inboxRow = (kind: string) => page.locator(`[data-testid="inbox-row"][data-kind="${kind}"]`);
 
-  // ---------- every screen of a project in use ----------
-  {
-    const { fx, api, runbooks } = build(scheme);
-    const app = await launch(fx);
-    page = app.page;
-    const g = groveTest(app.app);
-    if (scheme === "light") {
-      console.log("tray title:", JSON.stringify(await g.trayTitle()));
-      console.log("tray menu:", JSON.stringify(await g.trayMenu(), null, 2));
-    }
-
-    await shot("inbox");
-    await page.locator('[data-testid="inbox-row"][data-kind="decided"]').first().hover();
-    await shot("inbox-hover", false);
-
-    await page.getByTestId("project-switcher").click();
-    await page.getByTestId("project-search").fill("e");
-    await shot("switcher-search");
-    await page.keyboard.press("Escape");
-
-    await page.getByTestId("nav-cards").click();
-    await page.getByTestId("card-row").nth(7).waitFor();
-    await shot("cards");
-    // the keyboard's row, right under a group's header
-    await page.keyboard.press("ArrowDown");
-    await shot("cards-keyboard", false);
-    // the sessions that hold no card, under the groups
-    await page.getByTestId("sessions-all").scrollIntoViewIfNeeded();
-    await shot("cards-sessions");
-
-    // where a click on the question's notification lands
-    await g.reveal(SID.idp);
-    await card("AUTH-4");
-    await page.getByTestId("card-side").waitFor();
-    await shot("card-held");
-    await g.reveal(SID.store);
-    await card("AUTH-5");
-    await shot("card-stopped");
-    await page.getByTestId("nav-cards").click();
-    // a click on a row opens the card in the panel. its page is a chip away: AUTH-2 came from AUTH-1
-    await page.locator('[data-testid="card-row"][data-id="AUTH-2"]').click();
-    await page
-      .locator('[data-testid="card-side"] [data-testid="card-chip"][data-id="AUTH-1"]')
-      .click();
-    await card("AUTH-1");
-    await page.locator('[data-testid="screen"][data-view="card"]').waitFor();
-    await page.getByTestId("card-side").waitFor();
-    await shot("card-done");
-
-    await page.getByTestId("nav-conclusions").click();
-    await page.getByTestId("conclusion-row").nth(8).waitFor();
-    await shot("conclusions");
-    await page.locator('[data-testid="conclusion-row"][data-id="D-5"]').click();
-    await shot("conclusions-open");
+  for (const [w, h] of SIZES) {
+    width = w;
+    await resize(app.app, page, w, h);
 
     await page.getByTestId("nav-inbox").click();
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette").waitFor();
-    await shot("palette");
-    await page.getByTestId("palette-input").fill("okta");
-    await page.locator('[data-testid="palette-item"][data-id^="session:"]').first().waitFor();
-    await shot("palette-search");
+    await page.getByTestId("inbox-row").nth(5).waitFor();
+    await shot("inbox");
+    await inboxRow("permission").first().hover();
+    await shot("inbox-hover", false);
+    // where a click on its notification lands: the row, with its panel open
+    await g.reveal(turn);
+    await page.getByTestId("panel-text").waitFor();
+    await shot("inbox-panel");
+    await page.keyboard.press("ArrowDown");
+    await page.getByTestId("panel-text").waitFor();
+    await shot("inbox-panel-keyboard", false);
     await page.keyboard.press("Escape");
 
-    await page.keyboard.press("Meta+,");
-    await page.getByTestId("settings-dialog").waitFor();
-    await shot("settings");
+    await project("auth-sso");
+    await page.getByTestId("session-row").nth(43).waitFor();
+    await shot("sessions");
+    await page.locator('[data-testid="session-row"][data-state="turn"]').click();
+    await page.getByTestId("panel-text").waitFor();
+    await shot("sessions-panel");
     await page.keyboard.press("Escape");
-
-    await page.getByTestId("nav-cards").click();
-    await page.getByTestId("edit-project").click();
-    await page.getByTestId("repo-row").getByRole("radiogroup").nth(2).waitFor();
-    await shot("project-edit");
-    await page.getByTestId("form-cancel").click();
+    // a quiet one, from further down the list
+    await page.getByTestId("session-row").nth(20).click();
+    await page.getByTestId("panel-text").waitFor();
+    await shot("sessions-panel-quiet");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("session-filter").fill("okta");
+    await page.getByTestId("session-row").nth(3).waitFor();
+    await shot("sessions-filter");
+    await page.getByTestId("session-filter").fill("nothing like it");
+    await page.getByTestId("sessions-none").waitFor();
+    await shot("sessions-filter-none");
+    await page.getByTestId("session-filter").fill("");
 
     await project("billing-export");
-    await page.getByTestId("start-state").waitFor();
-    await shot("start-state");
+    await page.getByTestId("sessions-empty").waitFor();
+    await shot("sessions-empty");
 
-    await stubDirectoryPicker(app.app, [api, runbooks]);
-    await page.keyboard.press("Meta+n");
-    await page.getByTestId("project-name").fill("Search relevance");
-    await page
-      .getByTestId("project-goal")
-      .fill("Exact title matches rank first in dashboard search.");
-    await page.getByTestId("add-folder").click();
-    const rows = page.getByTestId("repo-row");
-    await rows.getByRole("radiogroup").nth(1).waitFor();
-    await rows.nth(1).getByTestId("mode-reference").click();
-    await page.getByTestId("form-submit").and(page.locator(":enabled")).waitFor();
-    await shot("project-new");
-    await app.close();
+    await page.keyboard.press("Meta+k");
+    await page.getByTestId("palette").waitFor();
+    await page.getByTestId("palette-input").fill("okta");
+    await page.locator('[data-testid="palette-item"][data-id^="session:"]').first().waitFor();
+    await shot("palette");
+    await page.keyboard.press("Escape");
+
+    await project("auth-sso");
+    await page.getByTestId("edit-project").click();
+    await page.getByTestId("repo-row").getByRole("radiogroup").first().waitFor();
+    await shot("project-edit");
+    await page.getByTestId("form-cancel").click();
   }
 
-  // ---------- the record server cannot start: the banner, and what Edit project says ----------
-  {
-    const { fx } = build(scheme);
-    // a bundle that says it is newer than the app's, so the install leaves it, and that dies on
-    // start the way a half-written one would: node's own words on stderr
-    const bin = path.join(fx.root, ".grove", "bin");
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(
-      path.join(bin, "record.cjs"),
-      '// grove-record app=99.0.0\nrequire("./tools.cjs");\n',
-    );
-    const app = await launch(fx);
-    page = app.page;
-    await page.getByTestId("banner").waitFor();
-    await shot("banner");
-    await page.getByTestId("banner-action").click();
-    await page.getByTestId("record-check").waitFor();
-    // the section is below the repos: the bottom of the form, down to its buttons
-    await page.getByTestId("project-form").evaluate((el) => el.scrollTo(0, el.scrollHeight));
-    await shot("project-edit-record-failed");
-    await app.close();
+  // nothing needs him: every row dismissed
+  await page.evaluate(async () => {
+    const { inbox } = await window.grove.bootstrap();
+    for (const r of inbox.rows) await window.grove.review(r.project, r.reviewKeys, true);
+  });
+  await page.getByTestId("nav-inbox").click();
+  await page.getByTestId("inbox-empty").waitFor();
+  for (const [w, h] of SIZES) {
+    width = w;
+    await resize(app.app, page, w, h);
+    await shot("inbox-empty");
   }
+  await app.close();
 }
 console.log(out);

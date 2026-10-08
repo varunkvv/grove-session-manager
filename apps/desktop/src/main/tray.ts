@@ -52,8 +52,9 @@ export function updateTray(
 ): MenuItemConstructorOptions[] {
   const template = trayTemplate(inbox, a);
   if (tray && !tray.isDestroyed()) {
-    tray.setTitle(inbox.tray > 0 ? String(inbox.tray) : "");
-    tray.setToolTip(inbox.tray > 0 ? `Grove, ${inbox.tray} waiting on you` : "Grove");
+    const n = inbox.rows.length;
+    tray.setTitle(n > 0 ? String(n) : "");
+    tray.setToolTip(n > 0 ? `Grove, ${n} waiting on you` : "Grove");
     tray.setContextMenu(electron.Menu.buildFromTemplate(template));
   }
   return template;

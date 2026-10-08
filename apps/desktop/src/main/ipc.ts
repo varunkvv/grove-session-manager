@@ -5,7 +5,6 @@ import {
   type Combo,
   classifyPath,
   derivePrefix,
-  isInside,
   isValidSessionId,
   openInEditor,
   prepareFolderOpen,
@@ -16,7 +15,7 @@ import {
   sessionTail,
   validatePrefix,
 } from "@grove/core";
-import { CARD_ID, CONCLUSION_ID, readProject, transcriptFile, turnAround } from "@grove/record";
+import { readProject } from "@grove/record";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
 import type {
@@ -102,8 +101,6 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "setLongWork",
   "installCompanion",
   "updateSettings",
-  "reveal",
-  "copyText",
   "openExternal",
 ]);
 
@@ -218,7 +215,6 @@ function buildHandlers(deps: Deps): Handlers {
       const editorStatus = await editor.status();
       // the views first: reading them can run a compute, which stamps revs of its own
       const { projects: list, problem } = projects.views();
-      const record = projects.recordViews();
       const inbox = projects.inbox();
       return {
         revs: pusher.currentRevs(),
@@ -233,7 +229,6 @@ function buildHandlers(deps: Deps): Handlers {
         editor: editorStatus,
         projects: list,
         ...(problem ? { projectsProblem: problem } : {}),
-        record,
         inbox,
       };
     },
@@ -250,24 +245,6 @@ function buildHandlers(deps: Deps): Handlers {
           await Promise.all([combos.reconcileAll(), deps.serverChecks?.runAll(combos.list())]);
         })(),
       ]);
-    },
-
-    async card(project, cardId) {
-      const id = typeof cardId === "string" ? cardId.toUpperCase() : "";
-      if (typeof project !== "string" || !CARD_ID.test(id)) return null;
-      return projects.card(project, id);
-    },
-
-    async conclusionTurn(project, conclusionId) {
-      const id = typeof conclusionId === "string" ? conclusionId.toUpperCase() : "";
-      if (typeof project !== "string" || !CONCLUSION_ID.test(id)) return null;
-      const c = deps.record.snapshot(project)?.conclusions.find((x) => x.id === id);
-      if (!c?.toolUseId) return null;
-      // the record's own reader, the one conclusion_search answers an agent with. it reads a
-      // bounded part of the file and gives null for anything it cannot read
-      const file = transcriptFile(deps.projectsDir, c.session);
-      const turn = file ? turnAround(file, c.toolUseId) : null;
-      return turn?.prompt || turn?.text ? turn : null;
     },
 
     async review(project, keys, reviewed) {
@@ -336,9 +313,6 @@ function buildHandlers(deps: Deps): Handlers {
         root: combo.root,
         rootExists: await isDirectory(combo.root),
         goal: combo.note,
-        ...(req.cardId
-          ? { cardId: req.cardId, card: projects.startCard(req.project, req.cardId) }
-          : {}),
       });
       const label = editor.current().label;
 
@@ -352,7 +326,6 @@ function buildHandlers(deps: Deps): Handlers {
         ) {
           await openWindow(combo);
           electron.clipboard.writeText(prompt);
-          projects.addStart(req.project, "editor", req.cardId);
           return {
             message: "Prompt copied - paste it into a new Claude conversation",
             body: companionVersion
@@ -366,7 +339,6 @@ function buildHandlers(deps: Deps): Handlers {
         for (const warning of report.warnings) {
           pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
         }
-        projects.addStart(req.project, "editor", req.cardId);
         return {
           message: `Opening ${combo.name} in ${label} on a new conversation`,
           // the panel only fills the box
@@ -382,7 +354,6 @@ function buildHandlers(deps: Deps): Handlers {
           randomUUID(),
           claudeScriptBody({ cwd: combo.root, claudeBin: await claudeBin(deps), args }),
         );
-        projects.addStart(req.project, "background", req.cardId);
         return { message: TERMINAL_MESSAGE };
       }
       const res = await deps.background.dispatch(args, { cwd: combo.root });
@@ -391,7 +362,6 @@ function buildHandlers(deps: Deps): Handlers {
           ? notTrusted(combo.root)
           : claudeFailure("claude --bg failed", res.out);
       }
-      projects.addStart(req.project, "background", req.cardId);
       return { message: res.id ? `started in background · ${res.id}` : "started in background" };
     },
 
@@ -416,8 +386,8 @@ function buildHandlers(deps: Deps): Handlers {
       return deps.reveals.take();
     },
 
-    async setVisibleProject(id) {
-      deps.notifier.setVisibleProject(typeof id === "string" ? id : null);
+    async setVisibleProject(id, all) {
+      deps.notifier.setVisible(typeof id === "string" ? id : null, all === true);
     },
 
     async validateProjectName(name, self, prefix) {
@@ -556,21 +526,6 @@ function buildHandlers(deps: Deps): Handlers {
       editor.applySettings(next);
       pusher.send("editor:status", await editor.status(true));
       return toAppSettings(next);
-    },
-
-    async reveal(project, relative) {
-      const { root } = combos.byId(project);
-      const file = typeof relative === "string" && relative ? path.resolve(root, relative) : "";
-      // an agent wrote the path. Finder shows it, and only when it is inside the project
-      if (!file || !isInside(file, root)) {
-        throw new AppError("bad-path", "That file is not inside the project folder.");
-      }
-      electron.shell.showItemInFolder(file);
-    },
-
-    async copyText(text) {
-      if (typeof text !== "string") throw new AppError("bad-text", "Nothing to copy.");
-      electron.clipboard.writeText(text);
     },
 
     async openExternal(url) {

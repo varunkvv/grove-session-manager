@@ -6,8 +6,13 @@ import path from "node:path";
 import type { ProjectId } from "@grove/core";
 import * as record from "@grove/record";
 import type { Card, Conclusion } from "@grove/record/types";
-import type { RecordProblem } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
+
+/** a record file that did not parse whole, relative to the project root */
+export interface RecordProblem {
+  file: string;
+  problems: string[];
+}
 
 type Reader = Pick<typeof record, "readRecord" | "readCard" | "readConclusions" | "listCardIds">;
 

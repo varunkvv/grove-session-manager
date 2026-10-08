@@ -1,20 +1,6 @@
-import type {
-  ArtifactView,
-  OpenPlan,
-  ProjectId,
-  SessionKey,
-  StartAgentRequest,
-} from "../../shared/ipc.ts";
+import type { OpenPlan, ProjectId, SessionKey, StartAgentRequest } from "../../shared/ipc.ts";
 import type { Intent } from "../logic/keyboard.ts";
-import { webLink } from "../logic/refs.ts";
-import {
-  artifactName,
-  cardOrder,
-  filterConclusions,
-  projectRows,
-  prUrl,
-  revealConclusion,
-} from "../logic/views.ts";
+import { sessionOrder } from "../logic/views.ts";
 import { rememberProject, type Section, type State, useStore } from "./store.ts";
 
 const api = () => window.grove;
@@ -39,36 +25,9 @@ export function report(
 
 // ---------- navigation ----------
 
-const NO_CONCLUSIONS = { query: "", kind: "all", open: null } as const;
-
-/** a screen from the nav, the menu or the palette: nothing to go back to */
+/** a list from the sidebar, the menu or the palette: nothing to go back to */
 export function go(section: Section): void {
-  state().set({
-    section,
-    view: { name: section },
-    back: [],
-    overlay: null,
-    peek: null,
-    ...(section === "conclusions" ? { conclusions: NO_CONCLUSIONS } : {}),
-  });
-}
-
-/** the nav keeps saying where the card was opened from */
-export function openCard(cardId: string): void {
-  const s = state();
-  s.set({ back: [...s.back, s.view], view: { name: "card", cardId } });
-}
-
-/** that conclusion, open, on the Conclusions screen. a search or a kind that hides it is reset */
-export function openConclusion(id: string): void {
-  const s = state();
-  const list = (s.project ? s.records[s.project]?.conclusions : undefined) ?? [];
-  s.set({
-    ...(s.view.name === "conclusions"
-      ? {}
-      : { back: [...s.back, s.view], section: "conclusions", view: { name: "conclusions" } }),
-    conclusions: revealConclusion(list, s.conclusions, id),
-  });
+  state().set({ section, view: { name: section }, back: [], overlay: null, peek: null });
 }
 
 export function back(): void {
@@ -76,19 +35,37 @@ export function back(): void {
   s.set({ view: s.back.at(-1) ?? { name: s.section }, back: s.back.slice(0, -1) });
 }
 
-/** the same screen in the other project */
+/** a project's sessions */
 export function switchProject(id: ProjectId): void {
   const s = state();
   s.set({
     project: id,
-    view: { name: s.section },
+    section: "sessions",
+    view: { name: "sessions" },
     back: [],
-    card: null,
+    overlay: null,
     peek: null,
-    active: { inbox: null, cards: null, conclusions: null },
-    conclusions: NO_CONCLUSIONS,
+    filter: "",
+    active: { ...s.active, sessions: null },
+    // another project's rows never show under this one's name
+    sessions: s.sessions?.project === id ? s.sessions : null,
   });
   rememberProject(id);
+}
+
+let asked = 0;
+/** the sessions of the project on screen, from main. an answer that came too late is dropped */
+export async function loadSessions(): Promise<void> {
+  const project = state().project;
+  if (!project) return;
+  const mine = ++asked;
+  // main did not answer: what is on screen stays
+  const hits = await api()
+    .projectSessions(project)
+    .catch(() => null);
+  if (hits && mine === asked && state().project === project) {
+    state().set({ sessions: { project, hits } });
+  }
 }
 
 /** the menu's accelerator and the page's key can both ask: a second ask changes nothing */
@@ -98,36 +75,27 @@ export function newProject(): void {
   s.set({ back: [...s.back, s.view], view: { name: "new-project" }, overlay: null });
 }
 
+/** the project on screen. the inbox shows none, so there it does nothing */
 export function editProject(): void {
   const s = state();
-  if (!s.project || s.view.name === "edit-project") return;
-  s.set({
-    back: [...s.back, s.view],
-    view: { name: "edit-project" },
-    section: "cards",
-    overlay: null,
-  });
+  if (s.view.name !== "sessions") return;
+  s.set({ back: [...s.back, s.view], view: { name: "edit-project" }, overlay: null });
 }
 
 /** puts the keyboard back where the screen wants it. a form does it itself, with autoFocus */
 export function focusScreen(): void {
   if (typeof document === "undefined") return;
   const { name } = state().view;
-  const target =
-    name === "inbox" || name === "cards"
-      ? "[data-list]"
-      : name === "conclusions"
-        ? "#search"
-        : name === "card"
-          ? '[data-testid="card-main"]'
-          : null;
-  if (target) document.querySelector<HTMLElement>(target)?.focus();
+  if (name === "inbox" || name === "sessions") {
+    // a list taller than the window would be scrolled to its own top edge, under the padding
+    document.querySelector<HTMLElement>("[data-list]")?.focus({ preventScroll: true });
+  }
 }
 
 /** the DOM id of a list row, for aria-activedescendant and for scrolling the keyboard's row into view */
 export const optionId = (id: string): string => `row-${id}`;
 
-// ---------- what a row, a card or a chip does ----------
+// ---------- what a row does ----------
 
 /** the one function every Open in {editor} control calls. one toast per open, after main answers */
 export function openWith(
@@ -155,11 +123,11 @@ export function openWith(
 }
 
 /**
- * a click or Enter on an inbox row or a card row: it opens in the panel beside its list and is the
- * keyboard's. never a toggle, a double-click is two of these first. and never the editor: that is
- * the double-click
+ * a click or Enter on a row: its session opens in the panel beside the list and is the keyboard's.
+ * never a toggle, a double-click is two of these first. and never the editor: that is the
+ * double-click
  */
-export function openRow(screen: "inbox" | "cards", id: string): void {
+export function openRow(screen: Section, id: string): void {
   const s = state();
   s.set({ peek: id, active: { ...s.active, [screen]: id } });
 }
@@ -187,46 +155,21 @@ export async function startAgent(req: StartAgentRequest): Promise<void> {
 }
 
 /**
- * the rows these keys clear leave at once, and main's next inbox is the truth either way. a
- * refusal puts them back, unless main has spoken since. true when it went through
+ * Dismiss. the rows these keys clear leave at once, and main's next inbox is the truth either way.
+ * a refusal puts them back, unless main has spoken since. true when it went through
  */
-export async function review(
-  project: ProjectId,
-  keys: string[],
-  reviewed = true,
-): Promise<boolean> {
+export async function review(project: ProjectId, keys: string[]): Promise<boolean> {
   const before = state().inbox;
   const marked = new Set(keys);
   const optimistic = {
-    ...before,
     rows: before.rows.filter(
-      (r) =>
-        !(
-          reviewed &&
-          r.project === project &&
-          r.reviewKeys.length > 0 &&
-          r.reviewKeys.every((k) => marked.has(k))
-        ),
+      (r) => !(r.project === project && r.reviewKeys.every((k) => marked.has(k))),
     ),
   };
   state().set({ inbox: optimistic });
-  const ok = report("Could not mark it reviewed", await api().review(project, keys, reviewed));
+  const ok = report("Could not dismiss it", await api().review(project, keys, true));
   if (!ok && state().inbox === optimistic) state().set({ inbox: before });
   return ok;
-}
-
-/** a file is shown in Finder, never opened: an agent wrote the path, and Finder runs nothing */
-export async function openArtifact(project: ProjectId, a: ArtifactView): Promise<void> {
-  const name = artifactName(a);
-  if (a.type === "file") {
-    report(`Could not show ${name}`, await api().reveal(project, a.ref));
-    return;
-  }
-  const url = a.type === "pr" ? prUrl(a.ref) : a.type === "link" ? webLink(a.ref) : null;
-  if (url) report(`Could not open ${name}`, await api().openExternal(url));
-  else if (report(`Could not copy ${name}`, await api().copyText(a.ref))) {
-    state().toast({ level: "info", title: `Copied ${name}` });
-  }
 }
 
 export async function openProject(id: ProjectId): Promise<void> {
@@ -255,16 +198,11 @@ export async function installCompanion(): Promise<void> {
 /** the list on screen, in the order it is drawn, and the keyboard's row in it */
 function listOf(s: State): { screen: Section; ids: string[]; at: string | null } | null {
   const { name } = s.view;
-  if (!s.project || (name !== "inbox" && name !== "cards" && name !== "conclusions")) return null;
-  const record = s.records[s.project];
+  if (name !== "inbox" && name !== "sessions") return null;
   const ids =
     name === "inbox"
-      ? projectRows(s.inbox, s.project).map((r) => r.id)
-      : name === "cards"
-        ? cardOrder(record?.cards ?? [])
-        : filterConclusions(record?.conclusions ?? [], s.conclusions.query, s.conclusions.kind).map(
-            (c) => c.id,
-          );
+      ? s.inbox.rows.map((r) => r.sessionId)
+      : sessionOrder(s.sessions?.project === s.project ? s.sessions.hits : [], s.inbox, s.filter);
   const active = s.active[name];
   // on a fresh list the first row is the keyboard's
   return { screen: name, ids, at: active && ids.includes(active) ? active : (ids[0] ?? null) };
@@ -277,7 +215,7 @@ function moveTo(s: State, list: NonNullable<ReturnType<typeof listOf>>, index: n
     active: { ...s.active, [list.screen]: id },
     keys: true,
     // an open panel goes where the keyboard goes. it never follows the mouse
-    ...(list.screen !== "conclusions" && s.peek ? { peek: id } : {}),
+    ...(s.peek ? { peek: id } : {}),
   });
   if (typeof document !== "undefined") {
     document.getElementById(optionId(id))?.scrollIntoView({ block: "nearest" });
@@ -292,34 +230,21 @@ function act(s: State, list: NonNullable<ReturnType<typeof listOf>>, type: Inten
     return;
   }
   const { at } = list;
-  if (!at || !s.project) return;
-  if (list.screen === "inbox") {
-    const row = s.inbox.rows.find((r) => r.project === s.project && r.id === at);
-    if (!row) return;
-    if (type === "open") openRow("inbox", at);
-    else if (type === "open-editor") openWith(row.sessionKey, row.open, row.card?.id ?? row.title);
-    else void review(s.project, row.reviewKeys);
-  } else if (list.screen === "cards") {
-    const card = s.records[s.project]?.cards.find((c) => c.id === at);
-    if (type === "open") openRow("cards", at);
-    // a todo card has no session to open: nothing opens, and nothing is started
-    else if (type === "open-editor") openWith(card?.sessionKey, card?.open, at);
-    // a card is not reviewed: its inbox rows are
-  } else {
-    const c = s.records[s.project]?.conclusions.find((x) => x.id === at);
-    if (!c) return;
-    if (type === "open") {
-      s.set({ conclusions: { ...s.conclusions, open: s.conclusions.open === at ? null : at } });
-    } else if (type === "open-editor") openWith(c.sessionKey, c.open, c.id);
-    else if (c.needsReview && !c.reviewed) void review(s.project, [`conclusion:${c.id}`]);
-  }
+  if (!at) return;
+  // its inbox row, when it needs the person: what Dismiss clears
+  const row = s.inbox.rows.find((r) => r.sessionId === at);
+  const session = list.screen === "inbox" ? row : s.sessions?.hits.find((h) => h.sessionId === at);
+  if (!session) return;
+  if (type === "open") openRow(list.screen, at);
+  else if (type === "open-editor") openWith(session.key, session.open, session.title);
+  else if (row) void review(row.project, row.reviewKeys);
 }
 
-function focusSearch(select: boolean): void {
+function focusSearch(): void {
   if (typeof document === "undefined") return;
   const el = document.getElementById("search") as HTMLInputElement | null;
   el?.focus();
-  if (select) el?.select();
+  el?.select();
 }
 
 /** what a key or a menu item does */
@@ -330,8 +255,7 @@ export function perform(intent: Intent): void {
     case "move":
       if (list) {
         // the open row always shows, so an arrow steps from it at once, wherever the mouse has been
-        const open =
-          list.screen !== "conclusions" && s.peek && list.ids.includes(s.peek) ? s.peek : null;
+        const open = s.peek && list.ids.includes(s.peek) ? s.peek : null;
         const from = open ?? list.at;
         // nothing shows which row the keyboard is on yet: the first arrow shows it, like the first Enter
         moveTo(s, list, (from ? list.ids.indexOf(from) : -1) + (s.keys || open ? intent.delta : 0));
@@ -341,30 +265,19 @@ export function perform(intent: Intent): void {
       if (list) moveTo(s, list, intent.where === "first" ? 0 : list.ids.length - 1);
       break;
     case "open":
+    case "open-editor":
     case "review":
       if (list) act(s, list, intent.type);
       break;
-    case "open-editor":
-      if (list) act(s, list, intent.type);
-      // a card: its header's button, and only when it opens. never a start
-      else if (s.view.name === "card" && typeof document !== "undefined") {
-        document
-          .querySelector<HTMLElement>('[data-testid="card-primary"][data-action="open"]')
-          ?.click();
-      }
-      break;
     case "back":
       back();
-      break;
-    case "collapse":
-      s.set({ conclusions: { ...s.conclusions, open: null } });
       break;
     case "close-panel":
       s.set({ peek: null });
       focusScreen();
       break;
     case "clear-query":
-      s.set({ conclusions: { ...s.conclusions, query: "" } });
+      s.set({ filter: "" });
       break;
     case "close-overlay":
       s.set({ overlay: null });
@@ -378,10 +291,13 @@ export function perform(intent: Intent): void {
       s.set({ overlay: "palette" });
       break;
     case "project-step": {
+      // the sidebar's order: the inbox, then the projects
       const ids = s.projects.map((p) => p.id);
-      const next =
-        ids[Math.min(ids.length - 1, Math.max(0, ids.indexOf(s.project ?? "") + intent.delta))];
-      if (next && next !== s.project) switchProject(next);
+      const at = s.view.name === "inbox" ? -1 : ids.indexOf(s.project ?? "");
+      const to = Math.min(ids.length - 1, at + intent.delta);
+      const next = ids[to];
+      if (next && to !== at) switchProject(next);
+      else if (to < 0 && at >= 0) go("inbox");
       break;
     }
     case "new-project":
@@ -391,7 +307,7 @@ export function perform(intent: Intent): void {
       editProject();
       break;
     case "open-project":
-      if (s.project) void openProject(s.project);
+      if (s.project && s.view.name === "sessions") void openProject(s.project);
       break;
     case "refresh":
       void refresh();
@@ -400,13 +316,11 @@ export function perform(intent: Intent): void {
       s.set({ dialog: { kind: "settings" } });
       break;
     case "focus-search":
-      // search means the record: sessions are searched in the palette. the screen focuses its
-      // field when it mounts
-      if (s.view.name !== "conclusions") go("conclusions");
-      focusSearch(true);
-      break;
-    case "type-through":
-      focusSearch(false);
+      // the filter is a project's: from the inbox, the project that was last on screen. full text
+      // is the palette's
+      if (s.view.name !== "sessions") go("sessions");
+      // the field is drawn with the screen, a frame from now
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(focusSearch);
       break;
   }
 }

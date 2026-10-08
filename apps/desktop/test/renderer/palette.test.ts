@@ -3,15 +3,8 @@ import {
   matchCommand,
   type PaletteContext,
   paletteItems,
-  reviewAllKeys,
 } from "../../src/renderer/logic/palette.ts";
-import type {
-  CardHead,
-  FolderView,
-  InboxRowView,
-  ProjectView,
-  SessionHit,
-} from "../../src/shared/ipc.ts";
+import type { FolderView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
 
 const NOW = Date.parse("2026-10-02T15:00:00Z");
 
@@ -28,32 +21,7 @@ const project = (id: string, partial: Partial<ProjectView> = {}): ProjectView =>
   rootExists: true,
   server: { state: "ok", checkedAt: NOW, ms: 40, tools: 14 },
   shadowed: [],
-  starting: [],
   ...partial,
-});
-
-const row = (id: string, kind: InboxRowView["kind"]): InboxRowView => ({
-  id,
-  project: "auth",
-  projectName: "auth",
-  kind,
-  at: NOW,
-  title: "t",
-  summary: "",
-  reviewKeys: [`key:${id}`],
-});
-
-const head = (id: string, state?: "closed" | "working"): CardHead => ({
-  id,
-  title: `title of ${id}`,
-  status: "in_progress",
-  at: NOW,
-  lastActivity: NOW,
-  version: "1",
-  problems: 0,
-  ...(state && {
-    agent: { ref: { sessionId: id, name: "a" }, runtime: "closed", state },
-  }),
 });
 
 const hit = (n: number): SessionHit => ({
@@ -79,8 +47,6 @@ function ctx(partial: Partial<PaletteContext> = {}): PaletteContext {
     project: auth,
     projects: [auth, project("data")],
     editor: "VS Code",
-    rows: [],
-    cards: [],
     ...partial,
   };
 }
@@ -90,13 +56,11 @@ const ids = (c: PaletteContext, q = "") =>
 const sections = (c: PaletteContext, q = "") => paletteItems(c, q).sections.map((s) => s.label);
 
 describe("paletteItems", () => {
-  it("an empty query shows every section but Sessions, and no takeover rows", () => {
-    const c = ctx({ cards: [head("AUTH-1", "closed")], sessions: { query: "", hits: [hit(1)] } });
+  it("an empty query shows every section but Sessions", () => {
+    const c = ctx({ sessions: { query: "", hits: [hit(1)] } });
     expect(sections(c)).toEqual(["Go to", "Projects", "This project", "App"]);
     expect(ids(c)).toEqual([
       "go-inbox",
-      "go-cards",
-      "go-conclusions",
       "project:auth",
       "project:data",
       "start-editor",
@@ -109,7 +73,7 @@ describe("paletteItems", () => {
 
   it("has none of the cut rows", () => {
     const all = ids(ctx({ projects: [project("auth", { folders: [folder("stale")] })] }));
-    for (const cut of ["new-project", "edit-project", "open-project", "reveal"])
+    for (const cut of ["new-project", "edit-project", "open-project", "go-cards", "review-all"])
       expect(all).not.toContain(cut);
   });
 
@@ -118,7 +82,8 @@ describe("paletteItems", () => {
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(["project:auth"]);
   });
 
-  it("with no project: no Go to and no This project", () => {
+  it("on the inbox, which is every project's: no This project. with no projects: the app's rows alone", () => {
+    expect(sections(ctx({ project: null }))).toEqual(["Go to", "Projects", "App"]);
     expect(sections(ctx({ project: null, projects: [] }))).toEqual(["App"]);
   });
 
@@ -157,28 +122,12 @@ describe("paletteItems", () => {
     }
   });
 
-  it("review-all only with reviewable rows that are not Asked or Stopped", () => {
-    expect(ids(ctx({ rows: [row("a", "asked"), row("s", "stopped")] }))).not.toContain(
-      "review-all",
-    );
-    const rows = [row("a", "asked"), row("d", "decided"), row("n", "new"), row("s", "stopped")];
-    expect(ids(ctx({ rows }))).toContain("review-all");
-    expect(reviewAllKeys(rows)).toEqual(["key:d", "key:n"]);
-  });
-
-  it("a takeover row per card whose agent is closed, once there is a word", () => {
-    const c = ctx({ cards: [head("AUTH-1", "closed"), head("AUTH-2", "working"), head("AUTH-3")] });
-    expect(ids(c, "start")).toContain("takeover:AUTH-1");
-    expect(ids(c, "start").filter((i) => i.startsWith("takeover:"))).toEqual(["takeover:AUTH-1"]);
-    expect(ids(c, "reassign")).toEqual(["takeover:AUTH-1"]);
-    expect(ids(c, "auth-1")).toEqual(["takeover:AUTH-1"]);
-  });
-
   it("a query keeps the section order and drops empty sections", () => {
     const c = ctx({ sessions: { query: "auth", hits: [hit(1)] } });
     expect(sections(c, "auth")).toEqual(["Projects", "Sessions"]);
     expect(ids(c, "set")).toEqual(["settings"]);
-    expect(ids(c, "decisions")).toEqual(["go-conclusions"]);
+    // a project is its sessions
+    expect(ids(c, "sessions")).toEqual(["project:auth", "project:data"]);
   });
 
   it("Sessions shows what findSessions answered, at most 50, and only for this query", () => {
@@ -200,10 +149,10 @@ describe("paletteItems", () => {
 
 describe("matchCommand", () => {
   it("matches word starts and keywords, not middles", () => {
-    expect(matchCommand("Conclusions go decisions", ["conc"])).toBe(true);
-    expect(matchCommand("Conclusions go decisions", ["lusions"])).toBe(false);
-    expect(matchCommand("Conclusions go decisions", ["deci", "go"])).toBe(true);
-    expect(matchCommand("Conclusions go decisions", ["deci", "x"])).toBe(false);
+    expect(matchCommand("Sessions go lists", ["sess"])).toBe(true);
+    expect(matchCommand("Sessions go lists", ["ssions"])).toBe(false);
+    expect(matchCommand("Sessions go lists", ["li", "go"])).toBe(true);
+    expect(matchCommand("Sessions go lists", ["li", "x"])).toBe(false);
     expect(matchCommand("chat-features switch project", ["features"])).toBe(true);
     expect(matchCommand("Settings…", ["settings"])).toBe(true);
   });

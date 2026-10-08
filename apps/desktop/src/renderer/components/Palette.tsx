@@ -1,17 +1,8 @@
 import { tokenize } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import type { SessionHit } from "../../shared/ipc.ts";
-import { type PaletteItem, paletteItems, reviewAllKeys } from "../logic/palette.ts";
-import { projectRows } from "../logic/views.ts";
-import {
-  focusScreen,
-  go,
-  openWith,
-  report,
-  review,
-  startAgent,
-  switchProject,
-} from "../state/actions.ts";
+import { type PaletteItem, paletteItems } from "../logic/palette.ts";
+import { focusScreen, go, openWith, report, startAgent, switchProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { cx, Highlighted, Icon, Kbd, menuItemClass, Overlay, Time } from "./ui.tsx";
 
@@ -20,11 +11,10 @@ const domId = (id: string) => `palette-${id}`;
 
 /** mounted only while it is open, so every open starts empty with the first item active */
 function Open() {
-  const project = useStore((s) => currentProject(s) ?? null);
+  // the inbox is every project's: nothing there is `This project`
+  const project = useStore((s) => (s.view.name === "inbox" ? null : (currentProject(s) ?? null)));
   const projects = useStore((s) => s.projects);
   const editor = useStore((s) => s.editor?.label ?? "the editor");
-  const inbox = useStore((s) => s.inbox);
-  const cards = useStore((s) => (s.project ? s.records[s.project]?.cards : undefined));
   const [query, setQuery] = useState("");
   /** the keyboard's item by id. null, or one that left the list, is the first item */
   const [at, setAt] = useState<string | null>(null);
@@ -32,11 +22,7 @@ function Open() {
 
   const words = tokenize(query);
   const typed = words.length > 0;
-  const rows = projectRows(inbox, project?.id ?? null);
-  const { sections, none } = paletteItems(
-    { project, projects, editor, rows, cards: cards ?? [], sessions },
-    query,
-  );
+  const { sections, none } = paletteItems({ project, projects, editor, sessions }, query);
   const items = sections.flatMap((s) => s.items);
   const active = items.find((i) => i.id === at) ?? items[0];
 
@@ -62,7 +48,7 @@ function Open() {
 
   const run = (item: PaletteItem) => {
     const { set, toast } = useStore.getState();
-    // `project:{id}`, `takeover:{card}`, `session:{key}`
+    // `project:{id}`, `session:{key}`
     const cut = item.id.indexOf(":");
     const name = cut < 0 ? item.id : item.id.slice(0, cut);
     const arg = item.id.slice(cut + 1);
@@ -70,12 +56,6 @@ function Open() {
     switch (name) {
       case "go-inbox":
         go("inbox");
-        break;
-      case "go-cards":
-        go("cards");
-        break;
-      case "go-conclusions":
-        go("conclusions");
         break;
       case "project":
         switchProject(arg);
@@ -111,27 +91,6 @@ function Open() {
             .repairProject(p.id)
             .then((res) => report("Could not repair the working copies", res));
           break;
-        case "review-all": {
-          // a row can carry two keys (a card that was created and finished): the count is rows
-          const n = rows.filter((r) => reviewAllKeys([r]).length > 0).length;
-          void review(p.id, reviewAllKeys(rows)).then((ok) => {
-            if (ok) toast({ level: "info", title: `Marked ${n} reviewed` });
-          });
-          break;
-        }
-        case "takeover": {
-          const agent = cards?.find((c) => c.id === arg)?.agent?.ref.name ?? "An agent";
-          return set({
-            overlay: null,
-            dialog: {
-              kind: "confirm",
-              title: `Start a new agent on ${arg}?`,
-              body: `${agent} still holds it, but its session is closed. A new agent in the background takes the card over and carries on from the record.`,
-              label: "Start a new agent",
-              run: () => void startAgent({ project: p.id, where: "background", cardId: arg }),
-            },
-          });
-        }
         case "delete-project":
           return set({ overlay: null, dialog: { kind: "delete", project: p.id } });
       }
@@ -246,7 +205,7 @@ function Open() {
   );
 }
 
-/** cmd-K (ui.md 5.3): go to, switch project, what the screens have no button for, and every session */
+/** cmd-K: go to, switch project, what the screens have no button for, and every session */
 export function Palette() {
   const open = useStore((s) => s.overlay === "palette");
   return open ? <Open /> : null;

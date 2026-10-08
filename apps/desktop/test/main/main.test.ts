@@ -165,10 +165,10 @@ describe("Pusher", () => {
       isDestroyed: () => destroyed,
       send: (channel, payload) => sent.push([channel, payload]),
     }));
-    expect(pusher.nextRev("record")).toBe(1);
-    expect(pusher.nextRev("record")).toBe(2);
+    expect(pusher.nextRev("projects")).toBe(1);
+    expect(pusher.nextRev("projects")).toBe(2);
     expect(pusher.nextRev("inbox")).toBe(1);
-    expect(pusher.currentRevs()).toEqual({ projects: 0, record: 2, inbox: 1 });
+    expect(pusher.currentRevs()).toEqual({ projects: 2, inbox: 1 });
     pusher.send("toast", { level: "info", title: "hi" });
     destroyed = true;
     pusher.send("toast", { level: "info", title: "gone" });
