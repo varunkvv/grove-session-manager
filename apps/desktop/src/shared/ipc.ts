@@ -397,6 +397,14 @@ export interface SessionHit {
   open: OpenPlan;
 }
 
+/** the end of a session's transcript, read when its panel opens. both are untrusted text */
+export interface SessionTail {
+  /** the newest thing the person typed, cut at 4,000 characters */
+  prompt?: string;
+  /** what the agent said last, after that. markdown, the last 20,000 characters */
+  text?: string;
+}
+
 /** what Open in {editor} needs to know before it is pressed. one label for every case */
 export interface OpenPlan {
   /** asked first: stopping a background agent that is working */
@@ -490,6 +498,8 @@ export interface Api {
   findSessions(query: string): Promise<SessionHit[]>;
   /** the sessions started in a project's folder that hold no in-progress card, newest first, at most PROJECT_SESSIONS_MAX */
   projectSessions(project: ProjectId): Promise<SessionHit[]>;
+  /** a bounded read of the transcript's end, now. null for a session grove does not list */
+  sessionTail(key: SessionKey): Promise<SessionTail | null>;
 
   /** a landing the page has not taken yet. taken once. */
   takeLanding(): Promise<Landing | null>;
@@ -547,6 +557,7 @@ export const INVOKE_CHANNELS = [
   "startAgent",
   "findSessions",
   "projectSessions",
+  "sessionTail",
   "takeLanding",
   "setVisibleProject",
   "validateProjectName",

@@ -13,6 +13,7 @@ import {
   runDetached,
   type Settings,
   saveSettings,
+  sessionTail,
   validatePrefix,
 } from "@grove/core";
 import { CARD_ID, CONCLUSION_ID, readProject, transcriptFile, turnAround } from "@grove/record";
@@ -400,6 +401,15 @@ function buildHandlers(deps: Deps): Handlers {
 
     async projectSessions(project) {
       return typeof project === "string" ? projects.projectSessions(project) : [];
+    },
+
+    async sessionTail(key) {
+      // only a transcript grove indexed is ever read: the key is a path, and the page sent it
+      const row = typeof key === "string" ? sessions.get(key) : undefined;
+      if (!row) return null;
+      const tail = sessionTail(row.key);
+      // past the reader's reach: the start of the turn's first prompt, from the index
+      return { ...tail, prompt: tail.prompt ?? row.lastPrompt };
     },
 
     async takeLanding() {
