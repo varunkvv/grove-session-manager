@@ -63,8 +63,11 @@ The client secret is in 1Password under **okta-dev**, not in the repo. \`terrafo
 
 Want me to open the PR now, or wait for the callback route to land first?`;
 
-/** the quiet session whose recap never arrives */
-const SLOW = "read the SAML strategy";
+/**
+ * the quiet sessions whose recap never arrives, one for each window size: a call that timed out is
+ * not made again for a minute, so the second size cannot photograph the first one's
+ */
+const SLOW = ["read the SAML strategy", "terraform state for staging"];
 
 const QUIET = [
   "why is the staging deploy red",
@@ -155,8 +158,8 @@ const RECAPS = [
       "Choose: run the backfill on staging now, or tonight.",
     ),
   },
-  // never answers in time: its panel is the one that shows a recap being written
-  { when: `title: ${SLOW}`, say: "", afterMs: 10 * 60_000 },
+  // never answer in time: their panels are the ones that show a recap being written
+  ...SLOW.map((title) => ({ when: `title: ${title}`, say: "", afterMs: 10 * 60_000 })),
   {
     when: "title: ",
     say: recapSays(
@@ -541,7 +544,10 @@ for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
     await shot("sessions-panel-quiet");
     await page.keyboard.press("Escape");
     // one whose recap is still being written
-    await page.getByTestId("session-row").filter({ hasText: SLOW }).click();
+    await page
+      .getByTestId("session-row")
+      .filter({ hasText: SLOW[SIZES.findIndex((s) => s[0] === w)] })
+      .click();
     await page.getByTestId("recap-writing").waitFor();
     await shot("sessions-panel-writing");
     await page.keyboard.press("Escape");
