@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import type { ProjectView } from "../../shared/ipc.ts";
 import { needsYouCount, startBlocked } from "../logic/views.ts";
-import { focusScreen, go, newProject, newSession, switchProject } from "../state/actions.ts";
+import {
+  focusScreen,
+  go,
+  goUsage,
+  newProject,
+  newSession,
+  switchProject,
+} from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Icon, IconButton, ProjectMark, SideGroup, SideItem } from "./ui.tsx";
 
@@ -73,7 +80,7 @@ export function Sidebar() {
     >
       {/* the traffic lights sit in it, and the window is dragged by it */}
       <div className="drag h-11 shrink-0" />
-      <div className="px-2">
+      <div className="space-y-px px-2">
         <SideItem
           selected={view === "inbox"}
           mark={<Icon name="inbox" size={14} />}
@@ -85,6 +92,14 @@ export function Sidebar() {
             go("inbox");
             focusScreen();
           }}
+        />
+        {/* not a project and not a list: no count, and nothing to start with a double-click */}
+        <SideItem
+          selected={view === "usage"}
+          mark={<Icon name="chart" size={14} />}
+          label="Usage"
+          testId="nav-usage"
+          onClick={goUsage}
         />
       </div>
       <div className="mt-4 flex h-7 shrink-0 items-center justify-between pr-2 pl-4">

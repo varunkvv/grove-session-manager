@@ -344,6 +344,7 @@ export type MenuCommandId =
   | "archive-project"
   | "go-inbox"
   | "go-sessions"
+  | "go-usage"
   | "palette"
   | "focus-search"
   | "refresh"

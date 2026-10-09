@@ -17,6 +17,7 @@ import {
   useState,
 } from "react";
 import type { ProjectId } from "../../shared/ipc.ts";
+import type { Slice } from "../logic/usage.ts";
 import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
 import { optionId } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
@@ -34,7 +35,8 @@ export type IconName =
   | "chevron"
   | "x"
   | "warning"
-  | "check";
+  | "check"
+  | "chart";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -62,6 +64,7 @@ const PATHS: Record<IconName, ReactNode> = {
   x: <path d="m4 4 8 8M12 4l-8 8" />,
   warning: <path d="M8 2.25 14.25 13H1.75L8 2.25ZM8 6.5v3M8 11.25v.01" />,
   check: <path d="m3.5 8.5 3 3 6-7" />,
+  chart: <path d="M3.5 13V8.5M8 13V3M12.5 13V6" />,
 };
 
 export function Icon({
@@ -688,6 +691,98 @@ export function ProjectMark({ id }: { id: ProjectId }) {
   );
 }
 
+/**
+ * the fill of a slice of usage: a project's own colour, the same its mark has in the sidebar, and
+ * two greys that are nobody's: every session in no project, and what a list folded into Other
+ */
+function useSliceFill(slice: Slice): string {
+  const hue = useStore((s) =>
+    typeof slice === "string" ? 0 : (projectHues(s.projects).get(slice.project) ?? 0),
+  );
+  if (slice === "other") return "bg-line-strong";
+  // a project that has left the list since has no colour of its own any more
+  return hue ? (PROJECT_FILL[hue - 1] ?? "bg-faint") : "bg-faint";
+}
+
+/** a slice's mark beside its name: what keys a list row and a tooltip row to the bars */
+export function SliceMark({ slice }: { slice: Slice }) {
+  return (
+    <span aria-hidden="true" className={cx("size-2 shrink-0 rounded-[2px]", useSliceFill(slice))} />
+  );
+}
+
+/** a slice's part of a bar. the caller gives it its size and place, never its colour */
+export function SliceFill({
+  slice,
+  className,
+  style,
+}: {
+  slice: Slice;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      data-slice={typeof slice === "string" ? slice : slice.project}
+      className={cx(useSliceFill(slice), className)}
+      style={style}
+    />
+  );
+}
+
+/**
+ * one number of a row of them, and the one the chart under them draws: picking it is a radio. the
+ * picked one is tinted with the accent, like the row of the sidebar that is on screen
+ */
+export function StatTile({
+  label,
+  value,
+  note,
+  hint,
+  selected,
+  onSelect,
+  testId,
+}: {
+  label: string;
+  value: string;
+  /** under the value: how it compares with the range before. a space is kept when there is none */
+  note?: string;
+  /** what the number is, as its tooltip */
+  hint: string;
+  selected: boolean;
+  onSelect: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      title={hint}
+      data-testid={testId}
+      onClick={onSelect}
+      className={cx(
+        "no-drag fade flex min-w-0 flex-1 flex-col rounded-lg border px-4 pt-3 pb-3.5 text-left",
+        selected ? "border-accent-line bg-accent-soft" : "border-line hover:bg-raised",
+      )}
+    >
+      <span className={cx("truncate text-sm font-medium", selected ? "text-fg-2" : "text-fg-3")}>
+        {label}
+      </span>
+      {/* proportional figures: a large number set in tabular ones looks loose */}
+      <span className="mt-1.5 truncate text-figure font-semibold text-fg" data-testid="tile-value">
+        {value}
+      </span>
+      <span
+        className="mt-0.5 h-[18px] truncate text-sm tabular-nums text-fg-4"
+        data-testid="tile-note"
+      >
+        {note}
+      </span>
+    </button>
+  );
+}
+
 /** how many sessions need the person: filled, so it is found in a column of names */
 function CountPill({ n, testId }: { n: number; testId?: string }) {
   if (n <= 0) return null;
@@ -717,7 +812,8 @@ export function SideItem({
   /** an icon, or a project's mark */
   mark: ReactNode;
   label: string;
-  count: number;
+  /** how many of its sessions need the person. a screen that is not a list of sessions has none */
+  count?: number;
   onClick: () => void;
   /** a project's: a new session in it. the first click of the two has already gone to it */
   onDoubleClick?: () => void;
@@ -745,7 +841,7 @@ export function SideItem({
     >
       <span className="flex w-3.5 shrink-0 justify-center">{mark}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      <CountPill n={count} testId="count" />
+      {count !== undefined && <CountPill n={count} testId="count" />}
     </button>
   );
 }

@@ -1,6 +1,7 @@
 // every screen as the real app draws it, light and dark, at the default window and at its smallest,
 // against fixture projects. `pnpm --filter @grove/desktop build` first, then
-//   node scripts/screenshots.ts <outDir> [light|dark]  ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
+//   node scripts/screenshots.ts <outDir> [light|dark|both] [usage]  ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
+// with `usage` only the Usage screen is drawn, from its own fixture.
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
 import { appendFileSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
@@ -14,7 +15,9 @@ import {
   makeFixture,
   makePlainDir,
   makeRepo,
+  type UsageDaySpec,
   writeSession,
+  writeUsage,
 } from "../e2e/helpers/fixture.ts";
 import { groveTest, launchApp } from "../e2e/helpers/launchApp.ts";
 import { interrupted, liveSession, writeProject } from "../e2e/helpers/project.ts";
@@ -541,9 +544,155 @@ const resize = async (app: ElectronApplication, page: Page, width: number, heigh
   await page.waitForFunction((w) => window.innerWidth === w, width);
 };
 
-for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
+/** a number that is the same on every run: the fixture's days never move between two shots */
+const noise = (n: number) => {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+/**
+ * the Usage screen's own machine: five projects and a folder in none, with seven weeks of work in
+ * them. that is what a machine looks like a while after Claude Code is installed: a year of
+ * nothing, then a few busy weeks at its right edge. weekends are quiet, and the last days busiest
+ */
+function buildUsage(scheme: string) {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(
+    path.join(fx.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme }),
+  );
+  const names = ["auth-sso", "billing-export", "chat-features", "data-objects", "search-relevance"];
+  const roots = names.map((name) => writeProject(fx, { name }).root);
+  roots.push(makePlainDir(fx, "dotfiles"));
+  const MODELS = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-haiku-4-5"];
+  roots.forEach((cwd, p) => {
+    // each project has its weeks: the first is worked on all along, the others come and go
+    const days: UsageDaySpec[] = [];
+    const sessionId = sid();
+    for (let back = 48; back >= 0; back--) {
+      const d = new Date();
+      d.setDate(d.getDate() - back);
+      const weekend = d.getDay() === 0 || d.getDay() === 6;
+      const on = p === 0 || noise(p * 100 + Math.floor(back / 5)) > 0.45;
+      if (!on || (weekend && noise(back + p) > 0.25)) continue;
+      // more of it lately, and the first project the most
+      const size =
+        (0.3 + noise(back * 7 + p)) * (1.6 - back / 48) * [1, 0.5, 0.7, 0.35, 0.25, 0.12][p]!;
+      const model = MODELS[p === 0 ? 0 : (p + Math.floor(back / 9)) % MODELS.length]!;
+      // not all at nine: the peak is the hours they share
+      const hour = 8 + ((p * 2 + back) % 7);
+      days.push({
+        back,
+        hour,
+        model,
+        input: Math.round(size * 4_000),
+        output: Math.round(size * 420_000),
+        cacheRead: Math.round(size * 90_000_000),
+        cacheWrite: Math.round(size * 2_400_000),
+        cacheWrite1h: Math.round(size * 600_000),
+        minutes: Math.round(20 + size * 150),
+      });
+      // its subagents work the same hours, on the small model
+      if (noise(back * 3 + p) > 0.5) {
+        const work: UsageDaySpec = {
+          back,
+          hour,
+          model: "claude-haiku-4-5",
+          input: Math.round(size * 30_000),
+          output: Math.round(size * 60_000),
+          cacheRead: Math.round(size * 4_000_000),
+          minutes: Math.round(10 + size * 40),
+        };
+        // an agent lives for one task: a transcript of its own each day
+        writeUsage(fx, { cwd, sessionId, agent: `a${p}d${back}`, days: [work] });
+        if (noise(back + p * 11) > 0.6) {
+          writeUsage(fx, { cwd, sessionId, agent: `b${p}d${back}`, days: [work] });
+        }
+      }
+    }
+    writeUsage(fx, { cwd, sessionId, title: `the work in ${path.basename(cwd)}`, days });
+  });
+  return fx;
+}
+
+/** the Usage screen: each range, each tile picked once, a bar pointed at, and a machine with nothing */
+async function usageShots(scheme: string, dir: string) {
+  const fx = buildUsage(scheme);
+  // HOME is the fixture's, so nothing reaches the real home
+  const app = await launchApp(fx, { HOME: fx.dir });
+  const { page } = app;
+  page.on("pageerror", (e) => console.log("PAGE ERROR", e.message));
+  const shot = async (name: string, w: number, rest = true) => {
+    if (rest) await page.mouse.move(w - 200, 22);
+    // the bars are through moving
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: path.join(dir, `${name}-${w}.png`) });
+    console.log(scheme, w, name);
+  };
+  await page.getByTestId("nav-usage").click();
+  await page.getByTestId("usage-bar").first().waitFor();
+  await page.getByTestId("usage-counting").waitFor({ state: "detached" });
+  for (const [w, h] of SIZES) {
+    await resize(app.app, page, w, h);
+    await page.getByTestId("tile-cost").click();
+    for (const range of ["1W", "1M", "1Y"]) {
+      await page.getByTestId(`range-${range}`).click();
+      await shot(`usage-${range}`, w);
+    }
+    // each of the other two tiles once, on the month
+    await page.getByTestId("range-1M").click();
+    await page.getByTestId("tile-time").click();
+    await shot("usage-time", w);
+    await page.getByTestId("tile-tokens").click();
+    await shot("usage-tokens", w);
+    // a bar pointed at: the others step back, and it says its split
+    await page.getByTestId("tile-cost").click();
+    await page.getByTestId("usage-bar").nth(22).hover();
+    await shot("usage-hover", w, false);
+    await page.getByTestId("range-1W").click();
+    await page.getByTestId("usage-bar").nth(4).hover();
+    await shot("usage-hover-week", w, false);
+    // the keyboard on the chart: the same words
+    await page.getByTestId("range-1Y").click();
+    await page.getByTestId("usage-plot").focus();
+    await page.keyboard.press("End");
+    await page.keyboard.press("ArrowLeft");
+    await shot("usage-keyboard", w);
+    await page.getByTestId("range-1W").click();
+  }
+  await app.close();
+
+  // nothing in the range: one session, a month ago
+  const quiet = makeFixture({ withCompanion: true });
+  writeFileSync(
+    path.join(quiet.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme }),
+  );
+  writeUsage(quiet, {
+    cwd: writeProject(quiet, { name: "auth-sso" }).root,
+    sessionId: sid(),
+    days: [{ back: 20, output: 120_000, cacheRead: 9_000_000, minutes: 25 }],
+  });
+  const empty = await launchApp(quiet, { HOME: quiet.dir });
+  await empty.page.getByTestId("nav-usage").click();
+  await empty.page.getByTestId("usage-empty").waitFor();
+  for (const [w, h] of SIZES) {
+    await resize(empty.app, empty.page, w, h);
+    await empty.page.mouse.move(w - 200, 22);
+    await empty.page.waitForTimeout(350);
+    await empty.page.screenshot({ path: path.join(dir, `usage-empty-${w}.png`) });
+  }
+  await empty.close();
+}
+
+const schemes = ["light", "dark"].filter(
+  (s) => (process.argv[3] ?? "both") === "both" || s === process.argv[3],
+);
+for (const scheme of schemes) {
   const dir = path.join(out, scheme);
   mkdirSync(dir, { recursive: true });
+  await usageShots(scheme, dir);
+  if (process.argv[4] === "usage") continue;
   const { fx, turn } = build(scheme);
   const app = await launch(fx);
   const { page } = app;

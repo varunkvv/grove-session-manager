@@ -6,6 +6,7 @@ import {
   archiveProject,
   focusScreen,
   go,
+  goUsage,
   newSession,
   openWith,
   report,
@@ -64,6 +65,9 @@ function Open() {
     switch (name) {
       case "go-inbox":
         go("inbox");
+        break;
+      case "go-usage":
+        goUsage();
         break;
       case "project":
         switchProject(arg);

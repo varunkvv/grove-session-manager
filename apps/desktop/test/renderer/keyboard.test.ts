@@ -84,6 +84,7 @@ describe("what a key means", () => {
       ["k", { type: "palette" }],
       ["1", { type: "go", section: "inbox" }],
       ["2", { type: "go", section: "sessions" }],
+      ["3", { type: "go-usage" }],
       ["n", { type: "new-project" }],
       ["e", { type: "edit-project" }],
       ["o", { type: "open-project" }],
@@ -108,7 +109,7 @@ describe("what a key means", () => {
   });
 
   it("cmd keys that are gone, and the ones a field keeps for itself", () => {
-    for (const k of ["t", "3", "4", "i", "g", "j", "a", "c", "v", "z"]) {
+    for (const k of ["t", "4", "5", "i", "g", "j", "a", "c", "v", "z"]) {
       expect(interpret(ctx(), cmd(k)), k).toBeNull();
     }
     // cmd-shift is selection and redo, and the old shift shortcuts are gone

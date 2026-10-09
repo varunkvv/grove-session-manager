@@ -80,6 +80,9 @@
   --text-body--line-height: 20px;
   --text-title: 15px;
   --text-title--line-height: 22px;
+  /* the one large size: the value of a stat tile */
+  --text-figure: 26px;
+  --text-figure--line-height: 32px;
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -192,6 +195,11 @@ input[type="checkbox"]:focus-visible {
   outline: none;
 }
 
+/* and so does the usage chart: the keyboard's bar stands out from the others */
+[data-plot]:focus-visible {
+  outline: none;
+}
+
 /* the palette's field is always focused: its bottom line stays a line */
 [data-palette-input]:focus-visible {
   outline: none;
@@ -280,6 +288,37 @@ dialog::backdrop {
 
 @media (prefers-reduced-motion: reduce) {
   .fade {
+    transition: none;
+  }
+}
+
+/*
+ * the usage chart. a bar's part takes its height from --h, so a new range or metric moves it there
+ * in place, and a part that was not there before grows from the floor. while one bar is pointed
+ * at or has the keyboard, the others step back
+ */
+.bar-part {
+  height: var(--h);
+  transition: height 200ms ease-out;
+}
+@starting-style {
+  .bar-part {
+    height: 0;
+  }
+}
+.bar,
+.grid-line {
+  transition:
+    opacity 120ms ease-out,
+    bottom 200ms ease-out;
+}
+[data-hot] .bar:not([data-on]) {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-part,
+  .bar,
+  .grid-line {
     transition: none;
   }
 }

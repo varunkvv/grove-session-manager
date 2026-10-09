@@ -41,6 +41,7 @@ describe("the menu", () => {
       ["Find", "CmdOrCtrl+F"],
       ["All Sessions", "CmdOrCtrl+1"],
       ["Project Sessions", "CmdOrCtrl+2"],
+      ["Usage", "CmdOrCtrl+3"],
       ["Go to…", "CmdOrCtrl+K"],
       ["Refresh", "CmdOrCtrl+R"],
     ]);
@@ -54,6 +55,7 @@ describe("the menu", () => {
       "focus-search",
       "go-inbox",
       "go-sessions",
+      "go-usage",
       "palette",
       "refresh",
     ]);

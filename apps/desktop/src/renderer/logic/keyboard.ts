@@ -11,6 +11,7 @@ export type Intent =
   | { type: "clear-query" }
   | { type: "close-overlay" }
   | { type: "go"; section: Section }
+  | { type: "go-usage" }
   | { type: "palette" }
   | { type: "project-step"; delta: 1 | -1 }
   | { type: "new-project" }
@@ -103,6 +104,8 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
         return { type: "go", section: "inbox" };
       case "2":
         return { type: "go", section: "sessions" };
+      case "3":
+        return { type: "go-usage" };
       case "n":
         return { type: "new-project" };
       case "e":

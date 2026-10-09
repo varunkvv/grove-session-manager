@@ -23,6 +23,8 @@ export type Section = "inbox" | "sessions";
 export type View =
   | { name: "inbox" }
   | { name: "sessions" }
+  /** what the machine's agents used. not a list, and not any one project's */
+  | { name: "usage" }
   | { name: "new-project" }
   | { name: "edit-project" };
 

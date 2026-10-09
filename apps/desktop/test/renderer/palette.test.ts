@@ -58,6 +58,7 @@ describe("paletteItems", () => {
     expect(sections(c)).toEqual(["Go to", "Projects", "This project", "App"]);
     expect(ids(c)).toEqual([
       "go-inbox",
+      "go-usage",
       "project:auth",
       "project:data",
       "new-session",
@@ -111,9 +112,11 @@ describe("paletteItems", () => {
     expect(items.filter((i) => i.current).map((i) => i.id)).toEqual(["project:auth"]);
   });
 
-  it("on the inbox, which is every project's: no This project. with no projects: the app's rows alone", () => {
+  it("on the inbox, which is every project's: no This project. with no projects: the app's rows, and Usage, which is the machine's", () => {
     expect(sections(ctx({ project: null }))).toEqual(["Go to", "Projects", "App"]);
-    expect(sections(ctx({ project: null, projects: [] }))).toEqual(["App"]);
+    expect(sections(ctx({ project: null, projects: [] }))).toEqual(["Go to", "App"]);
+    expect(ids(ctx({ project: null, projects: [] }))).toEqual(["go-usage", "settings"]);
+    expect(ids(ctx(), "usage")).toEqual(["go-usage"]);
   });
 
   it("repair only with a working copy absent, stale or foreign", () => {

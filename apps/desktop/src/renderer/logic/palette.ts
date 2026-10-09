@@ -63,6 +63,14 @@ function commands(ctx: PaletteContext): PaletteItem[] {
       kbd: "⌘1",
     });
   }
+  // the whole machine's, so it is there with no project too
+  items.push({
+    id: "go-usage",
+    section: "Go to",
+    label: "Usage",
+    keywords: "go cost spend tokens agent time",
+    kbd: "⌘3",
+  });
   // a project is its sessions. an archived one is put away here too, and found by its name. it
   // does not answer to `archive`: that word is for the command, which Enter must land on
   for (const q of ctx.projects) {

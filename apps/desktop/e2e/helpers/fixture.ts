@@ -498,3 +498,94 @@ export function readExecLog(fx: Fixture): ExecLine[] {
     .filter(Boolean)
     .map((line) => JSON.parse(line) as ExecLine);
 }
+
+export interface UsageDaySpec {
+  /** how many local days ago. 0 is today */
+  back: number;
+  /** the hour of that day the turn starts at. 9 unless given */
+  hour?: number;
+  model?: string;
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  /** every cache write, and how much of it is kept an hour */
+  cacheWrite?: number;
+  cacheWrite1h?: number;
+  /** how long the turn works. a response every ten minutes at most, so all of it counts */
+  minutes?: number;
+}
+
+/**
+ * a transcript with one turn on each given day: a prompt, then responses that carry the day's
+ * tokens and working time. with `agent` it is that subagent's own transcript under the session
+ * instead. the days are the local calendar's, like the Usage screen's
+ */
+export function writeUsage(
+  fx: Fixture,
+  o: { cwd: string; sessionId: string; title?: string; agent?: string; days: UsageDaySpec[] },
+): string {
+  const envelope = {
+    isSidechain: o.agent !== undefined,
+    userType: "external",
+    entrypoint: "claude-vscode",
+    cwd: o.cwd,
+    sessionId: o.sessionId,
+    version: "2.1.278",
+    ...(o.agent ? { agentId: o.agent } : {}),
+  };
+  const lines: object[] = [];
+  let n = 0;
+  for (const d of [...o.days].sort((a, b) => b.back - a.back)) {
+    const start = new Date();
+    start.setHours(d.hour ?? 9, 0, 0, 0);
+    start.setDate(start.getDate() - d.back);
+    const t0 = start.getTime();
+    const stamp = (min: number) => new Date(t0 + min * 60_000).toISOString();
+    const id = `${o.agent ?? "main"}_${d.back}_${d.hour ?? 9}`;
+    lines.push({
+      type: "user",
+      ...envelope,
+      uuid: `${o.sessionId.slice(0, 8)}-${String(++n).padStart(4, "0")}-4000-8000-00000000000a`,
+      timestamp: stamp(0),
+      ...(o.agent ? {} : { origin: { kind: "human" } }),
+      message: { role: "user", content: `work of ${d.back} days ago` },
+    });
+    const minutes = d.minutes ?? 1;
+    const steps = Math.max(1, Math.ceil(minutes / 10));
+    for (let i = 1; i <= steps; i++) {
+      const last = i === steps;
+      lines.push({
+        type: "assistant",
+        ...envelope,
+        uuid: `${o.sessionId.slice(0, 8)}-${String(++n).padStart(4, "0")}-4000-8000-00000000000b`,
+        timestamp: stamp((minutes * i) / steps),
+        message: {
+          role: "assistant",
+          id: `msg_${o.sessionId.slice(0, 8)}_${id}_${i}`,
+          model: d.model ?? "claude-opus-5-5",
+          content: [{ type: "text", text: last ? "done" : "working" }],
+          stop_reason: last ? "end_turn" : "tool_use",
+          usage: {
+            input_tokens: last ? (d.input ?? 0) : 0,
+            output_tokens: last ? (d.output ?? 0) : 0,
+            cache_read_input_tokens: last ? (d.cacheRead ?? 0) : 0,
+            cache_creation_input_tokens: last ? (d.cacheWrite ?? 0) : 0,
+            cache_creation: {
+              ephemeral_5m_input_tokens: last ? (d.cacheWrite ?? 0) - (d.cacheWrite1h ?? 0) : 0,
+              ephemeral_1h_input_tokens: last ? (d.cacheWrite1h ?? 0) : 0,
+            },
+          },
+        },
+      });
+    }
+  }
+  if (o.title && !o.agent)
+    lines.push({ type: "ai-title", aiTitle: o.title, sessionId: o.sessionId });
+  const dir = path.join(fx.projectsDir, claudeProjectSlug(o.cwd));
+  const file = o.agent
+    ? path.join(dir, o.sessionId, "subagents", `agent-${o.agent}.jsonl`)
+    : path.join(dir, `${o.sessionId}.jsonl`);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  return file;
+}

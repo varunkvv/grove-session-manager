@@ -12,6 +12,7 @@ import { ProjectForm } from "./components/ProjectForm.tsx";
 import { Sessions } from "./components/Sessions.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TopBar } from "./components/TopBar.tsx";
+import { Usage } from "./components/Usage.tsx";
 import { type Intent, interpret } from "./logic/keyboard.ts";
 import { focusScreen, perform } from "./state/actions.ts";
 import { applyAppearance } from "./state/appearance.ts";
@@ -25,6 +26,7 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "archive-project": { type: "archive-project" },
   "go-inbox": { type: "go", section: "inbox" },
   "go-sessions": { type: "go", section: "sessions" },
+  "go-usage": { type: "go-usage" },
   palette: { type: "palette" },
   "focus-search": { type: "focus-search" },
   refresh: { type: "refresh" },
@@ -34,6 +36,8 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
 function Screen() {
   const view = useStore((s) => s.view);
   const project = useStore((s) => s.project);
+  // the whole machine's, with or without a project
+  if (view.name === "usage") return <Usage />;
   // no projects at all: the form, whatever the view says
   if (!project) return <ProjectForm mode="new" first />;
   switch (view.name) {

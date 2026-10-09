@@ -99,6 +99,7 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
   // no session until there is a word. no repair row: nothing has drifted
   expect(await ids(page)).toEqual([
     "go-inbox",
+    "go-usage",
     "project:auth-sso",
     "project:billing-export",
     "new-session",
@@ -122,7 +123,7 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
   await page.keyboard.press("ArrowUp");
   await expect(item(page, "go-inbox")).toHaveAttribute("data-active", "true");
   await page.keyboard.press("ArrowDown");
-  await expect(item(page, "project:auth-sso")).toHaveAttribute("data-active", "true");
+  await expect(item(page, "go-usage")).toHaveAttribute("data-active", "true");
   await expect(item(page, "go-inbox")).not.toHaveAttribute("data-active");
   // the list behind it did not move. Tab stays in the field, and so does a click on a label
   await page.keyboard.press("Tab");

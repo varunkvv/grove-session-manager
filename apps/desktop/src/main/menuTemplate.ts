@@ -79,6 +79,7 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     submenu: [
       command("All Sessions", "CmdOrCtrl+1", "go-inbox"),
       command("Project Sessions", "CmdOrCtrl+2", "go-sessions"),
+      command("Usage", "CmdOrCtrl+3", "go-usage"),
       separator,
       // the page owns cmd-K, so it works while a field has focus. a toggle the page and the menu
       // both acted on would open the palette and close it again

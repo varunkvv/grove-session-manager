@@ -55,6 +55,11 @@ export function go(section: Section): void {
   });
 }
 
+/** the Usage screen, from the sidebar, the menu or the palette. Back has nowhere to go from it */
+export function goUsage(): void {
+  state().set({ view: { name: "usage" }, back: [], overlay: null, peek: null, filter: "" });
+}
+
 export function back(): void {
   const s = state();
   s.set({ view: s.back.at(-1) ?? { name: s.section }, back: s.back.slice(0, -1) });
@@ -386,6 +391,9 @@ export function perform(intent: Intent): void {
     case "go":
       go(intent.section);
       focusScreen();
+      break;
+    case "go-usage":
+      goUsage();
       break;
     case "palette":
       s.set({ overlay: "palette" });
