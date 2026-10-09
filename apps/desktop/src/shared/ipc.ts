@@ -145,6 +145,8 @@ export interface AppSettings {
   notifications?: boolean;
   /** a recap of a session, written by haiku through the person's own claude. on unless switched off. */
   recaps?: boolean;
+  /** the mac does not idle-sleep while an agent is mid-turn. on unless switched off. */
+  keepAwake?: boolean;
 }
 
 export interface EnvInfo {

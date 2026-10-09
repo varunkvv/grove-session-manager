@@ -371,6 +371,24 @@ export function SettingsDialog() {
             needing you or you open it. It uses your Claude login and the haiku model.
           </span>
         </div>
+        <div>
+          <span className="mb-1.5 block text-sm font-medium text-fg-2">Sleep</span>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 text-sm text-fg-2">
+              Keep the Mac awake while agents work
+            </span>
+            <Switch
+              checked={draft.keepAwake !== false}
+              onChange={(v) => setDraft({ ...draft, keepAwake: v })}
+              label="Keep the Mac awake while agents work"
+              testId="setting-keep-awake"
+            />
+          </div>
+          <span className="mt-1 block text-meta text-fg-3">
+            Held only while a turn is running, in any session Grove can see. The display still
+            sleeps, and so does a laptop on battery with its lid shut.
+          </span>
+        </div>
         {error && <p className="text-danger">{error}</p>}
       </div>
     </Modal>

@@ -14,6 +14,7 @@ import type { InboxView, MenuCommandId } from "../shared/ipc.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
+import { anyRunning, keepAwake } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import { OpQueue } from "./opQueue.ts";
@@ -131,6 +132,7 @@ async function start(): Promise<void> {
     if (session) handlers.openSession(session.key).catch((e) => log.warn("open session:", e));
   };
 
+  const awake = keepAwake(electron.powerSaveBlocker);
   const live = new LiveService({
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
@@ -139,6 +141,7 @@ async function start(): Promise<void> {
       sessions.setLive(statuses, agentRuns, alive);
       // a session that closed while idle changes no row, and its list still has to say Closed
       projects.sessionsChanged();
+      awake(settings.keepAwake !== false && anyRunning(statuses));
     },
     onNeedsYou: (sessionId, status) => {
       const row = sessions.byId(sessionId)[0];
@@ -328,6 +331,7 @@ async function start(): Promise<void> {
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       settings = s;
       if (recapsMoved) projects.recapsSwitched();
+      awake(s.keepAwake !== false && anyRunning(live.list()));
       electron.nativeTheme.themeSource = s.appearance;
     },
     sessions,
@@ -407,6 +411,7 @@ async function start(): Promise<void> {
   electron.app.on("window-all-closed", () => electron.app.quit());
   electron.app.on("before-quit", () => {
     quitting = true;
+    awake(false);
     combos.dispose();
     live.dispose();
     projects.dispose();

@@ -21,6 +21,8 @@ export interface Settings {
   notifications?: boolean;
   /** recaps of sessions, written by haiku through the person's own `claude -p`. on unless false. */
   recaps?: boolean;
+  /** no idle sleep while an agent is mid-turn. on unless false. */
+  keepAwake?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -46,7 +48,7 @@ function clean(raw: unknown): Settings {
     const v = raw[key];
     if (typeof v === "string" && v.trim()) s[key] = v.trim();
   }
-  for (const key of ["trackAllSessions", "notifications", "recaps"] as const) {
+  for (const key of ["trackAllSessions", "notifications", "recaps", "keepAwake"] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
   }
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {

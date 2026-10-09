@@ -277,6 +277,13 @@ dock badge carries the same count as the menu bar. **Notifications** in Settings
 A notification plays a short chime of Grove's own. macOS decides whether it sounds: System Settings, Notifications,
 Grove.
 
+## Staying awake
+
+While any session Grove can see is mid-turn, Grove keeps the Mac from going to sleep on its own, and lets it go when
+the last turn ends. It is the assertion `caffeinate -i` takes, held by Grove itself: no terminal and no extra process.
+The display still sleeps, and a laptop on battery with its lid shut still sleeps. A session waiting on you does not count, and
+neither does Grove when it is not running. **Keep the Mac awake while agents work** in Settings switches it off.
+
 ## Opening and starting agents
 
 **Open in VS Code** (or Cursor, per Settings) depends on where the agent runs, which each row says in a chip:
@@ -348,7 +355,7 @@ edited. The workspace file and the references are written when the project is op
 ~/claude-ws/
   combos.json       the projects. source of truth. hand-editable. unknown keys and formatting are preserved
   reviewed.json     what you dismissed, as `<project>/<key>`. hand-editable, same treatment
-  settings.json     optional: editor, binary paths, appearance, notifications, recaps
+  settings.json     optional: editor, binary paths, appearance, notifications, recaps, keep awake
   .grove/           cache and runtime - safe to delete
     events/         where session status hooks write
     interrupted.json  sessions whose process went away mid-turn, kept for a week
