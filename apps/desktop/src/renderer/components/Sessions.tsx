@@ -104,7 +104,7 @@ function SessionRow({
           <span className="hidden w-[140px] min-w-0 @3xl:block">
             {hit.branch && (
               <Mono className="block truncate text-fg-3" title={hit.branch}>
-                {hit.branch}
+                <Highlighted text={hit.branch} tokens={tokens} />
               </Mono>
             )}
           </span>

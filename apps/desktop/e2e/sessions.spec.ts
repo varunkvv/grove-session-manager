@@ -262,8 +262,11 @@ test("the search narrows the rows by title, prompt and branch, cmd-F focuses it,
   await expect(row(page, sid(QUIET + 7)).getByTestId("session-snippet")).toHaveText(
     "rotate the okta keys",
   );
-  await expect(row(page, SID.turn).locator("mark")).toHaveText("okta");
+  // the word is marked where a row shows it: in the title, and in the branch
+  await expect(row(page, SID.turn).locator("mark")).toHaveText(["okta", "okta"]);
   await expect(row(page, SID.turn).getByTestId("session-snippet")).toHaveCount(0);
+  await expect(row(page, sid(QUIET + 9)).locator("mark")).toHaveText("okta");
+  await expect(row(page, sid(QUIET + 9)).getByTestId("session-snippet")).toHaveCount(0);
   // every word has to be there
   await filter(page).fill("okta keys");
   await expect(rows(page)).toHaveCount(1);

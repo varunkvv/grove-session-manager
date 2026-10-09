@@ -23,6 +23,8 @@ const SID = {
   loose: sid(5),
   /** ten days old, said there: it is in Older */
   old: sid(6),
+  /** the word is in its branch, which a row of the home screen does not show */
+  branch: sid(7),
 };
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -35,8 +37,8 @@ test.afterEach(async () => {
 });
 
 /**
- * two projects and a folder outside them. `flamingo` is in one title, and in what four other
- * sessions said: one in each project, one that needs him, one of ten days ago
+ * two projects and a folder outside them. `flamingo` is in one title, in one branch, and in what
+ * four other sessions said: one in each project, one that needs him, one of ten days ago
  */
 function seed(): Fixture {
   fx = makeFixture({ withCompanion: true });
@@ -77,6 +79,13 @@ function seed(): Fixture {
     ageMs: 5 * MIN,
   });
   writeSession(fx, {
+    cwd: billing,
+    sessionId: SID.branch,
+    title: "table cleanup",
+    branch: "feat/flamingo-table",
+    ageMs: 6 * MIN,
+  });
+  writeSession(fx, {
     cwd: auth,
     sessionId: SID.old,
     title: "session store",
@@ -100,10 +109,10 @@ const projectItem = (page: Page, id: string) =>
 const drawn = (page: Page) =>
   rows(page).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
 
-/** every session indexed: four are drawn, and Older holds the fifth */
+/** every session indexed: five are drawn, and Older holds the sixth */
 async function ready(page: Page): Promise<void> {
   await expect(needs(page)).toHaveCount(1, { timeout: 15_000 });
-  await expect(rows(page)).toHaveCount(4, { timeout: 20_000 });
+  await expect(rows(page)).toHaveCount(5, { timeout: 20_000 });
   await expect(older(page)).toHaveText("Older1");
 }
 
@@ -120,10 +129,10 @@ test("the home screen's search looks in every session: titles at once, then what
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
 
   await page.keyboard.type("FLAMINGO");
-  // found by its title, and by what was said in it: in both projects, and in Older, which is not
-  // folded while something is typed
-  await expect(rows(page)).toHaveCount(4);
-  expect(await drawn(page)).toEqual([SID.titled, SID.said, SID.other, SID.old]);
+  // found by its title, by its branch and by what was said in it: in both projects, and in Older,
+  // which is not folded while something is typed
+  await expect(rows(page)).toHaveCount(5);
+  expect(await drawn(page)).toEqual([SID.titled, SID.said, SID.other, SID.branch, SID.old]);
   await expect(row(page, SID.loose)).toHaveCount(0);
   await expect(group(page, "older").getByTestId("session-row")).toHaveCount(1);
   await expect(older(page)).toHaveCount(0);
@@ -142,6 +151,10 @@ test("the home screen's search looks in every session: titles at once, then what
   await expect(row(page, SID.old).getByTestId("session-snippet")).toContainText(
     "an old flamingo lived here",
   );
+  // one found by its branch says the branch: no other part of its row here would
+  const branch = row(page, SID.branch).getByTestId("session-snippet");
+  await expect(branch).toHaveText("feat/flamingo-table");
+  await expect(branch.locator("mark")).toHaveText("flamingo");
   // the one that needs him is still his first row, and says why it is here in place of what it asks
   await expect(needs(page)).toHaveCount(1);
   await expect(needs(page).getByTestId("session-snippet")).toContainText("flamingo column");
@@ -153,8 +166,8 @@ test("the home screen's search looks in every session: titles at once, then what
   await expect(row(page, SID.titled)).toHaveCount(1);
   // a project's name finds its sessions here
   await field(page).fill("billing-export");
-  await expect(rows(page)).toHaveCount(1);
-  expect(await drawn(page)).toEqual([SID.other]);
+  await expect(rows(page)).toHaveCount(2);
+  expect(await drawn(page)).toEqual([SID.other, SID.branch]);
   await expect(needs(page)).toHaveCount(1);
   // nothing: said once main has looked
   await field(page).fill("nothing like it");
@@ -162,7 +175,7 @@ test("the home screen's search looks in every session: titles at once, then what
 
   // Escape, one step at a time: the panel, then what was typed. Older folds again
   await field(page).fill("flamingo");
-  await expect(rows(page)).toHaveCount(4);
+  await expect(rows(page)).toHaveCount(5);
   await row(page, SID.said).click();
   await expect(panel(page)).toHaveAttribute("data-id", SID.said);
   await page.keyboard.press("Escape");
@@ -170,7 +183,7 @@ test("the home screen's search looks in every session: titles at once, then what
   await expect(field(page)).toHaveValue("flamingo");
   await page.keyboard.press("Escape");
   await expect(field(page)).toHaveValue("");
-  await expect(rows(page)).toHaveCount(4);
+  await expect(rows(page)).toHaveCount(5);
   await expect(needs(page).getByTestId("inbox-summary")).toHaveText("Round up or down?");
   await expect(older(page)).toHaveAttribute("aria-expanded", "false");
 });
@@ -181,7 +194,7 @@ test("a project's search stays in the project, and what is typed never follows h
   await ready(page);
 
   await field(page).fill("flamingo");
-  await expect(rows(page)).toHaveCount(4);
+  await expect(rows(page)).toHaveCount(5);
   // another screen starts with nothing typed
   await projectItem(page, "auth-sso").click();
   await expect(page.getByTestId("project-name")).toHaveText("auth-sso");
@@ -215,5 +228,5 @@ test("a project's search stays in the project, and what is typed never follows h
   await expect(rows(page)).toHaveCount(3);
   await page.getByTestId("nav-inbox").click();
   await expect(field(page)).toHaveValue("");
-  await expect(rows(page)).toHaveCount(4);
+  await expect(rows(page)).toHaveCount(5);
 });

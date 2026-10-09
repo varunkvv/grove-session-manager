@@ -434,6 +434,15 @@ describe("projects and sessions", () => {
     expect(all.every((h) => listed.has(h.sessionId))).toBe(true);
     // a project's screen: its own sessions
     expect(await ids("rounding", "chat")).toEqual(["s-fix", "s-notes"]);
+    // found by its branch, which the home screen's row does not show: the second line says it
+    t.rows.push(row("s-branch", { ...inOps, title: "tidy up", gitBranch: "fix/rounding-mode" }));
+    const byBranch = (hits: Awaited<ReturnType<typeof t.svc.findSessions>>) =>
+      hits.find((h) => h.sessionId === "s-branch")?.snippet;
+    expect(byBranch(await t.svc.findSessions("rounding", null))).toBe("fix/rounding-mode");
+    // a project's own screen has the branch on the row, and the palette is as it was
+    expect(byBranch(await t.svc.findSessions("rounding", "ops"))).toBeUndefined();
+    expect(byBranch(await t.svc.findSessions("rounding"))).toBeUndefined();
+    t.rows.pop();
     expect(await ids("rounding", "no-such-project")).toEqual([]);
     // the palette still looks everywhere
     expect(await ids("rounding")).toEqual(["s-fix", "s-ops", "s-sub", "s-notes", "s-script"]);

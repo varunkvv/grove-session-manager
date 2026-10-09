@@ -237,11 +237,14 @@ export class ProjectsService {
       typeof scope === "string"
         ? (r: SessionRow) => rowHaystack({ ...r, comboName: undefined, cwdBase: undefined })
         : rowHaystack;
-    // found by what was asked in it, not by its title: that prompt is why the row is there
+    // found by what was asked in it, not by its title: that prompt is why the row is there. on
+    // the home screen one found by its branch says the branch: a row there shows it nowhere else
     const why = (r: SessionRow) =>
       snippetAround(r.title ?? r.firstPrompt ?? "", tokens)
         ? undefined
-        : (snippetAround(r.lastPrompt ?? "", tokens) ?? snippetAround(r.firstPrompt ?? "", tokens));
+        : (snippetAround(r.lastPrompt ?? "", tokens) ??
+          snippetAround(r.firstPrompt ?? "", tokens) ??
+          (scope === null ? snippetAround(r.gitBranch ?? "", tokens) : undefined));
     const out = rows
       .filter((r) => tokens.every((t) => fields(r).includes(t)))
       .sort(newest)
