@@ -113,8 +113,8 @@ and the dock, and still notifies. What changes is what the lists show. The proje
 sidebar, and its quiet sessions leave All sessions. Its own screen still lists every one of them. **Unarchive** in its
 top bar brings all of it back.
 
-Archive is in `⌘K` (**Archive project**), at the foot of the Edit project form, and in the delete dialog as **Archive
-instead**. Archiving the project on screen takes you to All sessions.
+Archive is `⌘⇧A` on a project's screen, in `⌘K` (**Archive project**), at the foot of the Edit project form, and in
+the delete dialog as **Archive instead**. Archiving the project on screen takes you to All sessions.
 
 Delete removes the clean working copies first. A working copy with uncommitted work, or a locked one, stops it: nothing
 is deleted, the dialog names the working copy, and you delete again once the work is committed or discarded. Then the
@@ -505,6 +505,7 @@ No single letter is a shortcut: a letter only ever types, in the search or a for
 | `⌘F` | search the sessions of the screen you are on. from a form it goes back to the form's list first |
 | `Esc` | close the panel, then clear the search, then go back |
 | `⌘N` `⌘O` `⌘E` `⌘R` `⌘,` | new project, open the project in the editor, edit project, refresh, settings. `⌘O` and `⌘E` do nothing on All sessions |
+| `⌘⇧A` | archive the project on screen, or unarchive it. does nothing on All sessions or in a project's form |
 
 No row looks active until a key says so: the first arrow or `↵` only shows which row the keyboard is on, and the next
 one acts. After the mouse, `↵`, `⌘↵` and `⌘D` act at once on a row that already shows it is the one: the row under the

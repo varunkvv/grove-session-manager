@@ -412,6 +412,13 @@ export function perform(intent: Intent): void {
     case "open-project":
       if (s.project && s.view.name === "sessions") void openProject(s.project);
       break;
+    case "archive-project": {
+      // the project on screen, like cmd-O and cmd-E: All sessions shows no one project. its form
+      // is left alone, where it would throw away what was typed
+      const p = s.view.name === "sessions" && s.projects.find((x) => x.id === s.project);
+      if (p) void archiveProject(p.id, !p.archived);
+      break;
+    }
     case "refresh":
       void refresh();
       break;

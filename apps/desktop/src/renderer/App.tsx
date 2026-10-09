@@ -22,6 +22,7 @@ const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "new-project": { type: "new-project" },
   "open-project": { type: "open-project" },
   "edit-project": { type: "edit-project" },
+  "archive-project": { type: "archive-project" },
   "go-inbox": { type: "go", section: "inbox" },
   "go-sessions": { type: "go", section: "sessions" },
   palette: { type: "palette" },

@@ -37,6 +37,7 @@ describe("the menu", () => {
       ["New Project…", "CmdOrCtrl+N"],
       ["Open Project in VS Code", "CmdOrCtrl+O"],
       ["Edit Project…", "CmdOrCtrl+E"],
+      ["Archive or Unarchive Project", "CmdOrCtrl+Shift+A"],
       ["Find", "CmdOrCtrl+F"],
       ["All Sessions", "CmdOrCtrl+1"],
       ["Project Sessions", "CmdOrCtrl+2"],
@@ -49,6 +50,7 @@ describe("the menu", () => {
       "new-project",
       "open-project",
       "edit-project",
+      "archive-project",
       "focus-search",
       "go-inbox",
       "go-sessions",
@@ -60,7 +62,10 @@ describe("the menu", () => {
   it("shows cmd-K but leaves the key to the page, so the palette opens while a field has focus", () => {
     const palette = items().find((i) => i.label === "Go to…");
     expect(palette?.registerAccelerator).toBe(false);
-    expect(items().filter((i) => i.registerAccelerator === false)).toHaveLength(1);
+    // and cmd-shift-A: a toggle the menu and the page both acted on would undo itself
+    const archive = items().find((i) => i.label === "Archive or Unarchive Project");
+    expect(archive?.registerAccelerator).toBe(false);
+    expect(items().filter((i) => i.registerAccelerator === false)).toHaveLength(2);
   });
 });
 

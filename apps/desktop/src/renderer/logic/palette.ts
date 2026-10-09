@@ -99,9 +99,12 @@ function commands(ctx: PaletteContext): PaletteItem[] {
     if (p.folders.some((f) => REPAIRABLE.has(f.state)))
       items.push(mine("repair", "Repair working copies", "worktree fix drift"));
     items.push(
-      p.archived
-        ? mine("archive-project", "Unarchive project", "archive restore bring back")
-        : mine("archive-project", "Archive project", "hide put away"),
+      {
+        ...(p.archived
+          ? mine("archive-project", "Unarchive project", "archive restore bring back")
+          : mine("archive-project", "Archive project", "hide put away")),
+        kbd: "⌘⇧A",
+      },
       mine("delete-project", "Delete project…", "remove trash disk space"),
     );
   }

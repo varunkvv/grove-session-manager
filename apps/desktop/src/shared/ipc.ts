@@ -295,6 +295,7 @@ export type MenuCommandId =
   | "new-project"
   | "open-project"
   | "edit-project"
+  | "archive-project"
   | "go-inbox"
   | "go-sessions"
   | "palette"

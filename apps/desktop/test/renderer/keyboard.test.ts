@@ -112,8 +112,13 @@ describe("what a key means", () => {
       expect(interpret(ctx(), cmd(k)), k).toBeNull();
     }
     // cmd-shift is selection and redo, and the old shift shortcuts are gone
-    for (const k of ["d", "a", "c", "r", "z", "ArrowDown"]) {
+    for (const k of ["d", "c", "r", "z", "ArrowDown"]) {
       expect(interpret(ctx(), cmd(k, { shift: true })), k).toBeNull();
+    }
+    // all but one: cmd-shift-A archives the project on screen, from a field too
+    for (const c of [ctx(), ctx({ view: "sessions", inText: true, inSearch: true })]) {
+      expect(interpret(c, cmd("a", { shift: true }))).toEqual({ type: "archive-project" });
+      expect(interpret(c, cmd("A", { shift: true }))).toEqual({ type: "archive-project" });
     }
     // in a form's field cmd-arrows move the caret: there is no list to jump through
     expect(interpret(ctx({ view: "new-project", inText: true }), cmd("ArrowUp"))).toBeNull();

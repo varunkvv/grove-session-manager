@@ -93,7 +93,9 @@ test("archive from cmd-K: the project goes under Archived, its quiet sessions le
   await expect(quiet(page)).toHaveCount(2);
   await ask(page, "archive");
   // the word is the command's: Enter runs it
-  await expect(paletteItem(page, "archive-project")).toHaveText("Archive project");
+  // the row says its key too
+  await expect(paletteItem(page, "archive-project")).toContainText("Archive project");
+  await expect(paletteItem(page, "archive-project")).toContainText("⌘⇧A");
   await expect(paletteItem(page, "archive-project")).toHaveAttribute("data-active", "true");
   await page.keyboard.press("Enter");
 
@@ -158,7 +160,7 @@ test("archive from cmd-K: the project goes under Archived, its quiet sessions le
   );
   expect(dragged).toEqual([]);
   await ask(page, "unarchive");
-  await expect(paletteItem(page, "archive-project")).toHaveText("Unarchive project");
+  await expect(paletteItem(page, "archive-project")).toContainText("Unarchive project");
   await page.keyboard.press("Escape");
 
   await page.getByTestId("unarchive").click();
@@ -227,4 +229,18 @@ test("archive from the Edit project form, and a hand edit of combos.json is foll
   await expect(toggle(page)).toHaveText(/^Archived\s*1$/, { timeout: 15_000 });
   expect(await listed(page)).toEqual(["auth-sso", "billing-export"]);
   expect(readdirSync(fx.root)).toContain("chat-features");
+
+  // cmd-shift-A is the same from the keyboard: the project on screen, both ways
+  await item(page, "billing-export").click();
+  await page.keyboard.press("Meta+Shift+A");
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await expect.poll(() => listed(page)).toEqual(["auth-sso"]);
+  // All sessions shows no one project: the key does nothing there
+  await page.keyboard.press("Meta+Shift+A");
+  await page.keyboard.press("Meta+2");
+  await expect(page.getByTestId("project-name")).toHaveText("billing-export");
+  await page.keyboard.press("Meta+Shift+A");
+  await expect.poll(() => listed(page)).toEqual(["auth-sso", "billing-export"]);
+  // it stays on the project it brought back
+  await expect(page.getByTestId("project-name")).toHaveText("billing-export");
 });

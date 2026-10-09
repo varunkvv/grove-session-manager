@@ -15,6 +15,7 @@ export type Intent =
   | { type: "project-step"; delta: 1 | -1 }
   | { type: "new-project" }
   | { type: "edit-project" }
+  | { type: "archive-project" }
   | { type: "open-project" }
   | { type: "refresh" }
   | { type: "settings" }
@@ -92,8 +93,9 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (ctx.overlay) return null;
 
   if (e.meta && !e.alt && !e.ctrl) {
-    // cmd-shift-anything is the system's or a field's: selection, redo
-    if (e.shift) return null;
+    // cmd-shift-A puts the project on screen away, or brings it back. any other cmd-shift is the
+    // system's or a field's: selection, redo
+    if (e.shift) return e.key.toLowerCase() === "a" ? { type: "archive-project" } : null;
     switch (e.key.toLowerCase()) {
       case "k":
         return { type: "palette" };

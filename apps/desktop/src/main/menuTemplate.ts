@@ -49,6 +49,12 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
       command("New Project…", "CmdOrCtrl+N", "new-project"),
       command(`Open Project in ${o.editorLabel}`, "CmdOrCtrl+O", "open-project"),
       command("Edit Project…", "CmdOrCtrl+E", "edit-project"),
+      // one item for both ways: the menu is not rebuilt when the project on screen changes. the
+      // page owns the key, like cmd-K: the menu and the page both acting would archive it and
+      // bring it straight back
+      command("Archive or Unarchive Project", "CmdOrCtrl+Shift+A", "archive-project", {
+        registerAccelerator: false,
+      }),
       ...(o.isMac ? [] : [separator, settings, separator, { role: "quit" } as const]),
     ],
   };

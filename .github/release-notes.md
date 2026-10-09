@@ -6,8 +6,8 @@ Delete the way to get disk space back and nothing else.
 New:
 
 - **Archive project** puts a project away and changes nothing on disk: its folder, working copies, hooks and sessions
-  stay as they are. it is in `⌘K`, at the foot of the Edit project form, and in the delete dialog as **Archive
-  instead**
+  stay as they are. it is `⌘⇧A` on a project's screen, in `⌘K`, at the foot of the Edit project form, and in the
+  delete dialog as **Archive instead**
 - an archived project leaves the sidebar's list for **Archived**, a row at the foot of the projects that is closed
   until you click it
 - its quiet sessions leave All sessions. one that needs you still shows there, still counts in the sidebar, the
