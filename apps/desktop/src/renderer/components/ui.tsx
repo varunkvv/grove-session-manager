@@ -704,6 +704,7 @@ export function SideItem({
   label,
   count,
   onClick,
+  onDoubleClick,
   testId,
   id,
 }: {
@@ -713,6 +714,8 @@ export function SideItem({
   label: string;
   count: number;
   onClick: () => void;
+  /** a project's: a new session in it. the first click of the two has already gone to it */
+  onDoubleClick?: () => void;
   testId: string;
   id?: string;
 }) {
@@ -720,11 +723,12 @@ export function SideItem({
     <button
       type="button"
       aria-current={selected ? "page" : undefined}
-      title={label}
+      title={onDoubleClick ? `${label} - double-click for a new session` : label}
       data-testid={testId}
       data-id={id}
       data-count={count}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       className={cx(
         "no-drag fade flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-body",
         selected ? "bg-accent-soft font-medium text-fg" : "text-fg-2 hover:bg-active hover:text-fg",

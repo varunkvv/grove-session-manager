@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { needsYouCount } from "../logic/views.ts";
-import { focusScreen, go, newProject, switchProject } from "../state/actions.ts";
+import { needsYouCount, startBlocked } from "../logic/views.ts";
+import { focusScreen, go, newProject, newSession, switchProject } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Icon, IconButton, ProjectMark, SideItem } from "./ui.tsx";
 
@@ -14,6 +14,7 @@ export function Sidebar() {
   const project = useStore((s) => s.project);
   const view = useStore((s) => s.view.name);
   const inbox = useStore((s) => s.inbox);
+  const toast = useStore((s) => s.toast);
   // a project is on screen with its sessions, and with its form
   const shown = view === "sessions" || view === "edit-project" ? project : null;
 
@@ -67,6 +68,16 @@ export function Sidebar() {
             onClick={() => {
               switchProject(p.id);
               focusScreen();
+            }}
+            // the top bar's New session, without the trip to it. it never starts what is known to fail
+            onDoubleClick={() => {
+              const blocked = startBlocked(p);
+              if (!blocked) return newSession(p.id);
+              toast({
+                level: "error",
+                title: `Could not start a session in ${p.name}`,
+                body: blocked.line,
+              });
             }}
           />
         ))}

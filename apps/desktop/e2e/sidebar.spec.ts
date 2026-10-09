@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
   type Fixture,
@@ -195,4 +196,42 @@ test("Open in VS Code in the top bar opens the window of the project on screen",
   await page.keyboard.press("Meta+o");
   await waitFor(async () => code().length === 2);
   expect(code()[1]?.argv[0]).toMatch(/billing-export\.code-workspace$/);
+});
+
+test("a double-click on a project starts a new session in it, and one whose folder is gone says why", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const { root } = writeProject(fx, { name: "auth-sso" });
+  const gone = writeProject(fx, { name: "moved-away" });
+  rmSync(gone.root, { recursive: true });
+  app = await launchApp(fx);
+  const { page } = app;
+  const code = () => readExecLog(fx).filter((l) => l.bin === "code");
+
+  await expect(item(page, "auth-sso")).toHaveAttribute(
+    "title",
+    "auth-sso - double-click for a new session",
+  );
+  await item(page, "auth-sso").dblclick();
+  // the first click of the two went to the project: he sees where it starts
+  await expect(page.getByTestId("project-name")).toHaveText("auth-sso");
+  await expect(
+    page
+      .getByTestId("toast")
+      .filter({ hasText: "Opening auth-sso in VS Code on a new conversation" }),
+  ).toBeVisible();
+  // the top bar's New session: the project's window, and a new conversation left for it. once
+  await waitFor(async () => code().length === 1);
+  expect(code()[0]?.argv[0]).toMatch(/auth-sso\.code-workspace$/);
+  const [intent, ...more] = pendingIntents(fx);
+  expect(more).toEqual([]);
+  expect(intent).toMatchObject({ kind: "new", cwd: root, source: "app" });
+
+  // a start that is known to fail is not made: the project comes on screen, and a toast says why
+  await item(page, gone.id).dblclick();
+  await expect(page.getByTestId("project-name")).toHaveText("moved-away");
+  await expect(
+    page.getByTestId("toast").filter({ hasText: "Could not start a session in moved-away" }),
+  ).toContainText(`The project folder is missing: ${gone.root}`);
+  await page.waitForTimeout(500);
+  expect(code()).toHaveLength(1);
 });
