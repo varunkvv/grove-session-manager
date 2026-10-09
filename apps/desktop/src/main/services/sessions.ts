@@ -20,9 +20,16 @@ import {
   watchProjects,
 } from "@grove/core";
 import { rowHaystack } from "../../shared/haystack.ts";
-import type { BackgroundView, SessionKey, SessionRow } from "../../shared/ipc.ts";
+import type {
+  BackgroundView,
+  ProjectId,
+  SessionKey,
+  SessionRow,
+  UsageView,
+} from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { diffRows, PatchCoalescer } from "../patchCoalescer.ts";
+import { buildUsageView } from "./usage.ts";
 
 const PATCH_INTERVAL_MS = 150;
 const FLUSH_DEBOUNCE_MS = 2000;
@@ -424,6 +431,17 @@ export class SessionService {
 
   list(): SessionRow[] {
     return [...this.rows.values()];
+  }
+
+  /** the Usage screen's numbers. `projectOf` is combo name -> project id, as the projects list has it */
+  usage(projectOf: ReadonlyMap<string, ProjectId>): UsageView {
+    return buildUsageView({
+      sources: this.index.usageSources(),
+      combos: this.combos,
+      projectOf,
+      progress: this.index.usageProgress(),
+      now: Date.now(),
+    });
   }
 
   get(key: SessionKey): SessionRow | undefined {

@@ -293,6 +293,50 @@ export interface Landing {
   at: number;
 }
 
+/** tokens by kind: input, output, cache read, cache write kept 5 minutes, cache write kept an hour */
+export type UsageTokens = [number, number, number, number, number];
+
+export interface UsageCell {
+  tokens: UsageTokens;
+  /** USD at API list prices. tokens on a model with no known price add nothing to it */
+  cost: number;
+  /** agent working time, every agent's added up. not wall clock */
+  ms: number;
+}
+
+/** one local day that has any usage */
+export interface UsageDay {
+  /** `YYYY-MM-DD`, by the machine's calendar */
+  day: string;
+  /** null is every session in no project */
+  projects: Array<UsageCell & { project: ProjectId | null }>;
+  models: Array<UsageCell & { model: string }>;
+  /**
+   * the sessions with usage that day, as numbers that name them only within one answer: a range
+   * counts a session once however many of its days it worked
+   */
+  sessions: number[];
+  /** the subagents that started that day */
+  subagents: number;
+  /** the most agents working within the same 5 minutes, subagents counted */
+  peak: number;
+  /** the longest single turn that reached this day, as working time */
+  longest: number;
+  /** tokens on models with no known price: counted, and left out of the cost */
+  unpriced: number;
+}
+
+/**
+ * everything the Usage screen draws, for the last 730 days: the oldest day first, and no day that
+ * has nothing. sessions whose transcript Claude Code has deleted are still in it
+ */
+export interface UsageView {
+  days: UsageDay[];
+  /** how many of the sessions on disk are counted. fewer than `total` only during the first count */
+  counted: number;
+  total: number;
+}
+
 export type MenuCommandId =
   | "new-project"
   | "open-project"
@@ -353,6 +397,11 @@ export interface Api {
   sessionConversation(key: SessionKey): Promise<ConversationView | null>;
   /** Write again: a new recap whatever is kept. it arrives with the session's row */
   writeRecap(key: SessionKey): Promise<void>;
+  /**
+   * the Usage screen's numbers, folded from what the session scan keeps. nothing is read from
+   * disk for it. asked when the screen opens and while it is open, never otherwise
+   */
+  usage(): Promise<UsageView>;
 
   /** a landing the page has not taken yet. taken once. */
   takeLanding(): Promise<Landing | null>;
@@ -405,6 +454,7 @@ export const INVOKE_CHANNELS = [
   "listSessions",
   "sessionConversation",
   "writeRecap",
+  "usage",
   "takeLanding",
   "setVisibleProject",
   "validateProjectName",
