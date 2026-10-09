@@ -30,6 +30,9 @@ const SIZES = [
   [880, 600],
 ] as const;
 
+/** put away before the app starts: under Archived in the sidebar */
+const ARCHIVED = ["infra-cleanup", "mobile-push"];
+
 let ids = 0;
 const sid = () => `${String(++ids).padStart(8, "0")}-0000-4000-8000-000000000000`;
 
@@ -155,6 +158,15 @@ const RECAPS = [
     ),
   },
   {
+    when: "title: notification channels",
+    say: recapSays(
+      "Group android notifications into channels the user can mute one by one",
+      "Listed the eleven notification types and where each is sent from.",
+      "Waiting on how many channels to make.",
+      "Choose: one channel per category, or one for everything.",
+    ),
+  },
+  {
     when: "title: threads backend",
     say: recapSays(
       "Add the reply_to column to messages and backfill it",
@@ -177,9 +189,11 @@ const RECAPS = [
 ];
 
 /**
- * seven projects. auth-sso has 44 sessions: one of each kind that needs the person, two working,
- * the rest spread over today, the three days before and the weeks before those. billing-export has
- * none, and two sessions are in no project
+ * seven projects, two of them archived. auth-sso has 44 sessions: one of each kind that needs the
+ * person, two working, the rest spread over today, the three days before and the weeks before
+ * those. billing-export has none, and two sessions are in no project. of the archived ones
+ * infra-cleanup is all quiet, and mobile-push has a session that needs him: it is still on the
+ * home screen and still counted
  */
 function build(scheme: string) {
   const fx = makeFixture({ withCompanion: true });
@@ -204,6 +218,7 @@ function build(scheme: string) {
       writeProject(fx, {
         name,
         goal,
+        ...(ARCHIVED.includes(name) ? { archived: true } : {}),
         ...(name === "auth-sso"
           ? { folders: [{ path: api, mode: "worktree", branch: { kind: "detach" } }] }
           : {}),
@@ -418,6 +433,23 @@ function build(scheme: string) {
     last_assistant_message:
       "The migration is written. Run the backfill on staging now, or tonight?",
   });
+  // in an archived project, and it needs him all the same
+  const push = projects["mobile-push"] as string;
+  const channels = sid();
+  writeSession(fx, {
+    cwd: push,
+    sessionId: channels,
+    title: "notification channels",
+    branch: "push-channels",
+    prompt: "group the android notifications into channels",
+    reply: "There are eleven notification types. One channel per category, or one for everything?",
+    ageMs: 10 * MIN,
+  });
+  vscode(channels);
+  event(fx, channels, "Stop", 10, {
+    last_assistant_message:
+      "There are eleven notification types. One channel per category, or one for everything?",
+  });
   const data = projects["data-objects"] as string;
   const schema = sid();
   writeSession(fx, {
@@ -484,13 +516,14 @@ async function launch(fx: Fixture) {
     async () => {
       const b = await window.grove.bootstrap();
       return (
-        b.inbox.rows.length === 6 &&
+        b.inbox.rows.length === 7 &&
         // each row that says what it needs has its recap. a permission row's is written on a look
         b.inbox.rows.every((r) => r.kind === "permission" || r.recap?.lines) &&
         b.projects[0]?.folders.every((f) => f.state === "ok") &&
         // the sessions are indexed after the page is up
         (await window.grove.listSessions("auth-sso")).length === 44 &&
-        (await window.grove.listSessions(null)).length === 58
+        // 59 in all, less the three quiet ones of the archived projects
+        (await window.grove.listSessions(null)).length === 56
       );
     },
     undefined,
@@ -656,7 +689,39 @@ for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
     await page.getByTestId("edit-project").click();
     await page.getByTestId("repo-row").getByRole("radiogroup").first().waitFor();
     await shot("project-edit");
+    // its foot: putting the project away and getting its disk space back, away from Save
+    await page.getByTestId("project-form").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await shot("project-edit-foot");
+    // Delete says what it is for, and offers the other thing
+    await page.getByTestId("form-delete").click();
+    await page.getByTestId("delete-dialog").waitFor();
+    await shot("delete-dialog");
+    await page.keyboard.press("Escape");
     await page.getByTestId("form-cancel").click();
+
+    // ---- archived projects: a group at the foot of the sidebar, closed until it is asked for.
+    // closed, it still says one of the sessions in it needs him
+    const archived = page.getByTestId("archived-toggle");
+    await page.getByTestId("nav-inbox").click();
+    await page.getByTestId("inbox-row").nth(6).waitFor();
+    await shot("archived-closed");
+    await archived.click();
+    await page.locator('[data-testid="project-item"][data-id="mobile-push"]').waitFor();
+    await shot("archived-open");
+    // an archived project's screen: its sessions, all of them, and how to bring it back
+    await project("mobile-push");
+    await page.getByTestId("unarchive").waitFor();
+    await page.getByTestId("session-row").nth(1).waitFor();
+    await shot("archived-project");
+    // cmd-K reaches one by its name
+    await page.keyboard.press("Meta+k");
+    await page.getByTestId("palette-input").fill("infra");
+    await page.locator('[data-testid="palette-item"][data-id="project:infra-cleanup"]').waitFor();
+    await shot("palette-archived");
+    await page.keyboard.press("Escape");
+    // closed again, for the next size
+    await page.getByTestId("nav-inbox").click();
+    await archived.click();
   }
 
   // nothing needs him: every row dismissed. the list starts at Working

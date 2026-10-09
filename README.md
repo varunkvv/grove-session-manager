@@ -93,12 +93,45 @@ It is a default by instruction, not an enforcement: Claude still decides what co
 A session whose turn ended while a background subagent it started is still working counts as running, not as waiting
 on you. A background shell left running (a dev server) does not hold the turn open.
 
+### Archiving and deleting a project
+
+**Archive** puts a project away. **Delete** gets its disk space back. They are different on purpose: use Archive for a
+project you are done looking at, and Delete only when you want the space.
+
+| | Archive | Delete |
+| --- | --- | --- |
+| the project folder, with its `CLAUDE.md`, `plans/`, `artifacts/`, `context/` and `.claude/` | kept | moved to the Trash |
+| working copies | kept | removed with `git worktree remove`, never forced |
+| the entry in `combos.json` | kept, with `"archived": true` | removed |
+| your original clones, their branches, and Claude Code's transcripts | not touched | not touched |
+| its sessions in Grove | on the project's own screen, and in `⌘K` | on All sessions, as sessions in no project |
+| undo | **Unarchive** | none in Grove. the folder is in the Trash until you empty it |
+
+Archiving changes nothing on disk. Grove keeps treating an archived project as a project: its hooks stay current, its
+sessions are still read, and one that needs you still shows on All sessions, still counts in the sidebar, the menu bar
+and the dock, and still notifies. What changes is what the lists show. The project moves under **Archived** in the
+sidebar, and its quiet sessions leave All sessions. Its own screen still lists every one of them. **Unarchive** in its
+top bar brings all of it back.
+
+Archive is in `⌘K` (**Archive project**), at the foot of the Edit project form, and in the delete dialog as **Archive
+instead**. Archiving the project on screen takes you to All sessions.
+
+Delete removes the clean working copies first. A working copy with uncommitted work, or a locked one, stops it: nothing
+is deleted, the dialog names the working copy, and you delete again once the work is committed or discarded. Then the
+project leaves `combos.json` and its folder goes to the Trash. If the Trash refuses the folder, Grove says so and names
+where the folder still is.
+
 ## The screens
 
 The **sidebar** on the left has **All sessions** with the count of sessions that need you, over every project, then
 the projects in `combos.json` order. Each project has its own colour and, when any of its sessions needs you, their
 count. The order never changes with the counts. A click on a project shows its sessions, a double-click also starts a
 new session in it. **+** beside Projects opens the new project form.
+
+Under the projects is **Archived**, when any project is [archived](#archiving-and-deleting-a-project): a row with how
+many there are, closed until you click it. It opens by itself while an archived project is on screen. Open, it lists
+them in a quieter grey, each with its colour and its count, and a click shows that project's sessions. Closed, the row
+shows how many sessions in the archived projects need you. Archiving a project never changes another project's colour.
 
 **All sessions** is the screen Grove opens on: every session, whichever project it is in, in groups.
 
@@ -115,6 +148,8 @@ new session in it. **+** beside Projects opens the new project form.
 A group with nothing in it is not there: when nothing needs you, the screen starts at Working or Today. The sessions
 of a project are the ones a project's own screen lists (below). Sessions in no project are here too, with their
 folder's name where the others have a project. A scripted one (`claude -p`, an SDK app) is listed only while it runs.
+So is a session of an archived project: it is here while it needs you or is running, and on its project's own screen
+after that.
 
 The rows under Needs you:
 
@@ -138,7 +173,8 @@ A click on a project shows **its sessions**, all of them, in the same groups. A 
 branch, where it runs and the time, and here Dismiss leaves the panel on the session. The list is the sessions started
 in the project's folder, plus any started in a subfolder or a working copy that needs you or is running now. A
 finished session in a subfolder is found from `⌘K`. The top bar also has **New session**, **Open in VS Code** for the
-project's window, and **Edit**. Both lists follow the sessions as they change, with no refresh.
+project's window, and **Edit**. An archived project's screen is the same list, with `Archived` after its name and
+**Unarchive** where New session is. Both lists follow the sessions as they change, with no refresh.
 
 **Search** is the field in the top bar, on both screens: every session on All sessions, the project's on a project's
 screen. Typing narrows the rows at once to the ones whose title, prompt or branch has every word typed (on All
@@ -160,12 +196,14 @@ at the end. While the panel is open it follows the arrow keys, and when its row 
 that took its place. `Esc` closes it. A double-click on a row opens the session in the editor.
 
 **New project** and **Edit project** are one form: name, about, repos. Edit project also shows drift per repo and, when
-Grove could not write the project's files, why.
+Grove could not write the project's files, why. At its foot, away from Save, are **Archive** (or **Unarchive**) and
+**Delete...**.
 
 `⌘K` opens the palette: go to All sessions or a project, start a session there or in the background, switch long work,
-repair working copies, delete the project, settings. Typing also searches every Claude Code session on the machine, in a project or not: titles and
-prompts first, then everything that was said in each session and by its subagents. `↵` on a session opens it in the
-editor.
+repair working copies, archive or unarchive the project, delete it, settings. Archived projects are not in its list
+of projects. They are a section of their own, **Archived**, once you type part of a name. Typing also searches every
+Claude Code session on the machine, in a project or not: titles and prompts first, then everything that was said in
+each session and by its subagents. `↵` on a session opens it in the editor.
 
 The **menu bar** item shows how many sessions need you across all projects. Its menu lists the three newest, then
 **Open Grove** and **Quit**. A click on one opens the window on its row in All sessions, with the panel open. Closing the window
@@ -322,10 +360,15 @@ edited. The workspace file and the references are written when the project is op
 What you dismissed is a decision, not a cache, so it sits beside `combos.json` and not in `.grove/`. Entries the app
 does not understand are left alone when it writes. Deleting `.grove/` loses the Stopped markers.
 
+In `combos.json` a project with `"archived": true` is [archived](#archiving-and-deleting-a-project). Set it or take it
+out by hand and the app follows. Only `true` means anything: the app never writes `"archived": false`, and drops any
+other value the next time it saves the file. No other key of the project moves when it is archived.
+
 Outside `~/claude-ws` and the projects' own folders the app writes two things: `Grove.wav`, and the opt-in status hooks
 below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. It never writes Claude Code's
 folder trust, never copies a transcript, never deletes a branch, and never passes `--force` to `git worktree remove`:
-a working copy with uncommitted work is kept and reported.
+a working copy with uncommitted work is kept and reported. The folder of a project you delete goes to the Trash,
+never straight off the disk.
 
 Drift is normal: people run `git worktree remove` and `rm -rf` behind the app's back, and Claude Code expires
 transcripts. Folder states are `ok`, `reference`, `absent`, `stale`, `foreign` (left alone) and `missing-origin`.
@@ -403,9 +446,9 @@ What is gone from the app:
 0.10.17 has all of it, if you want it back.
 
 Coming from 0.5: nothing of the record was ever installed, so there is nothing to remove. The agent inspector, token
-counts, the archive and **New session...** went in 0.10 and are still gone. A project's sessions are a screen again,
-and the conversation is back in the panel as turns, without the steps, the outline and the search it had. The
-one-line summaries of subagents are not back: the model is asked for a session's recap instead.
+counts, the archive of sessions and **New session...** went in 0.10 and are still gone. A project's sessions are a
+screen again, and the conversation is back in the panel as turns, without the steps, the outline and the search it
+had. The one-line summaries of subagents are not back: the model is asked for a session's recap instead.
 
 ## Limits
 
@@ -437,7 +480,11 @@ What did not run, or does not work:
   said in it still matches
 - two quick VS Code starts in one project leave one conversation
 - a project's colour is one of nine. past nine projects two share one, and deleting a project can change the colour
-  of a later one
+  of a later one. archiving one changes none
+- no test moves anything to the real Trash. under `GROVE_ROOT` a deleted project's folder is moved into
+  `.grove/trash/` under that root, and that path is the one that ran
+- archiving from the Edit project form leaves the form, and changes typed there that were not saved are lost
+- Archived in the sidebar is closed again every time Grove starts
 - starting an agent was only run against the stand-ins in 0.11, in the editor and in the background
 - what a session left open across the upgrade from 0.10 does when it calls a record tool was not tried
 - macOS on Apple Silicon only
@@ -450,7 +497,7 @@ No single letter is a shortcut: a letter only ever types, in the search or a for
 | --- | --- |
 | `⌘K` | the palette: go to, project commands, find a session |
 | `⌘1` `⌘2` | All sessions / the sessions of the project last on screen |
-| `⌥↑` `⌥↓` | step through the sidebar: All sessions, then the projects |
+| `⌥↑` `⌥↓` | step through the sidebar: All sessions, then the projects that are not archived |
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` `⌘↑` `⌘↓` | move the active row |
 | `↵` | open the active row's session in the panel beside the list |
 | `⌘↵` | open it in the editor |
@@ -493,7 +540,8 @@ e2e tests isolate themselves with both.
 
 Under `GROVE_ROOT` the app behaves as a test root: no menu bar item unless `GROVE_TRAY=1`, notifications are recorded
 and not shown, your shell's rc files are not run, and the real `claude` is never run (`GROVE_CLAUDE_BIN` names a
-stand-in). `apps/desktop/scripts/dev.mjs` takes `--real-root` to use `~/claude-ws` anyway.
+stand-in). A deleted project's folder is moved to `.grove/trash/` under that root and not to the Trash, so it frees
+no disk until you empty that folder. `apps/desktop/scripts/dev.mjs` takes `--real-root` to use `~/claude-ws` anyway.
 
 After `pnpm app:build`, `node apps/desktop/scripts/screenshots.ts <outDir>` saves every screen from the real app, in
 light and dark, at 1280x800 and 880x600, against fixture projects.
@@ -532,10 +580,13 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **a session says Closed but nothing went wrong** - Closed means its process is not running, which is what a closed
   VS Code tab looks like. Open resumes it
 - **a session says Stopped after its tab was closed** - it was mid-turn when the tab went
+- **a project is missing from the sidebar** - it is archived. it is under Archived, at the foot of the projects
 - **a session is missing from its project's list** - it was started in a subfolder and has finished. it is in `⌘K`
 - **a session is missing from All sessions** - it last moved more than three days ago and is under Older, which is
-  closed until you click it (search finds it without that). or it is one no list has: a finished one from a
-  subfolder, or a scripted run outside every project. those are in `⌘K`
+  closed until you click it (search finds it without that). or its project is archived and it needs nothing: it is
+  on that project's own screen. or it is one no list has: a finished one from a subfolder, or a scripted run outside
+  every project. those are in `⌘K`
+- **Delete project moved the folder to the Trash** - it always does now. Archive is what keeps everything
 - **"Nothing needs you" is gone** - the screen that said it lists every session now. when nothing needs you there is
   no Needs you group, and the menu bar still says it
 - **a session has no recap** - it is working, the switch is off, `claude` was not found (set its path in Settings), you

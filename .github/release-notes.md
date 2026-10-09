@@ -1,36 +1,29 @@
-## 0.12
+## 0.13
 
-Grove tells you which Claude Code agents need you, and gets you to them. 0.12 puts every session on the screen it
-opens on, and brings search back.
+Grove tells you which Claude Code agents need you, and gets you to them. 0.13 lets you archive a project, and makes
+Delete the way to get disk space back and nothing else.
 
 New:
 
-- **All sessions** is the home screen, where the Inbox was. the sessions that need you are still its first rows, as
-  they were. under them: the ones working now, each with what it was last asked and how long its turn has run, then
-  Today, Yesterday and the two days before, one line a session
-- sessions older than three days are under **Older**, closed until you click it. it draws 50 rows, and 50 more as you
-  scroll
-- a project's screen has the same groups
-- sessions in no project are listed too, with their folder's name. scripted runs (`claude -p`, SDK apps) only while
-  they run
-- **Search** in the top bar, on both screens: titles, prompts and branches at once, then what was said in each
-  session, with the words around the match on a second line. All sessions searches everything, a project's screen
-  the project. `⌘F` focuses it
-- a double-click on a project in the sidebar starts a new session in it
-- a notification plays a short chime of Grove's own
+- **Archive project** puts a project away and changes nothing on disk: its folder, working copies, hooks and sessions
+  stay as they are. it is in `⌘K`, at the foot of the Edit project form, and in the delete dialog as **Archive
+  instead**
+- an archived project leaves the sidebar's list for **Archived**, a row at the foot of the projects that is closed
+  until you click it
+- its quiet sessions leave All sessions. one that needs you still shows there, still counts in the sidebar, the
+  menu bar and the dock, and still notifies. one that is running shows there too. closed, Archived shows how many
+  sessions in it need you
+- an archived project's screen is its sessions, all of them, with **Unarchive** where New session was
+- `⌘K` lists an archived project once you type part of its name
+- in `combos.json` it is `"archived": true` on the project, so it can be set by hand
 
 Changed:
 
-- the sidebar, the top bar and the View menu say **All sessions** where they said Inbox. the count beside it, the
-  menu bar and the dock still count only the sessions that need you
-- dismissing a row on All sessions takes it out of Needs you. the session stays listed under its day, and the panel
-  goes on to the next row that needs you
-- "Nothing needs you." is gone from the window: with nothing waiting, the list starts at Working or Today. the menu
-  bar still says it
-- `⌘F` stays on the screen you are on. from All sessions it used to jump to a project
-- Grove writes one new file outside `~/claude-ws`: `~/Library/Sounds/Grove.wav`, the chime
-- fixed: with the pointer resting on a list, a key that scrolled it (`⌘↓`, `PgDn`, an arrow at the edge) left the
-  keyboard on the row that ended up under the pointer, not on the row the key went to
+- **Delete project** has no checkbox. it removes the clean working copies, takes the project out of `combos.json` and
+  moves the project folder, with its CLAUDE.md, plans and notes, to the Trash. before, the folder stayed unless you
+  ticked the box. a working copy with uncommitted work still stops it
+- `⌥↑` and `⌥↓` step past archived projects
+- Grove no longer opens on a project that was archived since you were last on it
 
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
 verified.
