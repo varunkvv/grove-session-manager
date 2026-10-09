@@ -1,10 +1,10 @@
-// the mac stays awake while an agent is mid-turn, and is let go when none is. it is the assertion
-// `caffeinate -i` takes, held by grove's own process: no child to start, and none to outlive us.
+// the mac and its display stay awake while an agent is mid-turn, and are let go when none is. it is
+// what `caffeinate -d -i` takes, held by grove's own process: no child to start, and none to outlive us.
 import type { LiveStatus } from "@grove/core";
 
 /** electron's powerSaveBlocker, as far as this needs it */
 export interface PowerBlocker {
-  start(type: "prevent-app-suspension"): number;
+  start(type: "prevent-display-sleep"): number;
   stop(id: number): void;
 }
 
@@ -18,14 +18,14 @@ export function anyRunning(statuses: ReadonlyMap<string, LiveStatus>): boolean {
 }
 
 /**
- * holds the mac awake while told to. idle sleep only: the display still sleeps, and so does a
- * laptop on battery with its lid shut. quitting drops the assertion with the process.
+ * holds the mac awake while told to, display included: a display kept on keeps the system up with
+ * it. a laptop on battery with its lid shut still sleeps. quitting drops the assertion with the process.
  */
 export function keepAwake(blocker: PowerBlocker): (on: boolean) => void {
   let id: number | null = null;
   return (on) => {
     if (on === (id !== null)) return;
-    if (id === null) id = blocker.start("prevent-app-suspension");
+    if (id === null) id = blocker.start("prevent-display-sleep");
     else {
       blocker.stop(id);
       id = null;

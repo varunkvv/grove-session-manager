@@ -40,12 +40,12 @@ describe("keeping the mac awake", () => {
     expect(calls).toEqual([]);
     awake(true);
     awake(true);
-    expect(calls).toEqual(["start prevent-app-suspension"]);
+    expect(calls).toEqual(["start prevent-display-sleep"]);
     awake(false);
     awake(false);
-    expect(calls).toEqual(["start prevent-app-suspension", "stop 7"]);
+    expect(calls).toEqual(["start prevent-display-sleep", "stop 7"]);
     awake(true);
     awake(false);
-    expect(calls.slice(2)).toEqual(["start prevent-app-suspension", "stop 8"]);
+    expect(calls.slice(2)).toEqual(["start prevent-display-sleep", "stop 8"]);
   });
 });

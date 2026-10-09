@@ -21,7 +21,7 @@ export interface Settings {
   notifications?: boolean;
   /** recaps of sessions, written by haiku through the person's own `claude -p`. on unless false. */
   recaps?: boolean;
-  /** no idle sleep while an agent is mid-turn. on unless false. */
+  /** no idle sleep, of the mac or its display, while an agent is mid-turn. on unless false. */
   keepAwake?: boolean;
 }
 

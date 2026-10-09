@@ -4,10 +4,10 @@ Grove tells you which Claude Code agents need you, and gets you to them. 0.14 ke
 
 New:
 
-- while any session Grove can see is mid-turn, the Mac does not go to sleep on its own. when the last turn ends it
-  can again. a session that waits on you does not count
-- it is the assertion `caffeinate -i` takes, held by Grove itself: no terminal and no extra process. the display
-  still sleeps, and a laptop on battery with its lid shut still sleeps
+- while any session Grove can see is mid-turn, the Mac and its display do not go to sleep on their own. when the last
+  turn ends they can again. a session that waits on you does not count
+- it is what `caffeinate -d -i` takes, held by Grove itself: no terminal and no extra process. a laptop on battery
+  with its lid shut still sleeps
 - it holds only while Grove is running. closing the window keeps Grove in the menu bar, quitting lets go
 - **Keep the Mac awake while agents work** in Settings switches it off
 
