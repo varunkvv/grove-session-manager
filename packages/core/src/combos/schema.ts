@@ -104,6 +104,8 @@ export function normalizeCombosFile(
     if (item.longWork === "background" || item.longWork === "foreground")
       combo.longWork = item.longWork;
     else delete combo.longWork;
+    // put away or not: `true` is the one value that means anything
+    if (item.archived !== true) delete combo.archived;
     combos.push(combo);
   }
   return { combos, problems, rejected };

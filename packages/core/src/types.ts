@@ -108,6 +108,8 @@ export interface Combo {
   note?: string;
   /** absent means background */
   longWork?: LongWorkMode;
+  /** put away: out of the lists, with nothing on disk changed. only ever `true` */
+  archived?: boolean;
   folders: ComboFolder[];
   [extra: string]: unknown;
 }

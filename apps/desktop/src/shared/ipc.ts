@@ -181,6 +181,8 @@ export interface ProjectView {
   rootExists: boolean;
   /** a file grove could not write, from the sync's warnings */
   syncProblem?: string;
+  /** put away: under Archived in the sidebar, and its quiet sessions are off the home screen */
+  archived?: boolean;
 }
 
 /**
@@ -368,11 +370,13 @@ export interface Api {
   inspectPath(path: string): Promise<PathInfoView>;
   createProject(draft: ProjectDraft): Promise<Outcome<{ id: ProjectId }>>;
   updateProject(id: ProjectId, draft: ProjectDraft): Promise<Outcome<{ id: ProjectId }>>;
-  /** runs a non-force teardown first and refuses while worktrees remain. trashing the root is opt-in */
-  deleteProject(
-    id: ProjectId,
-    trashRoot: boolean,
-  ): Promise<Outcome<{ remaining: TeardownOutcome[] }>>;
+  /**
+   * for getting disk space back: a non-force teardown first, refused while worktrees remain. then
+   * the project leaves combos.json and its folder goes to the Trash
+   */
+  deleteProject(id: ProjectId): Promise<Outcome<{ remaining: TeardownOutcome[] }>>;
+  /** `"archived": true` on the project in combos.json, or the key gone. nothing on disk moves */
+  setArchived(id: ProjectId, archived: boolean): Promise<Outcome>;
   /** every working copy of the project */
   repairProject(id: ProjectId): Promise<Outcome<FolderOutcome[]>>;
   /** the project's window in the editor, without landing on a session */
@@ -408,6 +412,7 @@ export const INVOKE_CHANNELS = [
   "createProject",
   "updateProject",
   "deleteProject",
+  "setArchived",
   "repairProject",
   "openProject",
   "setLongWork",

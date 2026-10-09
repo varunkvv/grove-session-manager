@@ -102,6 +102,26 @@ describe("combo model", () => {
     }
   });
 
+  it("archived is kept only when it is true, and no other key moves for it", () => {
+    const { combos, problems } = normalizeCombosFile(
+      {
+        combos: [
+          { name: "away", prefix: "AWAY", colour: "teal", archived: true, folders: [] },
+          { name: "said-no", archived: false, folders: [] },
+          { name: "said-yes", archived: "yes", longWork: "foreground", folders: [] },
+          { name: "plain", folders: [] },
+        ],
+      },
+      APP,
+    );
+    expect(problems).toEqual([]);
+    expect(combos.map((c) => c.archived)).toEqual([true, undefined, undefined, undefined]);
+    // a value that is not `true` does not stay as a key that reads as one
+    expect(combos.map((c) => "archived" in c)).toEqual([true, false, false, false]);
+    expect(combos[0]).toMatchObject({ prefix: "AWAY", colour: "teal" });
+    expect(combos[2]?.longWork).toBe("foreground");
+  });
+
   it("a key grove no longer reads, like 0.10's card prefix, stays with its combo, and loading never writes", async () => {
     const app = makeSandbox("grove-schema-");
     const text = JSON.stringify({

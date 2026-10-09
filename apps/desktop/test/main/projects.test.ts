@@ -575,6 +575,108 @@ describe("projects and sessions", () => {
     }
   });
 
+  it("an archived project is put away: the home screen has its sessions only while they need the person or run, and it is a project everywhere else", async () => {
+    const t = setup();
+    t.project("chat");
+    t.project("ops");
+    const inOps = { comboName: "ops", comboRelation: "root" } as const;
+    t.rows.push(row("s-chat", { ...inChat, title: "rounding fix", activityMs: 90 }));
+    t.rows.push(row("s-quiet", { ...inOps, title: "rounding notes", activityMs: 80 }));
+    t.session("s-asks", {
+      ...inOps,
+      title: "rounding ask",
+      live: live("waiting", 5000),
+      activityMs: 70,
+    });
+    t.session("s-runs", {
+      ...inOps,
+      title: "rounding run",
+      live: live("running", 6000),
+      activityMs: 60,
+    });
+    t.rows.push(
+      row("s-cut", {
+        ...inOps,
+        title: "rounding cut",
+        interrupted: { why: "gone", at: 4000 },
+        activityMs: 50,
+      }),
+    );
+    // only what was said in it has the word
+    t.rows.push(row("s-said", { ...inOps, title: "deploy notes", activityMs: 40 }));
+    t.hits.push({ key: "/claude/projects/s-said.jsonl", snippet: "the rounding mode" });
+    const ids = (hits: Array<{ sessionId: string }>) => hits.map((h) => h.sessionId);
+    const home = () => ids(t.svc.listSessions(null));
+    const ops = () => t.combos[1] as { archived?: boolean };
+    /** the combo model changed: what ComboService's onModelChanged does. how many times the lists were told */
+    const changed = () => {
+      const before = t.got.sessions;
+      t.svc.start();
+      t.svc.inbox();
+      return t.got.sessions - before;
+    };
+    const everything = ["s-chat", "s-quiet", "s-asks", "s-runs", "s-cut", "s-said"];
+    expect(home()).toEqual(everything);
+    const inbox = ids(t.svc.inbox().rows);
+    expect(inbox).toEqual(["s-asks", "s-cut"]);
+    expect(t.svc.views().projects.map((p) => p.archived)).toEqual([undefined, undefined]);
+
+    ops().archived = true;
+    expect(changed()).toBe(1);
+    expect(t.svc.views().projects.map((p) => p.archived)).toEqual([undefined, true]);
+    // the quiet ones are out. the one that needs him, the stopped one and the running one are in
+    expect(home()).toEqual(["s-chat", "s-asks", "s-runs", "s-cut"]);
+    // its own screen lists all of it, as for any project
+    expect(ids(t.svc.listSessions("ops"))).toEqual(everything.slice(1));
+    // archiving mutes nothing: the same rows count in the inbox, the tray and the dock
+    expect(ids(t.svc.inbox().rows)).toEqual(inbox);
+    expect(t.got.inbox).toHaveLength(1);
+    // a click on a notification about a quiet one still lands on its row, in its project
+    expect(t.svc.landing("s-quiet")).toEqual({
+      view: "sessions",
+      project: "ops",
+      session: "s-quiet",
+    });
+    expect(t.svc.landing("s-asks")).toEqual({ view: "inbox", session: "s-asks" });
+    expect(t.svc.projectOf("s-quiet")).toBe("ops");
+    await t.svc.review("ops", ["stopped:s-cut@4000"], true);
+    expect([...t.marks]).toEqual(["ops/stopped:s-cut@4000"]);
+    // dismissed, it is a quiet session of an archived project
+    expect(home()).toEqual(["s-chat", "s-asks", "s-runs"]);
+
+    // the home screen's search follows its list, in what was said too
+    expect(ids(await t.svc.findSessions("rounding", null))).toEqual(["s-chat", "s-asks", "s-runs"]);
+    expect(ids(await t.svc.findSessions("rounding", "ops"))).toEqual([
+      "s-quiet",
+      "s-asks",
+      "s-runs",
+      "s-cut",
+      "s-said",
+    ]);
+    // the palette's still finds every session
+    expect(ids(await t.svc.findSessions("rounding"))).toEqual([
+      ...everything.slice(0, 5),
+      "s-said",
+    ]);
+
+    // its own screen still draws its quiet rows: one that changes moves the lists
+    Object.assign(t.rows[1] as SessionRow, { title: "rounding notes, renamed" });
+    expect(changed()).toBe(1);
+    expect(changed()).toBe(0);
+    // a quiet one that runs again is back on the home screen, and leaves it when it is seen
+    Object.assign(t.rows[1] as SessionRow, { live: live("waiting", 9000) });
+    expect(changed()).toBe(1);
+    expect(home()).toEqual(["s-chat", "s-quiet", "s-asks", "s-runs"]);
+    Object.assign(t.rows[1] as SessionRow, { live: live("waiting", 9000, { seen: true }) });
+    expect(changed()).toBe(1);
+    expect(home()).toEqual(["s-chat", "s-asks", "s-runs"]);
+
+    // brought back: all of it is on the home screen again
+    delete ops().archived;
+    expect(changed()).toBe(1);
+    expect(home()).toEqual(everything);
+  });
+
   it("a working session says what it was last asked and since when, and no other does", () => {
     const t = setup();
     t.project("chat");

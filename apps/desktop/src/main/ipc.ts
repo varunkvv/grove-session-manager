@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type Combo,
@@ -91,6 +91,7 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "createProject",
   "updateProject",
   "deleteProject",
+  "setArchived",
   "repairProject",
   "openProject",
   "setLongWork",
@@ -194,6 +195,18 @@ function buildHandlers(deps: Deps): Handlers {
       outcomes: report.outcomes,
       warnings: report.warnings,
     };
+  }
+
+  /**
+   * a deleted project's folder, to the Trash. a test root keeps it inside itself, in
+   * `.grove/trash/`: nothing a test deletes lands in the Trash of whoever runs it
+   */
+  async function trash(root: string): Promise<void> {
+    if (!env.customRoot) return electron.shell.trashItem(root);
+    const dir = path.join(env.stateDir, "trash");
+    await mkdir(dir, { recursive: true });
+    // two projects deleted in one run can share a folder name
+    await rename(root, path.join(dir, `${path.basename(root)}-${Date.now()}`));
   }
 
   /** a clean draft, or every problem with it in one error */
@@ -469,17 +482,32 @@ function buildHandlers(deps: Deps): Handlers {
       return { id: projectIdOf(combo) };
     },
 
-    async deleteProject(id, trashRoot) {
+    async deleteProject(id) {
       const combo = combos.byId(id);
       const { remaining } = await combos.remove(combo.name);
       if (remaining.length > 0) return { remaining };
-      if (trashRoot) {
-        // the root holds the person's CLAUDE.md, .claude settings, plans and notes, so it goes to the Trash
-        await electron.shell.trashItem(combo.root).catch((e: unknown) => {
+      // delete is for the disk, so the folder goes too. it holds the person's CLAUDE.md, .claude
+      // settings, plans and notes: the Trash, where it can still be taken back from
+      if (await isDirectory(combo.root)) {
+        await trash(combo.root).catch((e: unknown) => {
           log.warn("trash project root:", e);
+          // the project has left the list already: what is still on the disk has to be said
+          pusher.send("toast", {
+            level: "error",
+            title: `Could not move ${combo.name}'s folder to the Trash`,
+            body: `It is still at ${combo.root}.`,
+            detail: e instanceof Error ? e.message : String(e),
+          });
         });
       }
       return { remaining: [] };
+    },
+
+    async setArchived(id, archived) {
+      if (typeof archived !== "boolean") {
+        throw new AppError("invalid", "A project is either archived or not.");
+      }
+      await combos.setArchived(combos.byId(id).name, archived);
     },
 
     async repairProject(id) {

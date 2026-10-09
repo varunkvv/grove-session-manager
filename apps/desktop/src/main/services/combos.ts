@@ -438,6 +438,22 @@ export class ComboService {
     await syncLongWorkPolicy(this.find(name));
   }
 
+  /**
+   * put away, or brought back. it is a key in combos.json and nothing else: the folder, the
+   * working copies, the hooks and the sessions are as they were
+   */
+  async setArchived(name: string, archived: boolean): Promise<void> {
+    const { root } = this.find(name);
+    await this.save((combos) =>
+      combos.map((c) => {
+        if (c.root !== root) return c;
+        // the key goes when it is not archived: the file never says `"archived": false`
+        const { archived: _, ...rest } = c;
+        return archived ? { ...rest, archived: true } : rest;
+      }),
+    );
+  }
+
   /** removes clean worktrees first and refuses while any remain: nothing is left orphaned */
   async remove(name: string): Promise<{ remaining: TeardownOutcome[] }> {
     const combo = this.find(name);
@@ -445,6 +461,8 @@ export class ComboService {
     const remaining = outcomes.filter(isRemaining);
     if (remaining.length > 0) return { remaining };
     await this.save((combos) => combos.filter((c) => c.root !== combo.root));
+    // its folder is about to go to the Trash: nothing of ours keeps watching it there
+    this.watchStatusHooks();
     return { remaining: [] };
   }
 

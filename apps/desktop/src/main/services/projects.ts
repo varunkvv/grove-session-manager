@@ -61,6 +61,8 @@ interface Project {
   name: string;
   root: string;
   goal?: string;
+  /** put away. still a project in everything here but what the home screen lists */
+  archived?: boolean;
 }
 
 interface Index {
@@ -68,6 +70,8 @@ interface Index {
   rows: Map<string, SessionRow>;
   /** combo name -> project id */
   projectOf: Map<string, ProjectId>;
+  /** the combo names of the archived projects */
+  archived: Set<string>;
   /** by project: the sessions in it that are live or were interrupted. the others make no row */
   active: Map<ProjectId, SessionRow[]>;
 }
@@ -181,6 +185,7 @@ export class ProjectsService {
           checkedAt: v.checkedAt,
           rootExists: isDir(p.root),
           syncProblem: report?.warnings.map((w) => w.message).join(" ") || undefined,
+          ...(p.archived ? { archived: true } : {}),
         };
       }),
     };
@@ -265,7 +270,8 @@ export class ProjectsService {
   /**
    * the sessions a screen lists, newest first, every one of them. a project's: the ones started in
    * its folder, and the ones started in a subfolder or a working copy that need the person or are
-   * running now. with null every project's, and the ones in no project that a person started.
+   * running now. with null every project's, and the ones in no project that a person started. an
+   * archived project's are in that one only while they need the person or run.
    *
    * a finished one in a subfolder is left to the palette. Open takes it to that folder's own
    * window, not the project's, and a project's `artifacts/` can hold hundreds of scripted runs
@@ -334,13 +340,16 @@ export class ProjectsService {
       this.o.onInbox?.(inbox);
     }
     // what the sessions lists draw, without the activity time: that moves on every line an agent
-    // writes, and the page asks again on its own clock for it. every project's list is in this one
-    const sessions = JSON.stringify(
-      this.scoped(null, index).map((r) => {
+    // writes, and the page asks again on its own clock for it. every project's list is in this
+    // one, an archived project's quiet rows too: its own screen still draws them. then which of
+    // them the home screen has
+    const sessions = JSON.stringify([
+      this.scoped(null, index, true).map((r) => {
         const { activityMs: _, ...shown } = this.hit(r, index);
         return shown;
       }),
-    );
+      this.scoped(null, index).map((r) => r.sessionId),
+    ]);
     if (sessions !== this.sessionsJson) {
       this.sessionsJson = sessions;
       this.o.onSessions?.();
@@ -364,7 +373,7 @@ export class ProjectsService {
         );
         continue;
       }
-      projects.push({ id, name: c.name, root: c.root, goal: c.note });
+      projects.push({ id, name: c.name, root: c.root, goal: c.note, archived: c.archived });
     }
     return { projects, problem: problems.join(" ") || undefined };
   }
@@ -378,6 +387,7 @@ export class ProjectsService {
     const index: Index = {
       rows,
       projectOf: new Map(projects.map((p) => [p.name, p.id])),
+      archived: new Set(projects.filter((p) => p.archived).map((p) => p.name)),
       active: new Map(),
     };
     for (const r of rows.values()) {
@@ -387,16 +397,24 @@ export class ProjectsService {
     return index;
   }
 
-  /** the rows `listSessions` is made of. no project by that id has none */
-  private scoped(scope: ProjectId | null, index: Index): SessionRow[] {
+  /**
+   * the rows `listSessions` is made of. no project by that id has none. with null an archived
+   * project's quiet sessions are left out, unless `putAway` asks for them too
+   */
+  private scoped(scope: ProjectId | null, index: Index, putAway = false): SessionRow[] {
     const name =
       scope === null ? undefined : this.list().projects.find((p) => p.id === scope)?.name;
     if (scope !== null && !name) return [];
     const needs = new Set(this.inbox().rows.map((r) => r.sessionId));
+    // archiving is about noise, never about muting: one that needs the person or runs still shows
+    const quiet = (r: SessionRow) => !needs.has(r.sessionId) && r.live?.state !== "running";
+    const hidden = (r: SessionRow) =>
+      scope === null && !putAway && index.archived.has(r.comboName ?? "") && quiet(r);
     return [...index.rows.values()].filter(
       (r) =>
         (scope === null || r.comboName === name) &&
-        listed(r, needs.has(r.sessionId), !!projectOf(r, index)),
+        listed(r, needs.has(r.sessionId), !!projectOf(r, index)) &&
+        !hidden(r),
     );
   }
 

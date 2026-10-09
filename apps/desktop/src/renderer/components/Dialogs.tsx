@@ -25,14 +25,12 @@ export function DeleteProjectDialog() {
   const open = dialog?.kind === "delete";
   const id = open ? dialog.project : "";
   const name = projects.find((p) => p.id === id)?.name ?? id;
-  const [trash, setTrash] = useState(false);
   const [running, setRunning] = useState(false);
   const [remaining, setRemaining] = useState<TeardownOutcome[]>([]);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     if (open) {
-      setTrash(false);
       setRemaining([]);
       setError(undefined);
     }
@@ -40,7 +38,7 @@ export function DeleteProjectDialog() {
 
   async function run() {
     setRunning(true);
-    const res = await window.grove.deleteProject(id, trash);
+    const res = await window.grove.deleteProject(id);
     setRunning(false);
     if (!res.ok) return setError(res.error.message);
     if (res.value.remaining.length > 0) return setRemaining(res.value.remaining);
@@ -73,24 +71,10 @@ export function DeleteProjectDialog() {
     >
       <div className="space-y-3 text-fg-2">
         <p>
-          Clean working copies are removed first, then the project leaves the list. Original clones
+          Delete is for getting disk space back. The clean working copies are removed and the
+          project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones
           and past sessions are not touched.
         </p>
-        <label className="flex items-start gap-2.5">
-          <input
-            type="checkbox"
-            checked={trash}
-            onChange={(e) => setTrash(e.target.checked)}
-            className="mt-1"
-            data-testid="trash-root"
-          />
-          <span>
-            Also move the project folder to the Trash
-            <span className="block text-meta text-fg-3">
-              It holds your CLAUDE.md, .claude settings, plans and notes, so this is off by default.
-            </span>
-          </span>
-        </label>
         {remaining.length > 0 && (
           <div
             className="rounded-md border border-line px-3 py-2 text-sm text-fg"
