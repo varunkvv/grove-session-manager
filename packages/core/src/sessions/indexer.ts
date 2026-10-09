@@ -4,9 +4,19 @@ import { isObject, mapLimit } from "../fsx.ts";
 import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
 import { pickTitle } from "../transcript/title.ts";
-import { summarizeUsage } from "../transcript/usage.ts";
+import { type DayTally, summarizeUsage } from "../transcript/usage.ts";
 import type { ParsedMeta, SessionRecord } from "../types.ts";
-import { type CacheEntry, cacheKey, loadCache, saveCache, sweepOldCaches } from "./cache.ts";
+import {
+  type CacheEntry,
+  cacheKey,
+  loadCache,
+  loadRetired,
+  type RetiredEntry,
+  saveCache,
+  saveRetired,
+  sweepOldCaches,
+  USAGE_SCHEMA,
+} from "./cache.ts";
 import { TextStore } from "./fulltext.ts";
 import { type FileStat, scanProjects, sidecarTitlePath, statTranscript } from "./scan.ts";
 import {
@@ -46,6 +56,14 @@ export interface RefreshOptions {
 }
 
 export type IndexHealth = "ok" | "degraded" | "empty";
+
+/**
+ * one session's usage by day, per file under it, and what places it in a project. the session
+ * may be gone from disk: `path` is then where its transcript was
+ */
+export interface UsageSource extends RetiredEntry {
+  path: string;
+}
 
 const COLD_THRESHOLD = 20;
 
@@ -122,6 +140,10 @@ export class SessionIndex {
   private records = new Map<string, SessionRecord>();
   private dirty = false;
   private saving: Promise<void> | null = null;
+  /** the sessions whose transcript is gone, by where it was. only an index that counts keeps them */
+  private retired = new Map<string, RetiredEntry>();
+  private retiredRead = false;
+  private retiredDirty = false;
 
   constructor(opts: SessionIndexOptions) {
     this.projectsDir = opts.projectsDir;
@@ -140,7 +162,78 @@ export class SessionIndex {
   async load(): Promise<void> {
     if (!this.cacheDir) return;
     this.cache = await loadCache(this.cacheDir, this.projectsDir);
+    await this.readRetired();
     void sweepOldCaches(this.cacheDir);
+  }
+
+  /** once, and before the file is ever written: a write holds everything retired so far */
+  private async readRetired(): Promise<void> {
+    if (this.retiredRead || !this.cacheDir || !this.usage) return;
+    this.retiredRead = true;
+    const kept = await loadRetired(this.cacheDir, this.projectsDir);
+    // what was retired before the file was read is newer than what is in it
+    this.retired = new Map([...kept, ...this.retired]);
+  }
+
+  /**
+   * a transcript left the disk: its entry goes, and what was counted from it stays as a retired
+   * session. an index that does not count leaves a counted entry for the one that does
+   */
+  private drop(file: string): void {
+    const entry = this.cache.get(file);
+    if (!entry || (!this.usage && entry.usage)) return;
+    this.cache.delete(file);
+    this.dirty = true;
+    const files = Object.entries(entry.usage?.files ?? {}).flatMap(([rel, t]) =>
+      Object.keys(t.days).length ? [[rel, t.days] as const] : [],
+    );
+    if (files.length === 0) return;
+    const cwd = entry.meta.relocatedCwd ?? entry.meta.cwd;
+    this.retired.set(file, {
+      sessionId: entry.meta.sessionId ?? path.basename(file, ".jsonl"),
+      ...(cwd ? { cwd } : {}),
+      projectDirName: path.basename(path.dirname(file)),
+      files: Object.fromEntries(files),
+    });
+    this.retiredDirty = true;
+  }
+
+  /** it is on disk again, and is counted from the file again */
+  private back(file: string): void {
+    if (this.retired.delete(file)) this.retiredDirty = true;
+  }
+
+  /** every session's usage by day: the ones on disk that are counted, then the retired ones */
+  usageSources(): UsageSource[] {
+    const out: UsageSource[] = [];
+    for (const [file, entry] of this.cache) {
+      if (!entry.usage) continue;
+      const cwd = entry.meta.relocatedCwd ?? entry.meta.cwd;
+      const files: Record<string, Record<string, DayTally>> = {};
+      for (const [rel, t] of Object.entries(entry.usage.files)) files[rel] = t.days;
+      out.push({
+        path: file,
+        sessionId: entry.meta.sessionId ?? path.basename(file, ".jsonl"),
+        ...(cwd ? { cwd } : {}),
+        projectDirName: path.basename(path.dirname(file)),
+        files,
+      });
+    }
+    for (const [file, r] of this.retired) out.push({ path: file, ...r });
+    return out;
+  }
+
+  /** how far the count has got: the first one after an upgrade reads every transcript whole */
+  usageProgress(): { counted: number; total: number } {
+    let counted = 0;
+    let total = 0;
+    for (const file of this.records.keys()) {
+      const entry = this.cache.get(file);
+      if (!entry) continue;
+      total++;
+      if (entry.usage) counted++;
+    }
+    return { counted, total };
   }
 
   async refresh(opts: RefreshOptions = {}): Promise<RefreshStats> {
@@ -150,6 +243,7 @@ export class SessionIndex {
     let cacheHits = 0;
 
     for (const s of stats) {
+      this.back(s.path);
       const hit = this.cache.get(s.path);
       if (hit && hit.key === cacheKey(s)) {
         next.set(s.path, toRecord(s, hit.meta, hit.usage?.files));
@@ -162,11 +256,8 @@ export class SessionIndex {
     }
 
     const removed = [...this.records.keys()].filter((p) => !next.has(p)).length;
-    for (const p of this.cache.keys()) {
-      if (!next.has(p)) {
-        this.cache.delete(p);
-        this.dirty = true;
-      }
+    for (const p of [...this.cache.keys()]) {
+      if (!next.has(p)) this.drop(p);
     }
     this.records = next;
     opts.onBatch?.(this.list());
@@ -307,6 +398,7 @@ export class SessionIndex {
       if (files[rel]) agentText[rel] = await agentSink.commit();
     }
     entry.usage = {
+      v: USAGE_SCHEMA,
       key: cacheKey(s),
       files,
       ...(textChars !== undefined ? { textChars } : {}),
@@ -322,6 +414,7 @@ export class SessionIndex {
   async refreshFile(file: string): Promise<{ changed: boolean; record?: SessionRecord }> {
     const s = await statTranscript(file);
     if (!s) return { changed: this.removeFile(file) };
+    this.back(file);
     const before = this.records.get(file);
     const hit = this.cache.get(file);
     let meta: ParsedMeta | null;
@@ -407,7 +500,7 @@ export class SessionIndex {
   removeFile(file: string): boolean {
     void this.text?.remove(file);
     const had = this.records.delete(file);
-    if (this.cache.delete(file)) this.dirty = true;
+    this.drop(file);
     return had;
   }
 
@@ -433,12 +526,24 @@ export class SessionIndex {
   }
 
   async flush(): Promise<void> {
-    if (!this.cacheDir || !this.dirty || this.persist === "never") return;
+    if (!this.cacheDir || this.persist === "never") return;
+    if (!this.dirty && !this.retiredDirty) return;
     if (this.saving) await this.saving;
+    const cacheDir = this.cacheDir;
+    const { dirty, retiredDirty } = this;
     this.dirty = false;
-    this.saving = saveCache(this.cacheDir, this.projectsDir, this.cache)
+    this.retiredDirty = false;
+    this.saving = (async () => {
+      // the retired first: the index can be counted again, they cannot
+      if (retiredDirty) {
+        await this.readRetired();
+        await saveRetired(cacheDir, this.projectsDir, this.retired);
+      }
+      if (dirty) await saveCache(cacheDir, this.projectsDir, this.cache);
+    })()
       .catch(() => {
-        this.dirty = true;
+        this.dirty ||= dirty;
+        this.retiredDirty ||= retiredDirty;
       })
       .finally(() => {
         this.saving = null;

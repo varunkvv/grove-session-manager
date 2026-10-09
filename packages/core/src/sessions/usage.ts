@@ -68,12 +68,12 @@ function foldLines(
   for (const line of text.split("\n")) {
     if (line.charCodeAt(0) !== 0x7b) continue;
     // most of the bytes are tool results and attachments. skip them before paying for a parse.
-    // every assistant response carries usage. a person's turn is a user line that is not a tool
+    // every assistant response carries usage. a turn starts at a user line that is not a tool
     // result - and an agent's tool results mostly carry no toolUseResult, so the block says it.
+    // those are read with or without a text sink: the working time is counted from them
     const usage = line.includes('"usage"');
     const typed =
       !usage &&
-      !!sink &&
       line.includes('"type":"user"') &&
       !line.includes('"toolUseResult":') &&
       !line.includes('"type":"tool_result"');
@@ -81,7 +81,7 @@ function foldLines(
     try {
       const v: unknown = JSON.parse(line);
       if (!isObject(v)) continue;
-      if (usage) acc.push(v);
+      acc.push(v);
       if (sink) {
         const t = textOf(v);
         if (t) sink.push(t);
@@ -127,7 +127,8 @@ export async function scanSessionUsage(
   sink?: TextSink,
   agentSink?: (rel: string) => TextSink | undefined,
 ): Promise<SessionTallies> {
-  const out: SessionTallies = {};
+  // an agent's transcript that is gone keeps what was counted from it: the work was still done
+  const { "": _, ...out }: SessionTallies = prev;
   const main = await scanUsage(transcriptPath, prev[""], sink).catch(() => undefined);
   if (main) out[""] = main;
   const base = path.dirname(transcriptPath);

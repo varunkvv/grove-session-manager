@@ -12,6 +12,7 @@ export * from "./sessions/search.ts";
 export * from "./sessions/timeline.ts";
 export * from "./slug.ts";
 export * from "./time.ts";
+export * from "./transcript/pricing.ts";
 export { pickTitle, squash } from "./transcript/title.ts";
 export * from "./transcript/usage.ts";
 export * from "./types.ts";
