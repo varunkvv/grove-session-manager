@@ -63,8 +63,40 @@ describe("paletteItems", () => {
       "new-session",
       "start-background",
       "long-work",
+      "archive-project",
       "delete-project",
       "settings",
+    ]);
+  });
+
+  it("archived projects are a section of their own, and only once something is typed", () => {
+    const auth = project("auth");
+    const away = project("old-export", { archived: true });
+    const c = ctx({ project: auth, projects: [auth, away, project("data")] });
+    // nothing typed: the projects that are not archived
+    expect(sections(c)).toEqual(["Go to", "Projects", "This project", "App"]);
+    expect(ids(c)).not.toContain("project:old-export");
+    // a word of its name: the keyboard still reaches it, and it runs like any project
+    expect(sections(c, "old")).toEqual(["Archived"]);
+    expect(ids(c, "old")).toEqual(["project:old-export"]);
+    expect(sections(c, "switch")).toEqual(["Projects", "Archived"]);
+    expect(ids(c, "switch")).toEqual(["project:auth", "project:data", "project:old-export"]);
+
+    // the row says what choosing it does, above Delete, which both have
+    const mine = (x: PaletteContext, q = "") =>
+      paletteItems(x, q)
+        .sections.find((s) => s.label === "This project")
+        ?.items.map((i) => i.label);
+    expect(mine(c)?.slice(-2)).toEqual(["Archive project", "Delete project…"]);
+    const onIt = ctx({ project: away, projects: [auth, away] });
+    expect(mine(onIt)?.slice(-2)).toEqual(["Unarchive project", "Delete project…"]);
+    // `archive` and Enter is the command, on either: an archived project does not answer to the word
+    expect(ids(c, "archive")).toEqual(["archive-project"]);
+    expect(ids(onIt, "archive")).toEqual(["archive-project"]);
+    // the one on screen is checked where it is listed
+    const checked = paletteItems(onIt, "old").sections.flatMap((s) => s.items);
+    expect(checked).toMatchObject([
+      { id: "project:old-export", section: "Archived", current: true },
     ]);
   });
 

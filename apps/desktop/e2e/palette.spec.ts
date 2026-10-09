@@ -104,6 +104,7 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
     "new-session",
     "start-background",
     "long-work",
+    "archive-project",
     "delete-project",
     "settings",
   ]);

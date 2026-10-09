@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { CLOSED, PAGE } from "../../src/renderer/logic/views.ts";
 import {
+  archiveProject,
   back,
   drawMore,
   editProject,
@@ -15,10 +16,10 @@ import {
   toggleOlder,
 } from "../../src/renderer/state/actions.ts";
 import { applyLanding } from "../../src/renderer/state/landing.ts";
-import { listInput, useStore } from "../../src/renderer/state/store.ts";
+import { listInput, startProject, useStore } from "../../src/renderer/state/store.ts";
 import type { InboxRowView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
 
-const project = (id: string): ProjectView => ({
+const project = (id: string, archived?: boolean): ProjectView => ({
   id,
   name: id,
   root: `/ws/${id}`,
@@ -27,6 +28,7 @@ const project = (id: string): ProjectView => ({
   folders: [],
   status: "known",
   rootExists: true,
+  ...(archived ? { archived } : {}),
 });
 // a list cuts its rows by the day they last moved: these all moved in the last minute
 const NOW = Date.now();
@@ -327,6 +329,32 @@ describe("keys on a list", () => {
     expect(s()).toMatchObject({ view: { name: "inbox" }, project: "auth" });
   });
 
+  it("alt-arrows leave the archived projects out, and from one of them go up to the last that is not", () => {
+    s().set({
+      projects: [project("auth"), project("old", true), project("billing"), project("older", true)],
+    });
+    const walk = (delta: 1 | -1, steps: number) => {
+      const seen: string[] = [];
+      for (let i = 0; i < steps; i++) {
+        perform({ type: "project-step", delta });
+        seen.push(s().view.name === "inbox" ? "inbox" : (s().project ?? ""));
+      }
+      return seen;
+    };
+    expect(walk(1, 3)).toEqual(["auth", "billing", "billing"]);
+    expect(walk(-1, 3)).toEqual(["auth", "inbox", "inbox"]);
+    // he went to an archived one on purpose: it sits under them all
+    switchProject("old");
+    expect(walk(1, 1)).toEqual(["old"]);
+    expect(walk(-1, 1)).toEqual(["billing"]);
+    // every project is archived: there is nothing to step through but the way back up
+    s().set({ projects: [project("old", true)] });
+    go("inbox");
+    expect(walk(1, 1)).toEqual(["inbox"]);
+    switchProject("old");
+    expect(walk(-1, 1)).toEqual(["inbox"]);
+  });
+
   it("cmd-F is the search of the list on screen, and from a form of the list under it", () => {
     perform({ type: "focus-search" });
     expect(s()).toMatchObject({ view: { name: "inbox" } });
@@ -363,6 +391,62 @@ describe("keys on a list", () => {
     perform({ type: "open-project" });
     perform({ type: "edit-project" });
     expect(s()).toMatchObject({ view: { name: "inbox" }, toasts: [] });
+  });
+});
+
+describe("archiving a project", () => {
+  const asked: unknown[][] = [];
+  beforeEach(() => {
+    asked.length = 0;
+    grove.setArchived = async (...args: unknown[]) => {
+      asked.push(args);
+      return { ok: true };
+    };
+  });
+
+  it("the one on screen: a toast, and All sessions. from its form too", async () => {
+    go("sessions");
+    openRow("sessions", "s-quiet");
+    await archiveProject("auth", true);
+    expect(asked).toEqual([["auth", true]]);
+    expect(s()).toMatchObject({ view: { name: "inbox" }, back: [], peek: null });
+    expect(s().toasts).toMatchObject([{ level: "info", title: "Archived auth" }]);
+    // the screen it was on is still the one cmd-2 goes back to: archived is a view, not a lock
+    expect(s().project).toBe("auth");
+
+    go("sessions");
+    editProject();
+    await archiveProject("auth", true);
+    expect(s()).toMatchObject({ view: { name: "inbox" }, back: [] });
+  });
+
+  it("unarchiving stays on the project, and a refusal changes nothing but a toast", async () => {
+    go("sessions");
+    await archiveProject("auth", false);
+    expect(asked).toEqual([["auth", false]]);
+    expect(s()).toMatchObject({ view: { name: "sessions" }, project: "auth" });
+    expect(s().toasts).toMatchObject([{ level: "info", title: "Unarchived auth" }]);
+
+    grove.setArchived = async () => ({ ok: false, error: { code: "invalid", message: "no" } });
+    await archiveProject("auth", true);
+    expect(s().view).toEqual({ name: "sessions" });
+    expect(s().toasts.at(-1)).toMatchObject({
+      level: "error",
+      title: "Could not archive auth",
+      body: "no",
+    });
+  });
+
+  it("a launch starts on the project it was left on, unless that one is gone or archived since", () => {
+    const projects = [project("old", true), project("auth"), project("billing")];
+    expect(startProject(projects, "billing")).toBe("billing");
+    // archived since, gone, or never remembered: the first that is not archived
+    expect(startProject(projects, "old")).toBe("auth");
+    expect(startProject(projects, "deleted")).toBe("auth");
+    expect(startProject(projects, null)).toBe("auth");
+    // all of them archived is still a project, never the first-run form
+    expect(startProject([project("old", true)], null)).toBe("old");
+    expect(startProject([], "old")).toBeNull();
   });
 });
 

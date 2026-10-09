@@ -2,7 +2,15 @@ import { tokenize } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import type { SessionHit } from "../../shared/ipc.ts";
 import { type PaletteItem, paletteItems } from "../logic/palette.ts";
-import { focusScreen, go, newSession, openWith, report, switchProject } from "../state/actions.ts";
+import {
+  archiveProject,
+  focusScreen,
+  go,
+  newSession,
+  openWith,
+  report,
+  switchProject,
+} from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { cx, Highlighted, Icon, Kbd, menuItemClass, Overlay, Time } from "./ui.tsx";
 
@@ -90,6 +98,9 @@ function Open() {
           void window.grove
             .repairProject(p.id)
             .then((res) => report("Could not repair the working copies", res));
+          break;
+        case "archive-project":
+          void archiveProject(p.id, !p.archived);
           break;
         case "delete-project":
           return set({ overlay: null, dialog: { kind: "delete", project: p.id } });

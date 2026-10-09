@@ -543,6 +543,103 @@ test("removing working copies on Edit project takes the clean one down and keeps
   }
 });
 
+test("Delete project is for the disk: no checkbox, a working copy with changes blocks it, then the folder goes to the trash. Archive instead keeps everything", async () => {
+  fx = makeFixture({ withCompanion: true });
+  const apiRepo = makeRepo(fx, "api");
+  const shared = makeRepo(fx, "shared");
+  const notes = writeProject(fx, { name: "notes", goal: "Keep the notes in one place" });
+
+  app = await launchApp(fx);
+  const { page } = app;
+  await stubDirectoryPicker(app.app, [apiRepo, shared]);
+  await fillNew(page, "prod-debug", 2);
+  await submit(page);
+  await expect
+    .poll(() => folderStates(page, "prod-debug"), { timeout: 30_000 })
+    .toEqual(["ok", "ok"]);
+  const root = path.join(fx.root, "prod-debug");
+  const dirty = path.join(root, "api", "work-in-progress.txt");
+  writeFileSync(dirty, "half an hour of work\n");
+  // a test root never uses the real Trash: a deleted project's folder is moved here
+  const trash = path.join(fx.root, ".grove", "trash");
+
+  // from the foot of its form, where he looked for it
+  await page.getByTestId("edit-project").click();
+  await page.getByTestId("form-delete").click();
+  const dialog = page.getByTestId("delete-dialog");
+  await expect(dialog).toHaveAttribute("aria-label", "Delete prod-debug?");
+  // nothing to tick: delete always takes the folder
+  await expect(dialog.locator("input")).toHaveCount(0);
+  await expect(dialog).toContainText(
+    "Delete is for getting disk space back. The clean working copies are removed and the project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones and past sessions are not touched.",
+  );
+  await expect(page.getByTestId("archive-hint")).toHaveText(
+    "Archiving puts the project away and keeps everything.",
+  );
+  await expect(page.getByTestId("archive-instead")).toBeVisible();
+
+  // the working copy with work in it is never forced: nothing is deleted, and it says which one
+  await page.getByTestId("delete-confirm").click();
+  await expect(page.getByTestId("delete-blocked")).toContainText(
+    "api - kept - it has uncommitted changes",
+    { timeout: 30_000 },
+  );
+  expect(readFileSync(dirty, "utf8")).toBe("half an hour of work\n");
+  expect(combos().map((c) => c.name)).toEqual(["notes", "prod-debug"]);
+  expect(existsSync(path.join(root, "CLAUDE.md"))).toBe(true);
+  expect(existsSync(trash)).toBe(false);
+
+  // the work is dealt with: the same button deletes
+  rmSync(dirty);
+  await page.getByTestId("delete-confirm").click();
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByTestId("toast").filter({ hasText: "Deleted prod-debug" })).toBeVisible();
+  expect(combos().map((c) => c.name)).toEqual(["notes"]);
+  // the folder is gone from the projects, whole, and is in the trash with what he wrote in it
+  expect(existsSync(root)).toBe(false);
+  const [gone, ...more] = readdirSync(trash);
+  expect(more).toEqual([]);
+  expect(gone).toMatch(/^prod-debug-\d+$/);
+  expect(existsSync(path.join(trash, gone as string, "CLAUDE.md"))).toBe(true);
+  for (const copy of ["api", "shared"]) {
+    expect(existsSync(path.join(trash, gone as string, copy)), copy).toBe(false);
+  }
+  // the original clones are exactly as they were
+  for (const repo of [apiRepo, shared]) {
+    expect(git(repo, "status", "--porcelain")).toBe("");
+    expect(git(repo, "branch", "--show-current")).toBe("main");
+    expect(git(repo, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+  }
+  // its screen went with it: the project that is left
+  await expect(page.getByTestId("project-name")).toHaveText("notes");
+  await expect(page.locator('[data-testid="project-item"][data-id="prod-debug"]')).toHaveCount(0);
+
+  // Archive instead, from the same dialog: put away, with everything kept
+  await page.getByTestId("open-palette").click();
+  await page.getByTestId("palette-input").fill("delete");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveAttribute("aria-label", "Delete notes?");
+  await page.getByTestId("archive-instead").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("toast").filter({ hasText: "Archived notes" })).toBeVisible();
+  expect(combos()).toMatchObject([{ name: "notes", root: notes.root, archived: true }]);
+  expect(existsSync(notes.root)).toBe(true);
+  expect(readdirSync(trash)).toEqual([gone]);
+  // every project is archived now. that is still a project: All sessions, not the first-run form
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+  await expect(page.getByTestId("project-form")).toHaveCount(0);
+  await expect(page.getByTestId("archived-toggle")).toHaveText(/^Archived\s*1$/);
+  // on an archived project the dialog has nothing to offer instead
+  await page.getByTestId("archived-toggle").click();
+  await show(page, "notes");
+  await page.getByTestId("edit-project").click();
+  await expect(page.getByTestId("form-archive")).toHaveText("Unarchive");
+  await page.getByTestId("form-delete").click();
+  await expect(dialog).toContainText("Delete is for getting disk space back.");
+  await expect(page.getByTestId("archive-instead")).toHaveCount(0);
+  await expect(page.getByTestId("archive-hint")).toHaveCount(0);
+});
+
 test("repos people keep using are one click away, and two with one name say where they are", async () => {
   fx = makeFixture({ withCompanion: true });
   writeProject(fx, { name: "scratch" });

@@ -1,5 +1,5 @@
 import { startBlocked } from "../logic/views.ts";
-import { editProject, newSession, openProject } from "../state/actions.ts";
+import { archiveProject, editProject, newSession, openProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import { Button, Icon, Kbd, ProjectMark } from "./ui.tsx";
 
@@ -33,6 +33,12 @@ export function TopBar() {
           >
             {project.name}
           </h1>
+          {/* put away, and said quietly: it is still a project, and this is still its screen */}
+          {project.archived && (
+            <span className="shrink-0 text-sm text-fg-4" data-testid="project-archived">
+              Archived
+            </span>
+          )}
         </>
       )}
       {(view === "inbox" || project) && (
@@ -55,18 +61,31 @@ export function TopBar() {
       <span className="ml-auto" />
       {project && (
         <>
-          {/* a new conversation in the editor, where the ask is typed. a background one is in cmd-K */}
-          <Button
-            variant="quiet"
-            size="sm"
-            disabled={!!blocked}
-            title={blocked?.line ?? `A new conversation in ${project.name}, in ${editor}`}
-            onClick={() => newSession(project.id)}
-            data-testid="new-session"
-          >
-            <Icon name="plus" size={10} />
-            New session
-          </Button>
+          {project.archived ? (
+            // what an archived project's screen is for: looking, and bringing it back
+            <Button
+              variant="quiet"
+              size="sm"
+              title={`Bring ${project.name} back into the list of projects`}
+              onClick={() => void archiveProject(project.id, false)}
+              data-testid="unarchive"
+            >
+              Unarchive
+            </Button>
+          ) : (
+            // a new conversation in the editor, where the ask is typed. a background one is in cmd-K
+            <Button
+              variant="quiet"
+              size="sm"
+              disabled={!!blocked}
+              title={blocked?.line ?? `A new conversation in ${project.name}, in ${editor}`}
+              onClick={() => newSession(project.id)}
+              data-testid="new-session"
+            >
+              <Icon name="plus" size={10} />
+              New session
+            </Button>
+          )}
           {/* the project's window in the editor. cmd-O does the same */}
           <Button
             size="sm"

@@ -4,11 +4,12 @@ import path from "node:path";
 import { comboDirSlug } from "@grove/core";
 import type { Fixture } from "./fixture.ts";
 
-/** a combos.json entry and its root */
+/** a combos.json entry and its root. any other key is written into the entry as it is */
 export function writeProject(
   fx: Fixture,
-  o: { name: string; goal?: string; folders?: unknown[] },
+  o: { name: string; goal?: string; folders?: unknown[]; [key: string]: unknown },
 ): { id: string; root: string } {
+  const { name: _n, goal: _g, folders: _f, ...extra } = o;
   const id = comboDirSlug(o.name);
   const root = path.join(fx.root, id);
   mkdirSync(root, { recursive: true });
@@ -18,6 +19,7 @@ export function writeProject(
     name: o.name,
     root,
     ...(o.goal ? { note: o.goal } : {}),
+    ...extra,
     folders: o.folders ?? [],
   });
   writeFileSync(file, JSON.stringify({ combos }, null, 2));

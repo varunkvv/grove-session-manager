@@ -245,6 +245,22 @@ export async function review(project: ProjectId, keys: string[]): Promise<boolea
   return ok;
 }
 
+/**
+ * put a project away, or bring it back. archiving the one on screen goes to All sessions: its row
+ * has left the list for Archived. unarchiving stays on the project
+ */
+export async function archiveProject(id: ProjectId, archived: boolean): Promise<void> {
+  const name = nameOf(id);
+  const res = await api().setArchived(id, archived);
+  if (!report(`Could not ${archived ? "archive" : "unarchive"} ${name}`, res)) return;
+  const s = state();
+  s.toast({ level: "info", title: `${archived ? "Archived" : "Unarchived"} ${name}` });
+  if (archived && s.project === id && s.view.name !== "inbox") {
+    go("inbox");
+    focusScreen();
+  }
+}
+
 export async function openProject(id: ProjectId): Promise<void> {
   const name = nameOf(id);
   state().toast({ level: "info", title: `Opening ${name} in ${editorLabel()}` });
@@ -375,12 +391,15 @@ export function perform(intent: Intent): void {
       s.set({ overlay: "palette" });
       break;
     case "project-step": {
-      // the sidebar's order: the inbox, then the projects
-      const ids = s.projects.map((p) => p.id);
-      const at = s.view.name === "inbox" ? -1 : ids.indexOf(s.project ?? "");
-      const to = Math.min(ids.length - 1, at + intent.delta);
+      // the sidebar's order: the inbox, then the projects. the archived ones are put away, and
+      // are not stepped through
+      const ids = s.projects.filter((p) => !p.archived).map((p) => p.id);
+      const here = ids.indexOf(s.project ?? "");
+      // an archived project on screen sits under them all: up from it is the last of them
+      const at = s.view.name === "inbox" ? -1 : here < 0 ? ids.length : here;
+      const to = at + intent.delta;
       const next = ids[to];
-      if (next && to !== at) switchProject(next);
+      if (next) switchProject(next);
       else if (to < 0 && at >= 0) go("inbox");
       break;
     }

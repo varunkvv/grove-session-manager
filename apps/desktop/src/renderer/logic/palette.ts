@@ -3,7 +3,13 @@ import { tokenize } from "@grove/core/pure";
 import type { ProjectView, SessionHit } from "../../shared/ipc.ts";
 import { startBlocked } from "./views.ts";
 
-export type PaletteSection = "Go to" | "Projects" | "This project" | "App" | "Sessions";
+export type PaletteSection =
+  | "Go to"
+  | "Projects"
+  | "Archived"
+  | "This project"
+  | "App"
+  | "Sessions";
 
 export interface PaletteItem {
   /** what it runs: `go-inbox`, `project:{id}`, `session:{key}` ... */
@@ -57,11 +63,12 @@ function commands(ctx: PaletteContext): PaletteItem[] {
       kbd: "⌘1",
     });
   }
-  // a project is its sessions
+  // a project is its sessions. an archived one is put away here too, and found by its name. it
+  // does not answer to `archive`: that word is for the command, which Enter must land on
   for (const q of ctx.projects) {
     items.push({
       id: `project:${q.id}`,
-      section: "Projects",
+      section: q.archived ? "Archived" : "Projects",
       label: q.name,
       keywords: "switch project sessions",
       current: q.id === p?.id,
@@ -91,7 +98,12 @@ function commands(ctx: PaletteContext): PaletteItem[] {
     );
     if (p.folders.some((f) => REPAIRABLE.has(f.state)))
       items.push(mine("repair", "Repair working copies", "worktree fix drift"));
-    items.push(mine("delete-project", "Delete project…", "remove"));
+    items.push(
+      p.archived
+        ? mine("archive-project", "Unarchive project", "archive restore bring back")
+        : mine("archive-project", "Archive project", "hide put away"),
+      mine("delete-project", "Delete project…", "remove trash disk space"),
+    );
   }
   items.push({
     id: "settings",
@@ -103,7 +115,14 @@ function commands(ctx: PaletteContext): PaletteItem[] {
   return items;
 }
 
-const ORDER: PaletteSection[] = ["Go to", "Projects", "This project", "App", "Sessions"];
+const ORDER: PaletteSection[] = [
+  "Go to",
+  "Projects",
+  "Archived",
+  "This project",
+  "App",
+  "Sessions",
+];
 
 export interface PaletteList {
   sections: Array<{ label: PaletteSection; items: PaletteItem[] }>;
@@ -114,8 +133,9 @@ export interface PaletteList {
 export function paletteItems(ctx: PaletteContext, query: string): PaletteList {
   const words = tokenize(query);
   const typed = words.length > 0;
-  const items = commands(ctx).filter(
-    (i) => !typed || matchCommand(`${i.label} ${i.keywords ?? ""}`, words),
+  // the archived projects show only once something is typed: the keyboard can still reach one
+  const items = commands(ctx).filter((i) =>
+    typed ? matchCommand(`${i.label} ${i.keywords ?? ""}`, words) : i.section !== "Archived",
   );
   const answered = ctx.sessions?.query === query;
   if (typed && answered) {

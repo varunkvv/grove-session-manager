@@ -711,6 +711,7 @@ export function SideItem({
   onDoubleClick,
   testId,
   id,
+  quiet,
 }: {
   selected: boolean;
   /** an icon, or a project's mark */
@@ -722,6 +723,8 @@ export function SideItem({
   onDoubleClick?: () => void;
   testId: string;
   id?: string;
+  /** an archived project: its name is a grey lighter until it is the one on screen */
+  quiet?: boolean;
 }) {
   return (
     <button
@@ -735,12 +738,56 @@ export function SideItem({
       onDoubleClick={onDoubleClick}
       className={cx(
         "no-drag fade flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-body",
-        selected ? "bg-accent-soft font-medium text-fg" : "text-fg-2 hover:bg-active hover:text-fg",
+        selected
+          ? "bg-accent-soft font-medium text-fg"
+          : cx(quiet ? "text-fg-4" : "text-fg-2", "hover:bg-active hover:text-fg"),
       )}
     >
       <span className="flex w-3.5 shrink-0 justify-center">{mark}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <CountPill n={count} testId="count" />
+    </button>
+  );
+}
+
+/**
+ * a group of the sidebar that folds, as Older does in a list: closed until it is asked for, with
+ * how many it holds. closed, it also says how many sessions in it need the person: putting a
+ * project away never hides that
+ */
+export function SideGroup({
+  label,
+  n,
+  count,
+  open,
+  onToggle,
+  testId,
+}: {
+  label: string;
+  /** how many rows it holds */
+  n: number;
+  /** how many sessions under it need the person. only shown while it is closed */
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      data-testid={testId}
+      onClick={onToggle}
+      className="no-drag fade flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-fg-3 hover:bg-active hover:text-fg"
+    >
+      <span className="flex w-3.5 shrink-0 justify-center">
+        <Icon name="chevron" size={10} faint className={cx(open && "rotate-90")} />
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        {label}
+        <span className="ml-2 font-normal tabular-nums text-fg-4">{n}</span>
+      </span>
+      <CountPill n={open ? 0 : count} testId="count" />
     </button>
   );
 }

@@ -1,7 +1,7 @@
 import type { TeardownOutcome } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
-import { startAgent } from "../state/actions.ts";
+import { archiveProject, startAgent } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Button, cx, Field, inputClass, Modal, Select, Switch } from "./ui.tsx";
 
@@ -24,7 +24,8 @@ export function DeleteProjectDialog() {
   const toast = useStore((s) => s.toast);
   const open = dialog?.kind === "delete";
   const id = open ? dialog.project : "";
-  const name = projects.find((p) => p.id === id)?.name ?? id;
+  const project = projects.find((p) => p.id === id);
+  const name = project?.name ?? id;
   const [running, setRunning] = useState(false);
   const [remaining, setRemaining] = useState<TeardownOutcome[]>([]);
   const [error, setError] = useState<string>();
@@ -58,6 +59,18 @@ export function DeleteProjectDialog() {
           <Button variant="ghost" onClick={() => set({ dialog: null })}>
             Cancel
           </Button>
+          {project && !project.archived && (
+            <Button
+              disabled={running}
+              onClick={() => {
+                set({ dialog: null });
+                void archiveProject(id, true);
+              }}
+              data-testid="archive-instead"
+            >
+              Archive instead
+            </Button>
+          )}
           <Button
             variant="primary"
             disabled={running}
@@ -75,6 +88,9 @@ export function DeleteProjectDialog() {
           project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones
           and past sessions are not touched.
         </p>
+        {project && !project.archived && (
+          <p data-testid="archive-hint">Archiving puts the project away and keeps everything.</p>
+        )}
         {remaining.length > 0 && (
           <div
             className="rounded-md border border-line px-3 py-2 text-sm text-fg"

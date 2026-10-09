@@ -166,11 +166,28 @@ function rememberedProject(): string | null {
   }
 }
 
+/**
+ * the project a screen falls back to: the first that is not archived. an archived one only when
+ * all of them are, since no project at all is what the first-run form is drawn for
+ */
+const firstProject = (projects: readonly ProjectView[]): ProjectId | null =>
+  (projects.find((p) => !p.archived) ?? projects[0])?.id ?? null;
+
+/**
+ * the project the app opens with: the one it was left on, unless that is gone or was archived
+ * since. going to an archived one on purpose always works. this is only where a launch starts
+ */
+export const startProject = (
+  projects: readonly ProjectView[],
+  saved: string | null,
+): ProjectId | null =>
+  projects.some((p) => p.id === saved && !p.archived) ? saved : firstProject(projects);
+
 /** the project the sessions screen is on left the list, or the first one arrived */
 function followProjects(projects: ProjectView[]): void {
   const s = useStore.getState();
   if (s.project !== null && projects.some((p) => p.id === s.project)) return;
-  const first = projects[0]?.id ?? null;
+  const first = firstProject(projects);
   // its screen went with it. the inbox is every project's, so it stays
   if (first && s.view.name !== "inbox") switchProject(first);
   else s.set({ project: first, sessions: null });
@@ -224,7 +241,6 @@ export async function connect(): Promise<() => void> {
   ];
 
   const boot = await window.grove.bootstrap();
-  const saved = rememberedProject();
   set({
     ready: true,
     env: boot.env,
@@ -233,7 +249,7 @@ export async function connect(): Promise<() => void> {
     projects: boot.projects,
     projectsProblem: boot.projectsProblem,
     inbox: boot.inbox,
-    project: boot.projects.some((p) => p.id === saved) ? saved : (boot.projects[0]?.id ?? null),
+    project: startProject(boot.projects, rememberedProject()),
   });
   revs = { ...boot.revs };
   for (const replay of buffered.splice(0)) replay();

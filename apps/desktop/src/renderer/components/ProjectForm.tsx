@@ -23,7 +23,7 @@ import {
   repoNote,
   repoOf,
 } from "../logic/projectForm.ts";
-import { back, switchProject } from "../state/actions.ts";
+import { archiveProject, back, switchProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
 import {
   Button,
@@ -296,6 +296,7 @@ function SyncProblem({ project }: { project: ProjectView }) {
 /** New project and Edit project (ui.md 4.5, 4.6): one form on the draft, validate and save flow */
 export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boolean }) {
   const env = useStore((s) => s.env);
+  const set = useStore((s) => s.set);
   const live = useStore(currentProject);
   // the project as it was when the screen opened: the heading, the locked rows, what Save compares
   const [original] = useState(() => (mode === "edit" ? live : undefined));
@@ -579,6 +580,28 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
           </ul>
         )}
         <div className="mt-9 flex justify-end gap-2 border-t border-line pt-4">
+          {self && live && (
+            // putting it away and getting its disk space back, away from Save. their words start
+            // where the labels do
+            <div className="mr-auto -ml-3 flex gap-1">
+              <Button
+                variant="quiet"
+                size="lg"
+                onClick={() => void archiveProject(self, !live.archived)}
+                data-testid="form-archive"
+              >
+                {live.archived ? "Unarchive" : "Archive"}
+              </Button>
+              <Button
+                variant="quiet"
+                size="lg"
+                onClick={() => set({ dialog: { kind: "delete", project: self } })}
+                data-testid="form-delete"
+              >
+                Delete…
+              </Button>
+            </div>
+          )}
           {!first && (
             <Button variant="ghost" size="lg" onClick={back} data-testid="form-cancel">
               Cancel
