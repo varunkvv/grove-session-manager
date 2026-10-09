@@ -281,8 +281,9 @@ Grove.
 
 While any session Grove can see is mid-turn, Grove keeps the Mac from going to sleep on its own, and lets it go when
 the last turn ends. It is the assertion `caffeinate -i` takes, held by Grove itself: no terminal and no extra process.
-The display still sleeps, and a laptop on battery with its lid shut still sleeps. A session waiting on you does not count, and
-neither does Grove when it is not running. **Keep the Mac awake while agents work** in Settings switches it off.
+The display still sleeps, and a laptop on battery with its lid shut still sleeps. A session waiting on you does not
+count. It holds only while Grove is running: closing the window keeps Grove in the menu bar, quitting lets go.
+**Keep the Mac awake while agents work** in Settings switches it off.
 
 ## Opening and starting agents
 
