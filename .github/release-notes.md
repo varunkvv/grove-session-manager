@@ -1,43 +1,37 @@
-## 0.11
+## 0.12
 
-Grove tells you which Claude Code agents need you, and gets you to them. 0.10 made it a project manager with a record
-agents wrote to. That is gone, and the sessions are the app again.
+Grove tells you which Claude Code agents need you, and gets you to them. 0.12 puts every session on the screen it
+opens on, and brings search back.
 
 New:
 
-- a sidebar of your projects, each with the count of its sessions that need you
-- one inbox over every project: Needs permission, Your turn, Failed, Stopped
-- a project's sessions as a screen, all of them, with a filter. the ones that need you first, then the ones working
-- a click on a row opens the session in a panel beside the list. a double-click opens it in VS Code
-- a recap at the top of the panel: Goal, Done, Now, Needs you. four lines on what the session was for and what it
-  needs from you, written by haiku through your own `claude` when a session's turn ends and when you open it. an inbox
-  row says what the recap says you have to do, and so does the notification for a long turn
-- under the recap, the whole conversation: what you typed, one line for the work, and the message each turn ended on
-- **Write recaps with Claude** in Settings switches recaps off. they use your Claude login and the haiku model
-- a notification and a menu bar row open the window on that session, with the panel open
-- **New session** opens a new conversation in VS Code, and a project needs no goal for it: a project is the folders,
-  each session has its own ask. a background session is started from `⌘K`, with what it should do typed first
-- fixed: a session that changed state in the second before Grove quit was missing from the inbox on the next launch
-- fixed: `⌘D` after a click did nothing on its first press. it dismisses the session open in the panel, or the row
-  under the pointer, at once
-- a colour per project, and one colour per state everywhere
+- **All sessions** is the home screen, where the Inbox was. the sessions that need you are still its first rows, as
+  they were. under them: the ones working now, each with what it was last asked and how long its turn has run, then
+  Today, Yesterday and the two days before, one line a session
+- sessions older than three days are under **Older**, closed until you click it. it draws 50 rows, and 50 more as you
+  scroll
+- a project's screen has the same groups
+- sessions in no project are listed too, with their folder's name. scripted runs (`claude -p`, SDK apps) only while
+  they run
+- **Search** in the top bar, on both screens: titles, prompts and branches at once, then what was said in each
+  session, with the words around the match on a second line. All sessions searches everything, a project's screen
+  the project. `⌘F` focuses it
+- a double-click on a project in the sidebar starts a new session in it
+- a notification plays a short chime of Grove's own
 
-Gone: the Cards and Conclusions screens, card pages, inbox rows about cards and conclusions, starting an agent on a
-card, the notification for a question on a card, the card prefix, and the record itself. Agents no longer get the
-`grove` MCP server, its rules file or its `SessionStart` hook.
+Changed:
 
-The first launch takes out of every project what 0.10 installed, and only that:
+- the sidebar, the top bar and the View menu say **All sessions** where they said Inbox. the count beside it, the
+  menu bar and the dock still count only the sessions that need you
+- dismissing a row on All sessions takes it out of Needs you. the session stays listed under its day, and the panel
+  goes on to the next row that needs you
+- "Nothing needs you." is gone from the window: with nothing waiting, the list starts at Working or Today. the menu
+  bar still says it
+- `⌘F` stays on the screen you are on. from All sessions it used to jump to a project
+- Grove writes one new file outside `~/claude-ws`: `~/Library/Sounds/Grove.wav`, the chime
 
-- `mcpServers.grove` in `.mcp.json` (the file too, when that was all it held)
-- in `.claude/settings.local.json`: the `SessionStart` hook marked `# grove-record`, the `grove` server's approval and
-  its two allow rules. the status hooks stay
-- `.claude/rules/grove-record.md`
-- the record paragraphs in `CLAUDE.md` and `.claude/agents/long-task.md`, where they are still exactly what Grove wrote
-- `~/claude-ws/.grove/bin/record` and `record.cjs`
-
-`cards/`, `conclusions/` and `.claude/grove-project.json` are yours and are not touched. What you marked reviewed stays
-dismissed. Sessions that are open during the upgrade need a restart. The
-[README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not verified.
+The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
+verified.
 
 ## Install
 

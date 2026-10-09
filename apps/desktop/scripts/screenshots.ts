@@ -3,7 +3,7 @@
 //   node scripts/screenshots.ts <outDir> [light|dark]  ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
-import { appendFileSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { recapSays, setFakeRecaps, writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
@@ -12,6 +12,7 @@ import {
   type Fixture,
   hookEvent,
   makeFixture,
+  makePlainDir,
   makeRepo,
   writeSession,
 } from "../e2e/helpers/fixture.ts";
@@ -32,26 +33,21 @@ const SIZES = [
 let ids = 0;
 const sid = () => `${String(++ids).padStart(8, "0")}-0000-4000-8000-000000000000`;
 
-/** a hook event that happened `minutes` ago: the app reads when from the file */
-function event(
+/** a hook event that happened `minutes` ago */
+const event = (
   fx: Fixture,
   sessionId: string,
   name: string,
   minutes: number,
   extra: Record<string, unknown> = {},
-) {
-  const dir = path.join(fx.root, ".grove", "events");
-  const had = new Set(names(dir));
-  hookEvent(fx, sessionId, name, extra);
-  const when = new Date(Date.now() - minutes * MIN);
-  for (const f of names(dir)) if (!had.has(f)) utimesSync(path.join(dir, f), when, when);
-}
-const names = (dir: string) => {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
+) => hookEvent(fx, sessionId, name, extra, minutes * MIN);
+
+/** how long ago it was this o'clock, this many days back: a day's group whatever the hour it is now */
+const ago = (back: number, hour: number) => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - back);
+  return Date.now() - d.getTime() - hour * HOUR;
 };
 
 const REPLY = `The okta app is created in the dev tenant, with one redirect URI per environment:
@@ -109,7 +105,16 @@ const QUIET = [
   "logout redirect",
   "backfill okta ids",
 ];
-const BRANCHES = ["feat/okta-staging", "auth-sso", "fix/callback-state", undefined, undefined];
+const BRANCHES = ["feat/idp-staging", "auth-sso", "fix/callback-state", undefined, undefined];
+/** what a few of them said, about something their title does not name: a search finds them by it */
+const SAID: Record<string, string> = {
+  "draft the rollout note":
+    "The note says SSO goes to staging on Tuesday, and that okta sign-in replaces the password form for everyone but the two break-glass admins.",
+  "session length for admins":
+    "Admins get 8 hours. Okta's own session lasts 2, so they are signed in again silently through the refresh token.",
+  "rate limits":
+    "The limiter keys on the api token, not on the okta user, so a shared token shares one budget.",
+};
 
 /** what the fake haiku says of a session, found by its title in the digest. the last one is everyone else's */
 const RECAPS = [
@@ -173,7 +178,8 @@ const RECAPS = [
 
 /**
  * seven projects. auth-sso has 44 sessions: one of each kind that needs the person, two working,
- * the rest spread over today, yesterday and the weeks before. billing-export has none
+ * the rest spread over today, the three days before and the weeks before those. billing-export has
+ * none, and two sessions are in no project
  */
 function build(scheme: string) {
   const fx = makeFixture({ withCompanion: true });
@@ -350,6 +356,7 @@ function build(scheme: string) {
     branch: "auth-sso",
     prompt: "build the login page with the SSO button, and the error state for a disabled org",
     reply: "The button and the three states are in. Writing the story for the disabled org.",
+    lastPrompt: "build the login page with the SSO button, and the error state for a disabled org",
     ageMs: 20_000,
   });
   liveSession(fx, { sessionId: login, kind: "bg", status: "busy" });
@@ -361,22 +368,34 @@ function build(scheme: string) {
     title: "idp config",
     branch: "feat/okta-staging",
     prompt: "point staging at the dev tenant",
+    lastPrompt:
+      "point staging at the dev tenant, then run the sign-in smoke test and tell me which of the three redirect URIs it lands on",
     ageMs: 40_000,
   });
   vscode(idp, "busy");
   event(fx, idp, "UserPromptSubmit", 6);
 
-  // ---- the rest: today, yesterday, and further back
+  // ---- the rest: six of today, four of yesterday, three and three of the two days before, then
+  // one every 26 hours back from the fourth day: those are in Older
   QUIET.forEach((title, i) => {
     const sessionId = sid();
-    const ageMs = i < 6 ? (i + 1) * 70 * MIN : i < 13 ? (20 + i) * HOUR : (i - 10) * 26 * HOUR;
+    const ageMs =
+      i < 6
+        ? (i + 1) * 70 * MIN
+        : i < 10
+          ? ago(1, 18 - (i - 6) * 3)
+          : i < 13
+            ? ago(2, 17 - (i - 10) * 3)
+            : i < 16
+              ? ago(3, 16 - (i - 13) * 3)
+              : ago(4, 15) + (i - 16) * 26 * HOUR;
     writeSession(fx, {
       cwd: auth,
       sessionId,
       title,
       branch: BRANCHES[i % BRANCHES.length],
       prompt: title,
-      reply: `Done: ${title}.`,
+      reply: SAID[title] ?? `Done: ${title}.`,
       ageMs,
     });
     if (i < 2) vscode(sessionId);
@@ -427,10 +446,27 @@ function build(scheme: string) {
         sessionId: sid(),
         title,
         prompt: title,
+        ...(SAID[title] ? { reply: SAID[title] } : {}),
         ageMs: (i + 2) * 5 * HOUR,
       });
     }
   }
+  // ---- in no project: a folder he opened Claude Code in by itself
+  const dotfiles = makePlainDir(fx, "dotfiles");
+  writeSession(fx, {
+    cwd: dotfiles,
+    sessionId: sid(),
+    title: "zsh startup is slow",
+    prompt: "why does a new shell take two seconds",
+    ageMs: 95 * MIN,
+  });
+  writeSession(fx, {
+    cwd: dotfiles,
+    sessionId: sid(),
+    title: "git aliases",
+    prompt: "an alias for the last five branches",
+    ageMs: ago(2, 11),
+  });
   interrupted(fx, { [stopped]: Date.now() - 25 * MIN });
   return { fx, turn };
 }
@@ -453,7 +489,8 @@ async function launch(fx: Fixture) {
         b.inbox.rows.every((r) => r.kind === "permission" || r.recap?.lines) &&
         b.projects[0]?.folders.every((f) => f.state === "ok") &&
         // the sessions are indexed after the page is up
-        (await window.grove.listSessions("auth-sso")).length === 44
+        (await window.grove.listSessions("auth-sso")).length === 44 &&
+        (await window.grove.listSessions(null)).length === 58
       );
     },
     undefined,
@@ -505,40 +542,82 @@ for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
     page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
   const inboxRow = (kind: string) => page.locator(`[data-testid="inbox-row"][data-kind="${kind}"]`);
 
+  const older = page.getByTestId("older-toggle");
+  /** a group's band at the top of the list, so the shot starts there */
+  const top = (group: string) =>
+    page
+      .locator(`[data-testid="session-group"][data-group="${group}"]`)
+      .evaluate((el) => el.scrollIntoView({ block: "start" }));
+  const search = page.getByTestId("session-filter");
+
   for (const [w, h] of SIZES) {
     width = w;
     await resize(app.app, page, w, h);
 
+    // ---- the home screen: every session, the ones that need him on top
     await page.getByTestId("nav-inbox").click();
     await page.getByTestId("inbox-row").nth(5).waitFor();
-    await shot("inbox");
+    await older.waitFor();
+    await shot("home");
     await inboxRow("permission").first().hover();
-    await shot("inbox-hover", false);
+    await shot("home-hover", false);
+    // under them: the working ones with what they were asked, then the days
+    await top("working");
+    await shot("home-groups");
+    // Older, closed until it is asked for. open, a page of it
+    await older.click();
+    await page.locator('[data-group="older"] [data-testid="session-row"]').nth(9).waitFor();
+    await top("older");
+    await shot("home-older");
+    await older.click();
+    // a search: titles, and what was said, with the words around it
+    await search.fill("okta");
+    await page.getByTestId("session-snippet").nth(2).waitFor();
+    await shot("home-search");
+    await search.fill("nothing like it");
+    await page.getByTestId("sessions-none").waitFor();
+    await shot("home-search-none");
+    await search.fill("");
+    // the field goes back to how it is found: not the one thing in focus
+    await search.blur();
     // where a click on its notification lands: the row, with its panel open
     await g.reveal(turn);
     await page.getByTestId("panel-text").waitFor();
     await page.getByTestId("recap").waitFor();
-    await shot("inbox-panel");
+    await shot("home-panel");
     // the conversation, scrolled back to where it starts
     await page.getByTestId("conversation").evaluate((el) => el.scrollTo({ top: 0 }));
-    await shot("inbox-panel-conversation-up");
+    await shot("home-panel-conversation-up");
     await page.getByTestId("conversation").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
     await page.keyboard.press("ArrowDown");
     await page.getByTestId("panel-text").waitFor();
     // a permission row's recap is written when its panel opens
     await page.getByTestId("recap").waitFor();
-    await shot("inbox-panel-keyboard", false);
+    await shot("home-panel-keyboard", false);
+    await page.keyboard.press("Escape");
+    // a working one in the panel, beside the narrow list
+    await page.locator('[data-testid="session-row"][data-state="working"]').first().click();
+    await page.getByTestId("panel-text").waitFor();
+    await shot("home-panel-working");
     await page.keyboard.press("Escape");
 
+    // ---- a project's screen: the same groups, its own sessions
     await project("auth-sso");
-    await page.getByTestId("session-row").nth(43).waitFor();
+    await older.waitFor();
     await shot("sessions");
+    await top("today");
+    await shot("sessions-days");
+    await older.click();
+    await page.locator('[data-group="older"] [data-testid="session-row"]').nth(9).waitFor();
+    await top("older");
+    await shot("sessions-older");
+    await older.click();
     await page.locator('[data-testid="session-row"][data-state="turn"]').click();
     await page.getByTestId("panel-text").waitFor();
     await shot("sessions-panel");
     await page.keyboard.press("Escape");
     // a quiet one, from further down the list
-    await page.getByTestId("session-row").nth(20).click();
+    await page.getByTestId("session-row").filter({ hasText: "okta research" }).click();
     await page.getByTestId("panel-text").waitFor();
     await page.getByTestId("recap").waitFor();
     await shot("sessions-panel-quiet");
@@ -551,13 +630,16 @@ for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
     await page.getByTestId("recap-writing").waitFor();
     await shot("sessions-panel-writing");
     await page.keyboard.press("Escape");
-    await page.getByTestId("session-filter").fill("okta");
-    await page.getByTestId("session-row").nth(3).waitFor();
-    await shot("sessions-filter");
-    await page.getByTestId("session-filter").fill("nothing like it");
+    await search.fill("okta");
+    // two found by what was said. the ones on a branch with the word have it marked in their row
+    await page.getByTestId("session-snippet").nth(1).waitFor();
+    await shot("sessions-search");
+    await search.fill("nothing like it");
     await page.getByTestId("sessions-none").waitFor();
-    await shot("sessions-filter-none");
-    await page.getByTestId("session-filter").fill("");
+    await shot("sessions-search-none");
+    await search.fill("");
+    // the field goes back to how it is found: not the one thing in focus
+    await search.blur();
 
     await project("billing-export");
     await page.getByTestId("sessions-empty").waitFor();
@@ -577,18 +659,36 @@ for (const scheme of process.argv[3] ? [process.argv[3]] : ["light", "dark"]) {
     await page.getByTestId("form-cancel").click();
   }
 
-  // nothing needs him: every row dismissed
+  // nothing needs him: every row dismissed. the list starts at Working
   await page.evaluate(async () => {
     const { inbox } = await window.grove.bootstrap();
     for (const r of inbox.rows) await window.grove.review(r.project, r.reviewKeys, true);
   });
   await page.getByTestId("nav-inbox").click();
-  await page.getByTestId("inbox-empty").waitFor();
+  await page.getByTestId("inbox-row").first().waitFor({ state: "detached" });
   for (const [w, h] of SIZES) {
     width = w;
     await resize(app.app, page, w, h);
-    await shot("inbox-empty");
+    await shot("home-nothing-needs");
   }
   await app.close();
+
+  // no session anywhere: a project that was just made
+  const bare = makeFixture({ withCompanion: true });
+  writeFileSync(
+    path.join(bare.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme }),
+  );
+  writeProject(bare, { name: "auth-sso" });
+  const first = await launchApp(bare, { HOME: bare.dir });
+  await first.page.getByTestId("inbox-empty").waitFor();
+  for (const [w, h] of SIZES) {
+    width = w;
+    await resize(first.app, first.page, w, h);
+    await first.page.mouse.move(w - 200, 22);
+    await first.page.waitForTimeout(350);
+    await first.page.screenshot({ path: path.join(dir, `home-none-${w}.png`) });
+  }
+  await first.close();
 }
 console.log(out);

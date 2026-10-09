@@ -8,8 +8,8 @@ opens the one you pick in VS Code or Cursor.
 
 In the repo:
 
-- the app (`apps/desktop`, Electron, macOS) - the sidebar of projects, the inbox, a project's sessions, opening and
-  starting agents
+- the app (`apps/desktop`, Electron, macOS) - the sidebar of projects, every session on one screen with the ones that
+  need you on top, a project's sessions, search, opening and starting agents
 - the core (`packages/core`) - the reader of Claude Code's transcripts and live status, the project model, the git
   layer
 - the companion extension (`extension/`) - the few things that can only happen from inside VS Code or Cursor: landing a
@@ -30,8 +30,8 @@ the background. Checked against Claude Code 2.1.286 and 2.1.287.
 3. If a banner offers to install the Grove extension into your editor, take it: landing on a session and starting a
    conversation both go through it
 4. **New session** opens the project in your editor on a new Claude conversation. Say there what it should do
-5. Watch the **Inbox**: every session that needs you, in any project. A click opens it in a panel beside the list, a
-   double-click opens it in the editor, which is where you answer. **Dismiss** clears a row
+5. Watch **All sessions**: the ones that need you are on top, from any project. A click opens one in a panel beside
+   the list, a double-click opens it in the editor, which is where you answer. **Dismiss** clears a row
 
 ## A project is a folder
 
@@ -95,12 +95,28 @@ on you. A background shell left running (a dev server) does not hold the turn op
 
 ## The screens
 
-The **sidebar** on the left has **Inbox** with the count of sessions that need you, over every project, then the
-projects in `combos.json` order. Each project has its own colour and, when any of its sessions needs you, their count.
-The order never changes with the counts. **+** beside Projects opens the new project form.
+The **sidebar** on the left has **All sessions** with the count of sessions that need you, over every project, then
+the projects in `combos.json` order. Each project has its own colour and, when any of its sessions needs you, their
+count. The order never changes with the counts. A click on a project shows its sessions, a double-click also starts a
+new session in it. **+** beside Projects opens the new project form.
 
-**Inbox** is every session that needs you, newest first, whichever project it is in. A row has the session's title,
-what it is at, its project, where it runs and when, then a line of what it asks.
+**All sessions** is the screen Grove opens on: every session, whichever project it is in, in groups.
+
+- **Needs you** - the sessions waiting on you, newest first. Two lines each: the title, what it is at, its project,
+  where it runs and when, then what it asks. Only these are counted in the sidebar, the menu bar and the dock
+- **Working** - the sessions in a turn now. A second line says what each was last asked, and the time says how long
+  the turn has run (`for 12m`)
+- **Today**, **Yesterday**, then the two days before by their weekday - the rest by the day they last moved, newest
+  first, one line each: the title, its project, where it runs, when
+- **Older** - what last moved before the start of the day three days ago. It is closed, with its count, until you
+  click it. Open, it draws 50 rows, and 50 more each time you scroll near its end. It is closed again whenever the
+  screen comes up
+
+A group with nothing in it is not there: when nothing needs you, the screen starts at Working or Today. The sessions
+of a project are the ones a project's own screen lists (below). Sessions in no project are here too, with their
+folder's name where the others have a project. A scripted one (`claude -p`, an SDK app) is listed only while it runs.
+
+The rows under Needs you:
 
 | row | when | the line under it |
 | --- | --- | --- |
@@ -113,17 +129,24 @@ Once a session has a [recap](#recaps), the line under Your turn, Failed and Stop
 do. A Needs permission row keeps the tool: that is exact, and it is what you answer.
 
 Each state keeps one colour everywhere: orange for permission, the accent for your turn, red for failed and stopped,
-green for working. **Dismiss** takes a row out. Opening the session in the editor does the same for Needs permission,
-Your turn and Failed, which come back on that session's next event. A Stopped row stays until it is dismissed, the
-session runs again, or a week has passed.
+green for working. **Dismiss** takes a row out of Needs you. Opening the session in the editor does the same for Needs
+permission, Your turn and Failed, which come back on that session's next event. A Stopped row stays until it is
+dismissed, the session runs again, or a week has passed. A dismissed session is still listed, under the day it last
+moved, and the panel goes on to the next row that needs you.
 
-A click on a project shows **its sessions**, all of them: Needs you first, then Working, then the rest under Today,
-Yesterday and Earlier, newest first. A row has the title, the state, where it runs, the branch and the time. The list
-is the sessions started in the project's folder, plus any started in a subfolder or a working copy that needs you or is
-running now. A finished session in a subfolder is found from `⌘K`. The filter in the top bar narrows the rows to the
-ones whose title, prompt or branch has every word typed. The top bar also has **New session**, **Open in VS Code** for the project's
-window, and **Edit**. The list follows the sessions as they change,
-with no refresh.
+A click on a project shows **its sessions**, all of them, in the same groups. A row has the title, the state, the
+branch, where it runs and the time, and here Dismiss leaves the panel on the session. The list is the sessions started
+in the project's folder, plus any started in a subfolder or a working copy that needs you or is running now. A
+finished session in a subfolder is found from `⌘K`. The top bar also has **New session**, **Open in VS Code** for the
+project's window, and **Edit**. Both lists follow the sessions as they change, with no refresh.
+
+**Search** is the field in the top bar, on both screens: every session on All sessions, the project's on a project's
+screen. Typing narrows the rows at once to the ones whose title, prompt or branch has every word typed (on All
+sessions the project's name counts too). A moment later Grove adds the sessions where the words are in what was said,
+by you, the agent or its subagents. One found that way has a second line with the words around the match, marked.
+One found by its branch has the branch marked on its row, and on All sessions, where a row shows no branch, on a
+second line. While something is typed Older is not folded: its matches are listed. What is typed is cleared when you go to another
+screen. `⌘K` still searches everything, including the sessions no list has.
 
 **The panel.** A click on a row, in either list, opens that session in a panel on the right half of the window. Its
 head has the state, the title, **Open in VS Code**, the project, the branch, where it runs, and the session's
@@ -139,13 +162,13 @@ that took its place. `Esc` closes it. A double-click on a row opens the session 
 **New project** and **Edit project** are one form: name, about, repos. Edit project also shows drift per repo and, when
 Grove could not write the project's files, why.
 
-`⌘K` opens the palette: go to the inbox or a project, start a session there or in the background, switch long work, repair working copies, delete
-the project, settings. Typing also searches every Claude Code session on the machine, in a project or not: titles and
+`⌘K` opens the palette: go to All sessions or a project, start a session there or in the background, switch long work,
+repair working copies, delete the project, settings. Typing also searches every Claude Code session on the machine, in a project or not: titles and
 prompts first, then everything that was said in each session and by its subagents. `↵` on a session opens it in the
 editor.
 
 The **menu bar** item shows how many sessions need you across all projects. Its menu lists the three newest, then
-**Open Grove** and **Quit**. A click on one opens the window on its inbox row, with the panel open. Closing the window
+**Open Grove** and **Quit**. A click on one opens the window on its row in All sessions, with the panel open. Closing the window
 hides it: the app stays in the menu bar until it is quit.
 
 What an agent wrote is not trusted. It is rendered as markdown without any HTML (a `<script>` shows as text), images
@@ -206,12 +229,15 @@ Grove notifies when:
   what the session's recap says you have to do when the recap is there within 15 seconds, else the start of the last
   message. the other three are never held back
 
-Nothing notifies about what the focused window already shows: on the inbox that is every project, on a project's
-sessions that project. What stopped while Grove was closed shows in the inbox and does not notify.
+Nothing notifies about what the focused window already shows: on All sessions that is every project, on a project's
+sessions that project. What stopped while Grove was closed shows under Needs you and does not notify.
 
-A click opens the window on that session with its panel open: its inbox row when it has one, else its row in its
-project's sessions. A session that is in neither list, or in no project, opens in the editor. The dock badge carries
-the same count as the menu bar. **Notifications** in Settings switches them off.
+A click opens the window on that session with its panel open: its row under Needs you in All sessions when it has
+one, else its row in its project's sessions. A session that is in neither, or in no project, opens in the editor. The
+dock badge carries the same count as the menu bar. **Notifications** in Settings switches them off.
+
+A notification plays a short chime of Grove's own. macOS decides whether it sounds: System Settings, Notifications,
+Grove.
 
 ## Opening and starting agents
 
@@ -226,7 +252,8 @@ the same count as the menu bar. **Notifications** in Settings switches them off.
 
 Landing needs the companion extension in that editor. Without it the window opens and Grove says it could not land.
 
-**New session** is in a project's top bar, on a project with no sessions, and in `⌘K`. The project opens in VS Code
+**New session** is in a project's top bar, on a project with no sessions, in `⌘K`, and a double-click on the project
+in the sidebar. The project opens in VS Code
 (or Cursor) on a new conversation in the Claude panel, and what the session should do is typed there. Grove asks
 nothing first: a project is the folders work happens in, and each session has its own ask.
 
@@ -288,14 +315,17 @@ edited. The workspace file and the references are written when the project is op
     events/         where session status hooks write
     interrupted.json  sessions whose process went away mid-turn, kept for a week
     recaps.v1.json  the recaps, by transcript. deleting it has them written again
+~/Library/Sounds/
+  Grove.wav         the notification chime, about 40KB. written at launch, and again whenever it differs from Grove's own
 ```
 
 What you dismissed is a decision, not a cache, so it sits beside `combos.json` and not in `.grove/`. Entries the app
 does not understand are left alone when it writes. Deleting `.grove/` loses the Stopped markers.
 
-The app never writes inside `~/.claude` (the one exception is the opt-in status hooks below, and only in
-`settings.json`), never writes Claude Code's folder trust, never copies a transcript, never deletes a branch, and never
-passes `--force` to `git worktree remove`: a working copy with uncommitted work is kept and reported.
+Outside `~/claude-ws` and the projects' own folders the app writes two things: `Grove.wav`, and the opt-in status hooks
+below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. It never writes Claude Code's
+folder trust, never copies a transcript, never deletes a branch, and never passes `--force` to `git worktree remove`:
+a working copy with uncommitted work is kept and reported.
 
 Drift is normal: people run `git worktree remove` and `rm -rf` behind the app's back, and Claude Code expires
 transcripts. Folder states are `ok`, `reference`, `absent`, `stale`, `foreign` (left alone) and `missing-origin`.
@@ -320,12 +350,13 @@ Sessions outside every project report only when **Track sessions outside project
 the same status hooks to Claude Code's own `settings.json`, and watches and repairs that file the same way. Turning the
 switch off takes them out again. Use the switch: setting `trackAllSessions` to `false` by hand in
 `~/claude-ws/settings.json` leaves the hooks (the groups marked `# grove-status`) where they are. A session outside
-every project notifies and is found from `⌘K`. It is in no list.
+every project is in All sessions either way, under Working while its process is busy and under its day after. It is
+never under Needs you: with the switch on it notifies, and its notification opens it in the editor.
 
 ## After a restart
 
 Quitting Grove changes nothing for the agents. The hooks keep writing events into `.grove/events/`, and Grove reads
-what it missed when it starts. Sessions that went away mid-turn while it was closed are Stopped rows in the inbox,
+what it missed when it starts. Sessions that went away mid-turn while it was closed are Stopped rows under Needs you,
 without a notification. What you dismissed is in `reviewed.json`.
 
 Closing VS Code ends the sessions in its tabs. One that was between turns shows as `Closed`, and opening it resumes
@@ -384,7 +415,7 @@ against a fixture project written by 0.10's own code.
 
 What did not run, or does not work:
 
-- no test drives a real editor tab, and the double-click was only driven by Playwright's mouse
+- no test drives a real editor tab, and the double-clicks (a row, a project) were only driven by Playwright's mouse
 - you cannot answer from Grove, and Grove cannot wake an agent. you answer in the agent's chat
 - no test runs the real `claude`. the recap prompt was tried by hand on six real sessions (13 calls): a short one, a
   60MB one compacted four times, one that ended on a question, one stopped mid-turn, one cut at a permission prompt and
@@ -395,7 +426,15 @@ What did not run, or does not work:
 - a working session's panel shows a new turn when the turn starts and ends, and otherwise catches up twice a minute
 - the panel folds the whole transcript each time it reads it: 90ms for a 60MB one
 - the notification with a recap's line was only run in unit tests
-- a session started in a subfolder that has finished is not in its project's list, only in `⌘K`
+- a session started in a subfolder that has finished is not in its project's list or in All sessions, only in `⌘K`.
+  the same goes for a scripted session outside every project
+- a session outside every project never shows under Needs you, whatever it waits on
+- a list comes from the main process whole, and Older is paged in the page. built on a machine with 326 sessions, not
+  tried with thousands
+- the search asks what was said once per query, up to 200 sessions. one that says the words later shows when you type
+  again
+- typing in the search closes the panel when its session is not found by title, prompt or branch, even if what was
+  said in it still matches
 - two quick VS Code starts in one project leave one conversation
 - a project's colour is one of nine. past nine projects two share one, and deleting a project can change the colour
   of a later one
@@ -405,25 +444,27 @@ What did not run, or does not work:
 
 ## Keyboard
 
-No single letter is a shortcut: a letter only ever types, in the filter or a form.
+No single letter is a shortcut: a letter only ever types, in the search or a form.
 
 | | |
 | --- | --- |
 | `⌘K` | the palette: go to, project commands, find a session |
-| `⌘1` `⌘2` | Inbox / the sessions of the project last on screen |
-| `⌥↑` `⌥↓` | step through the sidebar: Inbox, then the projects |
+| `⌘1` `⌘2` | All sessions / the sessions of the project last on screen |
+| `⌥↑` `⌥↓` | step through the sidebar: All sessions, then the projects |
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` `⌘↑` `⌘↓` | move the active row |
 | `↵` | open the active row's session in the panel beside the list |
 | `⌘↵` | open it in the editor |
 | `⌘D` | dismiss the active row |
-| `⌘F` | filter the project's sessions. from the inbox it goes to the project last on screen |
-| `Esc` | close the panel, then clear the filter, then go back |
-| `⌘N` `⌘O` `⌘E` `⌘R` `⌘,` | new project, open the project in the editor, edit project, refresh, settings. `⌘O` and `⌘E` do nothing on the inbox |
+| `⌘F` | search the sessions of the screen you are on. from a form it goes back to the form's list first |
+| `Esc` | close the panel, then clear the search, then go back |
+| `⌘N` `⌘O` `⌘E` `⌘R` `⌘,` | new project, open the project in the editor, edit project, refresh, settings. `⌘O` and `⌘E` do nothing on All sessions |
 
 No row looks active until a key says so: the first arrow or `↵` only shows which row the keyboard is on, and the next
 one acts. After the mouse, `↵`, `⌘↵` and `⌘D` act at once on a row that already shows it is the one: the row under the
-pointer, else the row open in the panel. With the panel open the arrows step from its row at once. `Esc` does not leave a project form that has
-changes.
+pointer, else the row open in the panel. With the panel open the arrows step from its row at once. The arrows only
+ever land on rows that are drawn: not in Older while it is closed, and past the last row an open Older has drawn they
+draw its next 50. In the search field the arrows and `↵` are still the list's. `Esc` does not leave a project form
+that has changes.
 
 ## Develop
 
@@ -492,6 +533,11 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
   VS Code tab looks like. Open resumes it
 - **a session says Stopped after its tab was closed** - it was mid-turn when the tab went
 - **a session is missing from its project's list** - it was started in a subfolder and has finished. it is in `⌘K`
+- **a session is missing from All sessions** - it last moved more than three days ago and is under Older, which is
+  closed until you click it (search finds it without that). or it is one no list has: a finished one from a
+  subfolder, or a scripted run outside every project. those are in `⌘K`
+- **"Nothing needs you" is gone** - the screen that said it lists every session now. when nothing needs you there is
+  no Needs you group, and the menu bar still says it
 - **a session has no recap** - it is working, the switch is off, `claude` was not found (set its path in Settings), you
   are not logged in to Claude Code, or the call failed. a failed one is tried again a minute later
 - **a recap says something the session did not** - it is haiku's reading of a digest. Write again asks once more
