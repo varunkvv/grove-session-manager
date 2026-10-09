@@ -11,6 +11,7 @@ import {
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
 import type { InboxView, MenuCommandId } from "../shared/ipc.ts";
+import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
 import { log } from "./log.ts";
@@ -98,6 +99,10 @@ async function start(): Promise<void> {
 
   const reveals = new Reveals({ raise: showMain, notify: () => pusher.send("app:land", {}) });
 
+  // a test root shows no notifications, so it has no sound to put in the person's Library
+  if (!appEnv.customRoot && process.platform === "darwin") {
+    void installChime(appEnv.home).catch((e) => log.warn("chime:", e));
+  }
   /** what a test root would have shown: it shows no notifications */
   const noted: Array<{ title: string; body: string; at: number }> = [];
   const notifier = new Notifier({
@@ -106,7 +111,10 @@ async function start(): Promise<void> {
       (!!appEnv.customRoot || electron.Notification.isSupported()),
     focused: () => !!win?.isFocused(),
     create: (n) => {
-      if (!appEnv.customRoot) return new electron.Notification({ ...n, silent: false });
+      // grove's own chime in place of the macOS default. macOS still decides whether it sounds
+      if (!appEnv.customRoot) {
+        return new electron.Notification({ ...n, silent: false, sound: CHIME });
+      }
       noted.push({ ...n, at: Date.now() });
       return { on: () => {}, show: () => {} };
     },
