@@ -48,7 +48,14 @@ function commands(ctx: PaletteContext): PaletteItem[] {
   const p = ctx.project;
   const items: PaletteItem[] = [];
   if (ctx.projects.length > 0) {
-    items.push({ id: "go-inbox", section: "Go to", label: "Inbox", keywords: "go", kbd: "⌘1" });
+    items.push({
+      id: "go-inbox",
+      section: "Go to",
+      label: "All sessions",
+      // what the screen was called until 0.12
+      keywords: "go inbox",
+      kbd: "⌘1",
+    });
   }
   // a project is its sessions
   for (const q of ctx.projects) {

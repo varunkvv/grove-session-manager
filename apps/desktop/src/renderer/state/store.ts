@@ -10,10 +10,14 @@ import type {
   SessionHit,
   ToastMessage,
 } from "../../shared/ipc.ts";
-import { loadSessions, switchProject } from "./actions.ts";
+import { CLOSED, type ListInput, type OlderView } from "../logic/views.ts";
+import { loadSessions, setInbox, switchProject } from "./actions.ts";
 import { takeLanding } from "./landing.ts";
 
-/** the two lists: every project's inbox, and one project's sessions */
+/**
+ * the two lists. `inbox` is the home screen, called All sessions on it: every project's sessions,
+ * the ones that need the person first. `sessions` is one project's
+ */
 export type Section = "inbox" | "sessions";
 
 export type View =
@@ -54,10 +58,18 @@ export interface State {
   back: View[];
   /** every project's sessions that need the person, newest first */
   inbox: InboxView;
-  /** the sessions of one project, newest first. null until main has answered for `project` */
-  sessions: { project: ProjectId; hits: SessionHit[] } | null;
+  /**
+   * the sessions of the list on screen, newest first: a project's, or with a null scope every
+   * project's. null until main has answered
+   */
+  sessions: { scope: ProjectId | null; hits: SessionHit[] } | null;
   /** what is typed in the sessions list's filter */
   filter: string;
+  /**
+   * Older in the list on screen: whether its rows show, and how many of them are drawn. one for
+   * both lists: `go` and `switchProject` are every way a list comes on screen, and close it
+   */
+  older: OlderView;
   /** the keyboard's row in each list, by session id */
   active: Record<Section, string | null>;
   /** the keyboard moved last. while false no row looks active and only hover shows a row's buttons */
@@ -95,6 +107,7 @@ export const useStore = create<State>((set) => ({
   inbox: { rows: [] },
   sessions: null,
   filter: "",
+  older: CLOSED,
   active: { inbox: null, sessions: null },
   keys: false,
   peek: null,
@@ -112,6 +125,24 @@ export const useStore = create<State>((set) => ({
 /** the project on screen */
 export const currentProject = (s: State): ProjectView | undefined =>
   s.projects.find((p) => p.id === s.project);
+
+/** which sessions the list on screen holds: a project's, or with null every project's */
+export const scopeOf = (s: State): ProjectId | null => (s.view.name === "inbox" ? null : s.project);
+
+/** what the list on screen is drawn from. the screen and the keyboard both read this */
+export function listInput(s: State): ListInput {
+  const scope = scopeOf(s);
+  return {
+    scope,
+    // another list's rows never show on this one
+    hits: s.sessions?.scope === scope ? s.sessions.hits : null,
+    inbox: s.inbox,
+    query: s.filter,
+    now: s.now,
+    older: s.older,
+    peek: s.peek,
+  };
+}
 
 const PROJECT_KEY = "grove.project";
 
@@ -176,13 +207,9 @@ export async function connect(): Promise<() => void> {
         }),
       ),
     ),
-    window.grove.on("inbox:changed", (p) =>
-      gate("inbox", p.rev, () => set({ inbox: { rows: p.rows } })),
-    ),
+    window.grove.on("inbox:changed", (p) => gate("inbox", p.rev, () => setInbox({ rows: p.rows }))),
     // a nudge with nothing in it: the list on screen asks main again
-    window.grove.on("sessions:changed", () => {
-      if (useStore.getState().view.name === "sessions") void loadSessions();
-    }),
+    window.grove.on("sessions:changed", () => void loadSessions()),
     window.grove.on("editor:status", (editor) => set({ editor })),
     window.grove.on("toast", (t) => toast(t)),
     // a notification or a tray row was clicked: take where it lands, now that the page is here

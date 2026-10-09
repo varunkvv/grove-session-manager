@@ -217,7 +217,7 @@ describe("the inbox", () => {
     t.svc.sessionsChanged();
     t.svc.inbox();
     expect(t.got.sessions).toBe(before + 1);
-    expect(t.svc.projectSessions("chat")[0]?.recap).toEqual({ writing: true });
+    expect(t.svc.listSessions("chat")[0]?.recap).toEqual({ writing: true });
   });
 
   it("is every project's sessions that need the person, newest first", () => {
@@ -432,7 +432,7 @@ describe("projects and sessions", () => {
     t.session("s-ops", { ...inOps, activityMs: 60 });
     t.rows.push(row("s-nowhere", { activityMs: 70 }));
 
-    const chat = t.svc.projectSessions("chat");
+    const chat = t.svc.listSessions("chat");
     expect(chat.map((h) => h.sessionId)).toEqual([
       "s-sub-runs",
       "s-sub-asks",
@@ -456,24 +456,99 @@ describe("projects and sessions", () => {
     // every row of the inbox is in its project's list
     const ids = new Set(chat.map((h) => h.sessionId));
     expect(t.svc.inbox().rows.every((r) => ids.has(r.sessionId))).toBe(true);
-    expect(t.svc.projectSessions("ops").map((h) => h.sessionId)).toEqual(["s-ops"]);
-    expect(t.svc.projectSessions("no-such-project")).toEqual([]);
+    expect(t.svc.listSessions("ops").map((h) => h.sessionId)).toEqual(["s-ops"]);
+    expect(t.svc.listSessions("no-such-project")).toEqual([]);
 
     // he has many: no cap
     for (let i = 0; i < 135; i++) {
       t.rows.push(row(`s-many-${i}`, { ...inOps, activityMs: 100 + i }));
     }
-    const many = t.svc.projectSessions("ops").map((h) => h.sessionId);
+    const many = t.svc.listSessions("ops").map((h) => h.sessionId);
     expect(many).toHaveLength(136);
     expect(many[0]).toBe("s-many-134");
     expect(many.at(-1)).toBe("s-ops");
   });
 
+  it("lists every project's sessions with a null scope, and the ones in no project that a person started", () => {
+    const t = setup();
+    t.project("chat");
+    t.project("ops");
+    const inside = { comboName: "chat", comboRelation: "inside" } as const;
+    t.rows.push(row("s-chat", { ...inChat, activityMs: 90 }));
+    t.rows.push(row("s-ops", { comboName: "ops", comboRelation: "root", activityMs: 80 }));
+    // a project's own rule holds here too: a finished one in a subfolder is the palette's
+    t.rows.push(row("s-sub", { ...inside, activityMs: 70 }));
+    t.session("s-sub-asks", { ...inside, live: live("waiting"), activityMs: 60 });
+    // in no project: the editor, a terminal, the desktop app, and one that does not say
+    t.rows.push(row("s-loose", { entrypoint: "claude-vscode", activityMs: 50 }));
+    t.rows.push(row("s-cli", { entrypoint: "cli", activityMs: 40 }));
+    t.rows.push(row("s-desktop", { entrypoint: "claude-desktop", activityMs: 30 }));
+    t.rows.push(row("s-unsaid", { activityMs: 20 }));
+    // `claude -p` and SDK apps are scripts: only while one runs
+    t.rows.push(row("s-script", { entrypoint: "sdk-cli", activityMs: 95 }));
+    t.rows.push(row("s-sdk", { entrypoint: "sdk-ts", activityMs: 94 }));
+    t.rows.push(
+      row("s-script-runs", { entrypoint: "sdk-cli", live: live("running"), activityMs: 10 }),
+    );
+
+    const all = t.svc.listSessions(null);
+    expect(all.map((h) => h.sessionId)).toEqual([
+      "s-chat",
+      "s-ops",
+      "s-sub-asks",
+      "s-loose",
+      "s-cli",
+      "s-desktop",
+      "s-unsaid",
+      "s-script-runs",
+    ]);
+    // a project's session says which project, one in none its folder's name
+    expect(all[0]).toMatchObject({ project: "chat", where: "chat" });
+    expect(all[3]).toMatchObject({ project: undefined, where: "elsewhere" });
+    // every project's own list is in it
+    const ids = new Set(all.map((h) => h.sessionId));
+    for (const p of ["chat", "ops"]) {
+      expect(t.svc.listSessions(p).every((h) => ids.has(h.sessionId))).toBe(true);
+    }
+  });
+
+  it("a working session says what it was last asked and since when, and no other does", () => {
+    const t = setup();
+    t.project("chat");
+    const asked = `fix the   rounding in\nthe invoice totals ${"and the tests ".repeat(30)}`;
+    t.session("s-runs", {
+      ...inChat,
+      firstPrompt: "start here",
+      lastPrompt: asked,
+      live: live("running", 9000, { turnStart: 4000 }),
+    });
+    // the process registry saw it busy: there is no turn, only since when
+    t.session("s-busy", {
+      ...inChat,
+      firstPrompt: "the only prompt",
+      live: live("running", 7000, { source: "registry" }),
+    });
+    t.session("s-asks", { ...inChat, lastPrompt: "then this", live: live("waiting", 8000) });
+    t.rows.push(row("s-quiet", { ...inChat, lastPrompt: "long ago" }));
+    const by = Object.fromEntries(t.svc.listSessions("chat").map((h) => [h.sessionId, h]));
+    expect(by["s-runs"]?.since).toBe(4000);
+    expect(by["s-runs"]?.doing).toMatch(/^fix the rounding in the invoice totals and the tests /);
+    expect(by["s-runs"]?.doing?.length).toBeLessThanOrEqual(200);
+    expect(by["s-busy"]).toMatchObject({ since: 7000, doing: "the only prompt" });
+    for (const id of ["s-asks", "s-quiet"]) {
+      expect(by[id]?.doing, id).toBeUndefined();
+      expect(by[id]?.since, id).toBeUndefined();
+    }
+  });
+
   it("says the lists changed when what a row shows moved, not on every line an agent writes", () => {
     const t = setup();
     t.project("chat");
-    t.session("s-1", { ...inChat, live: live("running", 1000) });
+    // a turn that started at 500: every status of it says so, whatever its own time
+    const turn = { turnStart: 500 };
+    t.session("s-1", { ...inChat, live: live("running", 1000, turn) });
     t.rows.push(row("s-nowhere"));
+    t.rows.push(row("s-script", { entrypoint: "sdk-cli" }));
     const moved = () => {
       const before = t.got.sessions;
       t.svc.sessionsChanged();
@@ -485,8 +560,11 @@ describe("projects and sessions", () => {
     expect(moved()).toBe(0);
 
     // a tool call: the status's time and the transcript's move, the row does not
-    set({ live: live("running", 2000), activityMs: 2000 });
+    set({ live: live("running", 2000, turn), activityMs: 2000 });
     expect(moved()).toBe(0);
+    // a new prompt while it works is a new turn, and what it is doing
+    set({ live: live("running", 2500, { turnStart: 2500 }), lastPrompt: "and the tests" });
+    expect(moved()).toBe(1);
     set({ live: live("waiting", 3000) });
     expect(moved()).toBe(1);
     set({ title: "rounding fix" });
@@ -494,8 +572,10 @@ describe("projects and sessions", () => {
     // its window closed
     t.alive.delete("s-1");
     expect(moved()).toBe(1);
-    // a session outside every project is in no list
+    // a session outside every project is in the list of all of them. a script there is in none
     Object.assign(t.rows[1] as SessionRow, { title: "elsewhere" });
+    expect(moved()).toBe(1);
+    Object.assign(t.rows[2] as SessionRow, { title: "a scripted run" });
     expect(moved()).toBe(0);
     t.rows.push(row("s-2", inChat));
     expect(moved()).toBe(1);

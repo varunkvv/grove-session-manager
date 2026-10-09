@@ -157,7 +157,7 @@ export class ProjectsService {
     if (this.inbox().rows.some((r) => r.sessionId === sessionId)) {
       return { view: "inbox", session: sessionId };
     }
-    return listed(row, false) ? { view: "sessions", project, session: sessionId } : undefined;
+    return listed(row, false, true) ? { view: "sessions", project, session: sessionId } : undefined;
   }
 
   views(): { projects: ProjectView[]; problem?: string } {
@@ -246,20 +246,16 @@ export class ProjectsService {
   }
 
   /**
-   * a project's sessions, newest first, every one of them: the ones started in its folder, and
-   * the ones started in a subfolder or a working copy that need the person or are running now.
+   * the sessions a screen lists, newest first, every one of them. a project's: the ones started in
+   * its folder, and the ones started in a subfolder or a working copy that need the person or are
+   * running now. with null every project's, and the ones in no project that a person started.
    *
    * a finished one in a subfolder is left to the palette. Open takes it to that folder's own
    * window, not the project's, and a project's `artifacts/` can hold hundreds of scripted runs
    */
-  projectSessions(project: ProjectId): SessionHit[] {
-    const { projects } = this.list();
-    const p = projects.find((x) => x.id === project);
-    if (!p) return [];
-    const index = this.index(projects);
-    const needs = new Set(this.inbox().rows.map((r) => r.sessionId));
-    return [...index.rows.values()]
-      .filter((r) => r.comboName === p.name && listed(r, needs.has(r.sessionId)))
+  listSessions(scope: ProjectId | null): SessionHit[] {
+    const index = this.index(this.list().projects);
+    return this.scoped(scope, index)
       .sort(newest)
       .map((r) => this.hit(r, index));
   }
@@ -320,15 +316,13 @@ export class ProjectsService {
       this.inboxView = inbox;
       this.o.onInbox?.(inbox);
     }
-    // what a sessions list draws, without the activity time: that moves on every line an agent
-    // writes, and the page asks again on its own clock for it
+    // what the sessions lists draw, without the activity time: that moves on every line an agent
+    // writes, and the page asks again on its own clock for it. every project's list is in this one
     const sessions = JSON.stringify(
-      [...index.rows.values()]
-        .filter((r) => projectOf(r, index))
-        .map((r) => {
-          const { activityMs: _, ...shown } = this.hit(r, index);
-          return [shown, r.comboRelation];
-        }),
+      this.scoped(null, index).map((r) => {
+        const { activityMs: _, ...shown } = this.hit(r, index);
+        return shown;
+      }),
     );
     if (sessions !== this.sessionsJson) {
       this.sessionsJson = sessions;
@@ -376,6 +370,19 @@ export class ProjectsService {
     return index;
   }
 
+  /** the rows `listSessions` is made of. no project by that id has none */
+  private scoped(scope: ProjectId | null, index: Index): SessionRow[] {
+    const name =
+      scope === null ? undefined : this.list().projects.find((p) => p.id === scope)?.name;
+    if (scope !== null && !name) return [];
+    const needs = new Set(this.inbox().rows.map((r) => r.sessionId));
+    return [...index.rows.values()].filter(
+      (r) =>
+        (scope === null || r.comboName === name) &&
+        listed(r, needs.has(r.sessionId), !!projectOf(r, index)),
+    );
+  }
+
   /** a session as every list names it: where it is and how it opens */
   private ref(row: SessionRow, index: Index): SessionRef {
     const runtime = this.runtimeFor(row.sessionId, row);
@@ -393,12 +400,18 @@ export class ProjectsService {
 
   private hit(row: SessionRow, index: Index, snippet?: string): SessionHit {
     const prompts = new Set([row.firstPrompt, row.lastPrompt].flatMap((p) => p ?? []));
+    // the hooks name no tool for a running session: what it was last asked is what it is doing
+    const running = row.live?.state === "running" ? row.live : undefined;
+    const asked = row.lastPrompt ?? row.firstPrompt;
     return {
       ...this.ref(row, index),
       project: projectOf(row, index),
       activityMs: row.activityMs,
       live: row.live?.state,
       prompt: [...prompts].map((p) => squash(p, 160)).join("\n") || undefined,
+      doing: running && asked ? squash(asked, 200) : undefined,
+      // a status the process registry gave has no turn: it has been busy since `at`
+      since: running && (running.turnStart ?? running.at),
       snippet,
     };
   }
@@ -416,6 +429,13 @@ export class ProjectsService {
 const projectOf = (row: SessionRow, index: Index): ProjectId | undefined =>
   row.comboName ? index.projectOf.get(row.comboName) : undefined;
 
-/** whether a project's sessions list holds this one of its sessions */
-const listed = (row: SessionRow, needsYou: boolean): boolean =>
-  row.comboRelation === "root" || needsYou || row.live?.state === "running";
+/**
+ * whether a list holds this session. always while it needs the person or runs. after that, one in
+ * a project when it was started in the project's folder, and one in no project when a person
+ * started it: `claude -p` and SDK apps (`sdk-cli`, `sdk-ts`) are scripts, and 28 of the 72
+ * sessions outside a project on the machine this was measured on
+ */
+const listed = (row: SessionRow, needsYou: boolean, inProject: boolean): boolean =>
+  needsYou ||
+  row.live?.state === "running" ||
+  (inProject ? row.comboRelation === "root" : !row.entrypoint?.startsWith("sdk"));

@@ -29,6 +29,19 @@ const HOUR = 60 * MIN;
 /** how long ago quiet session i last moved: five in the last minutes, ten a day back, the rest older */
 const age = (i: number) =>
   i < 5 ? (i + 2) * MIN : i < 15 ? (20 + i) * HOUR : (i - 10) * 30 * HOUR;
+/** midnight, this many days back, by the calendar */
+const midnight = (back: number) => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - back);
+  return d.getTime();
+};
+/** the group quiet session i is in. the days are the machine's own, so they are worked out as the app does */
+const day = (i: number) => {
+  const back = [0, 1, 2, 3].findIndex((n) => Date.now() - age(i) >= midnight(n));
+  return ["today", "yesterday", "day-2", "day-3"][back] ?? "older";
+};
+const QUIETS = Array.from({ length: 40 }, (_, i) => i);
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -40,8 +53,8 @@ test.afterEach(async () => {
 
 /**
  * auth-sso with 45 sessions to list: three that need him, two working (one of them in a working
- * copy), forty quiet ones over today, yesterday and the weeks before. a finished one in a
- * subfolder is not its to list. billing-export has none
+ * copy), forty quiet ones over today, the days before and the weeks before those, which are folded
+ * into Older. a finished one in a subfolder is not its to list. billing-export has none
  */
 function seed(): Fixture {
   fx = makeFixture({ withCompanion: true });
@@ -72,14 +85,20 @@ function seed(): Fixture {
   hookEvent(fx, SID.permission, "PermissionRequest", { tool_name: "Bash" });
   writeSession(fx, { cwd: root, sessionId: SID.stopped, title: "session store" });
   interrupted(fx, { [SID.stopped]: Date.now() - 10 * MIN });
-  writeSession(fx, { cwd: root, sessionId: SID.working, title: "login page" });
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID.working,
+    title: "login page",
+    lastPrompt: "wire the login form\nto the new endpoint",
+  });
   liveSession(fx, {
     sessionId: SID.working,
     kind: "interactive",
     entrypoint: "cli",
     status: "busy",
   });
-  hookEvent(fx, SID.working, "UserPromptSubmit");
+  // its turn started twelve minutes ago
+  hookEvent(fx, SID.working, "UserPromptSubmit", {}, 12 * MIN + 5_000);
 
   for (const dir of ["api", "artifacts"]) mkdirSync(path.join(root, dir));
   writeSession(fx, { cwd: path.join(root, "api"), sessionId: SID.insideRuns, title: "api tests" });
@@ -102,20 +121,27 @@ const group = (page: Page, key: string) =>
 const openRow = (page: Page) => page.locator('[data-testid="session-row"][data-open]');
 const panel = (page: Page) => page.getByTestId("session-panel");
 const filter = (page: Page) => page.getByTestId("session-filter");
+const older = (page: Page) => page.getByTestId("older-toggle");
+/** the rows that are drawn while Older is closed */
+const DRAWN = 5 + QUIETS.filter((i) => day(i) !== "older").length;
 const projectItem = (page: Page, id: string) =>
   page.locator(`[data-testid="project-item"][data-id="${id}"]`);
 const code = () => readExecLog(fx).filter((l) => l.bin === "code");
 
-/** the project's screen, with every session indexed */
-async function open(page: Page, n = 45): Promise<void> {
+/** the project's screen, with every session indexed, and Older opened: all 45 are drawn */
+async function open(page: Page): Promise<void> {
   await projectItem(page, "auth-sso").click();
-  await expect(rows(page)).toHaveCount(n, { timeout: 20_000 });
+  await expect(rows(page)).toHaveCount(DRAWN, { timeout: 20_000 });
+  await expect(older(page)).toContainText(`Older${45 - DRAWN}`);
+  await older(page).click();
+  await expect(rows(page)).toHaveCount(45);
 }
 
-test("a project's screen is every one of its sessions: the ones that need him, the working, then the rest by day", async () => {
+test("a project's screen is every one of its sessions: the ones that need him, the working, then the rest by day, and Older folded away", async () => {
   app = await launchApp(seed());
   const { page } = app;
-  await open(page);
+  await projectItem(page, "auth-sso").click();
+  await expect(rows(page)).toHaveCount(DRAWN, { timeout: 20_000 });
 
   // the project is marked in the sidebar, with how many of its sessions need him
   await expect(projectItem(page, "auth-sso")).toHaveAttribute("aria-current", "page");
@@ -123,14 +149,13 @@ test("a project's screen is every one of its sessions: the ones that need him, t
   await expect(page.getByTestId("project-name")).toHaveText("auth-sso");
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
 
-  // the groups, in order. the days are the machine's own, so they are worked out the way the app does
-  const midnight = new Date().setHours(0, 0, 0, 0);
-  const day = (i: number) => {
-    const at = Date.now() - age(i);
-    return at >= midnight ? "today" : at >= midnight - 24 * HOUR ? "yesterday" : "earlier";
-  };
-  const all: string[] = Array.from({ length: 40 }, (_, i) => day(i));
-  const days = ["today", "yesterday", "earlier"].filter((d) => all.includes(d));
+  // the groups, in order: today, yesterday, the two days before by their weekday, then Older
+  const all = QUIETS.map(day);
+  const days = ["today", "yesterday", "day-2", "day-3", "older"].filter((d) => all.includes(d));
+  const drawnIn = (d: string) =>
+    group(page, d)
+      .getByTestId("session-row")
+      .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
   expect(
     await page
       .getByTestId("session-group")
@@ -139,16 +164,32 @@ test("a project's screen is every one of its sessions: the ones that need him, t
   await expect(group(page, "needs").getByTestId("session-row")).toHaveCount(3);
   await expect(group(page, "needs")).toContainText("Needs you3");
   await expect(group(page, "working").getByTestId("session-row")).toHaveCount(2);
-  for (const d of days) {
-    const want = Array.from({ length: 40 }, (_, i) => i).filter((i) => day(i) === d);
+  for (const d of days.filter((x) => x !== "older")) {
     // newest first inside each
-    expect(
-      await group(page, d)
-        .getByTestId("session-row")
-        .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id)),
-      d,
-    ).toEqual(want.map((i) => sid(QUIET + i)));
+    expect(await drawnIn(d), d).toEqual(
+      QUIETS.filter((i) => day(i) === d).map((i) => sid(QUIET + i)),
+    );
   }
+  for (const [d, back] of [
+    ["day-2", 2],
+    ["day-3", 3],
+  ] as const) {
+    if (!days.includes(d)) continue;
+    const name = new Date(midnight(back)).toLocaleDateString("en-US", { weekday: "long" });
+    await expect(group(page, d)).toContainText(name);
+  }
+
+  // Older says how many it holds and draws none of them until its header is pressed
+  const old = QUIETS.filter((i) => day(i) === "older");
+  await expect(older(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(older(page)).toHaveText(`Older${old.length}`);
+  expect(await drawnIn("older")).toEqual([]);
+  await older(page).click();
+  await expect(older(page)).toHaveAttribute("aria-expanded", "true");
+  expect(await drawnIn("older")).toEqual(old.map((i) => sid(QUIET + i)));
+  await expect(rows(page)).toHaveCount(45);
+  // the click left the keyboard with the list
+  await expect(page.getByRole("listbox")).toBeFocused();
 
   // one started in a working copy is here while it runs. a finished one in a subfolder is the palette's
   await expect(row(page, SID.insideRuns)).toHaveAttribute("data-state", "working");
@@ -168,22 +209,38 @@ test("a project's screen is every one of its sessions: the ones that need him, t
   await expect(row(page, SID.stopped).getByTestId("state")).toHaveText("Stopped");
   await expect(row(page, SID.working).getByTestId("state")).toHaveText("Working");
   await expect(row(page, SID.working).getByTestId("runtime-chip")).toHaveText("Terminal");
-  // a quiet one says nothing
+  // a working one has a second line, what it was last asked, and says how long its turn has run
+  await expect(row(page, SID.working).getByTestId("session-doing")).toHaveText(
+    "wire the login form to the new endpoint",
+  );
+  await expect(row(page, SID.working)).toContainText(/for 1[23]m/);
+  // a quiet one says nothing, on one line
   const quiet = row(page, sid(QUIET));
   await expect(quiet).toContainText("session 0");
   await expect(quiet.getByTestId("state")).toHaveCount(0);
+  await expect(quiet.getByTestId("session-doing")).toHaveCount(0);
   await expect(quiet.getByTestId("runtime-chip")).toHaveText("Closed");
+  await expect(row(page, SID.turn).getByTestId("session-doing")).toHaveCount(0);
 
-  // the last of 45 is a scroll away, not a `Show all`
+  // the last of 45 is a scroll away
   const last = row(page, sid(QUIET + 39));
   await expect(last).not.toBeInViewport();
   await last.scrollIntoViewIfNeeded();
   await expect(last).toContainText("session 39");
 
+  // Older closes again from its header, and every time the screen comes up
+  await older(page).click();
+  await expect(rows(page)).toHaveCount(DRAWN);
+  await older(page).click();
+  await expect(rows(page)).toHaveCount(45);
+
   // the other project has none: one line, and how to start one
   await projectItem(page, "billing-export").click();
   await expect(page.getByTestId("sessions-empty")).toContainText("No sessions yet.");
   await expect(rows(page)).toHaveCount(0);
+  await projectItem(page, "auth-sso").click();
+  await expect(older(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(rows(page)).toHaveCount(DRAWN);
 });
 
 test("the filter narrows the rows by title, prompt and branch, cmd-F focuses it, and the arrows drive the list from it", async () => {
@@ -250,7 +307,7 @@ test("the filter narrows the rows by title, prompt and branch, cmd-F focuses it,
   await projectItem(page, "billing-export").click();
   await projectItem(page, "auth-sso").click();
   await expect(filter(page)).toHaveValue("");
-  await expect(rows(page)).toHaveCount(45);
+  await expect(rows(page)).toHaveCount(DRAWN);
 });
 
 test("a click opens a session in the panel, a double-click in the editor, and Dismiss leaves it in the list", async () => {
@@ -347,13 +404,39 @@ test("the list is live: a session that starts working, then needs him, and a new
   await expect(rows(page)).toHaveCount(46);
 });
 
+test("Dismiss on a session that stopped days ago leaves the panel on it, down in Older", async () => {
+  fx = makeFixture({ withCompanion: true });
+  root = writeProject(fx, { name: "auth-sso" }).root;
+  const old = sid(7);
+  // five days back: a stop is kept for seven, and what last moved that long ago is in Older
+  writeSession(fx, { cwd: root, sessionId: old, title: "session store", ageMs: 5 * 24 * HOUR });
+  interrupted(fx, { [old]: Date.now() - 5 * 24 * HOUR });
+  writeSession(fx, { cwd: root, sessionId: sid(8), title: "okta app" });
+  app = await launchApp(fx);
+  const { page } = app;
+  await projectItem(page, "auth-sso").click();
+  await expect(row(page, old)).toHaveAttribute("data-state", "stopped", { timeout: 20_000 });
+
+  await row(page, old).click();
+  await panel(page).getByTestId("panel-dismiss").click();
+  // it is an old session like any other now, and the panel is still on it: Older shows for it
+  await expect(group(page, "needs")).toHaveCount(0);
+  await expect(panel(page)).toHaveAttribute("data-id", old);
+  await expect(group(page, "older").getByTestId("session-row")).toHaveAttribute("data-id", old);
+  await expect(openRow(page)).toHaveAttribute("data-id", old);
+  // closing Older takes the panel with it, and nothing is open on a row nobody sees
+  await older(page).click();
+  await expect(page.getByTestId("panel")).toHaveCount(0);
+  await expect(rows(page)).toHaveCount(1);
+});
+
 test("a landing on a session far down its project's list opens its panel and brings its row into view", async () => {
   app = await launchApp(seed());
   const { page } = app;
   const oldest = sid(QUIET + 39);
   // main has to know the session before it can say where it is
   await page.waitForFunction(
-    async () => (await window.grove.projectSessions("auth-sso")).length === 45,
+    async () => (await window.grove.listSessions("auth-sso")).length === 45,
     undefined,
     { timeout: 20_000 },
   );
@@ -364,6 +447,8 @@ test("a landing on a session far down its project's list opens its panel and bri
   await expect(page.getByTestId("project-name")).toHaveText("auth-sso");
   await expect(panel(page)).toHaveAttribute("data-id", oldest);
   await expect(panel(page).getByTestId("panel-text")).toHaveText("what session 39 said");
+  // it is five weeks old: Older shows as far as its row, since the panel is on it
+  await expect(older(page)).toHaveAttribute("aria-expanded", "true");
   await expect(openRow(page)).toHaveAttribute("data-id", oldest);
   await expect(openRow(page)).toBeInViewport();
   expect(code()).toHaveLength(0);

@@ -453,7 +453,7 @@ async function launch(fx: Fixture) {
         b.inbox.rows.every((r) => r.kind === "permission" || r.recap?.lines) &&
         b.projects[0]?.folders.every((f) => f.state === "ok") &&
         // the sessions are indexed after the page is up
-        (await window.grove.projectSessions("auth-sso")).length === 44
+        (await window.grove.listSessions("auth-sso")).length === 44
       );
     },
     undefined,

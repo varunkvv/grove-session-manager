@@ -38,8 +38,8 @@ describe("the menu", () => {
       ["Open Project in VS Code", "CmdOrCtrl+O"],
       ["Edit Project…", "CmdOrCtrl+E"],
       ["Find", "CmdOrCtrl+F"],
-      ["Inbox", "CmdOrCtrl+1"],
-      ["Sessions", "CmdOrCtrl+2"],
+      ["All Sessions", "CmdOrCtrl+1"],
+      ["Project Sessions", "CmdOrCtrl+2"],
       ["Go to…", "CmdOrCtrl+K"],
       ["Refresh", "CmdOrCtrl+R"],
     ]);

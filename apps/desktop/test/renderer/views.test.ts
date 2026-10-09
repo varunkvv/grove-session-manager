@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLOSED,
   filterSessions,
   groupSessions,
+  type ListInput,
   needsYouCount,
+  PAGE,
   projectHues,
+  runningFor,
   sessionOrder,
   startBlocked,
   workLine,
@@ -96,8 +100,9 @@ describe("the sidebar", () => {
   });
 });
 
-describe("a project's sessions", () => {
-  // newest first, as main sends them
+describe("a list of sessions", () => {
+  const DAY = 24 * HOUR;
+  // newest first, as main sends them. NOW is a friday, three in the afternoon
   const hits = [
     hit("working", { live: "running", activityMs: NOW - 1000 }),
     hit("today", { title: "sketch the login page", activityMs: NOW - 2 * HOUR }),
@@ -105,52 +110,134 @@ describe("a project's sessions", () => {
     hit("seen", { live: "waiting", activityMs: NOW - 4 * HOUR }),
     hit("yesterday", { prompt: "rotate the LOGIN keys", activityMs: NOW - 20 * HOUR }),
     hit("cut", { activityMs: NOW - 30 * HOUR }),
-    hit("last-week", { activityMs: NOW - 8 * 24 * HOUR }),
-    hit("old", { activityMs: NOW - 90 * 24 * HOUR }),
+    hit("wednesday", { activityMs: NOW - 2 * DAY }),
+    // the first minute of the day three days ago is the last that is not Older
+    hit("tuesday", { activityMs: new Date(2026, 8, 29, 0, 0).getTime() }),
+    hit("monday-night", { activityMs: new Date(2026, 8, 28, 23, 59).getTime() }),
+    hit("last-week", { activityMs: NOW - 8 * DAY }),
+    hit("old", { activityMs: NOW - 90 * DAY }),
   ];
   // the inbox's order, newest first: the stop is the later of the two
   const inbox: InboxView = { rows: [row("cut", { kind: "stopped" }), row("asks")] };
-  const drawn = (query = "") =>
-    groupSessions(hits, inbox, query, NOW).map((g) => [
+  const input = (o: Partial<ListInput> = {}): ListInput => ({
+    scope: "auth",
+    hits,
+    inbox,
+    query: "",
+    now: NOW,
+    older: CLOSED,
+    peek: null,
+    ...o,
+  });
+  const drawn = (o: Partial<ListInput> = {}) =>
+    groupSessions(input(o)).map((g) => [
       g.label,
       g.items.map((i) => [i.hit.sessionId, i.state].filter(Boolean).join(" ")),
     ]);
+  const older = (o: Partial<ListInput> = {}) => groupSessions(input(o)).at(-1);
 
-  it("the ones that need him in the inbox's order, the working, then the rest by day", () => {
+  it("the ones that need him in the inbox's order, the working, then the days, and Older closed", () => {
     expect(drawn()).toEqual([
       ["Needs you", ["cut stopped", "asks turn"]],
       ["Working", ["working working"]],
       ["Today", ["today", "seen"]],
       ["Yesterday", ["yesterday"]],
-      ["Earlier", ["last-week", "old"]],
+      ["Wednesday", ["wednesday"]],
+      ["Tuesday", ["tuesday"]],
+      ["Older", []],
     ]);
-    const needs = groupSessions(hits, inbox, "", NOW)[0];
+    expect(groupSessions(input()).map((g) => g.key)).toEqual([
+      "needs",
+      "working",
+      "today",
+      "yesterday",
+      "day-2",
+      "day-3",
+      "older",
+    ]);
+    // it says how many it holds while it draws none of them
+    expect(older()).toMatchObject({ key: "older", count: 3, open: false });
+    const needs = groupSessions(input())[0];
     // what Dismiss clears comes with the row
     expect(needs?.items[0]?.row?.reviewKeys).toEqual(["seen:cut"]);
-    expect(sessionOrder(hits, inbox, "")).toEqual(
+    // the keyboard is given the rows that are drawn, and no other
+    expect(sessionOrder(input())).toEqual(
       drawn()
         .flatMap(([, ids]) => ids)
         .map((x) => String(x).split(" ")[0]),
     );
+    expect(sessionOrder(input())).not.toContain("old");
+  });
+
+  it("Older draws a page when it opens, and as many more as it is told to", () => {
+    const many = Array.from({ length: 120 }, (_, n) =>
+      hit(`old-${n}`, { activityMs: NOW - (10 + n) * DAY }),
+    );
+    const open = (drawn: number, o: Partial<ListInput> = {}) =>
+      older({ hits: many, inbox: { rows: [] }, older: { open: true, drawn }, ...o });
+    expect(older({ hits: many, inbox: { rows: [] } })).toMatchObject({ count: 120, items: [] });
+    expect(open(PAGE)?.items).toHaveLength(50);
+    expect(open(PAGE)).toMatchObject({ count: 120, open: true });
+    expect(open(100)?.items.at(-1)?.hit.sessionId).toBe("old-99");
+    expect(open(150)?.items).toHaveLength(120);
+    expect(sessionOrder(input({ hits: many, older: { open: true, drawn: PAGE } }))).toHaveLength(
+      50 + 2,
+    );
+  });
+
+  it("the session in the panel is drawn wherever it is: Older shows as far as its row", () => {
+    // a landing on an old session, or a Dismiss that sent a stop of last week down there
+    expect(older({ peek: "last-week" })).toMatchObject({ open: true, count: 3 });
+    expect(sessionOrder(input({ peek: "old" }))).toContain("old");
+    const many = Array.from({ length: 120 }, (_, n) =>
+      hit(`old-${n}`, { activityMs: NOW - (10 + n) * DAY }),
+    );
+    const far = older({ hits: many, inbox: { rows: [] }, peek: "old-70" });
+    expect(far?.items).toHaveLength(71);
+    // one that is not in Older opens nothing
+    expect(older({ peek: "today" })).toMatchObject({ open: false, items: [] });
   });
 
   it("the filter narrows by title, prompt and branch, every word, and leaves empty groups out", () => {
-    expect(drawn("login")).toEqual([
+    expect(drawn({ query: "login" })).toEqual([
       ["Needs you", ["asks turn"]],
       ["Today", ["today"]],
       ["Yesterday", ["yesterday"]],
     ]);
-    expect(drawn("LOGIN keys")).toEqual([["Yesterday", ["yesterday"]]]);
-    expect(drawn("nothing like it")).toEqual([]);
+    expect(drawn({ query: "LOGIN keys" })).toEqual([["Yesterday", ["yesterday"]]]);
+    expect(drawn({ query: "nothing like it" })).toEqual([]);
     expect(filterSessions(hits, "  ")).toHaveLength(hits.length);
-    expect(sessionOrder(hits, inbox, "login")).toEqual(["asks", "today", "yesterday"]);
+    expect(sessionOrder(input({ query: "login" }))).toEqual(["asks", "today", "yesterday"]);
   });
 
-  it("an inbox row of another project's session changes nothing here", () => {
-    const other: InboxView = { rows: [row("elsewhere", { project: "billing" })] };
-    expect(groupSessions([hit("today")], other, "", NOW)).toMatchObject([
-      { key: "today", items: [{ hit: { sessionId: "today" } }] },
+  it("a project's list holds its own rows of the inbox. the home screen's holds every project's", () => {
+    const both: InboxView = {
+      rows: [row("elsewhere", { project: "billing", at: NOW - HOUR }), row("asks")],
+    };
+    expect(drawn({ hits: [hit("today")], inbox: both })).toEqual([
+      // main has not listed it yet: it is drawn from its inbox row all the same
+      ["Needs you", ["asks turn"]],
+      ["Today", ["today"]],
     ]);
+    expect(drawn({ scope: null, hits: [hit("today")], inbox: both })).toEqual([
+      ["Needs you", ["elsewhere turn", "asks turn"]],
+      ["Today", ["today"]],
+    ]);
+    // before main has answered at all, the ones that need him are there
+    expect(drawn({ scope: null, hits: null, inbox: both })).toEqual([
+      ["Needs you", ["elsewhere turn", "asks turn"]],
+    ]);
+    expect(drawn({ scope: null, hits: null, inbox: { rows: [] } })).toEqual([]);
+  });
+
+  it("says how long a working session's turn has run, in whole minutes and then hours", () => {
+    const MIN = 60_000;
+    expect(runningFor(NOW - 20_000, NOW)).toBe("now");
+    expect(runningFor(NOW - 12 * MIN - 59_000, NOW)).toBe("for 12m");
+    expect(runningFor(NOW - 59 * MIN, NOW)).toBe("for 59m");
+    expect(runningFor(NOW - 150 * MIN, NOW)).toBe("for 2h");
+    // a clock a second ahead of main's
+    expect(runningFor(NOW + 1000, NOW)).toBe("now");
   });
 });
 

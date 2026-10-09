@@ -214,13 +214,18 @@ export interface SessionRef {
   recap?: RecapView;
 }
 
-/** one session in a project's list, or found from the palette */
+/** one session in a list, or found from the palette */
 export interface SessionHit extends SessionRef {
+  /** absent for a session in no project */
   project?: ProjectId;
   activityMs: number;
   live?: LiveState;
   /** its first and last prompts, cut: what a sessions list's filter also looks in */
   prompt?: string;
+  /** only while it runs: what it was last asked, cut. its hooks name no tool */
+  doing?: string;
+  /** only while it runs: when this turn started */
+  since?: number;
   /** only for a full-text match */
   snippet?: string;
 }
@@ -324,8 +329,13 @@ export interface Api {
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   findSessions(query: string): Promise<SessionHit[]>;
-  /** every session a project lists, newest first. asked again on `sessions:changed` */
-  projectSessions(project: ProjectId): Promise<SessionHit[]>;
+  /**
+   * every session a screen lists, newest first: a project's, or with null every project's and the
+   * ones in none. asked again on `sessions:changed`
+   */
+  // ponytail: the whole list in one answer, and Older is paged in the page. 326 sessions on the
+  // machine it was built on. page from here the day one has thousands
+  listSessions(scope: ProjectId | null): Promise<SessionHit[]>;
   /**
    * a session's turns, read from its transcript now: the last 100, each text cut. everything in
    * it is untrusted. null when Claude Code has deleted the transcript, or grove does not list it
@@ -380,7 +390,7 @@ export const INVOKE_CHANNELS = [
   "openSession",
   "startAgent",
   "findSessions",
-  "projectSessions",
+  "listSessions",
   "sessionConversation",
   "writeRecap",
   "takeLanding",
@@ -414,7 +424,7 @@ export interface PushEvents {
     folders: FolderView[];
   };
   "inbox:changed": InboxView & { rev: number };
-  /** what a project's sessions list shows moved: `projectSessions` has the new list */
+  /** what a sessions list shows moved: `listSessions` has the new list */
   "sessions:changed": Record<string, never>;
   "editor:status": EditorStatus;
   "menu:command": { id: MenuCommandId };

@@ -5,6 +5,7 @@ import { writeProject } from "./helpers/project.ts";
 
 const IDP = "aaaaaaaa-0000-4000-8000-000000000001";
 const EXPORT = "bbbbbbbb-0000-4000-8000-000000000002";
+const QUIET = "cccccccc-0000-4000-8000-000000000003";
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -13,7 +14,10 @@ test.afterEach(async () => {
   await app?.close();
 });
 
-/** two projects, and in each a session whose turn ended on a question */
+/**
+ * two projects, and in each a session whose turn ended on a question. a third session needs
+ * nothing: the home screen lists it, the tray and the counts do not
+ */
 function setup(): Fixture {
   fx = makeFixture({ withCompanion: true });
   const auth = writeProject(fx, {
@@ -23,6 +27,7 @@ function setup(): Fixture {
   const billing = writeProject(fx, { name: "billing-export" });
   writeSession(fx, { cwd: auth.root, sessionId: IDP, title: "idp config" });
   writeSession(fx, { cwd: billing.root, sessionId: EXPORT, title: "export job" });
+  writeSession(fx, { cwd: billing.root, sessionId: QUIET, title: "csv columns" });
   hookEvent(fx, IDP, "Stop", { last_assistant_message: "A dev tenant, or the prod one?" });
   hookEvent(fx, EXPORT, "Stop", { last_assistant_message: "csv only, or parquet too?" });
   return fx;
@@ -82,6 +87,9 @@ test("a row shows the window on that session: its inbox row, with its panel open
     "data-project",
     "billing-export",
   );
+  // the home screen lists the session that needs nothing too. the tray never counted it
+  await expect(app.page.locator(`[data-testid="session-row"][data-id="${QUIET}"]`)).toHaveCount(1);
+  expect(await g.trayTitle()).toBe("2");
 });
 
 test("--hidden starts with no visible window and a working page", async () => {

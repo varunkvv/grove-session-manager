@@ -7,7 +7,6 @@ import {
   SettingsDialog,
   StartDialog,
 } from "./components/Dialogs.tsx";
-import { Inbox } from "./components/Inbox.tsx";
 import { Palette } from "./components/Palette.tsx";
 import { ProjectForm } from "./components/ProjectForm.tsx";
 import { Sessions } from "./components/Sessions.tsx";
@@ -37,11 +36,11 @@ function Screen() {
   // no projects at all: the form, whatever the view says
   if (!project) return <ProjectForm mode="new" first />;
   switch (view.name) {
+    // keyed, so one list never keeps another's scroll or keyboard
     case "inbox":
-      return <Inbox />;
+      return <Sessions key="" scope={null} />;
     case "sessions":
-      // keyed, so one project's list never keeps another's scroll or keyboard
-      return <Sessions key={project} />;
+      return <Sessions key={project} scope={project} />;
     case "new-project":
       return <ProjectForm mode="new" />;
     case "edit-project":

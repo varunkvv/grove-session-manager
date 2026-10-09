@@ -79,7 +79,16 @@ function seed(): Fixture {
   return fx;
 }
 
+/** the rows of Needs you. every other session on the screen is a `session-row` under them */
 const rows = (page: Page) => page.getByTestId("inbox-row");
+const session = (page: Page, id: string) =>
+  page.locator(`[data-testid="session-row"][data-id="${id}"]`);
+const group = (page: Page, key: string) =>
+  page.locator(`[data-testid="session-group"][data-group="${key}"]`);
+const groups = (page: Page) =>
+  page
+    .getByTestId("session-group")
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.group));
 const row = (page: Page, kind: string) =>
   page.locator(`[data-testid="inbox-row"][data-kind="${kind}"]`);
 /** the row in the panel */
@@ -112,10 +121,24 @@ async function under(target: Locator, then: () => Promise<unknown>): Promise<voi
 const dismiss = (target: Locator) =>
   under(target, () => target.getByTestId("inbox-dismiss").click({ timeout: 2_000 }));
 
-test("one row for each session that needs him, from every project, and the sidebar counts them by project", async () => {
+test("one row for each session that needs him, from every project, above every other session, and the sidebar counts them by project", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
+
+  // the home screen is called All sessions, and the ones that need him are its first group
+  await expect(page.getByTestId("top-bar").getByRole("heading")).toHaveText("All sessions");
+  await expect(page.getByTestId("nav-inbox")).toContainText("All sessions");
+  await expect.poll(() => groups(page)).toEqual(["needs", "today"]);
+  await expect(group(page, "needs")).toContainText("Needs you4");
+  await expect(group(page, "needs").getByTestId("inbox-row")).toHaveCount(4);
+  // under them the two that need nothing, one line each: which project, or the folder of one in none
+  await expect(group(page, "today").getByTestId("session-row")).toHaveCount(2);
+  await expect(session(page, SID.quiet)).toContainText("chat-features-35");
+  await expect(session(page, SID.quiet).getByTestId("session-project")).toHaveText("auth-sso");
+  await expect(session(page, SID.quiet).getByTestId("state")).toHaveCount(0);
+  await expect(session(page, SID.loose).getByTestId("session-project")).toHaveText("scratch");
+  await expect(session(page, SID.loose).getByTestId("project-mark")).toHaveCount(0);
 
   // newest first: the one that stopped a minute ago is last
   const got = await kinds(page);
@@ -152,6 +175,7 @@ test("one row for each session that needs him, from every project, and the sideb
   expect(await hue(turn)).toBe(await hue(projectItem(page, "auth-sso")));
   expect(await hue(failed)).toBe(await hue(projectItem(page, "billing-export")));
   expect(await hue(failed)).not.toBe(await hue(turn));
+  expect(await hue(session(page, SID.quiet))).toBe(await hue(turn));
 
   // where it is and when give way to the two buttons under the mouse
   await expect(turn.getByTestId("inbox-dismiss")).toBeHidden();
@@ -185,6 +209,9 @@ test("Dismiss takes a row out: a stop is written down, a turn is only seen until
   await dismiss(row(page, "turn"));
   await ready(page, 3);
   await expect(row(page, "turn")).toHaveCount(0);
+  // it left Needs you, not the screen: it is a session of today now, with nothing to say
+  await expect(session(page, SID.turn)).toContainText("idp config");
+  await expect(session(page, SID.turn)).not.toHaveAttribute("data-state");
   await expect(count(projectItem(page, "auth-sso"))).toHaveText("2");
   // nothing was stored: looking at a session is not a decision
   expect(marks()).toEqual([]);
@@ -200,13 +227,16 @@ test("Dismiss takes a row out: a stop is written down, a turn is only seen until
   hookEvent(fx, SID.turn, "UserPromptSubmit");
   hookEvent(fx, SID.turn, "Stop", { last_assistant_message: "Opened it. Merge now?" });
   await expect(row(page, "turn").getByTestId("inbox-summary")).toHaveText("Opened it. Merge now?");
+  await expect(session(page, SID.turn)).toHaveCount(0);
   await expect(count(page.getByTestId("nav-inbox"))).toHaveText("3");
 
-  // the last rows go, and so do the counts
+  // the last rows go, and so do the counts. nothing says that nothing needs him: the group is gone
   await dismiss(row(page, "turn"));
   await dismiss(row(page, "permission"));
   await dismiss(row(page, "failed"));
-  await expect(page.getByTestId("inbox-empty")).toHaveText("Nothing needs you.");
+  await expect(rows(page)).toHaveCount(0);
+  await expect(group(page, "needs")).toHaveCount(0);
+  await expect(page.getByTestId("session-row")).toHaveCount(6);
   await expect(page.getByTestId("count")).toHaveCount(0);
   expect(await groveTest(app.app).trayTitle()).toBe("");
 });
@@ -365,7 +395,9 @@ test("the panel's own buttons: Dismiss hands it to the row that took the place, 
 
   // the last rows go: the panel closes with the list, and a new row does not open it again
   for (const _ of [1, 2, 3]) await panel(page).getByTestId("panel-dismiss").click();
-  await expect(page.getByTestId("inbox-empty")).toBeVisible();
+  await expect(rows(page)).toHaveCount(0);
+  // the sessions are still listed, under their day. the panel went with the last that needed him
+  await expect(page.getByTestId("session-row")).toHaveCount(6);
   await expect(page.getByTestId("panel")).toHaveCount(0);
   hookEvent(fx, SID.quiet, "Stop", { last_assistant_message: "Merged. Anything else?" });
   await expect(rows(page)).toHaveCount(1);
@@ -411,7 +443,7 @@ test("cmd-D with the mouse: one press dismisses the open row, and the row under 
   await expect(page.locator('[data-testid="inbox-row"][data-active]')).toHaveCount(1);
   await expect(rows(page)).toHaveCount(1);
   await page.keyboard.press("Meta+d");
-  await expect(page.getByTestId("inbox-empty")).toBeVisible();
+  await expect(rows(page)).toHaveCount(0);
 });
 
 test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, Enter opens the panel", async () => {
@@ -455,17 +487,17 @@ test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, En
     await at(order[3]!);
   });
 
-  // the last row is the stop: cmd-Enter opens it, and it stays
+  // the last of the three that need him is the stop: cmd-Enter opens it, and it stays
   const opened = () => code().length;
   await step(async () => {
-    if (opened() === 0) await press("Meta+ArrowDown", "Meta+Enter");
+    if (opened() === 0) await press("Meta+ArrowUp", "ArrowDown", "ArrowDown", "Meta+Enter");
     await expect.poll(opened, { timeout: 3_000 }).toBe(1);
   });
 
   // the arrows alone never open the panel. Enter does, on the keyboard's row, and the list stays
   await expect(page.getByTestId("panel")).toHaveCount(0);
   await step(async () => {
-    await press("Meta+ArrowDown", "Enter");
+    await press("Meta+ArrowUp", "ArrowDown", "ArrowDown", "Enter");
     await expect(panel(page)).toHaveAttribute("data-id", SID.stopped, { timeout: 2_000 });
   });
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
@@ -485,6 +517,21 @@ test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, En
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("panel")).toHaveCount(0);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
+
+  // the arrows carry on past the ones that need him, into the rest: the last row is a quiet session,
+  // Enter opens it in the same panel, and there is nothing to dismiss there
+  const quiet = page.locator('[data-testid="session-row"][data-active]');
+  await step(async () => {
+    await press("Meta+ArrowDown", "Enter");
+    await expect(quiet).toHaveCount(1, { timeout: 2_000 });
+    await expect(panel(page)).toHaveAttribute(
+      "data-id",
+      (await quiet.getAttribute("data-id", { timeout: 2_000 })) as string,
+      { timeout: 2_000 },
+    );
+  });
+  await expect(panel(page).getByTestId("panel-dismiss")).toHaveCount(0);
+  await expect(panel(page).getByTestId("state")).toHaveCount(0);
 });
 
 test("a notification click lands on the session with its panel open, wherever its row is", async () => {

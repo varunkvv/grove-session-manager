@@ -5,9 +5,9 @@ import { useStore } from "../state/store.ts";
 import { Icon, IconButton, ProjectMark, SideItem } from "./ui.tsx";
 
 /**
- * the inbox, which is every project's, and under it the projects with how many of their sessions
- * need the person: a session in project B must not be invisible while the window is on A. the
- * projects keep the order of combos.json, so nothing moves as counts change
+ * All sessions, which is every project's, and under it the projects. each says how many of its
+ * sessions need the person: a session in project B must not be invisible while the window is on A.
+ * the projects keep the order of combos.json, so nothing moves as counts change
  */
 export function Sidebar() {
   const projects = useStore((s) => s.projects);
@@ -29,7 +29,7 @@ export function Sidebar() {
 
   return (
     <nav
-      aria-label="Inbox and projects"
+      aria-label="All sessions and projects"
       className="flex w-[220px] shrink-0 flex-col border-r border-line bg-chrome"
       data-testid="sidebar"
     >
@@ -39,7 +39,8 @@ export function Sidebar() {
         <SideItem
           selected={view === "inbox"}
           mark={<Icon name="inbox" size={14} />}
-          label="Inbox"
+          label="All sessions"
+          // only the ones that need him, like the tray and the dock
           count={inbox.rows.length}
           testId="nav-inbox"
           onClick={() => {
@@ -54,7 +55,7 @@ export function Sidebar() {
           <Icon name="plus" size={12} />
         </IconButton>
       </div>
-      {/* many projects scroll here, under an inbox that stays put */}
+      {/* many projects scroll here, under an All sessions that stays put */}
       <div className="min-h-0 flex-1 space-y-px overflow-y-auto px-2 pb-3" data-testid="projects">
         {projects.map((p) => (
           <SideItem

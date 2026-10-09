@@ -97,7 +97,7 @@ test("nothing that takes a click sits in a window drag region", async () => {
 
 const NAMES = Array.from({ length: 26 }, (_, i) => `project-${String.fromCharCode(97 + i)}`);
 
-test("the sidebar: the inbox on top, the projects in the file's order with their counts, and the one on screen marked", async () => {
+test("the sidebar: All sessions on top, the projects in the file's order with their counts, and the one on screen marked", async () => {
   fx = makeFixture({ withCompanion: true });
   const roots = NAMES.map((name) => writeProject(fx, { name }).root);
   // the last project needs him, and nothing before it does
@@ -140,7 +140,7 @@ test("the sidebar: the inbox on top, the projects in the file's order with their
   const early = "dddddddd-0000-4000-8000-000000000004";
   writeSession(fx, { cwd: roots[1] as string, sessionId: early, title: "early one" });
   await page.waitForFunction(
-    async () => (await window.grove.projectSessions("project-b")).length === 1,
+    async () => (await window.grove.listSessions("project-b")).length === 1,
     undefined,
     { timeout: 20_000 },
   );

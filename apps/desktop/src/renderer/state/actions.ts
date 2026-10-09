@@ -1,7 +1,21 @@
-import type { OpenPlan, ProjectId, SessionKey, StartAgentRequest } from "../../shared/ipc.ts";
+import type {
+  InboxView,
+  OpenPlan,
+  ProjectId,
+  SessionKey,
+  StartAgentRequest,
+} from "../../shared/ipc.ts";
 import type { Intent } from "../logic/keyboard.ts";
-import { sessionOrder } from "../logic/views.ts";
-import { rememberProject, type Section, type State, useStore } from "./store.ts";
+import { nextActiveKey } from "../logic/rows.ts";
+import { CLOSED, groupSessions, PAGE, sessionOrder } from "../logic/views.ts";
+import {
+  listInput,
+  rememberProject,
+  type Section,
+  type State,
+  scopeOf,
+  useStore,
+} from "./store.ts";
 
 const api = () => window.grove;
 const state = () => useStore.getState();
@@ -25,9 +39,16 @@ export function report(
 
 // ---------- navigation ----------
 
-/** a list from the sidebar, the menu or the palette: nothing to go back to */
+/** a list from the sidebar, the menu or the palette: nothing to go back to, and Older closed */
 export function go(section: Section): void {
-  state().set({ section, view: { name: section }, back: [], overlay: null, peek: null });
+  state().set({
+    section,
+    view: { name: section },
+    back: [],
+    overlay: null,
+    peek: null,
+    older: CLOSED,
+  });
 }
 
 export function back(): void {
@@ -46,25 +67,29 @@ export function switchProject(id: ProjectId): void {
     overlay: null,
     peek: null,
     filter: "",
+    older: CLOSED,
     active: { ...s.active, sessions: null },
-    // another project's rows never show under this one's name
-    sessions: s.sessions?.project === id ? s.sessions : null,
+    // another list's rows never show under this project's name
+    sessions: s.sessions?.scope === id ? s.sessions : null,
   });
   rememberProject(id);
 }
 
+/** a list is on screen, not a form */
+const onList = (s: State): boolean => s.view.name === "inbox" || s.view.name === "sessions";
+
 let asked = 0;
-/** the sessions of the project on screen, from main. an answer that came too late is dropped */
+/** the sessions of the list on screen, from main. an answer that came too late is dropped */
 export async function loadSessions(): Promise<void> {
-  const project = state().project;
-  if (!project) return;
+  if (!onList(state())) return;
+  const scope = scopeOf(state());
   const mine = ++asked;
   // main did not answer: what is on screen stays
   const hits = await api()
-    .projectSessions(project)
+    .listSessions(scope)
     .catch(() => null);
-  if (hits && mine === asked && state().project === project) {
-    state().set({ sessions: { project, hits } });
+  if (hits && mine === asked && onList(state()) && scopeOf(state()) === scope) {
+    state().set({ sessions: { scope, hits } });
   }
 }
 
@@ -158,6 +183,46 @@ export async function startAgent(req: StartAgentRequest): Promise<void> {
   report("Could not start an agent", res);
 }
 
+/** the ids of the rows that need the person, as the list on screen draws them */
+const needsOf = (s: State): string[] =>
+  groupSessions(listInput(s))
+    .find((g) => g.key === "needs")
+    ?.items.map((i) => i.hit.sessionId) ?? [];
+
+/**
+ * the inbox moved. on the home screen a session that left Needs you is still listed, lower down in
+ * its day's group, so the triage is kept here: the panel and the keyboard go to the row that took
+ * its place in Needs you, and the panel closes with the last one. a project's screen leaves both
+ * where they are
+ */
+export function setInbox(inbox: InboxView): void {
+  const s = state();
+  const home = s.view.name === "inbox";
+  const was = needsOf(s);
+  const now = needsOf({ ...s, inbox });
+  const next = (id: string | null) =>
+    home && id && was.includes(id) && !now.includes(id) ? nextActiveKey(was, now, id, false) : id;
+  s.set({ inbox, peek: next(s.peek), active: { ...s.active, inbox: next(s.active.inbox) } });
+}
+
+/** Older's header: its rows show, or go. a panel on one of them goes with them */
+export function toggleOlder(): void {
+  const s = state();
+  const older = groupSessions(listInput(s)).find((g) => g.key === "older");
+  if (!older) return;
+  const closes = older.open && older.items.some((i) => i.hit.sessionId === s.peek);
+  s.set({ older: { open: !older.open, drawn: PAGE }, ...(closes ? { peek: null } : {}) });
+}
+
+/** the next rows of an open Older. false when all of it is drawn, or it is closed */
+export function drawMore(): boolean {
+  const s = state();
+  const older = groupSessions(listInput(s)).find((g) => g.key === "older");
+  if (!older?.open || older.items.length >= older.count) return false;
+  s.set({ older: { ...s.older, drawn: older.items.length + PAGE } });
+  return true;
+}
+
 /**
  * Dismiss. the rows these keys clear leave at once, and main's next inbox is the truth either way.
  * a refusal puts them back, unless main has spoken since. true when it went through
@@ -170,7 +235,7 @@ export async function review(project: ProjectId, keys: string[]): Promise<boolea
       (r) => !(r.project === project && r.reviewKeys.every((k) => marked.has(k))),
     ),
   };
-  state().set({ inbox: optimistic });
+  setInbox(optimistic);
   const ok = report("Could not dismiss it", await api().review(project, keys, true));
   if (!ok && state().inbox === optimistic) state().set({ inbox: before });
   return ok;
@@ -203,10 +268,7 @@ export async function installCompanion(): Promise<void> {
 function listOf(s: State): { screen: Section; ids: string[]; at: string | null } | null {
   const { name } = s.view;
   if (name !== "inbox" && name !== "sessions") return null;
-  const ids =
-    name === "inbox"
-      ? s.inbox.rows.map((r) => r.sessionId)
-      : sessionOrder(s.sessions?.project === s.project ? s.sessions.hits : [], s.inbox, s.filter);
+  const ids = sessionOrder(listInput(s));
   const active = s.active[name];
   // on a fresh list the first row is the keyboard's
   return { screen: name, ids, at: active && ids.includes(active) ? active : (ids[0] ?? null) };
@@ -221,9 +283,11 @@ function moveTo(s: State, list: NonNullable<ReturnType<typeof listOf>>, index: n
     // an open panel goes where the keyboard goes. it never follows the mouse
     ...(s.peek ? { peek: id } : {}),
   });
-  if (typeof document !== "undefined") {
-    document.getElementById(optionId(id))?.scrollIntoView({ block: "nearest" });
-  }
+  if (typeof document === "undefined") return;
+  const show = () => document.getElementById(optionId(id))?.scrollIntoView({ block: "nearest" });
+  // a row Older drew for this very move is in the page a frame from now
+  if (document.getElementById(optionId(id))) show();
+  else requestAnimationFrame(show);
 }
 
 /** the pointer is on this row, so its buttons show: it is plain which row a key would act on */
@@ -246,7 +310,7 @@ function act(s: State, list: NonNullable<ReturnType<typeof listOf>>, type: Inten
   if (!at) return;
   // its inbox row, when it needs the person: what Dismiss clears
   const row = s.inbox.rows.find((r) => r.sessionId === at);
-  const session = list.screen === "inbox" ? row : s.sessions?.hits.find((h) => h.sessionId === at);
+  const session = listInput(s).hits?.find((h) => h.sessionId === at) ?? row;
   if (!session) return;
   if (type === "open") openRow(list.screen, at);
   else if (type === "open-editor") openWith(session.key, session.open, session.title);
@@ -271,7 +335,10 @@ export function perform(intent: Intent): void {
         const open = s.peek && list.ids.includes(s.peek) ? s.peek : null;
         const from = open ?? list.at;
         // nothing shows which row the keyboard is on yet: the first arrow shows it, like the first Enter
-        moveTo(s, list, (from ? list.ids.indexOf(from) : -1) + (s.keys || open ? intent.delta : 0));
+        const to = (from ? list.ids.indexOf(from) : -1) + (s.keys || open ? intent.delta : 0);
+        // past the last row an open Older has drawn: its next rows are drawn, and the arrow lands there
+        const more = to >= list.ids.length && drawMore();
+        moveTo(state(), (more && listOf(state())) || list, to);
       }
       break;
     case "move-to":

@@ -121,8 +121,9 @@ describe("paletteItems", () => {
     const c = ctx({ sessions: { query: "auth", hits: [hit(1)] } });
     expect(sections(c, "auth")).toEqual(["Projects", "Sessions"]);
     expect(ids(c, "set")).toEqual(["settings"]);
-    // a project is its sessions
-    expect(ids(c, "sessions")).toEqual(["project:auth", "project:data"]);
+    // a project is its sessions, and the home screen is all of them. its old name still finds it
+    expect(ids(c, "sessions")).toEqual(["go-inbox", "project:auth", "project:data"]);
+    expect(ids(c, "inbox")).toEqual(["go-inbox"]);
   });
 
   it("Sessions shows what findSessions answered, at most 50, and only for this query", () => {

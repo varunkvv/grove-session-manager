@@ -1,26 +1,16 @@
-import { useEffect, useMemo } from "react";
 import type { InboxRowView } from "../../shared/ipc.ts";
-import { focusScreen, openRow, openWith, optionId, perform, review } from "../state/actions.ts";
+import { openWith, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
-import {
-  Button,
-  cx,
-  Icon,
-  ProjectMark,
-  RuntimeChip,
-  Split,
-  StateLabel,
-  stateWord,
-  Time,
-  useRowDoubleClick,
-} from "./ui.tsx";
+import { Button, cx, Icon, ProjectMark, RuntimeChip, StateLabel, stateWord, Time } from "./ui.tsx";
 
 /** what Open in {editor} and a double-click go to */
 const openSession = (row: InboxRowView) => openWith(row.key, row.open, row.title);
 
-/** two lines: which session and what it is at, then what it asks at full width */
-function InboxRow({
+/**
+ * a session that needs the person, on the home screen: two lines, which session and what it is at,
+ * then what it asks at full width. the rows of Needs you there, above every other session
+ */
+export function InboxRow({
   row,
   active,
   open,
@@ -34,7 +24,7 @@ function InboxRow({
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
   return (
-    <li
+    <div
       id={optionId(row.sessionId)}
       role="option"
       aria-selected={active}
@@ -46,7 +36,7 @@ function InboxRow({
       data-active={active || undefined}
       data-open={open || undefined}
       className={cx(
-        "cv-row group fade border-b border-line px-3 py-2",
+        "cv-row group fade border-b border-line px-3 py-2 last:border-b-0",
         // the open row is marked whoever moved last. hover and the keyboard's row are the lighter grey
         open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
       )}
@@ -120,79 +110,6 @@ function InboxRow({
           {row.summary}
         </p>
       )}
-    </li>
-  );
-}
-
-/**
- * the inbox: every project's sessions that need the person, newest first, in main's order. a
- * click opens a session in the panel beside the list
- */
-export function Inbox() {
-  const rows = useStore((s) => s.inbox.rows);
-  // no row looks like the keyboard's until a key says so
-  const active = useStore((s) => (s.keys ? s.active.inbox : null));
-  const peek = useStore((s) => s.peek);
-  const ids = useMemo(() => rows.map((r) => r.sessionId), [rows]);
-  const some = rows.length > 0;
-  const open = rows.find((r) => r.sessionId === peek);
-  const pair = useRowDoubleClick(openSession);
-
-  // the list holds the keyboard: when the screen mounts, and when the first row arrives after it.
-  // never from under a dialog or the palette
-  useEffect(() => {
-    const s = useStore.getState();
-    if (some && !s.overlay && !s.dialog) focusScreen();
-  }, [some]);
-  useHandoff("inbox", ids);
-
-  return (
-    <Split
-      testId="inbox"
-      root={pair.root}
-      label={open && `${stateWord(open.kind)}: ${open.title}`}
-      panel={
-        open && (
-          <SessionPanel
-            key={open.sessionId}
-            session={open}
-            project={open.project}
-            state={open.kind}
-            at={open.at}
-            row={open}
-            // the same as Escape
-            onClose={() => perform({ type: "close-panel" })}
-          />
-        )
-      }
-    >
-      {some ? (
-        <ul
-          role="listbox"
-          aria-label="Inbox"
-          tabIndex={0}
-          data-list
-          aria-activedescendant={active ? optionId(active) : undefined}
-          className="border-t border-line"
-        >
-          {rows.map((r) => (
-            <InboxRow
-              key={r.sessionId}
-              row={r}
-              active={r.sessionId === active}
-              open={r.sessionId === peek}
-              onClick={() => {
-                pair.clicked(r);
-                openRow("inbox", r.sessionId);
-              }}
-            />
-          ))}
-        </ul>
-      ) : (
-        <p className="py-28 text-center text-body text-fg" data-testid="inbox-empty">
-          Nothing needs you.
-        </p>
-      )}
-    </Split>
+    </div>
   );
 }

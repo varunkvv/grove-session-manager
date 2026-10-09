@@ -356,8 +356,9 @@ function buildHandlers(deps: Deps): Handlers {
       return projects.findSessions(typeof query === "string" ? query : "");
     },
 
-    async projectSessions(project) {
-      return typeof project === "string" ? projects.projectSessions(project) : [];
+    async listSessions(scope) {
+      // a project's id, or null for every project's. anything else lists nothing
+      return typeof scope === "string" || scope === null ? projects.listSessions(scope) : [];
     },
 
     async sessionConversation(key) {

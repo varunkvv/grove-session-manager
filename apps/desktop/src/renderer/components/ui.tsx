@@ -17,7 +17,7 @@ import {
   useState,
 } from "react";
 import type { ProjectId } from "../../shared/ipc.ts";
-import { projectHues, type SessionState } from "../logic/views.ts";
+import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
 import { optionId } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 
@@ -307,6 +307,7 @@ export function Split({
       <div
         ref={scroller}
         className="@container h-full min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+        data-scroller
         data-testid={testId}
       >
         <div className="mx-auto max-w-[860px] px-4 pt-8 pb-16">{children}</div>
@@ -559,15 +560,18 @@ export function Highlighted({ text, tokens }: { text: string; tokens: readonly s
 // ---------- colour means something, and is given here and nowhere else: a screen passes a state,
 // a project or a count, never a colour.
 
-/** a tooltip-dated relative time: `3m ago`, core's words */
-export function Time({ at, className }: { at: number; className?: string }) {
+/**
+ * a tooltip-dated relative time: `3m ago`, core's words. with `since`, how long something has been
+ * going on: `for 12m`
+ */
+export function Time({ at, since, className }: { at: number; since?: number; className?: string }) {
   const now = useStore((s) => s.now);
   return (
     <span
       className={cx("shrink-0 text-sm tabular-nums text-fg-4", className)}
-      title={new Date(at).toLocaleString()}
+      title={new Date(since ?? at).toLocaleString()}
     >
-      {formatRelativeTime(at, now)}
+      {since === undefined ? formatRelativeTime(at, now) : runningFor(since, now)}
     </span>
   );
 }

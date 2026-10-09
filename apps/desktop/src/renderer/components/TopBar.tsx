@@ -9,7 +9,7 @@ import { Button, Icon, Kbd, ProjectMark } from "./ui.tsx";
  */
 export function TopBar() {
   const view = useStore((s) => s.view.name);
-  // the inbox is every project's, and a form says its own
+  // the home screen is every project's, and a form says its own
   const project = useStore((s) => (s.view.name === "sessions" ? currentProject(s) : undefined));
   const editor = useStore((s) => s.editor?.label ?? "the editor");
   const filter = useStore((s) => s.filter);
@@ -21,7 +21,7 @@ export function TopBar() {
       className="@container drag flex h-11 shrink-0 items-center gap-2 border-b border-line bg-chrome px-4"
       data-testid="top-bar"
     >
-      {view === "inbox" && <h1 className="font-medium">Inbox</h1>}
+      {view === "inbox" && <h1 className="font-medium">All sessions</h1>}
       {project && (
         <>
           <ProjectMark id={project.id} />

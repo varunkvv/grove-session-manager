@@ -1,12 +1,6 @@
 // what the screens compute from main's views. pure: every fact here was derived in main, this is
 // only filtering, order and words.
-import {
-  dayBucket,
-  formatDuration,
-  type InboxKind,
-  type TurnView,
-  tokenize,
-} from "@grove/core/pure";
+import { formatDuration, type InboxKind, type TurnView, tokenize } from "@grove/core/pure";
 import type {
   InboxRowView,
   InboxView,
@@ -65,18 +59,41 @@ export interface SessionItem {
 }
 
 export interface SessionGroup {
-  key: "needs" | "working" | "today" | "yesterday" | "earlier";
+  key: "needs" | "working" | "today" | "yesterday" | "day-2" | "day-3" | "older";
   label: string;
+  /** the rows that are drawn */
   items: SessionItem[];
+  /** how many it holds. more than are drawn only in Older */
+  count: number;
+  /** Older alone: its rows show. the others have no way to close */
+  open?: boolean;
 }
 
-const GROUPS: Record<SessionGroup["key"], string> = {
-  needs: "Needs you",
-  working: "Working",
-  today: "Today",
-  yesterday: "Yesterday",
-  earlier: "Earlier",
-};
+/** how many rows Older draws when it opens, and how many more each time its end comes near */
+export const PAGE = 50;
+
+/** Older as a screen starts with it: closed */
+export const CLOSED: OlderView = { open: false, drawn: PAGE };
+
+export interface OlderView {
+  open: boolean;
+  drawn: number;
+}
+
+/** everything a sessions list is drawn from. the screen and the keyboard are given the same one */
+export interface ListInput {
+  /** a project's list, or with null every project's */
+  scope: ProjectId | null;
+  /** newest first. null until main has answered for this scope */
+  hits: readonly SessionHit[] | null;
+  inbox: InboxView;
+  /** what is typed in the top bar's field */
+  query: string;
+  now: number;
+  older: OlderView;
+  /** the session in the panel. its row is drawn wherever it is, or the panel would be on nothing */
+  peek: string | null;
+}
 
 /** the sessions filter: every word typed is in the title, a prompt or the branch */
 export function filterSessions(hits: readonly SessionHit[], query: string): SessionHit[] {
@@ -89,46 +106,85 @@ export function filterSessions(hits: readonly SessionHit[], query: string): Sess
 }
 
 /**
- * a project's sessions as its screen draws them: the ones that need the person in the inbox's
- * order, the ones working, then the rest by the day they last moved. `hits` is newest first, and
- * each group keeps that. empty groups are left out
+ * a list of sessions as its screen draws it: the ones that need the person in the inbox's order,
+ * the ones working, then the rest by the day they last moved: today, yesterday, the two days
+ * before by their weekday, and Older. `hits` is newest first, and each group keeps that. empty
+ * groups are left out.
+ *
+ * Older is closed until its header is pressed, and then draws a page at a time
  */
-export function groupSessions(
-  hits: readonly SessionHit[],
-  inbox: InboxView,
-  query: string,
-  now: number,
-): SessionGroup[] {
-  const rows = new Map(inbox.rows.map((r, i) => [r.sessionId, [r, i] as const]));
-  const groups = Object.fromEntries(
-    Object.keys(GROUPS).map((key) => [key, [] as SessionItem[]]),
-  ) as Record<SessionGroup["key"], SessionItem[]>;
-  for (const hit of filterSessions(hits, query)) {
+export function groupSessions(i: ListInput): SessionGroup[] {
+  const mine = i.inbox.rows.filter((r) => i.scope === null || r.project === i.scope);
+  const rows = new Map(mine.map((r, n) => [r.sessionId, [r, n] as const]));
+  // a session that needs him is listed from its inbox row until main has said what else there is
+  const had = new Set(i.hits?.map((h) => h.sessionId));
+  const all = [
+    ...(i.hits ?? []),
+    ...mine
+      .filter((r) => !had.has(r.sessionId))
+      .map((r): SessionHit => ({ ...r, activityMs: r.at })),
+  ];
+  // midnight today and the three before it, by the calendar: a day is not 24 hours twice a year
+  const cuts = [0, 1, 2, 3].map((back) => {
+    const d = new Date(i.now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - back);
+    return d.getTime();
+  });
+  const weekday = (at: number | undefined) =>
+    new Date(at ?? 0).toLocaleDateString("en-US", { weekday: "long" });
+  const labels: Record<SessionGroup["key"], string> = {
+    needs: "Needs you",
+    working: "Working",
+    today: "Today",
+    yesterday: "Yesterday",
+    "day-2": weekday(cuts[2]),
+    "day-3": weekday(cuts[3]),
+    older: "Older",
+  };
+  const keys = Object.keys(labels) as SessionGroup["key"][];
+  const days = keys.slice(2);
+  const groups = Object.fromEntries(keys.map((key) => [key, [] as SessionItem[]])) as Record<
+    SessionGroup["key"],
+    SessionItem[]
+  >;
+  for (const hit of filterSessions(all, i.query)) {
     const row = rows.get(hit.sessionId)?.[0];
     if (row) groups.needs.push({ hit, state: row.kind, row });
     else if (hit.live === "running") groups.working.push({ hit, state: "working" });
     else {
-      const day = dayBucket(hit.activityMs, now);
-      groups[day === "Today" ? "today" : day === "Yesterday" ? "yesterday" : "earlier"].push({
-        hit,
-      });
+      // older than three days: it last moved before the start of the day three days ago
+      const back = cuts.findIndex((cut) => hit.activityMs >= cut);
+      groups[days[back < 0 ? 4 : back] ?? "older"].push({ hit });
     }
   }
   groups.needs.sort(
     (a, b) => (rows.get(a.hit.sessionId)?.[1] ?? 0) - (rows.get(b.hit.sessionId)?.[1] ?? 0),
   );
-  return (Object.keys(GROUPS) as SessionGroup["key"][])
-    .map((key) => ({ key, label: GROUPS[key], items: groups[key] }))
-    .filter((g) => g.items.length > 0);
+  const at = groups.older.findIndex((x) => x.hit.sessionId === i.peek);
+  const open = i.older.open || at >= 0;
+  return keys
+    .map((key): SessionGroup => {
+      const items = groups[key];
+      if (key !== "older") return { key, label: labels[key], items, count: items.length };
+      const drawn = open ? Math.max(i.older.drawn, at + 1) : 0;
+      return { key, label: labels[key], items: items.slice(0, drawn), count: items.length, open };
+    })
+    .filter((g) => g.count > 0);
 }
 
-/** the ids in the order the sessions screen draws them, for the keyboard. the day a row falls in changes no order */
-export function sessionOrder(
-  hits: readonly SessionHit[],
-  inbox: InboxView,
-  query: string,
-): string[] {
-  return groupSessions(hits, inbox, query, 0).flatMap((g) => g.items.map((i) => i.hit.sessionId));
+/**
+ * the ids in the order the screen draws them, for the keyboard and the panel's handoff. only the
+ * rows that are drawn: Enter and the arrows never land on a row nobody sees
+ */
+export function sessionOrder(i: ListInput): string[] {
+  return groupSessions(i).flatMap((g) => g.items.map((x) => x.hit.sessionId));
+}
+
+/** `for 12m`: how long a working session's turn has run, in the room of `12m ago` */
+export function runningFor(since: number, now: number): string {
+  const min = Math.floor(Math.max(0, now - since) / 60_000);
+  return min < 1 ? "now" : `for ${min < 60 ? `${min}m` : `${Math.floor(min / 60)}h`}`;
 }
 
 export interface StartBlock {

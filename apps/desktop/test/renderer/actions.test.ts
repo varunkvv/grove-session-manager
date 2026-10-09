@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CLOSED, PAGE } from "../../src/renderer/logic/views.ts";
 import {
   back,
+  drawMore,
   editProject,
   go,
   loadSessions,
@@ -8,7 +10,9 @@ import {
   openRow,
   perform,
   review,
+  setInbox,
   switchProject,
+  toggleOlder,
 } from "../../src/renderer/state/actions.ts";
 import { applyLanding } from "../../src/renderer/state/landing.ts";
 import { useStore } from "../../src/renderer/state/store.ts";
@@ -24,13 +28,16 @@ const project = (id: string): ProjectView => ({
   status: "known",
   rootExists: true,
 });
+// a list cuts its rows by the day they last moved: these all moved in the last minute
+const NOW = Date.now();
+const DAY = 24 * 3_600_000;
 const hit = (id: string, o: Partial<SessionHit> = {}): SessionHit => ({
   key: `/p/${id}.jsonl`,
   sessionId: id,
   title: id,
   project: "auth",
   where: "auth",
-  activityMs: 0,
+  activityMs: NOW,
   runtime: "vscode",
   open: {},
   ...o,
@@ -60,6 +67,7 @@ beforeEach(() => {
   useStore.setState(useStore.getInitialState(), true);
   s().set({
     ready: true,
+    now: NOW,
     projects: [project("auth"), project("billing")],
     project: "auth",
     inbox: {
@@ -71,13 +79,13 @@ beforeEach(() => {
     },
     // newest first, as main sends them
     sessions: {
-      project: "auth",
+      scope: "auth",
       hits: [
-        hit("s-quiet", { title: "sketch the login page", activityMs: 9 }),
-        hit("s-works", { live: "running", activityMs: 8 }),
-        hit("s-cut", { activityMs: 7 }),
-        hit("s-asks", { branch: "fix/login", activityMs: 6 }),
-        hit("s-old", { prompt: "rotate the login keys", activityMs: 5 }),
+        hit("s-quiet", { title: "sketch the login page", activityMs: NOW - 1 }),
+        hit("s-works", { live: "running", activityMs: NOW - 2 }),
+        hit("s-cut", { activityMs: NOW - 3 }),
+        hit("s-asks", { branch: "fix/login", activityMs: NOW - 4 }),
+        hit("s-old", { prompt: "rotate the login keys", activityMs: NOW - 5 }),
       ],
     },
   });
@@ -97,6 +105,13 @@ describe("navigation", () => {
     });
     go("sessions");
     expect(s()).toMatchObject({ section: "sessions", view: { name: "sessions" }, project: "auth" });
+    // Older is closed every time a list comes on screen
+    s().set({ older: { open: true, drawn: 150 } });
+    go("inbox");
+    expect(s().older).toEqual(CLOSED);
+    s().set({ older: { open: true, drawn: 150 } });
+    switchProject("billing");
+    expect(s().older).toEqual(CLOSED);
   });
 
   it("a project is its sessions, with nothing carried over from another's", () => {
@@ -114,7 +129,7 @@ describe("navigation", () => {
       sessions: null,
     });
     // from the inbox, a project it already has the rows of keeps them while main is asked again
-    s().set({ sessions: { project: "billing", hits: [hit("s-bill")] } });
+    s().set({ sessions: { scope: "billing", hits: [hit("s-bill")] } });
     go("inbox");
     switchProject("billing");
     expect(s().sessions?.hits).toHaveLength(1);
@@ -122,20 +137,35 @@ describe("navigation", () => {
 
   it("main's answer for a project that left the screen, or to an older ask, is dropped", async () => {
     const answers: Array<(hits: SessionHit[]) => void> = [];
-    grove.projectSessions = () => new Promise<SessionHit[]>((done) => answers.push(done));
+    const scopes: unknown[] = [];
+    grove.listSessions = (scope: unknown) => {
+      scopes.push(scope);
+      return new Promise<SessionHit[]>((done) => answers.push(done));
+    };
     switchProject("billing");
     const first = loadSessions();
     const second = loadSessions();
     answers[1]?.([hit("s-new")]);
     answers[0]?.([hit("s-stale")]);
     await Promise.all([first, second]);
-    expect(s().sessions).toEqual({ project: "billing", hits: [hit("s-new")] });
+    expect(s().sessions).toEqual({ scope: "billing", hits: [hit("s-new")] });
 
     const late = loadSessions();
     switchProject("auth");
     answers[2]?.([hit("s-billing")]);
     await late;
     expect(s().sessions).toBeNull();
+
+    // the home screen asks for every project's, and a form asks for nothing
+    go("inbox");
+    const all = loadSessions();
+    answers[3]?.([hit("s-any", { project: undefined })]);
+    await all;
+    expect(scopes).toEqual(["billing", "billing", "billing", null]);
+    expect(s().sessions).toMatchObject({ scope: null, hits: [{ sessionId: "s-any" }] });
+    newProject();
+    await loadSessions();
+    expect(scopes).toHaveLength(4);
   });
 
   it("Edit project is a project's, and both forms go back where they came from", () => {
@@ -352,6 +382,125 @@ describe("the panel beside a list", () => {
     openRow("sessions", "s-quiet");
     switchProject("billing");
     expect(s().peek).toBeNull();
+  });
+});
+
+describe("the home screen", () => {
+  // every project's, newest first: three need him, one works, one is quiet, one is in no project
+  const all = [
+    hit("s-loose", { project: undefined, where: "scratch", activityMs: NOW - 1 }),
+    hit("s-works", { live: "running", activityMs: NOW - 2 }),
+    hit("s-cut", { activityMs: NOW - 3 }),
+    hit("s-asks", { activityMs: NOW - 4 }),
+    hit("s-bill", { project: "billing", where: "billing", activityMs: NOW - 5 }),
+    hit("s-ancient", { activityMs: NOW - 30 * DAY }),
+  ];
+  const walk = () => {
+    const seen: Array<string | null> = [];
+    perform({ type: "move-to", where: "first" });
+    for (let i = 0; i < 8; i++) {
+      seen.push(s().active.inbox);
+      perform({ type: "move", delta: 1 });
+    }
+    return [...new Set(seen)];
+  };
+  beforeEach(() => s().set({ sessions: { scope: null, hits: all } }));
+
+  it("is every session: the ones that need him in the inbox's order, the working, the rest, and Older closed", () => {
+    expect(walk()).toEqual(["s-asks", "s-cut", "s-bill", "s-works", "s-loose"]);
+  });
+
+  it("a dismissed session stays in the list, and the panel and the keyboard go to the next one that needs him", async () => {
+    grove.review = async () => ({ ok: true });
+    openRow("inbox", "s-asks");
+    await review("auth", ["seen:s-asks"]);
+    // the row that took its place in Needs you, not the session's own row lower down
+    expect(s()).toMatchObject({ peek: "s-cut", active: { inbox: "s-cut" } });
+    expect(walk()).toEqual(["s-cut", "s-bill", "s-works", "s-loose", "s-asks"]);
+
+    // the keyboard's row alone, with no panel: it moves the same way
+    s().set({ peek: null, active: { ...s().active, inbox: "s-bill" } });
+    await review("billing", ["seen:s-bill"]);
+    expect(s()).toMatchObject({ peek: null, active: { inbox: "s-cut" } });
+
+    // main says a row left by itself: he answered it in the editor
+    openRow("inbox", "s-cut");
+    setInbox({ rows: [] });
+    // the last one: the panel closes, and nothing is the keyboard's until a key says so
+    expect(s()).toMatchObject({ peek: null, active: { inbox: null } });
+  });
+
+  it("a panel on a session that does not need him stays put while the inbox moves", () => {
+    openRow("inbox", "s-loose");
+    setInbox({ rows: [row("s-cut", { kind: "stopped" })] });
+    expect(s()).toMatchObject({ peek: "s-loose", active: { inbox: "s-loose" } });
+  });
+
+  it("on a project's screen Dismiss leaves the panel where it is, in Older too", async () => {
+    grove.review = async () => ({ ok: true });
+    go("sessions");
+    // a stop of five days ago that nobody dismissed
+    s().set({
+      sessions: {
+        scope: "auth",
+        hits: [hit("s-asks"), hit("s-cut", { activityMs: NOW - 5 * DAY })],
+      },
+    });
+    openRow("sessions", "s-cut");
+    await review("auth", ["seen:s-cut"]);
+    expect(s()).toMatchObject({ peek: "s-cut", active: { sessions: "s-cut" } });
+    // its row is in Older now, which is drawn for it
+    perform({ type: "move", delta: -1 });
+    expect(s().peek).toBe("s-asks");
+  });
+});
+
+describe("Older", () => {
+  const old = Array.from({ length: 120 }, (_, n) =>
+    hit(`old-${n}`, { activityMs: NOW - (10 + n) * DAY }),
+  );
+  beforeEach(() => {
+    go("sessions");
+    s().set({ inbox: { rows: [] }, sessions: { scope: "auth", hits: [hit("s-new"), ...old] } });
+  });
+  const last = () => {
+    perform({ type: "move-to", where: "last" });
+    return s().active.sessions;
+  };
+
+  it("is closed until its header is pressed: the keyboard never lands on a row nobody sees", () => {
+    expect(last()).toBe("s-new");
+    expect(drawMore()).toBe(false);
+    toggleOlder();
+    expect(s().older).toEqual({ open: true, drawn: PAGE });
+    expect(last()).toBe("old-49");
+  });
+
+  it("draws the next page when the end comes near, and when an arrow steps past the last row drawn", () => {
+    toggleOlder();
+    expect(drawMore()).toBe(true);
+    expect(s().older.drawn).toBe(100);
+    expect(last()).toBe("old-99");
+    perform({ type: "move", delta: 1 });
+    expect(s()).toMatchObject({ older: { drawn: 150 }, active: { sessions: "old-100" } });
+    // all of it is drawn: the arrow stops on the last row
+    expect(drawMore()).toBe(false);
+    expect(last()).toBe("old-119");
+    perform({ type: "move", delta: 1 });
+    expect(s().active.sessions).toBe("old-119");
+  });
+
+  it("closes again from its header, and takes a panel on one of its rows with it", () => {
+    toggleOlder();
+    drawMore();
+    openRow("sessions", "old-3");
+    toggleOlder();
+    expect(s()).toMatchObject({ older: { open: false, drawn: PAGE }, peek: null });
+    // a panel on a row outside it stays
+    toggleOlder();
+    openRow("sessions", "s-new");
+    toggleOlder();
+    expect(s()).toMatchObject({ older: { open: false }, peek: "s-new" });
   });
 });
 

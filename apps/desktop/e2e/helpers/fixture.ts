@@ -427,12 +427,16 @@ export function writeAgent(fx: Fixture, a: AgentSpec): string {
 }
 
 let hooks = 0;
-/** what the status hook writes: the hook's own stdin, one file per event, renamed into place */
+/**
+ * what the status hook writes: the hook's own stdin, one file per event, renamed into place. an
+ * event happened when its file was written, so `ageMs` is how long ago that was
+ */
 export function hookEvent(
   fx: Fixture,
   sessionId: string,
   event: string,
   extra: Record<string, unknown> = {},
+  ageMs = 0,
 ): void {
   const dir = path.join(fx.root, ".grove", "events");
   mkdirSync(dir, { recursive: true });
@@ -441,6 +445,10 @@ export function hookEvent(
     `${file}.tmp`,
     JSON.stringify({ session_id: sessionId, hook_event_name: event, cwd: "/x", ...extra }),
   );
+  if (ageMs) {
+    const when = new Date(Date.now() - ageMs);
+    utimesSync(`${file}.tmp`, when, when);
+  }
   renameSync(`${file}.tmp`, `${file}.json`);
 }
 
