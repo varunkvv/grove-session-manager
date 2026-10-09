@@ -16,10 +16,6 @@ New:
 - the numbers stay when Claude Code deletes an old transcript, so the year view fills in over the year
 - the first launch reads every transcript once to count it. the screen says how far it has got
 
-Fixed:
-
-- a session's token totals now hold its advisor calls, which Claude Code records beside the response and not in it
-
 None of the numbers show anywhere but on the Usage screen.
 
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
