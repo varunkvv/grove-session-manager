@@ -37,8 +37,8 @@ export interface CacheFile {
 }
 
 /**
- * a session whose transcript is gone: Claude Code deletes old ones, and so does deleting a
- * project. its day buckets stay, with what places it in a project (membership is by cwd)
+ * a session whose transcript is gone: Claude Code deletes old ones. its day buckets stay, with
+ * what places it in a project (membership is by cwd)
  */
 export interface RetiredEntry {
   sessionId: string;

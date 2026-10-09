@@ -1,7 +1,7 @@
 {
   "name": "@grove/desktop",
   "productName": "Grove",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "description": "Tells you which Claude Code agents need you, and gets you to them",
