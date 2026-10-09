@@ -233,16 +233,28 @@ test("the keyboard walks the rows that are drawn: never into a closed Older, and
     await expect(active(page)).toHaveAttribute("data-id", lastDrawn as string, { timeout: 2_000 });
   });
 
-  // open: the end is the fiftieth of Older, and an arrow past it draws the next fifty and lands there
+  // open: the end is the fiftieth of Older
   await older(page).click();
   await expect(inOlder(page)).toHaveCount(50);
   const at = (n: number) => sid(OLD + n - AGED);
+  // an arrow while no row shows only shows the keyboard's row: a step can start with it
+  const show = async () => {
+    if ((await active(page).count()) === 0) await page.keyboard.press("ArrowDown");
+  };
+  // the pointer rests on a row while the keys scroll the list under it. the row that ends up
+  // under the pointer is not the keyboard's: the keyboard's is the one the key went to
+  await inOlder(page).first().hover();
   await step(async () => {
-    await press("Meta+ArrowDown");
+    if ((await inOlder(page).count()) === 50) await press("Meta+ArrowDown");
+    await show();
     await expect(active(page)).toHaveAttribute("data-id", at(49), { timeout: 2_000 });
   });
+  // one arrow past it: the next fifty are drawn, and the arrow lands on the first of them
   await step(async () => {
-    if ((await inOlder(page).count()) === 50) await press("Meta+ArrowDown", "ArrowDown");
+    await show();
+    if ((await active(page).getAttribute("data-id", { timeout: 2_000 })) === at(49)) {
+      await press("ArrowDown");
+    }
     await expect(inOlder(page)).toHaveCount(100, { timeout: 2_000 });
     await expect(active(page)).toHaveAttribute("data-id", at(50), { timeout: 2_000 });
   });

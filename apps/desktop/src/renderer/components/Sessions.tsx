@@ -77,8 +77,10 @@ function SessionRow({
         open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
       )}
       onClick={onClick}
-      // the keyboard carries on from where the mouse was
-      onMouseEnter={() => {
+      // the keyboard carries on from where the mouse was. a move, not an enter: a list that the
+      // keys scroll under a resting pointer puts another row under it, and that row is not the
+      // keyboard's
+      onMouseMove={() => {
         const s = useStore.getState();
         if (s.active[screen] !== hit.sessionId) {
           s.set({ active: { ...s.active, [screen]: hit.sessionId } });

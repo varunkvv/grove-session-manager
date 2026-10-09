@@ -29,6 +29,8 @@ Changed:
   bar still says it
 - `⌘F` stays on the screen you are on. from All sessions it used to jump to a project
 - Grove writes one new file outside `~/claude-ws`: `~/Library/Sounds/Grove.wav`, the chime
+- fixed: with the pointer resting on a list, a key that scrolled it (`⌘↓`, `PgDn`, an arrow at the edge) left the
+  keyboard on the row that ended up under the pointer, not on the row the key went to
 
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
 verified.
