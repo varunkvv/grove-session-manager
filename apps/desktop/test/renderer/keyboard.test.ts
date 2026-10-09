@@ -39,7 +39,7 @@ describe("what a key means", () => {
     });
     const sessions = (o: Partial<KeyContext>) =>
       interpret(ctx({ view: "sessions", ...o }), key("Escape"));
-    // the panel, then what was typed in the filter, then nothing: a list has nowhere to go back to
+    // the panel, then what was typed in the search, then nothing: a list has nowhere to go back to
     expect(sessions({ panel: true, query: "login" })).toEqual({ type: "close-panel" });
     expect(sessions({ query: "login" })).toEqual({ type: "clear-query" });
     expect(sessions({ ...search, query: "login" })).toEqual({ type: "clear-query" });
@@ -48,8 +48,17 @@ describe("what a key means", () => {
     expect(interpret(ctx({ view: "inbox", panel: true }), key("Escape"))).toEqual({
       type: "close-panel",
     });
-    // the inbox has no filter: text left in a project's is not its to clear
-    expect(interpret(ctx({ view: "inbox", query: "login" }), key("Escape"))).toBeNull();
+    // the home screen has the same field, and the same two steps
+    expect(interpret(ctx({ view: "inbox", panel: true, query: "login" }), key("Escape"))).toEqual({
+      type: "close-panel",
+    });
+    expect(interpret(ctx({ view: "inbox", query: "login" }), key("Escape"))).toEqual({
+      type: "clear-query",
+    });
+    // a form has no search: what was typed on its list is not Escape's there
+    expect(interpret(ctx({ view: "edit-project", query: "login" }), key("Escape"))).toEqual({
+      type: "back",
+    });
     // a panel left open under a form is not what Escape is about there
     expect(interpret(ctx({ view: "new-project", panel: true }), key("Escape"))).toEqual({
       type: "back",

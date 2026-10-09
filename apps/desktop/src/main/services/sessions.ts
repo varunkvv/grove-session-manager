@@ -379,15 +379,19 @@ export class SessionService {
   /**
    * rows whose conversation holds every word, that the renderer's instant filter over titles and
    * prompts did not already find. a word may match the row's own fields or its text - or what one
-   * of its agents said, which is how a session is found by what its agents found.
+   * of its agents said, which is how a session is found by what its agents found. `fields` is
+   * what counts as a row's own: a project's screen leaves the project's name out of it
    */
-  async search(query: string): Promise<SearchHit[]> {
+  async search(
+    query: string,
+    fields: (row: SessionRow) => string = rowHaystack,
+  ): Promise<SearchHit[]> {
     const tokens = tokenize(query);
     if (tokens.length === 0) return [];
     const texts = await this.index.texts();
     const hits: SearchHit[] = [];
     for (const row of this.rows.values()) {
-      const hay = rowHaystack(row);
+      const hay = fields(row);
       const missing = tokens.filter((t) => !hay.includes(t));
       if (missing.length === 0) continue;
       const agents: Array<{ id: string; snippet: string }> = [];

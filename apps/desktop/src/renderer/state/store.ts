@@ -63,8 +63,10 @@ export interface State {
    * project's. null until main has answered
    */
   sessions: { scope: ProjectId | null; hits: SessionHit[] } | null;
-  /** what is typed in the sessions list's filter */
+  /** what is typed in the top bar's search field, for the list on screen */
   filter: string;
+  /** main's answer to what is typed: the sessions it found, by what was said in them too */
+  found: { scope: ProjectId | null; query: string; hits: SessionHit[] } | null;
   /**
    * Older in the list on screen: whether its rows show, and how many of them are drawn. one for
    * both lists: `go` and `switchProject` are every way a list comes on screen, and close it
@@ -107,6 +109,7 @@ export const useStore = create<State>((set) => ({
   inbox: { rows: [] },
   sessions: null,
   filter: "",
+  found: null,
   older: CLOSED,
   active: { inbox: null, sessions: null },
   keys: false,
@@ -138,6 +141,8 @@ export function listInput(s: State): ListInput {
     hits: s.sessions?.scope === scope ? s.sessions.hits : null,
     inbox: s.inbox,
     query: s.filter,
+    // an answer to an older query, or to another list's, is nobody's
+    found: s.found?.query === s.filter && s.found.scope === scope ? s.found.hits : undefined,
     now: s.now,
     older: s.older,
     peek: s.peek,

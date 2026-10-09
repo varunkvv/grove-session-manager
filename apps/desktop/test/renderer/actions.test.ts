@@ -15,7 +15,7 @@ import {
   toggleOlder,
 } from "../../src/renderer/state/actions.ts";
 import { applyLanding } from "../../src/renderer/state/landing.ts";
-import { useStore } from "../../src/renderer/state/store.ts";
+import { listInput, useStore } from "../../src/renderer/state/store.ts";
 import type { InboxRowView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
 
 const project = (id: string): ProjectView => ({
@@ -327,9 +327,36 @@ describe("keys on a list", () => {
     expect(s()).toMatchObject({ view: { name: "inbox" }, project: "auth" });
   });
 
-  it("cmd-F is the sessions filter: from the inbox it goes to the project that was last on screen", () => {
+  it("cmd-F is the search of the list on screen, and from a form of the list under it", () => {
+    perform({ type: "focus-search" });
+    expect(s()).toMatchObject({ view: { name: "inbox" } });
+    go("sessions");
     perform({ type: "focus-search" });
     expect(s()).toMatchObject({ view: { name: "sessions" }, project: "auth" });
+    editProject();
+    perform({ type: "focus-search" });
+    expect(s()).toMatchObject({ view: { name: "sessions" }, back: [] });
+    go("inbox");
+    newProject();
+    perform({ type: "focus-search" });
+    expect(s()).toMatchObject({ view: { name: "inbox" }, back: [] });
+  });
+
+  it("what is typed is cleared when the screen changes, and an answer to it is not another list's", () => {
+    const found = { scope: null, query: "login", hits: [hit("s-old")] };
+    s().set({ filter: "login", found });
+    expect(listInput(s()).found).toHaveLength(1);
+    // one more letter: the answer is to an older query
+    s().set({ filter: "logins" });
+    expect(listInput(s()).found).toBeUndefined();
+    s().set({ filter: "login" });
+    go("sessions");
+    expect(s().filter).toBe("");
+    // the same word typed on a project's screen is not answered by the home screen's search
+    s().set({ filter: "login" });
+    expect(listInput(s()).found).toBeUndefined();
+    go("inbox");
+    expect(s().filter).toBe("");
   });
 
   it("cmd-O and cmd-E do nothing on the inbox, which shows no one project", () => {

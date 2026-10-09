@@ -402,6 +402,60 @@ describe("projects and sessions", () => {
     });
   });
 
+  it("a screen's search stays in what the screen lists, and a project's does not find its own name", async () => {
+    const t = setup();
+    t.project("chat");
+    t.project("ops");
+    const inOps = { comboName: "ops", comboRelation: "root" } as const;
+    t.rows.push(row("s-fix", { ...inChat, title: "rounding fix", cwdBase: "chat", activityMs: 9 }));
+    t.rows.push(
+      row("s-notes", { ...inChat, title: "deploy notes", cwdBase: "chat", activityMs: 8 }),
+    );
+    t.rows.push(row("s-ops", { ...inOps, title: "rounding in the chat export", activityMs: 7 }));
+    t.rows.push(row("s-loose", { title: "chat with sales", activityMs: 6 }));
+    // a finished run in a subfolder, and a script outside every project: no screen lists them
+    t.rows.push(
+      row("s-sub", { comboName: "chat", comboRelation: "inside", title: "rounding run" }),
+    );
+    t.rows.push(row("s-script", { entrypoint: "sdk-cli", title: "nightly script" }));
+    t.hits.push(
+      { key: "/claude/projects/s-notes.jsonl", snippet: "the rounding mode is banker's" },
+      { key: "/claude/projects/s-script.jsonl", snippet: "rounding" },
+    );
+    const ids = async (q: string, scope?: string | null) =>
+      (await t.svc.findSessions(q, scope)).map((h) => h.sessionId);
+
+    // the home screen: every project's and the ones in none, by their fields and then by what was said
+    const all = await t.svc.findSessions("rounding", null);
+    expect(all.map((h) => h.sessionId)).toEqual(["s-fix", "s-ops", "s-notes"]);
+    expect(all[2]).toMatchObject({ snippet: "the rounding mode is banker's", project: "chat" });
+    // every hit is a row the screen has
+    const listed = new Set(t.svc.listSessions(null).map((h) => h.sessionId));
+    expect(all.every((h) => listed.has(h.sessionId))).toBe(true);
+    // a project's screen: its own sessions
+    expect(await ids("rounding", "chat")).toEqual(["s-fix", "s-notes"]);
+    expect(await ids("rounding", "no-such-project")).toEqual([]);
+    // the palette still looks everywhere
+    expect(await ids("rounding")).toEqual(["s-fix", "s-ops", "s-sub", "s-notes", "s-script"]);
+
+    // nothing was said about chat anywhere: from here on it is the fields alone
+    t.hits.length = 0;
+    // a project's name finds its sessions on the home screen, and nothing on its own screen
+    expect(await ids("chat", null)).toEqual(["s-fix", "s-notes", "s-ops", "s-loose"]);
+    expect(await ids("chat", "chat")).toEqual([]);
+    expect(await ids("chat", "ops")).toEqual(["s-ops"]);
+    // nothing typed is nothing found: the list itself is the screen's
+    expect(await ids("  ", null)).toEqual([]);
+
+    // a screen is given up to 200, the palette 50
+    for (let i = 0; i < 230; i++) {
+      t.rows.push(row(`s-many-${i}`, { ...inOps, title: `rounding ${i}`, activityMs: 100 + i }));
+    }
+    expect(await t.svc.findSessions("rounding", "ops")).toHaveLength(200);
+    expect(await t.svc.findSessions("rounding", null)).toHaveLength(200);
+    expect(await t.svc.findSessions("rounding")).toHaveLength(50);
+  });
+
   it("lists every session started in a project's folder, newest first, and a subfolder's only while it needs the person or runs", () => {
     const t = setup();
     t.project("chat");

@@ -1,7 +1,17 @@
 import type { InboxRowView } from "../../shared/ipc.ts";
 import { openWith, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Icon, ProjectMark, RuntimeChip, StateLabel, stateWord, Time } from "./ui.tsx";
+import {
+  Button,
+  cx,
+  Highlighted,
+  Icon,
+  ProjectMark,
+  RuntimeChip,
+  StateLabel,
+  stateWord,
+  Time,
+} from "./ui.tsx";
 
 /** what Open in {editor} and a double-click go to */
 const openSession = (row: InboxRowView) => openWith(row.key, row.open, row.title);
@@ -14,12 +24,18 @@ export function InboxRow({
   row,
   active,
   open,
+  tokens,
+  snippet,
   onClick,
 }: {
   row: InboxRowView;
   active: boolean;
   /** it is the one in the panel */
   open: boolean;
+  /** the words of a search, marked in the title */
+  tokens: readonly string[];
+  /** a search found it by what was said in it: that takes the second line while it is typed */
+  snippet?: string;
   onClick: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
@@ -51,7 +67,7 @@ export function InboxRow({
     >
       <div className="flex h-5 items-center gap-3">
         <span className="min-w-0 flex-1 truncate font-medium text-fg" title={row.title}>
-          {row.title}
+          <Highlighted text={row.title} tokens={tokens} />
         </span>
         <StateLabel state={row.kind} within="list" className="@xl:w-[128px]" />
         {/* the buttons take its place under the mouse and on the keyboard's row */}
@@ -101,14 +117,20 @@ export function InboxRow({
           </Button>
         </span>
       </div>
-      {row.summary && (
-        <p
-          className="mt-0.5 line-clamp-2 text-fg-2"
-          title={row.summary}
-          data-testid="inbox-summary"
-        >
-          {row.summary}
+      {snippet ? (
+        <p className="mt-0.5 truncate text-fg-3" title={snippet} data-testid="session-snippet">
+          <Highlighted text={snippet} tokens={tokens} />
         </p>
+      ) : (
+        row.summary && (
+          <p
+            className="mt-0.5 line-clamp-2 text-fg-2"
+            title={row.summary}
+            data-testid="inbox-summary"
+          >
+            {row.summary}
+          </p>
+        )
       )}
     </div>
   );

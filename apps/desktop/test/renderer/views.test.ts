@@ -210,6 +210,57 @@ describe("a list of sessions", () => {
     expect(sessionOrder(input({ query: "login" }))).toEqual(["asks", "today", "yesterday"]);
   });
 
+  it("main's answer is joined in by session id: what it found in what was said, with the words around it", () => {
+    // `old` and `cut` hold the word in their conversation, `yesterday` in a prompt its title does not show
+    const found = [
+      hit("yesterday", { snippet: "rotate the LOGIN keys" }),
+      hit("old", { snippet: "…the login redirect loops…" }),
+      hit("cut", { snippet: "a login that never ends" }),
+      hit("today"),
+      // main lists a session the page has not been given yet: it joins nothing
+      hit("unlisted", { snippet: "login" }),
+    ];
+    const shown = (o: Partial<ListInput>) =>
+      groupSessions(input({ query: "login", ...o })).map((g) => [
+        g.label,
+        g.items.map((i) => [i.hit.sessionId, i.snippet].filter(Boolean).join(": ")),
+      ]);
+    // before the answer: what the page finds by itself, at once
+    expect(shown({})).toEqual([
+      ["Needs you", ["asks"]],
+      ["Today", ["today"]],
+      ["Yesterday", ["yesterday"]],
+    ]);
+    expect(shown({ found })).toEqual([
+      ["Needs you", ["cut: a login that never ends", "asks"]],
+      ["Today", ["today"]],
+      ["Yesterday", ["yesterday: rotate the LOGIN keys"]],
+      // Older is not folded while something is typed: nothing is hidden without saying so
+      ["Older", ["old: …the login redirect loops…"]],
+    ]);
+    expect(older({ query: "login", found })).toMatchObject({ open: true, count: 1 });
+    // with nothing typed an answer left over from before joins nothing
+    expect(drawn({ found })).toEqual(drawn());
+  });
+
+  it("a search pages Older the same way, and looks at the project's name on the home screen alone", () => {
+    const many = Array.from({ length: 120 }, (_, n) =>
+      hit(`old-${n}`, { title: `login ${n}`, activityMs: NOW - (10 + n) * DAY }),
+    );
+    const typed = { hits: many, inbox: { rows: [] }, query: "login" };
+    expect(older(typed)).toMatchObject({ open: true, count: 120 });
+    expect(older(typed)?.items).toHaveLength(PAGE);
+    expect(older({ ...typed, older: { open: false, drawn: 100 } })?.items).toHaveLength(100);
+    // every row of a project's screen is in the project: its name finds nothing there
+    expect(drawn({ query: "auth" })).toEqual([]);
+    expect(sessionOrder(input({ scope: null, query: "auth" }))).toHaveLength(hits.length);
+    expect(sessionOrder(input({ scope: null, query: "AUTH login" }))).toEqual([
+      "asks",
+      "today",
+      "yesterday",
+    ]);
+  });
+
   it("a project's list holds its own rows of the inbox. the home screen's holds every project's", () => {
     const both: InboxView = {
       rows: [row("elsewhere", { project: "billing", at: NOW - HOUR }), row("asks")],

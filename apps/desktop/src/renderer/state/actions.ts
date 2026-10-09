@@ -39,7 +39,10 @@ export function report(
 
 // ---------- navigation ----------
 
-/** a list from the sidebar, the menu or the palette: nothing to go back to, and Older closed */
+/**
+ * a list from the sidebar, the menu or the palette: nothing to go back to, Older closed, and
+ * nothing typed. a search never narrows a list it was not typed on
+ */
 export function go(section: Section): void {
   state().set({
     section,
@@ -47,6 +50,7 @@ export function go(section: Section): void {
     back: [],
     overlay: null,
     peek: null,
+    filter: "",
     older: CLOSED,
   });
 }
@@ -396,9 +400,8 @@ export function perform(intent: Intent): void {
       s.set({ dialog: { kind: "settings" } });
       break;
     case "focus-search":
-      // the filter is a project's: from the inbox, the project that was last on screen. full text
-      // is the palette's
-      if (s.view.name !== "sessions") go("sessions");
+      // the field is the list's on screen. a form has none: its own list comes back first
+      if (!onList(s)) go(s.section);
       // the field is drawn with the screen, a frame from now
       if (typeof requestAnimationFrame === "function") requestAnimationFrame(focusSearch);
       break;

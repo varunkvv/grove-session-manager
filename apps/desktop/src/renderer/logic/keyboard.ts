@@ -24,13 +24,13 @@ export interface KeyContext {
   /** a dialog or the palette is open. they own their keys. */
   overlay: boolean;
   view: View["name"];
-  /** focus is in an input, textarea or select. the sessions filter counts. */
+  /** focus is in an input, textarea or select. the search field counts. */
   inText: boolean;
-  /** focus is in the sessions filter (#search) */
+  /** focus is in the top bar's search field (#search) */
   inSearch: boolean;
   /** focus is on a control that answers Enter itself: a button, a link, or anything with role button, menuitem or radio */
   inControl: boolean;
-  /** the sessions filter's text */
+  /** what is typed in the search field */
   query: string;
   /** a session is open in the panel beside its list */
   panel: boolean;
@@ -80,9 +80,9 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (e.composing) return null;
   if (e.key === "Escape") {
     if (ctx.overlay) return { type: "close-overlay" };
-    // one step at a time: the panel, then what was typed in the filter
+    // one step at a time: the panel, then what was typed in the search
     if (isList(ctx.view) && ctx.panel) return { type: "close-panel" };
-    if (ctx.view === "sessions" && ctx.query) return { type: "clear-query" };
+    if (isList(ctx.view) && ctx.query) return { type: "clear-query" };
     // a form with changes is not thrown away by a stray Escape
     if (ctx.view === "new-project" || ctx.view === "edit-project") {
       return ctx.formDirty ? null : { type: "back" };

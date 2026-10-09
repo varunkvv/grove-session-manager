@@ -352,8 +352,10 @@ function buildHandlers(deps: Deps): Handlers {
       return { message: res.id ? `started in background · ${res.id}` : "started in background" };
     },
 
-    async findSessions(query) {
-      return projects.findSessions(typeof query === "string" ? query : "");
+    async findSessions(query, scope) {
+      // no scope is the palette's search. a scope that is neither a project's id nor null finds nothing
+      if (scope !== undefined && scope !== null && typeof scope !== "string") return [];
+      return projects.findSessions(typeof query === "string" ? query : "", scope);
     },
 
     async listSessions(scope) {

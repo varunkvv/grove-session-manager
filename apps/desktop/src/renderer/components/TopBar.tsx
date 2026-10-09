@@ -4,8 +4,8 @@ import { currentProject, useStore } from "../state/store.ts";
 import { Button, Icon, Kbd, ProjectMark } from "./ui.tsx";
 
 /**
- * what the screen beside the sidebar is, and what can be done with all of it: a project's filter,
- * its window in the editor, a new session in it
+ * what the screen beside the sidebar is, and what can be done with all of it: a search of its
+ * sessions, and for a project its window in the editor and a new session in it
  */
 export function TopBar() {
   const view = useStore((s) => s.view.name);
@@ -21,7 +21,7 @@ export function TopBar() {
       className="@container drag flex h-11 shrink-0 items-center gap-2 border-b border-line bg-chrome px-4"
       data-testid="top-bar"
     >
-      {view === "inbox" && <h1 className="font-medium">All sessions</h1>}
+      {view === "inbox" && <h1 className="shrink-0 font-medium">All sessions</h1>}
       {project && (
         <>
           <ProjectMark id={project.id} />
@@ -33,22 +33,25 @@ export function TopBar() {
           >
             {project.name}
           </h1>
-          <input
-            id="search"
-            aria-label={`Filter the sessions in ${project.name}`}
-            spellCheck={false}
-            // a field like the forms', a row lower. it takes the room that is left, up to 220, so
-            // the project's name is only cut once the field is at its smallest: in the narrowest
-            // window that is a name past 16 letters. its placeholder is one word, to be whole there
-            className="no-drag ml-2 h-7 max-w-[220px] min-w-[64px] flex-1 rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4"
-            placeholder="Filter"
-            data-testid="session-filter"
-            value={filter}
-            onChange={(e) => set({ filter: e.target.value })}
-          />
         </>
       )}
-      {/* an auto margin, not a growing spacer: it gets what the filter leaves, never half of it */}
+      {(view === "inbox" || project) && (
+        // the sessions of the list under it: every one on the home screen, a project's on its own
+        <input
+          id="search"
+          aria-label={project ? `Search the sessions in ${project.name}` : "Search every session"}
+          spellCheck={false}
+          // a field like the forms', a row lower. it takes the room that is left, up to 220, so
+          // the project's name is only cut once the field is at its smallest: in the narrowest
+          // window that is a name past 16 letters. its placeholder is one word, to be whole there
+          className="no-drag ml-2 h-7 max-w-[220px] min-w-[64px] flex-1 rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4"
+          placeholder="Search"
+          data-testid="session-filter"
+          value={filter}
+          onChange={(e) => set({ filter: e.target.value })}
+        />
+      )}
+      {/* an auto margin, not a growing spacer: it gets what the search leaves, never half of it */}
       <span className="ml-auto" />
       {project && (
         <>

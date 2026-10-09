@@ -243,7 +243,7 @@ test("a project's screen is every one of its sessions: the ones that need him, t
   await expect(rows(page)).toHaveCount(DRAWN);
 });
 
-test("the filter narrows the rows by title, prompt and branch, cmd-F focuses it, and the arrows drive the list from it", async () => {
+test("the search narrows the rows by title, prompt and branch, cmd-F focuses it, and the arrows drive the list from it", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await open(page);
@@ -258,6 +258,12 @@ test("the filter narrows the rows by title, prompt and branch, cmd-F focuses it,
   ).toEqual([SID.turn, sid(QUIET + 7), sid(QUIET + 9)]);
   // groups with nothing left in them are gone
   await expect(group(page, "working")).toHaveCount(0);
+  // found by what it was asked, which its title does not show: a second line says so
+  await expect(row(page, sid(QUIET + 7)).getByTestId("session-snippet")).toHaveText(
+    "rotate the okta keys",
+  );
+  await expect(row(page, SID.turn).locator("mark")).toHaveText("okta");
+  await expect(row(page, SID.turn).getByTestId("session-snippet")).toHaveCount(0);
   // every word has to be there
   await filter(page).fill("okta keys");
   await expect(rows(page)).toHaveCount(1);

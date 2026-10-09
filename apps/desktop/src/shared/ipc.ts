@@ -328,7 +328,12 @@ export interface Api {
 
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
-  findSessions(query: string): Promise<SessionHit[]>;
+  /**
+   * sessions found by their own fields, then by what was said in them. the palette asks with no
+   * scope: every session, 50. a screen asks with its own, a project's id or null: only rows it
+   * lists, up to 200
+   */
+  findSessions(query: string, scope?: ProjectId | null): Promise<SessionHit[]>;
   /**
    * every session a screen lists, newest first: a project's, or with null every project's and the
    * ones in none. asked again on `sessions:changed`

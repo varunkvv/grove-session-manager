@@ -1,3 +1,4 @@
+import { tokenize } from "@grove/core/pure";
 import { useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ProjectId, ProjectView, SessionRef } from "../../shared/ipc.ts";
@@ -19,6 +20,7 @@ import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
 import {
   Button,
   cx,
+  Highlighted,
   Icon,
   Loading,
   Mono,
@@ -33,13 +35,15 @@ import {
 
 /**
  * one line: which session, what it is at when it is at anything, and where it is. a working one
- * has a second, what it was last asked. no other row does: the history stays quiet
+ * has a second, what it was last asked, and so has one a search found by what was said in it: the
+ * words around the match. no other row does: the history stays quiet
  */
 function SessionRow({
   item,
   screen,
   active,
   open,
+  tokens,
   onClick,
 }: {
   item: SessionItem;
@@ -47,9 +51,11 @@ function SessionRow({
   active: boolean;
   /** it is the one in the panel */
   open: boolean;
+  /** the words of a search, marked wherever they show */
+  tokens: readonly string[];
   onClick: () => void;
 }) {
-  const { hit, state } = item;
+  const { hit, state, snippet } = item;
   const home = screen === "inbox";
   const doing = state === "working" ? hit.doing : undefined;
   return (
@@ -66,7 +72,7 @@ function SessionRow({
       className={cx(
         "fade border-b border-line px-3 last:border-b-0",
         // two lines are as tall as a row that needs him, one is a line
-        doing ? "cv-row py-2" : "cv-line flex h-9 flex-col justify-center",
+        snippet || doing ? "cv-row py-2" : "cv-line flex h-9 flex-col justify-center",
         // the open row is marked whoever moved last. hover and the keyboard's row are the lighter grey
         open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
       )}
@@ -81,7 +87,7 @@ function SessionRow({
     >
       <div className="flex h-5 items-center gap-3">
         <span className="min-w-0 flex-1 truncate text-fg" title={hit.title}>
-          {hit.title}
+          <Highlighted text={hit.title} tokens={tokens} />
         </span>
         {state && <StateLabel state={state} within="list" className="@xl:w-[128px]" />}
         {/* where it is gives way to the title as the list narrows. the home screen says which
@@ -113,10 +119,17 @@ function SessionRow({
           className="w-[60px] text-right"
         />
       </div>
-      {doing && (
-        <p className="mt-0.5 truncate text-fg-4" title={doing} data-testid="session-doing">
-          {doing}
+      {snippet ? (
+        // why a search has it here: its title does not say
+        <p className="mt-0.5 truncate text-fg-3" title={snippet} data-testid="session-snippet">
+          <Highlighted text={snippet} tokens={tokens} />
         </p>
+      ) : (
+        doing && (
+          <p className="mt-0.5 truncate text-fg-4" title={doing} data-testid="session-doing">
+            {doing}
+          </p>
+        )
       )}
     </div>
   );
@@ -192,6 +205,8 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
   const active = useStore((s) => (s.keys ? s.active[screen] : null));
   const peek = input.peek;
 
+  const tokens = useMemo(() => tokenize(query), [query]);
+  const typed = tokens.length > 0;
   const groups = useMemo(() => groupSessions(input), [input]);
   const items = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const ids = useMemo(() => items.map((i) => i.hit.sessionId), [items]);
@@ -215,6 +230,22 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
     if (some && !s.overlay && !s.dialog && document.activeElement?.id !== "search") focusScreen();
   }, [some]);
   useHandoff(screen, ids, hits !== null, query);
+
+  // what was said in a session is main's to look through: asked 80ms after the last key, as the
+  // palette does. an answer to an older query is dropped
+  useEffect(() => {
+    if (!typed) return;
+    let stale = false;
+    const timer = setTimeout(async () => {
+      // a search that failed is an answer with nothing in it, or `No sessions match.` would never show
+      const found = await window.grove.findSessions(query, scope).catch(() => []);
+      if (!stale) useStore.getState().set({ found: { scope, query, hits: found } });
+    }, 80);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [query, scope, typed]);
 
   if (scope !== null && !project) return null;
   return (
@@ -256,8 +287,9 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
               data-testid="session-group"
               data-group={g.key}
             >
-              {g.key === "older" ? (
-                // the one group that folds: closed until it is asked for, a page at a time after
+              {g.key === "older" && !typed ? (
+                // the one group that folds: closed until it is asked for, a page at a time after.
+                // a search looks in all of it, so while one is typed there is nothing to fold
                 <button
                   type="button"
                   id="group-older"
@@ -285,6 +317,7 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
                 const row = {
                   active: id === active,
                   open: id === peek,
+                  tokens,
                   onClick: () => {
                     pair.clicked(i.hit);
                     openRow(screen, id);
@@ -292,7 +325,7 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
                 };
                 // on the home screen a session that needs him is the inbox's row, with what it asks
                 return scope === null && i.row ? (
-                  <InboxRow key={id} row={i.row} {...row} />
+                  <InboxRow key={id} row={i.row} snippet={i.snippet} {...row} />
                 ) : (
                   <SessionRow key={id} item={i} screen={screen} {...row} />
                 );
@@ -303,10 +336,13 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
         </div>
       ) : hits === null ? (
         <Loading />
-      ) : query.trim() ? (
-        <p className="py-28 text-center text-body text-fg" data-testid="sessions-none">
-          No sessions match.
-        </p>
+      ) : typed ? (
+        // only once main has looked through what was said: until then nothing is known to be missing
+        input.found && (
+          <p className="py-28 text-center text-body text-fg" data-testid="sessions-none">
+            No sessions match.
+          </p>
+        )
       ) : project ? (
         <NoSessions project={project} />
       ) : (

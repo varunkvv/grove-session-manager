@@ -212,34 +212,48 @@ export class ProjectsService {
     this.compute();
   }
 
-  /** the palette's session search */
-  async findSessions(query: string): Promise<SessionHit[]> {
+  /**
+   * the session search: by a session's own fields, then by what was said in it. with no scope it
+   * is the palette's, over every session grove knows, 50 of them. with one it is a screen's: the
+   * sessions `listSessions` gives that screen and no other, up to 200, so every hit is a row it has
+   */
+  async findSessions(query: string, scope?: ProjectId | null): Promise<SessionHit[]> {
     const q = query.trim().slice(0, 500);
     const index = this.index(this.list().projects);
     const hit = (row: SessionRow, snippet?: string) => this.hit(row, index, snippet);
-    const rows = this.o.sessions.list();
+    const screen = scope !== undefined;
+    const rows = screen ? this.scoped(scope, index) : this.o.sessions.list();
+    const max = screen ? 200 : 50;
     if (!q)
-      return [...rows]
-        .sort(newest)
-        .slice(0, 20)
-        .map((r) => hit(r));
+      return screen
+        ? []
+        : [...rows]
+            .sort(newest)
+            .slice(0, 20)
+            .map((r) => hit(r));
     const tokens = tokenize(q);
+    // on a project's screen its name and its folder find nothing: every row there has them
+    const fields =
+      typeof scope === "string"
+        ? (r: SessionRow) => rowHaystack({ ...r, comboName: undefined, cwdBase: undefined })
+        : rowHaystack;
     // found by what was asked in it, not by its title: that prompt is why the row is there
     const why = (r: SessionRow) =>
       snippetAround(r.title ?? r.firstPrompt ?? "", tokens)
         ? undefined
         : (snippetAround(r.lastPrompt ?? "", tokens) ?? snippetAround(r.firstPrompt ?? "", tokens));
     const out = rows
-      .filter((r) => tokens.every((t) => rowHaystack(r).includes(t)))
+      .filter((r) => tokens.every((t) => fields(r).includes(t)))
       .sort(newest)
-      .slice(0, 50)
+      .slice(0, max)
       .map((r) => hit(r, why(r)));
-    if (out.length < 50) {
+    if (out.length < max) {
+      const mine = new Set(rows.map((r) => r.key));
       // full text: only rows the line above did not already match
-      for (const h of await this.o.sessions.search(q)) {
+      for (const h of await this.o.sessions.search(q, fields)) {
         const row = this.o.sessions.get(h.key);
-        if (row) out.push(hit(row, h.snippet));
-        if (out.length >= 50) break;
+        if (row && (!screen || mine.has(row.key))) out.push(hit(row, h.snippet));
+        if (out.length >= max) break;
       }
     }
     return out;

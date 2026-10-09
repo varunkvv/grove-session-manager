@@ -56,6 +56,8 @@ export interface SessionItem {
   state?: SessionState;
   /** its inbox row, when it needs the person: what Dismiss clears */
   row?: InboxRowView;
+  /** a search found it by what was said in it, not by its title: the words around what matched */
+  snippet?: string;
 }
 
 export interface SessionGroup {
@@ -89,18 +91,28 @@ export interface ListInput {
   inbox: InboxView;
   /** what is typed in the top bar's field */
   query: string;
+  /** what main found for `query`, in what was said too. undefined until it has answered */
+  found?: readonly SessionHit[];
   now: number;
   older: OlderView;
   /** the session in the panel. its row is drawn wherever it is, or the panel would be on nothing */
   peek: string | null;
 }
 
-/** the sessions filter: every word typed is in the title, a prompt or the branch */
-export function filterSessions(hits: readonly SessionHit[], query: string): SessionHit[] {
+/**
+ * the search, as far as the page can answer it at once: every word typed is in the title, a prompt
+ * or the branch, and on the home screen (`home`) the project's name. what was said is main's
+ */
+export function filterSessions(
+  hits: readonly SessionHit[],
+  query: string,
+  home = false,
+): SessionHit[] {
   const words = tokenize(query);
   if (words.length === 0) return [...hits];
   return hits.filter((h) => {
-    const hay = `${h.title}\n${h.prompt ?? ""}\n${h.branch ?? ""}`.toLowerCase();
+    const hay =
+      `${h.title}\n${h.prompt ?? ""}\n${h.branch ?? ""}\n${home ? h.where : ""}`.toLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }
@@ -111,7 +123,8 @@ export function filterSessions(hits: readonly SessionHit[], query: string): Sess
  * before by their weekday, and Older. `hits` is newest first, and each group keeps that. empty
  * groups are left out.
  *
- * Older is closed until its header is pressed, and then draws a page at a time
+ * Older is closed until its header is pressed, and then draws a page at a time. while something
+ * is typed it is open whatever its header was left at: a search hides nothing without saying so
  */
 export function groupSessions(i: ListInput): SessionGroup[] {
   const mine = i.inbox.rows.filter((r) => i.scope === null || r.project === i.scope);
@@ -148,21 +161,28 @@ export function groupSessions(i: ListInput): SessionGroup[] {
     SessionGroup["key"],
     SessionItem[]
   >;
-  for (const hit of filterSessions(all, i.query)) {
+  const typed = tokenize(i.query).length > 0;
+  // main's answer is joined in by session id: the rows it found that the page's own filter did
+  // not, and for each one found by what was said in it, the words around the match
+  const found = new Map(typed ? i.found?.map((h) => [h.sessionId, h.snippet]) : []);
+  const local = new Set(filterSessions(all, i.query, i.scope === null));
+  for (const hit of all) {
+    if (!local.has(hit) && !found.has(hit.sessionId)) continue;
+    const snippet = found.get(hit.sessionId);
     const row = rows.get(hit.sessionId)?.[0];
-    if (row) groups.needs.push({ hit, state: row.kind, row });
-    else if (hit.live === "running") groups.working.push({ hit, state: "working" });
+    if (row) groups.needs.push({ hit, state: row.kind, row, snippet });
+    else if (hit.live === "running") groups.working.push({ hit, state: "working", snippet });
     else {
       // older than three days: it last moved before the start of the day three days ago
       const back = cuts.findIndex((cut) => hit.activityMs >= cut);
-      groups[days[back < 0 ? 4 : back] ?? "older"].push({ hit });
+      groups[days[back < 0 ? 4 : back] ?? "older"].push({ hit, snippet });
     }
   }
   groups.needs.sort(
     (a, b) => (rows.get(a.hit.sessionId)?.[1] ?? 0) - (rows.get(b.hit.sessionId)?.[1] ?? 0),
   );
   const at = groups.older.findIndex((x) => x.hit.sessionId === i.peek);
-  const open = i.older.open || at >= 0;
+  const open = typed || i.older.open || at >= 0;
   return keys
     .map((key): SessionGroup => {
       const items = groups[key];
