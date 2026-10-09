@@ -40,11 +40,15 @@ async function ready(app: LaunchedApp) {
   return g;
 }
 
-test("the menu lists the newest rows across projects, then Open Grove and Quit", async () => {
+/** where Open Grove is: the rows above it come and go */
+const openGrove = async (g: Awaited<ReturnType<typeof ready>>) =>
+  (await g.trayMenu()).findIndex((i) => i.label === "Open Grove");
+
+test("the menu lists the newest rows across projects, what is working, then Open Grove and Quit", async () => {
   app = await launchApp(setup());
   const g = await ready(app);
   const menu = await g.trayMenu();
-  expect(menu).toHaveLength(5);
+  expect(menu).toHaveLength(7);
   // newest first, whichever millisecond each was written in
   expect(
     menu
@@ -55,7 +59,41 @@ test("the menu lists the newest rows across projects, then Open Grove and Quit",
     ["Your turn  export job", "billing-export · csv only, or parquet too?"],
     ["Your turn  idp config", "auth-sso · A dev tenant, or the prod one?"],
   ]);
-  expect(menu.slice(2)).toEqual([{}, { label: "Open Grove" }, { role: "quit" }]);
+  expect(menu.slice(2)).toEqual([
+    {},
+    { label: "The Mac can sleep · nothing working", enabled: false },
+    {},
+    { label: "Open Grove" },
+    { role: "quit" },
+  ]);
+});
+
+test("a working session is listed under what keeps the Mac awake, and a click shows it", async () => {
+  app = await launchApp(setup());
+  const g = await ready(app);
+  hookEvent(fx, QUIET, "UserPromptSubmit");
+  // the turn is seconds old, and the menu counts in minutes
+  const row = { label: "csv columns", sublabel: "billing-export · just started" };
+  await expect.poll(() => g.trayMenu(), { timeout: 15_000 }).toContainEqual(row);
+  const menu = await g.trayMenu();
+  const at = menu.findIndex((i) => i.label === row.label);
+  expect(menu[at - 1]).toEqual({
+    label: "Keeping the Mac awake · 1 working · just started",
+    enabled: false,
+  });
+  // it needs nothing, so the count is the two that do
+  expect(await g.trayTitle()).toBe("2");
+  await g.closeMain();
+  await expect.poll(() => g.isMainVisible()).toBe(false);
+  await g.trayClick(at);
+  await expect.poll(() => g.isMainVisible()).toBe(true);
+  await expect(app.page.getByTestId("session-panel")).toHaveAttribute("data-id", QUIET);
+
+  // its turn ends, and nothing keeps the Mac awake
+  hookEvent(fx, QUIET, "Stop", { last_assistant_message: "Comma or tab?" });
+  await expect
+    .poll(async () => (await g.trayMenu()).map((i) => i.label), { timeout: 15_000 })
+    .toContain("The Mac can sleep · nothing working");
 });
 
 test("the close button hides the window, the app stays, and Open Grove brings it back", async () => {
@@ -66,7 +104,7 @@ test("the close button hides the window, the app stays, and Open Grove brings it
   await expect.poll(() => g.isMainVisible()).toBe(false);
   // still running, and the hidden page still answers
   expect((await app.page.evaluate(() => window.grove.bootstrap())).projects).toHaveLength(2);
-  await g.trayClick(3);
+  await g.trayClick(await openGrove(g));
   await expect.poll(() => g.isMainVisible()).toBe(true);
 });
 
@@ -97,6 +135,6 @@ test("--hidden starts with no visible window and a working page", async () => {
   const g = await ready(app);
   expect(await g.isMainVisible()).toBe(false);
   expect((await app.page.evaluate(() => window.grove.bootstrap())).inbox.rows).toHaveLength(2);
-  await g.trayClick(3);
+  await g.trayClick(await openGrove(g));
   await expect.poll(() => g.isMainVisible()).toBe(true);
 });

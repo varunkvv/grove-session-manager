@@ -10,13 +10,14 @@ import {
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
-import type { InboxView, MenuCommandId } from "../shared/ipc.ts";
+import type { MenuCommandId } from "../shared/ipc.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
-import { anyRunning, keepAwake } from "./keepAwake.ts";
+import { keepAwake, runningCount } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
+import type { TrayView } from "./menuTemplate.ts";
 import { OpQueue } from "./opQueue.ts";
 import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer } from "./protocol.ts";
@@ -141,7 +142,10 @@ async function start(): Promise<void> {
       sessions.setLive(statuses, agentRuns, alive);
       // a session that closed while idle changes no row, and its list still has to say Closed
       projects.sessionsChanged();
-      awake(settings.keepAwake !== false && anyRunning(statuses));
+      const running = runningCount(statuses);
+      awake.set(settings.keepAwake !== false && running > 0);
+      // one with no transcript yet moves no list, and the menu bar still counts it
+      if (running !== trayView?.running || awake.since() !== trayView.awakeSince) showTray();
     },
     onNeedsYou: (sessionId, status) => {
       const row = sessions.byId(sessionId)[0];
@@ -255,11 +259,38 @@ async function start(): Promise<void> {
   /** the last tray menu and title. kept so a test root can read and click them with no tray */
   let trayMenu: MenuItemConstructorOptions[] = [];
   let trayTitle = "";
-  const showInbox = (inbox: InboxView) => {
-    trayMenu = updateTray(tray, inbox, { land: (target) => void reveals.land(target), showMain });
-    trayTitle = inbox.rows.length > 0 ? String(inbox.rows.length) : "";
+  /** what the menu bar was last drawn from */
+  let trayView: TrayView | undefined;
+  let drawing = false;
+  const showTray = () => {
+    // reading the inbox can finish a compute, which calls back here. the outer call draws it
+    if (drawing) return;
+    drawing = true;
+    try {
+      trayView = {
+        inbox: projects.inbox(),
+        working: projects.listSessions(null).filter((s) => s.live === "running"),
+        running: runningCount(live.list()),
+        awakeSince: awake.since(),
+        keepAwake: settings.keepAwake !== false,
+        now: Date.now(),
+      };
+    } finally {
+      drawing = false;
+    }
+    trayMenu = updateTray(tray, trayView, {
+      land: (target) => void reveals.land(target),
+      open: landOn,
+      showMain,
+    });
+    trayTitle = trayView.inbox.rows.length > 0 ? String(trayView.inbox.rows.length) : "";
     electron.app.dock?.setBadge(trayTitle);
   };
+  // "for 12m" is only as fresh as the menu's last build
+  const trayTick = setInterval(() => {
+    if (trayView?.running) showTray();
+  }, 60_000);
+  trayTick.unref();
 
   const projects = new ProjectsService({
     combos,
@@ -269,9 +300,13 @@ async function start(): Promise<void> {
     recaps,
     onInbox: (inbox) => {
       pusher.send("inbox:changed", { ...inbox, rev: pusher.nextRev("inbox") });
-      showInbox(inbox);
+      showTray();
     },
-    onSessions: () => pusher.send("sessions:changed", {}),
+    // a session started or stopped working, or was renamed
+    onSessions: () => {
+      pusher.send("sessions:changed", {});
+      showTray();
+    },
     onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId) }),
   });
 
@@ -331,7 +366,8 @@ async function start(): Promise<void> {
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       settings = s;
       if (recapsMoved) projects.recapsSwitched();
-      awake(s.keepAwake !== false && anyRunning(live.list()));
+      awake.set(s.keepAwake !== false && runningCount(live.list()) > 0);
+      showTray();
       electron.nativeTheme.themeSource = s.appearance;
     },
     sessions,
@@ -358,7 +394,7 @@ async function start(): Promise<void> {
   menu(editor.current().label);
   // no tray under a test root unless the test asks: its menu is still built, for groveTest
   if (!appEnv.customRoot || process.env.GROVE_TRAY === "1") tray = createTray();
-  showInbox(projects.inbox());
+  showTray();
 
   // the close button hides: the app lives in the menu bar until it is quit
   win.on("close", (e) => {
@@ -411,7 +447,8 @@ async function start(): Promise<void> {
   electron.app.on("window-all-closed", () => electron.app.quit());
   electron.app.on("before-quit", () => {
     quitting = true;
-    awake(false);
+    clearInterval(trayTick);
+    awake.set(false);
     combos.dispose();
     live.dispose();
     projects.dispose();

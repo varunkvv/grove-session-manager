@@ -1,9 +1,8 @@
 // the menu bar item: the grove mark, the count of what waits on the person, and a native menu
-// built from the inbox (menuTemplate.ts's trayTemplate).
+// built from the inbox and what is working (menuTemplate.ts's trayTemplate).
 import type { MenuItemConstructorOptions, NativeImage, Tray } from "electron";
 import * as electron from "electron";
-import type { InboxView } from "../shared/ipc.ts";
-import { type TrayActions, trayTemplate } from "./menuTemplate.ts";
+import { type TrayActions, type TrayView, trayTemplate } from "./menuTemplate.ts";
 
 /** the 16pt mark doubled: three discs of radius 6 in a 32px square */
 const DISCS = [
@@ -44,15 +43,18 @@ export function createTray(): Tray {
   return tray;
 }
 
-/** on every inbox recompute. returns the menu it built, which a test root reads with no tray at all */
+/**
+ * whenever the inbox or what is working moved, and once a minute while something works. returns
+ * the menu it built, which a test root reads with no tray at all
+ */
 export function updateTray(
   tray: Tray | null,
-  inbox: InboxView,
+  view: TrayView,
   a: TrayActions,
 ): MenuItemConstructorOptions[] {
-  const template = trayTemplate(inbox, a);
+  const template = trayTemplate(view, a);
   if (tray && !tray.isDestroyed()) {
-    const n = inbox.rows.length;
+    const n = view.inbox.rows.length;
     tray.setTitle(n > 0 ? String(n) : "");
     tray.setToolTip(n > 0 ? `Grove, ${n} waiting on you` : "Grove");
     tray.setContextMenu(electron.Menu.buildFromTemplate(template));

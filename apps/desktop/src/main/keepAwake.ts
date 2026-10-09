@@ -9,26 +9,36 @@ export interface PowerBlocker {
 }
 
 /**
- * a turn in flight somewhere. a session working through a background subagent is still `running`
- * (see reduceStatus on Stop), and one that waits on a person is not: nothing moves until they answer
+ * the turns in flight. a session working through a background subagent is still `running` (see
+ * reduceStatus on Stop), and one that waits on a person is not: nothing moves until they answer
  */
-export function anyRunning(statuses: ReadonlyMap<string, LiveStatus>): boolean {
-  for (const s of statuses.values()) if (s.state === "running") return true;
-  return false;
+export function runningCount(statuses: ReadonlyMap<string, LiveStatus>): number {
+  let n = 0;
+  for (const s of statuses.values()) if (s.state === "running") n++;
+  return n;
+}
+
+export interface KeepAwake {
+  set(on: boolean): void;
+  /** when it was last told to stay awake. null while the mac may sleep */
+  since(): number | null;
 }
 
 /**
  * holds the mac awake while told to, display included: a display kept on keeps the system up with
  * it. a laptop on battery with its lid shut still sleeps. quitting drops the assertion with the process.
  */
-export function keepAwake(blocker: PowerBlocker): (on: boolean) => void {
-  let id: number | null = null;
-  return (on) => {
-    if (on === (id !== null)) return;
-    if (id === null) id = blocker.start("prevent-display-sleep");
-    else {
-      blocker.stop(id);
-      id = null;
-    }
+export function keepAwake(blocker: PowerBlocker, now: () => number = Date.now): KeepAwake {
+  let held: { id: number; since: number } | null = null;
+  return {
+    set(on) {
+      if (on === (held !== null)) return;
+      if (held === null) held = { id: blocker.start("prevent-display-sleep"), since: now() };
+      else {
+        blocker.stop(held.id);
+        held = null;
+      }
+    },
+    since: () => held?.since ?? null,
   };
 }

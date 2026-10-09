@@ -9,6 +9,8 @@ New:
 - it is what `caffeinate -d -i` takes, held by Grove itself: no terminal and no extra process. a laptop on battery
   with its lid shut still sleeps
 - it holds only while Grove is running. closing the window keeps Grove in the menu bar, quitting lets go
+- the menu bar's menu says whether Grove is keeping the Mac awake, for how long, and lists the sessions that are
+  working, which are what keeps it so. a click on one opens the window on it
 - **Keep the Mac awake while agents work** in Settings switches it off
 
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not

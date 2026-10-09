@@ -205,9 +205,15 @@ of projects. They are a section of their own, **Archived**, once you type part o
 Claude Code session on the machine, in a project or not: titles and prompts first, then everything that was said in
 each session and by its subagents. `↵` on a session opens it in the editor.
 
-The **menu bar** item shows how many sessions need you across all projects. Its menu lists the three newest, then
-**Open Grove** and **Quit**. A click on one opens the window on its row in All sessions, with the panel open. Closing the window
-hides it: the app stays in the menu bar until it is quit.
+The **menu bar** item shows how many sessions need you across all projects. Its menu lists the three newest, then what
+is working, then **Open Grove** and **Quit**. A click on one that needs you opens the window on its row in All
+sessions, with the panel open. Closing the window hides it: the app stays in the menu bar until it is quit.
+
+What is working starts with one line that says whether Grove is keeping the Mac awake, how many sessions are working
+and for how long it has held: `Keeping the Mac awake · 3 working · for 1h 12m`, `The Mac can sleep · nothing working`,
+or `Keep awake is off · 2 working` with the switch off. Under it are the sessions that are mid-turn, up to five, each
+with its project and how long its turn has run. They are what keeps the Mac awake. A click on one opens the window on
+it. The times are to the minute: the menu is drawn again once a minute while something works.
 
 What an agent wrote is not trusted. It is rendered as markdown without any HTML (a `<script>` shows as text), images
 show their description, and only `http(s)` links open - in your browser, never in the app. A recap is plain text: it
@@ -282,8 +288,9 @@ Grove.
 While any session Grove can see is mid-turn, Grove keeps the Mac and its display from going to sleep on their own, and
 lets them go when the last turn ends. It is what `caffeinate -d -i` takes, held by Grove itself: no terminal and no
 extra process. A laptop on battery with its lid shut still sleeps. A session waiting on you does not count. It holds
-only while Grove is running: closing the window keeps Grove in the menu bar, quitting lets go.
-**Keep the Mac awake while agents work** in Settings switches it off.
+only while Grove is running: closing the window keeps Grove in the menu bar, quitting lets go. The menu bar's menu
+says whether it holds, for how long and for which sessions. **Keep the Mac awake while agents work** in Settings
+switches it off.
 
 ## Opening and starting agents
 

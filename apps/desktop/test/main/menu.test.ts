@@ -1,6 +1,6 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, it } from "vitest";
-import { buildMenuTemplate, trayTemplate } from "../../src/main/menuTemplate.ts";
+import { buildMenuTemplate, type TrayView, trayTemplate } from "../../src/main/menuTemplate.ts";
 import type { InboxRowView, LandingTarget, MenuCommandId } from "../../src/shared/ipc.ts";
 
 function items(sent: MenuCommandId[] = []): MenuItemConstructorOptions[] {
@@ -107,20 +107,42 @@ describe("the tray menu", () => {
     }),
     row({ sessionId: "s8", kind: "failed", title: "fourth" }),
   ];
-  const menu = (rows: InboxRowView[]) => {
+  const NOW = 10 * 3_600_000;
+  const menu = (rows: InboxRowView[], view: Partial<TrayView> = {}) => {
     const landed: LandingTarget[] = [];
+    const opened: string[] = [];
     let shown = 0;
-    const items = trayTemplate({ rows }, { land: (t) => landed.push(t), showMain: () => shown++ });
+    const items = trayTemplate(
+      {
+        inbox: { rows },
+        working: [],
+        running: 0,
+        awakeSince: null,
+        keepAwake: true,
+        now: NOW,
+        ...view,
+      },
+      { land: (t) => landed.push(t), open: (id) => opened.push(id), showMain: () => shown++ },
+    );
     const click = (i: number) => (items[i]?.click as (() => void) | undefined)?.();
-    return { items, landed, click, shown: () => shown };
+    return { items, landed, opened, click, shown: () => shown };
   };
+  const working = (n: number): TrayView["working"] =>
+    Array.from({ length: n }, (_, i) => ({
+      sessionId: `w${i}`,
+      title: `job ${i}`,
+      where: "Chat features",
+      since: NOW - (i + 1) * 12 * 60_000,
+    }));
 
-  it("the first three rows in the order the inbox gives, then Open Grove and Quit", () => {
+  it("the first three rows in the order the inbox gives, what is working, then Open Grove and Quit", () => {
     const { items } = menu(ROWS);
     expect(items.map((i) => i.label ?? i.type ?? i.role)).toEqual([
       "Your turn  Fix the accrual rounding",
       "Stopped  load test",
       `Needs permission  ${"x".repeat(41)}…`,
+      "separator",
+      "The Mac can sleep · nothing working",
       "separator",
       "Open Grove",
       "quit",
@@ -129,6 +151,8 @@ describe("the tray menu", () => {
       "Chat features · Round accrual to whole hours, or keep the half?",
       "Data objects · Run the load test again",
       `Chat features · Bash ${"y".repeat(58)}…`,
+      undefined,
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -145,7 +169,7 @@ describe("the tray menu", () => {
       { view: "inbox", session: "s4" },
       { view: "inbox", session: "s9" },
     ]);
-    click(4);
+    click(6);
     expect(shown()).toBe(1);
   });
 
@@ -154,9 +178,70 @@ describe("the tray menu", () => {
     expect(items).toEqual([
       { label: "Nothing needs you", enabled: false },
       { type: "separator" },
+      { label: "The Mac can sleep · nothing working", enabled: false },
+      { type: "separator" },
       { label: "Open Grove", click: expect.any(Function) },
       { role: "quit" },
     ]);
+  });
+
+  it("kept awake: for how long, and the working sessions that keep it so", () => {
+    const { items, click, opened } = menu([], {
+      working: working(2),
+      running: 2,
+      awakeSince: NOW - 75 * 60_000,
+    });
+    expect(items.slice(2, 5)).toEqual([
+      { label: "Keeping the Mac awake · 2 working · for 1h 15m", enabled: false },
+      { label: "job 0", sublabel: "Chat features · for 12m", click: expect.any(Function) },
+      { label: "job 1", sublabel: "Chat features · for 24m", click: expect.any(Function) },
+    ]);
+    expect(items[5]).toEqual({ type: "separator" });
+    click(3);
+    expect(opened).toEqual(["w0"]);
+  });
+
+  it("a turn under a minute old has just started", () => {
+    const { items } = menu([], {
+      working: [{ sessionId: "w", title: "job", where: "Chat features", since: NOW - 20_000 }],
+      running: 1,
+      awakeSince: NOW - 20_000,
+    });
+    expect(items.slice(2, 4).map((i) => i.sublabel ?? i.label)).toEqual([
+      "Keeping the Mac awake · 1 working · just started",
+      "Chat features · just started",
+    ]);
+  });
+
+  it("switched off in settings: it says so, and still lists what is working", () => {
+    const off = menu([], { keepAwake: false });
+    expect(off.items[2]?.label).toBe("Keep awake is off · nothing working");
+    const { items } = menu([], { keepAwake: false, working: working(1), running: 1 });
+    expect(items.slice(2, 4).map((i) => i.label)).toEqual([
+      "Keep awake is off · 1 working",
+      "job 0",
+    ]);
+  });
+
+  it("names five working sessions, then says how many more and how many it cannot name", () => {
+    const { items, click, landed } = menu([], {
+      working: working(7),
+      // one more by its status than a list can name
+      running: 8,
+      awakeSince: NOW - 60_000,
+    });
+    expect(items.slice(2, 10).map((i) => [i.label, i.enabled])).toEqual([
+      ["Keeping the Mac awake · 8 working · for 1m", false],
+      ["job 0", undefined],
+      ["job 1", undefined],
+      ["job 2", undefined],
+      ["job 3", undefined],
+      ["job 4", undefined],
+      ["and 2 more", undefined],
+      ["and 1 with no transcript yet", false],
+    ]);
+    click(8);
+    expect(landed).toEqual([{ view: "inbox" }]);
   });
 
   it("a row with no summary is the project name alone", () => {
