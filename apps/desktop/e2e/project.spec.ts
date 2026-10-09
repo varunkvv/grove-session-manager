@@ -573,6 +573,8 @@ test("Delete project is for the disk: no checkbox, a working copy with changes b
   await expect(dialog).toContainText(
     "Delete is for getting disk space back. The clean working copies are removed and the project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones and past sessions are not touched.",
   );
+  // and which folder that is
+  await expect(page.getByTestId("delete-folder")).toHaveAttribute("title", root);
   await expect(page.getByTestId("archive-hint")).toHaveText(
     "Archiving puts the project away and keeps everything.",
   );

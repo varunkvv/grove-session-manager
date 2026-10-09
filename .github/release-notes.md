@@ -21,7 +21,7 @@ Changed:
 
 - **Delete project** has no checkbox. it removes the clean working copies, takes the project out of `combos.json` and
   moves the project folder, with its CLAUDE.md, plans and notes, to the Trash. before, the folder stayed unless you
-  ticked the box. a working copy with uncommitted work still stops it
+  ticked the box. the dialog names the folder that goes. a working copy with uncommitted work still stops it
 - `⌥↑` and `⌥↓` step past archived projects
 - Grove no longer opens on a project that was archived since you were last on it
 

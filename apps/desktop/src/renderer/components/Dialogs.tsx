@@ -1,9 +1,9 @@
-import type { TeardownOutcome } from "@grove/core/pure";
+import { shortPath, type TeardownOutcome } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "../../shared/ipc.ts";
 import { archiveProject, startAgent } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Field, inputClass, Modal, Select, Switch } from "./ui.tsx";
+import { Button, cx, Field, inputClass, Modal, Mono, Select, Switch } from "./ui.tsx";
 
 function baseName(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
@@ -26,6 +26,7 @@ export function DeleteProjectDialog() {
   const id = open ? dialog.project : "";
   const project = projects.find((p) => p.id === id);
   const name = project?.name ?? id;
+  const home = useStore((s) => s.env?.home);
   const [running, setRunning] = useState(false);
   const [remaining, setRemaining] = useState<TeardownOutcome[]>([]);
   const [error, setError] = useState<string>();
@@ -88,6 +89,12 @@ export function DeleteProjectDialog() {
           project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones
           and past sessions are not touched.
         </p>
+        {project && (
+          // exactly what goes to the Trash, whole: nobody has to guess which folder that is
+          <p data-testid="delete-folder" title={project.root}>
+            <Mono className="break-all text-fg-3">{shortPath(project.root, undefined, home)}</Mono>
+          </p>
+        )}
         {project && !project.archived && (
           <p data-testid="archive-hint">Archiving puts the project away and keeps everything.</p>
         )}

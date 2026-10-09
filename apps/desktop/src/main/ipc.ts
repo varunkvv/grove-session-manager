@@ -202,6 +202,10 @@ function buildHandlers(deps: Deps): Handlers {
    * `.grove/trash/`: nothing a test deletes lands in the Trash of whoever runs it
    */
   async function trash(root: string): Promise<void> {
+    // a root that combos.json points at the home folder or at grove's own is not one project's
+    if (root === env.home || root === env.appRoot) {
+      throw new Error("That folder holds more than this project.");
+    }
     if (!env.customRoot) return electron.shell.trashItem(root);
     const dir = path.join(env.stateDir, "trash");
     await mkdir(dir, { recursive: true });
