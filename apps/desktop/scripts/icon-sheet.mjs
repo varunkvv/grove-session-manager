@@ -4,8 +4,8 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 
 const resources = path.join(import.meta.dirname, "../resources");
-const svg = readFileSync(path.join(resources, "icon.svg"), "utf8");
-const data = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+const png = readFileSync(path.join(resources, "icon.png"));
+const data = `data:image/png;base64,${png.toString("base64")}`;
 const row = (bg) =>
   `<div style="background:${bg};padding:28px;display:flex;align-items:flex-end;gap:28px">${[
     256, 128, 64, 32, 16,
