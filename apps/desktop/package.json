@@ -15,7 +15,7 @@
     "start": "electron out/main/index.cjs",
     "pretest:e2e": "pnpm run electron:ensure && pnpm run build",
     "test:e2e": "playwright test --grep-invert packaged",
-    "package": "pnpm run build && pnpm --filter grove-companion package && electron-builder --config electron-builder.yml --publish never",
+    "package": "pnpm run build && pnpm --filter grove-companion package && electron-builder --config electron-builder.yml --publish never $(node scripts/icon-arg.mjs)",
     "test:packaged": "playwright test e2e/packaged.spec.ts"
   },
   "devDependencies": {

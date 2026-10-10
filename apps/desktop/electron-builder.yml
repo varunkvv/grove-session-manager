@@ -22,6 +22,10 @@ extraResources:
       - manifest.json
 mac:
   category: public.app-category.developer-tools
+  # the fallback. the icon is resources/Grove.icon, which takes xcode 26's actool to compile, and
+  # electron-builder throws without one. so `pnpm package` passes it as -c.mac.icon only when this
+  # mac can compile it (scripts/icon-arg.mjs), and CI always does. this picture is that icon
+  # rendered once: macOS has no glass to draw from it, and no dark, clear or tinted style
   icon: resources/icon.png
   target:
     - target: dmg
