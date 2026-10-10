@@ -1,36 +1,21 @@
-// the menu bar item: the grove mark, the count of what waits on the person, and a native menu
-// built from the inbox and what is working (menuTemplate.ts's trayTemplate).
+// the menu bar item: the grove mark (trayMark.ts), the count of what waits on the person, and a
+// native menu built from the inbox and what is working (menuTemplate.ts's trayTemplate).
 import type { MenuItemConstructorOptions, NativeImage, Tray } from "electron";
 import * as electron from "electron";
 import { type TrayActions, type TrayView, trayTemplate } from "./menuTemplate.ts";
+import { MARK_SIZE, markAlpha } from "./trayMark.ts";
 
-/** the 16pt mark doubled: three discs of radius 6 in a 32px square */
-const DISCS = [
-  [9.2, 12],
-  [22.8, 12],
-  [16, 22.8],
-] as const;
-
-/** drawn in memory, so there is no asset to package. black and a template image: macOS tints it */
+/**
+ * drawn in memory, so there is no asset to package. black and a template image: macOS tints it,
+ * and keeps the alpha that sets the two trees behind back
+ */
 export function trayImage(): NativeImage {
-  const size = 32;
-  const buf = Buffer.alloc(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      // 4x4 samples per pixel, so the edges are smooth
-      let hits = 0;
-      for (let s = 0; s < 16; s++) {
-        const px = x + ((s % 4) + 0.5) / 4;
-        const py = y + (Math.floor(s / 4) + 0.5) / 4;
-        if (DISCS.some(([cx, cy]) => (px - cx) ** 2 + (py - cy) ** 2 <= 36)) hits++;
-      }
-      // BGRA: black, so only the alpha is written
-      buf[(y * size + x) * 4 + 3] = Math.round((hits / 16) * 255);
-    }
-  }
+  // BGRA: black, so only the alpha is written
+  const buf = Buffer.alloc(MARK_SIZE * MARK_SIZE * 4);
+  for (const [i, a] of markAlpha().entries()) buf[i * 4 + 3] = a;
   const image = electron.nativeImage.createFromBitmap(buf, {
-    width: size,
-    height: size,
+    width: MARK_SIZE,
+    height: MARK_SIZE,
     scaleFactor: 2,
   });
   image.setTemplateImage(true);
