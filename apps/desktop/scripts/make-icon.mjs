@@ -55,6 +55,9 @@ await page.setContent(
   img{display:block;margin:100px;width:824px;height:824px;filter:drop-shadow(0 12px 14px rgba(0,0,0,.32))}</style>
   <img src="data:image/png;base64,${png}">`,
 );
+// chrome paints the tile's edge again a moment after the first paint, and a few hundred nearly
+// transparent pixels move by a hair. waited out, so two runs write the same bytes
+await page.waitForTimeout(500);
 await page.screenshot({ path: path.join(resources, "icon.png"), omitBackground: true });
 await browser.close();
 console.log(path.join(resources, "icon.png"));
