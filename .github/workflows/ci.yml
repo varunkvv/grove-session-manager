@@ -54,6 +54,48 @@ jobs:
             apps/desktop/test-results
           if-no-files-found: ignore
 
+  preview:
+    # a pull request's dmg, to download from the run and open. xcode compiles the app icon on the
+    # runner, which a mac without xcode 26 cannot do, and the Dock is the only place it is really
+    # seen. the same build as release below, and nothing is published. it does not wait for the
+    # tests: the dmg is for looking at, and a failing test should not hide it.
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    env:
+      # ad-hoc signing only. never go looking for a certificate on the runner.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: version
+        id: version
+        run: |
+          base=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
+          echo "version=${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: actool
+        run: xcrun actool --version
+
+      - name: build the dmg
+        run: |
+          pnpm app:build
+          pnpm ext:package
+          pnpm --filter @grove/desktop exec electron-builder --config electron-builder.yml \
+            --publish never -c.extraMetadata.version=${{ steps.version.outputs.version }} \
+            -c.mac.icon=resources/Grove.icon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grove-${{ steps.version.outputs.version }}-dmg
+          path: apps/desktop/dist/*.dmg
+          if-no-files-found: error
+
   release:
     # every merge to main publishes a dmg. versions are <major>.<minor> from
     # apps/desktop/package.json plus the run number, so each release is its own immutable tag
@@ -82,13 +124,21 @@ jobs:
           base=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0,2).join('.')")
           echo "version=${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
+      # the app icon is compiled from resources/Grove.icon by xcode's actool, 26 or later. printed so
+      # the log says which one this runner had. a runner with none stops here.
+      - name: actool
+        run: xcrun actool --version
+
       - name: build the dmg
         run: |
           pnpm app:build
           pnpm ext:package
           # --publish never: on a CI runner electron-builder would otherwise try to publish by itself
+          # mac.icon is passed outright, and not through scripts/icon-arg.mjs as `pnpm package` does:
+          # a runner that cannot compile the package fails, and does not ship the icon with no glass
           pnpm --filter @grove/desktop exec electron-builder --config electron-builder.yml \
-            --publish never -c.extraMetadata.version=${{ steps.version.outputs.version }}
+            --publish never -c.extraMetadata.version=${{ steps.version.outputs.version }} \
+            -c.mac.icon=resources/Grove.icon
 
       - name: publish
         run: |
