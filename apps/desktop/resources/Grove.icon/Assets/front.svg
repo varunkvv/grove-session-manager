@@ -1,4 +1,4 @@
+<!-- grove icon layer: front tree, crown and trunk as one outline. the tile is the whole 1024 canvas, so this is the icon.svg tree scaled 1024/824 about the centre -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <circle cx="521.9" cy="392.7" r="213.7" fill="#ffffff"/>
-  <rect x="473.5" y="392.7" width="96.9" height="447.4" fill="#ffffff"/>
+  <path d="M473.48 840.08V600.88A213.75 213.75 0 1 1 570.41 600.88V840.08Z" fill="#ffffff"/>
 </svg>

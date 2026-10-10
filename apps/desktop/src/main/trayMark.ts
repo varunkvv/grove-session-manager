@@ -15,8 +15,8 @@ const GROUND = 29;
  */
 const TREES = [
   [16, 12, 8, 4, 1],
-  [7.5, 16.25, 5.5, 3, 0.55],
-  [24.5, 18, 5, 3, 0.42],
+  [7.5, 16.25, 5.5, 3, 0.72],
+  [24.5, 18, 5, 3, 0.5],
 ] as const;
 
 /** how much ink each pixel carries, 0 to 255, row by row */

@@ -33,23 +33,57 @@
             {
               "appearance": "dark",
               "value": {
-                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+                "linear-gradient": [
+                  "srgb:1.00000,1.00000,1.00000,1.00000",
+                  "srgb:0.89020,0.86275,0.97647,1.00000"
+                ]
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-gray:1.00000,1.00000"
               }
             }
-          ]
+          ],
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
         }
       ],
       "lighting": "individual",
+      "blur-material": 0.7,
       "shadow": {
         "kind": "neutral",
         "opacity": 0.5
       },
       "specular": true,
-      "translucency": {
-        "enabled": true,
-        "value": 0.35
-      },
-      "blur-material": 0.6
+      "translucency-specializations": [
+        {
+          "value": {
+            "enabled": true,
+            "value": 0.4
+          }
+        },
+        {
+          "appearance": "dark",
+          "value": {
+            "enabled": true,
+            "value": 0.12
+          }
+        },
+        {
+          "appearance": "tinted",
+          "value": {
+            "enabled": true,
+            "value": 0.12
+          }
+        }
+      ]
     },
     {
       "name": "mid",
@@ -76,8 +110,21 @@
                   "srgb:0.05882,0.55294,0.53333,1.00000"
                 ]
               }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-gray:0.64000,1.00000"
+              }
             }
-          ]
+          ],
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
         }
       ],
       "lighting": "individual",
@@ -116,8 +163,21 @@
                   "srgb:0.83137,0.23922,0.54118,1.00000"
                 ]
               }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-gray:0.46000,1.00000"
+              }
             }
-          ]
+          ],
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
         }
       ],
       "lighting": "individual",
