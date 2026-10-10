@@ -623,8 +623,12 @@ no disk until you empty that folder. `apps/desktop/scripts/dev.mjs` takes `--rea
 After `pnpm app:build`, `node apps/desktop/scripts/screenshots.ts <outDir>` saves every screen from the real app, in
 light and dark, at 1280x800 and 880x600, against fixture projects.
 
-The icon is [apps/desktop/resources/icon.svg](apps/desktop/resources/icon.svg); `node apps/desktop/scripts/make-icon.mjs`
-re-renders the PNG that electron-builder turns into the `.icns`.
+The icon is an Icon Composer package, [apps/desktop/resources/Grove.icon](apps/desktop/resources/Grove.icon). A build
+on a Mac with Xcode 26 compiles it into the app, so macOS draws the glass and the dark, clear and tinted styles
+itself: CI builds that way, and `pnpm app:package` does when it finds Xcode 26. Without it the app gets
+[apps/desktop/resources/icon.png](apps/desktop/resources/icon.png), one picture of the default style.
+`node apps/desktop/scripts/make-icon.mjs` re-renders that PNG from the package, and needs
+[Icon Composer](https://developer.apple.com/icon-composer/) installed.
 
 Layout: `packages/core` is pure Node TypeScript with no runtime dependencies, and is the only implementation of the
 transcript parser, the project model and the git layer. The app's main process and the extension both bundle core from
