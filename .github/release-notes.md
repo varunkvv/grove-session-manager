@@ -18,5 +18,9 @@ New:
 
 None of the numbers show anywhere but on the Usage screen.
 
+Also new: the app icon. Three glass trees on violet, white for the session that needs you. On macOS 26 the system
+draws the glass itself, and the icon follows the Dark, Clear and Tinted icon styles. The menu bar mark is the same
+three trees.
+
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
 verified.
