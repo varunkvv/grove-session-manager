@@ -12,6 +12,7 @@
       "!**/out",
       "!**/dist",
       "!**/e2e/screenshots",
+      "!**/*.icon",
       "!**/*.css",
       "!tools/oracle/node_modules"
     ]
