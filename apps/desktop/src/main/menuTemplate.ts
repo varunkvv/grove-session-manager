@@ -119,7 +119,9 @@ export interface TrayView {
   now: number;
 }
 
-/** the working sessions the menu names before it says how many more there are */
+/** the sessions that need the person the menu names before it says how many more there are */
+const TRAY_NEEDS = 3;
+/** and the working ones */
 const TRAY_WORKING = 5;
 
 /** `for 12m`, to the minute: the menu is built again once a minute and no more often */
@@ -128,7 +130,7 @@ function span(since: number, now: number): string {
   return ms < 60_000 ? "just started" : `for ${formatDuration(ms)}`;
 }
 
-/** one line, cut with an ellipsis. not squash: the two spaces after the kind word are on purpose */
+/** one line, cut with an ellipsis */
 function line(s: string, max: number): string {
   const flat = s.replace(/\s*[\r\n\t]\s*/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
@@ -165,20 +167,34 @@ function workingItems(v: TrayView, a: TrayActions): MenuItemConstructorOptions[]
 }
 
 /**
- * the menu bar item's menu: the three newest inbox rows across every project, what is working and
- * whether that keeps the mac awake, then Open Grove and Quit
+ * the menu bar item's menu: how many sessions need the person and the three newest of them across
+ * every project, what is working and whether that keeps the mac awake, then Open Grove and Quit
  */
 export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOptions[] {
-  const rows = v.inbox.rows.slice(0, 3).map(
+  const n = v.inbox.rows.length;
+  const more = n - TRAY_NEEDS;
+  const rows = v.inbox.rows.slice(0, TRAY_NEEDS).map(
     (r): MenuItemConstructorOptions => ({
-      label: line(`${KIND_WORD[r.kind]}  ${r.title}`, 60),
-      sublabel: line(r.summary ? `${r.where} · ${r.summary}` : r.where, 80),
+      label: line(r.title, 60),
+      // most rows are a turn that ended, and the line above says they need you: only the other
+      // kinds say theirs, so the same two words do not head every row
+      sublabel: line(
+        [r.kind === "turn" ? "" : KIND_WORD[r.kind], r.where, r.summary]
+          .filter(Boolean)
+          .join(" · "),
+        80,
+      ),
       // its row, with its panel open
       click: () => a.land({ view: "inbox", session: r.sessionId }),
     }),
   );
   return [
-    ...(rows.length > 0 ? rows : [{ label: "Nothing needs you", enabled: false }]),
+    {
+      label: n === 0 ? "Nothing needs you" : n === 1 ? "1 needs you" : `${n} need you`,
+      enabled: false,
+    },
+    ...rows,
+    ...(more > 0 ? [{ label: `and ${more} more`, click: () => a.land({ view: "inbox" }) }] : []),
     { type: "separator" },
     ...workingItems(v, a),
     { type: "separator" },

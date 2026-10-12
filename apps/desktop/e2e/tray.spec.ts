@@ -44,22 +44,23 @@ async function ready(app: LaunchedApp) {
 const openGrove = async (g: Awaited<ReturnType<typeof ready>>) =>
   (await g.trayMenu()).findIndex((i) => i.label === "Open Grove");
 
-test("the menu lists the newest rows across projects, what is working, then Open Grove and Quit", async () => {
+test("the menu says how many need you, lists the newest across projects, what is working, then Open Grove and Quit", async () => {
   app = await launchApp(setup());
   const g = await ready(app);
   const menu = await g.trayMenu();
-  expect(menu).toHaveLength(7);
+  expect(menu).toHaveLength(8);
+  expect(menu[0]).toEqual({ label: "2 need you", enabled: false });
   // newest first, whichever millisecond each was written in
   expect(
     menu
-      .slice(0, 2)
+      .slice(1, 3)
       .map((i) => [i.label, i.sublabel])
       .sort(),
   ).toEqual([
-    ["Your turn  export job", "billing-export · csv only, or parquet too?"],
-    ["Your turn  idp config", "auth-sso · A dev tenant, or the prod one?"],
+    ["export job", "billing-export · csv only, or parquet too?"],
+    ["idp config", "auth-sso · A dev tenant, or the prod one?"],
   ]);
-  expect(menu.slice(2)).toEqual([
+  expect(menu.slice(3)).toEqual([
     {},
     { label: "The Mac can sleep · nothing working", enabled: false },
     {},
@@ -112,7 +113,7 @@ test("a row shows the window on that session: its inbox row, with its panel open
   app = await launchApp(setup());
   const g = await ready(app);
   const menu = await g.trayMenu();
-  const billing = menu.findIndex((i) => i.label === "Your turn  export job");
+  const billing = menu.findIndex((i) => i.label === "export job");
   // from a project's screen, with the window closed
   await app.page.locator('[data-testid="project-item"][data-id="auth-sso"]').click();
   await g.closeMain();

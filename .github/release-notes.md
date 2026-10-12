@@ -22,5 +22,8 @@ Also new: the app icon. Three glass trees on violet, white for the session that 
 draws the glass itself, and the icon follows the Dark, Clear and Tinted icon styles. The menu bar mark is the same
 three trees.
 
+The menu bar's menu now says how many sessions need you on one line, `2 need you`, and lists them by title. A row
+says its kind only when it is not a finished turn, so `Your turn` no longer heads every row.
+
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
 verified.

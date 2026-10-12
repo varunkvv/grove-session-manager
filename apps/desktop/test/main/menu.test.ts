@@ -137,41 +137,49 @@ describe("the tray menu", () => {
       since: NOW - (i + 1) * 12 * 60_000,
     }));
 
-  it("the first three rows in the order the inbox gives, what is working, then Open Grove and Quit", () => {
-    const { items } = menu(ROWS);
+  it("how many need you, the first three in the order the inbox gives, what is working, then Open Grove and Quit", () => {
+    const { items, click, landed } = menu(ROWS);
     expect(items.map((i) => i.label ?? i.type ?? i.role)).toEqual([
-      "Your turn  Fix the accrual rounding",
-      "Stopped  load test",
-      `Needs permission  ${"x".repeat(41)}…`,
+      "4 need you",
+      "Fix the accrual rounding",
+      "load test",
+      `${"x".repeat(59)}…`,
+      "and 1 more",
       "separator",
       "The Mac can sleep · nothing working",
       "separator",
       "Open Grove",
       "quit",
     ]);
+    // a turn that ended does not say its kind: the line above the rows covers it
     expect(items.map((i) => i.sublabel)).toEqual([
+      undefined,
       "Chat features · Round accrual to whole hours, or keep the half?",
-      "Data objects · Run the load test again",
-      `Chat features · Bash ${"y".repeat(58)}…`,
+      "Stopped · Data objects · Run the load test again",
+      `Needs permission · Chat features · Bash ${"y".repeat(39)}…`,
+      undefined,
       undefined,
       undefined,
       undefined,
       undefined,
       undefined,
     ]);
-    expect(items[2]?.label).toHaveLength(60);
-    expect(items[2]?.sublabel).toHaveLength(80);
+    expect(items[0]?.enabled).toBe(false);
+    expect(items[3]?.label).toHaveLength(60);
+    expect(items[3]?.sublabel).toHaveLength(80);
+    click(4);
+    expect(landed).toEqual([{ view: "inbox" }]);
   });
 
   it("a row lands on its session in the inbox", () => {
     const { click, landed, shown } = menu(ROWS);
-    click(0);
     click(1);
+    click(2);
     expect(landed).toEqual([
       { view: "inbox", session: "s4" },
       { view: "inbox", session: "s9" },
     ]);
-    click(6);
+    click(8);
     expect(shown()).toBe(1);
   });
 
@@ -184,6 +192,15 @@ describe("the tray menu", () => {
       { type: "separator" },
       { label: "Open Grove", click: expect.any(Function) },
       { role: "quit" },
+    ]);
+  });
+
+  it("one that needs you: the line says needs, and there is no more to count", () => {
+    const { items } = menu(ROWS.slice(0, 1));
+    expect(items.slice(0, 3).map((i) => i.label ?? i.type)).toEqual([
+      "1 needs you",
+      "Fix the accrual rounding",
+      "separator",
     ]);
   });
 
@@ -248,6 +265,6 @@ describe("the tray menu", () => {
 
   it("a row with no summary is the project name alone", () => {
     const { items } = menu([row({ sessionId: "s1", kind: "turn", title: "session" })]);
-    expect(items[0]?.sublabel).toBe("Chat features");
+    expect(items[1]?.sublabel).toBe("Chat features");
   });
 });

@@ -214,9 +214,11 @@ of projects. They are a section of their own, **Archived**, once you type part o
 Claude Code session on the machine, in a project or not: titles and prompts first, then everything that was said in
 each session and by its subagents. `↵` on a session opens it in the editor.
 
-The **menu bar** item shows how many sessions need you across all projects. Its menu lists the three newest, then what
-is working, then **Open Grove** and **Quit**. A click on one that needs you opens the window on its row in All
-sessions, with the panel open. Closing the window hides it: the app stays in the menu bar until it is quit.
+The **menu bar** item shows how many sessions need you across all projects. Its menu says the count again, `2 need
+you`, and lists the three newest by title, each with its project and what it asks under it. A row that is not a
+finished turn says so first: `Needs permission`, `Failed` or `Stopped`. Then what is working, then **Open Grove** and
+**Quit**. A click on one that needs you opens the window on its row in All sessions, with the panel open, and
+`and 2 more` opens All sessions. Closing the window hides it: the app stays in the menu bar until it is quit.
 
 What is working starts with one line that says whether Grove is keeping the Mac awake, how many sessions are working
 and for how long it has held: `Keeping the Mac awake · 3 working · for 1h 12m`, `The Mac can sleep · nothing working`,
