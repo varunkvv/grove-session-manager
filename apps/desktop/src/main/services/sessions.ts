@@ -13,6 +13,7 @@ import {
   projectDirLabel,
   type SessionIndex,
   type SessionRecord,
+  type SessionTasks,
   type SessionView,
   scanSessionAgents,
   textSnippet,
@@ -99,6 +100,7 @@ function toRow(
   agents: ReadonlyMap<SessionKey, AgentSnapshot>,
   background: ReadonlyMap<string, BackgroundEntry>,
   interrupted: ReadonlyMap<string, { at: number }>,
+  tasks: ReadonlyMap<string, SessionTasks>,
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -130,6 +132,8 @@ function toRow(
   if (record.model) row.model = record.model;
   const status = live.get(record.sessionId);
   if (status) row.live = status;
+  const left = tasks.get(record.sessionId);
+  if (left) row.tasks = left;
   const bg = background.get(record.sessionId);
   if (bg) row.background = backgroundView(bg);
   const cut = interruptedView(interrupted.get(record.sessionId), bg);
@@ -156,6 +160,8 @@ export class SessionService {
   /** sessions whose process went away mid-turn, by session id */
   private interrupted: ReadonlyMap<string, { at: number }> = new Map();
   private runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map();
+  /** what each session left running, by session id */
+  private tasks: ReadonlyMap<string, SessionTasks> = new Map();
   /** sessions with a process still running, busy or idle, whether or not a hook reports them */
   private alive: ReadonlySet<string> = new Set();
   /** every session's subagents, by transcript path. a session without any has no entry. */
@@ -277,18 +283,20 @@ export class SessionService {
   }
 
   /**
-   * hook-reported status by session id, and the sessions whose process is still up. a session
-   * resumed in two places shows on both rows.
+   * hook-reported status by session id, the sessions whose process is still up, and what each
+   * left running. a session resumed in two places shows on both rows.
    */
   setLive(
     live: ReadonlyMap<string, LiveStatus>,
     runs: ReadonlyMap<string, Readonly<Record<string, AgentRun>>> = new Map(),
     alive: ReadonlySet<string> = new Set(),
+    tasks: ReadonlyMap<string, SessionTasks> = new Map(),
   ): void {
     const was = { live: this.live, runs: this.runs, alive: this.alive };
     this.live = new Map(live);
     this.runs = new Map(runs);
     this.alive = new Set(alive);
+    this.tasks = new Map(tasks);
     this.rebuild();
     for (const row of this.rows.values()) {
       const id = row.sessionId;
@@ -453,7 +461,7 @@ export class SessionService {
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
     const next = views.map((v) =>
-      toRow(v, labels, this.live, this.agents, this.background, this.interrupted),
+      toRow(v, labels, this.live, this.agents, this.background, this.interrupted, this.tasks),
     );
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;

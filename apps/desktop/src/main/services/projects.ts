@@ -6,11 +6,13 @@ import {
   buildInbox,
   type InboxRow,
   inboxOrder,
+  liveTasks,
   type ProjectId,
   projectIdOf,
   type Runtime,
   recapLine,
   runtimeOf,
+  type SessionTask,
   snippetAround,
   squash,
   tokenize,
@@ -24,6 +26,7 @@ import type {
   SessionHit,
   SessionRef,
   SessionRow,
+  TaskView,
 } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import type { ComboService } from "./combos.ts";
@@ -43,7 +46,7 @@ export interface ReviewMarks {
 export interface ProjectsOptions {
   combos: Pick<ComboService, "list" | "views" | "syncReport" | "problemMessage">;
   sessions: Pick<SessionService, "list" | "get" | "search">;
-  live: Pick<LiveService, "interruptions" | "holder" | "isAlive" | "markSeen">;
+  live: Pick<LiveService, "interruptions" | "holder" | "isAlive" | "markSeen" | "taskLine">;
   reviewed: ReviewMarks;
   /** each session's recap, and where to ask for one */
   recaps?: Pick<RecapService, "view" | "want">;
@@ -406,8 +409,10 @@ export class ProjectsService {
       scope === null ? undefined : this.list().projects.find((p) => p.id === scope)?.name;
     if (scope !== null && !name) return [];
     const needs = new Set(this.inbox().rows.map((r) => r.sessionId));
-    // archiving is about noise, never about muting: one that needs the person or runs still shows
-    const quiet = (r: SessionRow) => !needs.has(r.sessionId) && r.live?.state !== "running";
+    // archiving is about noise, never about muting: one that needs the person, runs or has left
+    // something running still shows
+    const quiet = (r: SessionRow) =>
+      !needs.has(r.sessionId) && r.live?.state !== "running" && !watching(r);
     const hidden = (r: SessionRow) =>
       scope === null && !putAway && index.archived.has(r.comboName ?? "") && quiet(r);
     return [...index.rows.values()].filter(
@@ -438,6 +443,9 @@ export class ProjectsService {
     // the hooks name no tool for a running session: what it was last asked is what it is doing
     const running = row.live?.state === "running" ? row.live : undefined;
     const asked = row.lastPrompt ?? row.firstPrompt;
+    const tasks = liveTasks(row.tasks, Date.now()).map((t) =>
+      taskView(t, this.o.live.taskLine(t.id)),
+    );
     return {
       ...this.ref(row, index),
       project: projectOf(row, index),
@@ -447,6 +455,7 @@ export class ProjectsService {
       doing: running && asked ? squash(asked, 200) : undefined,
       // a status the process registry gave has no turn: it has been busy since `at`
       since: running && (running.turnStart ?? running.at),
+      tasks: tasks.length ? tasks : undefined,
       snippet,
     };
   }
@@ -464,13 +473,45 @@ export class ProjectsService {
 const projectOf = (row: SessionRow, index: Index): ProjectId | undefined =>
   row.comboName ? index.projectOf.get(row.comboName) : undefined;
 
+/** it left something running that counts by now: a wake-up, or a command a minute old */
+const watching = (row: SessionRow): boolean => liveTasks(row.tasks, Date.now()).length > 0;
+
 /**
- * whether a list holds this session. always while it needs the person or runs. after that, one in
- * a project when it was started in the project's folder, and one in no project when a person
- * started it: `claude -p` and SDK apps (`sdk-cli`, `sdk-ts`) are scripts, and 28 of the 72
- * sessions outside a project on the machine this was measured on
+ * whether a list holds this session. always while it needs the person, runs or has left something
+ * running. after that, one in a project when it was started in the project's folder, and one in no
+ * project when a person started it: `claude -p` and SDK apps (`sdk-cli`, `sdk-ts`) are scripts,
+ * and 28 of the 72 sessions outside a project on the machine this was measured on
  */
 const listed = (row: SessionRow, needsYou: boolean, inProject: boolean): boolean =>
   needsYou ||
   row.live?.state === "running" ||
+  watching(row) ||
   (inProject ? row.comboRelation === "root" : !row.entrypoint?.startsWith("sdk"));
+
+/** what /loop schedules its next wake-up with when it paces itself: a marker, not words */
+const LOOP = /^<<autonomous-loop(-dynamic)?>>$/;
+const NUMBER = /^\d{1,2}$/;
+
+/**
+ * a task as a row draws it. a command's status is the last line it wrote, when its output was
+ * found. a wake-up's says when: one that fires once, at an hour and a minute that are plain
+ * numbers, is `wakes at 14:07` (Claude Code writes them in local time), and any other is its cron
+ * as written. no cron is worked out here
+ */
+export function taskView(t: SessionTask, line?: string): TaskView {
+  const view = (description: string, status?: string): TaskView => ({
+    id: t.id,
+    kind: t.kind,
+    description,
+    since: t.since,
+    ...(status ? { status } : {}),
+  });
+  if (t.kind === "command") return view(squash(t.description, 200), line);
+  const [minute = "", hour = ""] = t.schedule?.split(/\s+/) ?? [];
+  const when =
+    !t.recurring && NUMBER.test(minute) && NUMBER.test(hour)
+      ? `wakes at ${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`
+      : t.schedule && (t.recurring ? `repeats · ${t.schedule}` : t.schedule);
+  const prompt = squash(t.description, 200);
+  return view(LOOP.test(prompt) ? "Autonomous loop" : prompt || "Scheduled wake-up", when);
+}

@@ -108,6 +108,22 @@ describe("agents on every session", () => {
   });
 });
 
+describe("what a session left running", () => {
+  it("is on its row while the live service has it, and off it after", async () => {
+    const service = machine();
+    await service.loadCached([]);
+    await service.refresh();
+    const left = {
+      at: 5,
+      tasks: [{ id: "b1", kind: "command" as const, description: "tick watcher", since: 5 }],
+    };
+    service.setLive(new Map(), new Map(), new Set([SID]), new Map([[SID, left]]));
+    expect(service.list()[0]?.tasks).toEqual(left);
+    service.setLive(new Map(), new Map(), new Set([SID]));
+    expect(service.list()[0]?.tasks).toBeUndefined();
+  });
+});
+
 describe("search reaches what agents said", () => {
   it("finds a session by its agent's words, says which agent, and never by tool output", async () => {
     const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-agent-search-")));

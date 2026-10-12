@@ -138,8 +138,8 @@ async function start(): Promise<void> {
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
     registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
-    onChange: (statuses, agentRuns, alive) => {
-      sessions.setLive(statuses, agentRuns, alive);
+    onChange: (statuses, agentRuns, alive, tasks) => {
+      sessions.setLive(statuses, agentRuns, alive, tasks);
       // a session that closed while idle changes no row, and its list still has to say Closed
       projects.sessionsChanged();
       const running = runningCount(statuses);

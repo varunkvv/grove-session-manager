@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Combo, LiveStatus, RegistryEntry } from "@grove/core";
+import type { Combo, LiveStatus, RegistryEntry, SessionTask } from "@grove/core";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { Interruption } from "../../src/main/services/interrupted.ts";
-import { ProjectsService } from "../../src/main/services/projects.ts";
+import { ProjectsService, taskView } from "../../src/main/services/projects.ts";
 import type { SearchHit } from "../../src/main/services/sessions.ts";
 import type { InboxView, RecapView, SessionRow } from "../../src/shared/ipc.ts";
 
@@ -42,6 +42,8 @@ function setup() {
   const alive = new Set<string>();
   const marks = new Set<string>();
   const seen: string[] = [];
+  /** the last line each background command wrote, by task id */
+  const lines = new Map<string, string>();
   const hits: SearchHit[] = [];
   /** what the recap service would say of a session, by its key, and every recap asked for */
   const recaps = new Map<string, RecapView>();
@@ -78,6 +80,7 @@ function setup() {
       markSeen: (ids) => {
         seen.push(...ids);
       },
+      taskLine: (id) => lines.get(id),
     },
     reviewed: {
       keys: (prefix) =>
@@ -131,6 +134,7 @@ function setup() {
     alive,
     marks,
     seen,
+    lines,
     hits,
     recaps,
     wanted,
@@ -744,5 +748,146 @@ describe("projects and sessions", () => {
     expect(moved()).toBe(0);
     t.rows.push(row("s-2", inChat));
     expect(moved()).toBe(1);
+  });
+});
+
+describe("what a session left running", () => {
+  const MIN = 60_000;
+  const task = (o: Partial<SessionTask> & { id: string }): SessionTask => ({
+    kind: "command",
+    description: o.id,
+    since: Date.now() - 12 * MIN,
+    ...o,
+  });
+
+  it("is on its row: each task, when it was first seen and a status line", () => {
+    const t = setup();
+    t.project("chat");
+    const since = Date.now() - 12 * MIN;
+    t.rows.push(
+      row("s-poll", {
+        ...inChat,
+        tasks: {
+          at: since,
+          tasks: [
+            task({ id: "b1", description: "deploy watcher", command: "gh run watch", since }),
+            // started seconds ago: a one-off script is not a task yet
+            task({ id: "b2", description: "pnpm install", since: Date.now() - 5_000 }),
+            task({
+              id: "c1",
+              kind: "schedule",
+              description: "say hi",
+              schedule: "*/5 * * * *",
+              recurring: true,
+              since,
+            }),
+          ],
+        },
+      }),
+    );
+    t.rows.push(row("s-plain", inChat));
+    t.lines.set("b1", "run 4412 in progress: build");
+    t.lines.set("b2", "added 312 packages");
+    const by = Object.fromEntries(t.svc.listSessions("chat").map((h) => [h.sessionId, h]));
+    expect(by["s-poll"]?.tasks).toEqual([
+      {
+        id: "b1",
+        kind: "command",
+        description: "deploy watcher",
+        since,
+        status: "run 4412 in progress: build",
+      },
+      { id: "c1", kind: "schedule", description: "say hi", since, status: "repeats · */5 * * * *" },
+    ]);
+    expect(by["s-plain"]?.tasks).toBeUndefined();
+    // it needs nothing, so the inbox does not have it
+    expect(t.svc.inbox().rows).toEqual([]);
+  });
+
+  it("keeps a session in the lists like a running one: in a subfolder, in no project, in an archived one", () => {
+    const t = setup();
+    t.project("chat");
+    t.project("ops");
+    const left = { tasks: { at: 1, tasks: [task({ id: "b1" })] } };
+    const young = { tasks: { at: 1, tasks: [task({ id: "b2", since: Date.now() - 5_000 })] } };
+    t.rows.push(row("s-sub", { comboName: "chat", comboRelation: "inside", ...left }));
+    t.rows.push(row("s-sub-done", { comboName: "chat", comboRelation: "inside" }));
+    t.rows.push(row("s-sub-young", { comboName: "chat", comboRelation: "inside", ...young }));
+    t.rows.push(row("s-script", { entrypoint: "sdk-cli", ...left }));
+    t.rows.push(row("s-ops", { comboName: "ops", comboRelation: "root", ...left }));
+    t.rows.push(row("s-ops-quiet", { comboName: "ops", comboRelation: "root" }));
+    (t.combos[1] as { archived?: boolean }).archived = true;
+    const home = () =>
+      t.svc
+        .listSessions(null)
+        .map((h) => h.sessionId)
+        .sort();
+    expect(home()).toEqual(["s-ops", "s-script", "s-sub"]);
+    expect(t.svc.listSessions("chat").map((h) => h.sessionId)).toEqual(["s-sub"]);
+    expect(t.svc.landing("s-sub")).toEqual({ view: "sessions", project: "chat", session: "s-sub" });
+    // its Stop listed nothing more: it is a finished run in a subfolder again
+    delete t.rows[0]?.tasks;
+    expect(home()).toEqual(["s-ops", "s-script"]);
+  });
+
+  it("says the lists changed when a task came, wrote another line, or went", () => {
+    const t = setup();
+    t.project("chat");
+    t.rows.push(row("s-poll", inChat));
+    const moved = () => {
+      const before = t.got.sessions;
+      t.svc.sessionsChanged();
+      t.svc.inbox();
+      return t.got.sessions - before;
+    };
+    expect(moved()).toBe(1);
+    Object.assign(t.rows[0] as SessionRow, { tasks: { at: 1, tasks: [task({ id: "b1" })] } });
+    expect(moved()).toBe(1);
+    expect(moved()).toBe(0);
+    t.lines.set("b1", "tick 1");
+    expect(moved()).toBe(1);
+    t.lines.set("b1", "tick 2");
+    expect(moved()).toBe(1);
+    delete t.rows[0]?.tasks;
+    expect(moved()).toBe(1);
+  });
+
+  it("a wake-up says when: the time of one that fires once, the cron of one that repeats", () => {
+    const wake = (o: Partial<SessionTask>) =>
+      taskView(
+        task({ id: "c1", kind: "schedule", description: "check the deploy", since: 5, ...o }),
+      );
+    // a ScheduleWakeup: one fire time, in local time
+    expect(wake({ schedule: "7 14 12 10 *" })).toEqual({
+      id: "c1",
+      kind: "schedule",
+      description: "check the deploy",
+      since: 5,
+      status: "wakes at 14:07",
+    });
+    expect(wake({ schedule: "30 9 * * *" }).status).toBe("wakes at 09:30");
+    expect(wake({ schedule: "*/5 * * * *", recurring: true }).status).toBe("repeats · */5 * * * *");
+    // a daily one has a time too, and it is not the only time it fires
+    expect(wake({ schedule: "0 9 * * *", recurring: true }).status).toBe("repeats · 0 9 * * *");
+    // once, at a time this does not work out
+    expect(wake({ schedule: "*/15 14 12 10 *" }).status).toBe("*/15 14 12 10 *");
+    expect(wake({}).status).toBeUndefined();
+    // a /loop that paces itself schedules a marker, not words
+    expect(wake({ description: "<<autonomous-loop-dynamic>>" }).description).toBe(
+      "Autonomous loop",
+    );
+    expect(wake({ description: "<<autonomous-loop>>" }).description).toBe("Autonomous loop");
+    expect(wake({ description: "" }).description).toBe("Scheduled wake-up");
+    expect(wake({ description: `check\n  the deploy ${"x".repeat(300)}` }).description).toMatch(
+      /^check the deploy x+…$/,
+    );
+    expect(wake({ description: `a ${"x".repeat(300)}` }).description).toHaveLength(200);
+    // a command has no line until its output is found
+    expect(taskView(task({ id: "b1", description: "watch", since: 5 }))).toEqual({
+      id: "b1",
+      kind: "command",
+      description: "watch",
+      since: 5,
+    });
   });
 });

@@ -16,6 +16,7 @@ import type {
   Recap,
   Runtime,
   SessionAgent,
+  SessionTasks,
   TeardownOutcome,
   TitleSource,
 } from "@grove/core/pure";
@@ -69,6 +70,8 @@ export interface SessionRow {
   live?: LiveStatus;
   /** its subagents, running ones first. every session, live or long finished. */
   agents?: SessionAgent[];
+  /** what its last Stop said it left running: background commands, Monitors, wake-ups */
+  tasks?: SessionTasks;
   /** Claude Code's supervisor knows it: running in the background now, or once and not removed */
   background?: BackgroundView;
   /**
@@ -218,6 +221,21 @@ export interface SessionRef {
   recap?: RecapView;
 }
 
+/**
+ * something a session left running, as a row and the panel draw it: a background command or a
+ * Monitor, or a wake-up it scheduled (a cron, a /loop). what it says is untrusted plain text
+ */
+export interface TaskView {
+  id: string;
+  kind: "command" | "schedule";
+  /** what its tool call named it, or for a wake-up the start of what it will ask */
+  description: string;
+  /** when grove first saw it. a /loop keeps the time of its first wake-up */
+  since: number;
+  /** command: the last line it wrote. schedule: `wakes at 14:07`, or `repeats · ` and its cron */
+  status?: string;
+}
+
 /** one session in a list, or found from the palette */
 export interface SessionHit extends SessionRef {
   /** absent for a session in no project */
@@ -230,6 +248,8 @@ export interface SessionHit extends SessionRef {
   doing?: string;
   /** only while it runs: when this turn started */
   since?: number;
+  /** what it left running, when anything: a command counts once it is a minute old */
+  tasks?: TaskView[];
   /** only for a full-text match */
   snippet?: string;
 }
