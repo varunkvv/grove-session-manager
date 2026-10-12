@@ -5,7 +5,16 @@ import { settingsLocalPath } from "../combos/settingsSync.ts";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "../fsx.ts";
 import { getStateDir } from "../paths.ts";
 import { squash } from "../transcript/title.ts";
-import type { AgentRun, Combo, Disposable, LiveState, LiveStatus, Warning } from "../types.ts";
+import type {
+  AgentRun,
+  Combo,
+  Disposable,
+  LiveState,
+  LiveStatus,
+  SessionTask,
+  SessionTasks,
+  Warning,
+} from "../types.ts";
 import { toolTarget } from "./timeline.ts";
 
 export { needsYou } from "./needsYou.ts";
@@ -38,8 +47,11 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-/** the fields we read sit in the first ~1KB. the rest can be a whole tool output. */
-export const EVENT_MAX_BYTES = 16_384;
+/**
+ * the status reads the first ~1KB. what a Stop left running comes after the message the turn
+ * ended on, and this is the room for a long one. the rest can be a whole tool output.
+ */
+export const EVENT_MAX_BYTES = 65_536;
 /** past this many unread events the app has been closed a long while. stop adding, the state is stale. */
 const EVENT_BACKLOG = 5000;
 
@@ -231,6 +243,15 @@ export interface StatusEvent {
   agentType?: string;
   /** background subagents still running. read on Stop: a turn that handed work to one has not ended */
   backgroundAgents?: number;
+  /**
+   * what a Stop says is still in flight, subagents left out: commands, Monitors, wake-ups. absent
+   * when the payload does not say, which is not the same as nothing left
+   */
+  tasks?: Array<Omit<SessionTask, "since">>;
+  /** the background command whose end started this turn */
+  endedTask?: string;
+  /** the folder the session's transcript is in */
+  slug?: string;
 }
 
 /**
@@ -281,12 +302,13 @@ export function lastParagraph(message: string, max = 400): string {
   return flat.length > max ? `…${flat.slice(flat.length - max + 1).trimStart()}` : flat;
 }
 
+const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+
 export function parseStatusEvent(payload: unknown, at: number): StatusEvent | null {
   if (!isObject(payload)) return null;
   const sessionId = payload.session_id;
   const event = payload.hook_event_name;
   if (typeof sessionId !== "string" || typeof event !== "string") return null;
-  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
   const ev: StatusEvent = { sessionId, event, at };
   const notificationType = str(payload.notification_type);
   // Stop carries the reply that ended the turn. it makes a better notification than "done".
@@ -303,15 +325,62 @@ export function parseStatusEvent(payload: unknown, at: number): StatusEvent | nu
   }
   if (agentId) ev.agentId = agentId;
   if (agentType) ev.agentType = agentType;
-  // shells left running (a dev server) do not count: that turn is over. a payload cut at 16KB has
-  // lost this field, it comes after last_assistant_message
+  // shells left running (a dev server) do not count: that turn is over. a payload cut at the byte
+  // cap has lost this field, it comes after last_assistant_message
   const background = Array.isArray(payload.background_tasks)
     ? payload.background_tasks.filter(
         (t) => isObject(t) && t.type === "subagent" && t.status === "running",
       ).length
     : 0;
   if (background) ev.backgroundAgents = background;
+  const left = leftRunning(payload);
+  if (left) ev.tasks = left;
+  // a background command that ended says so in the prompt that wakes the session. a Monitor's
+  // event and its expiry have an <event> and no <status>
+  const prompt = event === "UserPromptSubmit" ? str(payload.prompt) : undefined;
+  if (prompt?.startsWith("<task-notification>") && prompt.includes("<status>")) {
+    const ended = /<task-id>([^<]+)<\/task-id>/.exec(prompt)?.[1];
+    if (ended) ev.endedTask = ended;
+  }
+  const transcript = str(payload.transcript_path);
+  if (transcript) ev.slug = path.basename(path.dirname(transcript));
   return ev;
+}
+
+/**
+ * the two arrays a Stop ends with, as one list: `background_tasks` (a background command and a
+ * Monitor are both `type: "shell"`) and `session_crons` (CronCreate, ScheduleWakeup, /loop).
+ * undefined when the payload has neither: one cut at the byte cap has lost them, and that must
+ * read as unknown, never as nothing left
+ */
+function leftRunning(payload: Record<string, unknown>): StatusEvent["tasks"] {
+  const { background_tasks: shells, session_crons: crons } = payload;
+  if (!Array.isArray(shells) && !Array.isArray(crons)) return undefined;
+  const out: NonNullable<StatusEvent["tasks"]> = [];
+  for (const t of Array.isArray(shells) ? shells : []) {
+    // a subagent has its own rows, and keeps the turn running: backgroundAgents counts those
+    if (!isObject(t) || typeof t.id !== "string" || t.type === "subagent") continue;
+    if (t.status !== undefined && t.status !== "running") continue;
+    const command = str(t.command);
+    out.push({
+      id: t.id,
+      kind: "command",
+      description: str(t.description) ?? command ?? "Background task",
+      ...(command ? { command } : {}),
+    });
+  }
+  for (const c of Array.isArray(crons) ? crons : []) {
+    if (!isObject(c) || typeof c.id !== "string") continue;
+    const schedule = str(c.schedule);
+    out.push({
+      id: c.id,
+      kind: "schedule",
+      description: str(c.prompt) ?? "",
+      ...(schedule ? { schedule } : {}),
+      ...(c.recurring === true ? { recurring: true } : {}),
+    });
+  }
+  return out;
 }
 
 function next(
@@ -422,6 +491,50 @@ export function reduceAgentRuns(
     }
   }
   return out;
+}
+
+/**
+ * what a session left running, kept beside its state: none of it moves reduceStatus. a Stop lists
+ * everything in flight, so the list is replaced whole at each one and nothing is inferred between
+ * two of them. a task that starts and ends inside one turn is never listed. undefined means
+ * nothing is left, or the session is gone.
+ */
+export function reduceTasks(
+  prev: SessionTasks | undefined,
+  ev: StatusEvent,
+): SessionTasks | undefined {
+  if (ev.event === "SessionEnd") return undefined;
+  if (ev.agentId) return prev;
+  if (ev.event === "UserPromptSubmit" && ev.endedTask && prev) {
+    const tasks = prev.tasks.filter((t) => t.id !== ev.endedTask);
+    if (tasks.length === prev.tasks.length) return prev;
+    return tasks.length ? { ...prev, tasks } : undefined;
+  }
+  // a Stop cut at the byte cap does not say: what was known stands
+  if (ev.event !== "Stop" || !ev.tasks) return prev;
+  if (ev.tasks.length === 0) return undefined;
+  const tasks = ev.tasks.map((t): SessionTask => {
+    const was =
+      prev?.tasks.find((p) => p.id === t.id) ??
+      // a /loop schedules a new one-shot at every tick. the same prompt is the same polling task
+      (t.kind === "schedule"
+        ? prev?.tasks.find((p) => p.kind === "schedule" && p.description === t.description)
+        : undefined);
+    return { ...t, since: was?.since ?? ev.at };
+  });
+  const slug = ev.slug ?? prev?.slug;
+  return { tasks, at: ev.at, ...(slug ? { slug } : {}) };
+}
+
+/** a command younger than this is not a task yet: a one-off script is nothing to watch */
+export const TASK_MIN_MS = 60_000;
+
+/**
+ * the tasks that count: every schedule, and every command that is still there a minute after the
+ * Stop that first listed it. what the lists show and what keeps the mac awake both come from here
+ */
+export function liveTasks(t: SessionTasks | undefined, now: number): SessionTask[] {
+  return t?.tasks.filter((x) => x.kind === "schedule" || now - x.since >= TASK_MIN_MS) ?? [];
 }
 
 /**

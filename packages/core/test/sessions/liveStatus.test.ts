@@ -6,19 +6,22 @@ import {
   drainStatusEvents,
   EVENT_MAX_BYTES,
   lastParagraph,
+  liveTasks,
   needsYou,
   parseStatusEvent,
   parseTruncatedEvent,
   reduceAgentRuns,
   reduceStatus,
+  reduceTasks,
   STATUS_HOOK_EVENTS,
   type StatusEvent,
   statusHookCommand,
   syncStatusHooks,
+  TASK_MIN_MS,
   watchStatusHooks,
   withStatusHooks,
 } from "../../src/sessions/liveStatus.ts";
-import type { LiveStatus } from "../../src/types.ts";
+import type { LiveStatus, SessionTasks } from "../../src/types.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
 const SID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -233,7 +236,7 @@ describe("session status from hook events", () => {
     });
   });
 
-  it("a Stop cut at 16KB has lost its background tasks, and ends the turn as it always did", () => {
+  it("a Stop cut at the byte cap has lost its background tasks, and ends the turn as it always did", () => {
     const text = JSON.stringify({
       session_id: SID,
       hook_event_name: "Stop",
@@ -408,5 +411,214 @@ describe("session status from hook events", () => {
     const events = await drainStatusEvents(dir);
     expect(events.map((e) => e.event)).toEqual(["UserPromptSubmit", "Stop"]);
     expect(readdirSync(dir)).toEqual(["7-7.tmp"]);
+  });
+});
+
+// the payloads of a real run (claude code 2.1.295, `claude -p`): a background Bash, a Monitor and a
+// CronCreate left by one turn. only the paths are changed
+describe("what a session left running", () => {
+  const SLUG = "-Users-you-claude-ws-chat-features";
+  const BASE = {
+    session_id: SID,
+    transcript_path: `/Users/you/.claude/projects/${SLUG}/${SID}.jsonl`,
+    cwd: "/Users/you/claude-ws/chat-features",
+    permission_mode: "default",
+  };
+  const SLEEPER = {
+    id: "bjtknaehh",
+    type: "shell",
+    status: "running",
+    description: "background sleeper",
+    command: "sleep 45",
+  };
+  // a Monitor comes as a shell too
+  const WATCHER = {
+    id: "br6y21j9k",
+    type: "shell",
+    status: "running",
+    description: "tick watcher",
+    command: "while true; do date; sleep 5; done",
+  };
+  const CRON = { id: "73e8c792", schedule: "*/5 * * * *", recurring: true, prompt: "say hi" };
+  const stop = (at: number, tasks: unknown[], crons: unknown[], message = "done") =>
+    parseStatusEvent(
+      {
+        ...BASE,
+        hook_event_name: "Stop",
+        stop_hook_active: false,
+        last_assistant_message: message,
+        background_tasks: tasks,
+        session_crons: crons,
+      },
+      at,
+    ) as StatusEvent;
+  const prompt = (at: number, text: string) =>
+    parseStatusEvent(
+      { ...BASE, hook_event_name: "UserPromptSubmit", prompt: text },
+      at,
+    ) as StatusEvent;
+  const ids = (t: SessionTasks | undefined) => t?.tasks.map((x) => x.id);
+
+  it("reads a command, a Monitor and a wake-up off a Stop, and leaves a subagent to its own rows", () => {
+    const subagent = { id: "a92", type: "subagent", status: "running", agent_type: "general" };
+    const ev = stop(5_000, [SLEEPER, subagent, WATCHER], [CRON]);
+    expect(ev.tasks).toEqual([
+      { id: "bjtknaehh", kind: "command", description: "background sleeper", command: "sleep 45" },
+      {
+        id: "br6y21j9k",
+        kind: "command",
+        description: "tick watcher",
+        command: "while true; do date; sleep 5; done",
+      },
+      {
+        id: "73e8c792",
+        kind: "schedule",
+        description: "say hi",
+        schedule: "*/5 * * * *",
+        recurring: true,
+      },
+    ]);
+    expect(ev.slug).toBe(SLUG);
+    // the subagent still keeps the turn running, exactly as before
+    expect(ev.backgroundAgents).toBe(1);
+    // nothing left is said too, and is not the same as not saying
+    expect(stop(5_000, [], []).tasks).toEqual([]);
+    // one that already ended, and an entry with no id, are not left running
+    expect(
+      stop(5_000, [{ ...SLEEPER, status: "completed" }, { type: "shell" }, "x"], []).tasks,
+    ).toEqual([]);
+    // a ScheduleWakeup: one fire time, in local time
+    expect(
+      stop(
+        5_000,
+        [],
+        [{ id: "c1", schedule: "7 14 12 10 *", recurring: false, prompt: "check the deploy" }],
+      ).tasks,
+    ).toEqual([
+      { id: "c1", kind: "schedule", description: "check the deploy", schedule: "7 14 12 10 *" },
+    ]);
+  });
+
+  it("a Stop cut at the byte cap says nothing about them, and what was known stands", () => {
+    const text = JSON.stringify({
+      ...BASE,
+      hook_event_name: "Stop",
+      last_assistant_message: "x".repeat(EVENT_MAX_BYTES),
+      background_tasks: [SLEEPER],
+      session_crons: [CRON],
+    }).slice(0, EVENT_MAX_BYTES);
+    const cut = parseStatusEvent(parseTruncatedEvent(text), 9_000) as StatusEvent;
+    expect(cut.tasks).toBeUndefined();
+    const known = reduceTasks(undefined, stop(5_000, [SLEEPER], [CRON]));
+    expect(reduceTasks(known, cut)).toBe(known);
+    // an older Claude Code, with no arrays at all
+    expect(
+      parseStatusEvent({ session_id: SID, hook_event_name: "Stop" }, 1)?.tasks,
+    ).toBeUndefined();
+  });
+
+  it("the prompt that wakes a session says which command ended. a Monitor's event does not", () => {
+    const ended = prompt(
+      7_000,
+      `<task-notification>\n<task-id>bjtknaehh</task-id>\n<tool-use-id>toolu_01AnZ2FvFPreLFSxYA7qfvSD</tool-use-id>\n<output-file>/private/tmp/claude-501/${SLUG}/${SID}/tasks/bjtknaehh.output</output-file>\n<status>completed</status>\n<summary>Background command "background sleeper" completed (exit code 0)</summary>\n</task-notification>`,
+    );
+    expect(ended.endedTask).toBe("bjtknaehh");
+    const tick = prompt(
+      7_000,
+      `<task-notification>\n<task-id>br6y21j9k</task-id>\n<summary>Monitor event: "tick watcher"</summary>\n<event>Mon Oct 12 14:08:21 CDT 2026</event>\n</task-notification>`,
+    );
+    expect(tick.endedTask).toBeUndefined();
+    const expired = prompt(
+      7_000,
+      `<task-notification>\n<task-id>br6y21j9k</task-id>\n<summary>Monitor event: "tick watcher"</summary>\n<event>[Monitor expired after 1m with 12 events delivered. Re-arm it if you still need the watch.]</event>\n</task-notification>`,
+    );
+    expect(expired.endedTask).toBeUndefined();
+    // somebody typing about a status is not a notification
+    expect(prompt(7_000, "what does <status>completed</status> mean?").endedTask).toBeUndefined();
+  });
+
+  it("each Stop replaces the list, and a task that was there keeps when it was first seen", () => {
+    let t = reduceTasks(undefined, stop(5_000, [SLEEPER, WATCHER], [CRON]));
+    expect(t).toMatchObject({ at: 5_000, slug: SLUG });
+    expect(t?.tasks.map((x) => [x.id, x.since])).toEqual([
+      ["bjtknaehh", 5_000],
+      ["br6y21j9k", 5_000],
+      ["73e8c792", 5_000],
+    ]);
+    // the sleeper exited: its notification takes it out before the turn it starts has ended
+    t = reduceTasks(t, {
+      sessionId: SID,
+      event: "UserPromptSubmit",
+      at: 50_000,
+      endedTask: "bjtknaehh",
+    });
+    expect(ids(t)).toEqual(["br6y21j9k", "73e8c792"]);
+    // one that is not listed changes nothing: a subagent's end comes the same way
+    expect(
+      reduceTasks(t, { sessionId: SID, event: "UserPromptSubmit", at: 51_000, endedTask: "a92" }),
+    ).toBe(t);
+    const added = { ...SLEEPER, id: "bnew", description: "second sleeper" };
+    t = reduceTasks(t, stop(52_000, [WATCHER, added], [CRON]));
+    expect(t?.at).toBe(52_000);
+    expect(t?.tasks.map((x) => [x.id, x.since])).toEqual([
+      ["br6y21j9k", 5_000],
+      ["bnew", 52_000],
+      ["73e8c792", 5_000],
+    ]);
+    // the Monitor expired: the next Stop no longer lists it
+    t = reduceTasks(t, stop(60_000, [], [CRON]));
+    expect(ids(t)).toEqual(["73e8c792"]);
+    expect(reduceTasks(t, stop(70_000, [], []))).toBeUndefined();
+  });
+
+  it("a /loop is one polling task: its next wake-up has a new id and keeps the first one's start", () => {
+    const wake = (id: string, at: string) => ({
+      id,
+      schedule: at,
+      recurring: false,
+      prompt: "<<autonomous-loop-dynamic>>",
+    });
+    let t = reduceTasks(undefined, stop(1_000, [], [wake("w1", "7 14 12 10 *")]));
+    t = reduceTasks(t, { sessionId: SID, event: "UserPromptSubmit", at: 900_000 });
+    t = reduceTasks(t, stop(910_000, [], [wake("w2", "22 14 12 10 *")]));
+    expect(t?.tasks).toEqual([
+      {
+        id: "w2",
+        kind: "schedule",
+        description: "<<autonomous-loop-dynamic>>",
+        schedule: "22 14 12 10 *",
+        since: 1_000,
+      },
+    ]);
+    // another prompt is another task
+    t = reduceTasks(t, stop(920_000, [], [wake("w2", "22 14 12 10 *"), { ...CRON, id: "c9" }]));
+    expect(t?.tasks.map((x) => [x.id, x.since])).toEqual([
+      ["w2", 1_000],
+      ["c9", 920_000],
+    ]);
+    // and a command is never matched by what it is called
+    const again = reduceTasks(
+      reduceTasks(undefined, stop(1_000, [SLEEPER], [])),
+      stop(2_000, [{ ...SLEEPER, id: "b2" }], []),
+    );
+    expect(again?.tasks[0]?.since).toBe(2_000);
+  });
+
+  it("a subagent's events leave it alone, and the end of the session takes it away", () => {
+    const t = reduceTasks(undefined, stop(5_000, [WATCHER], []));
+    expect(reduceTasks(t, { ...stop(6_000, [], []), agentId: "a1" })).toBe(t);
+    expect(reduceTasks(t, { sessionId: SID, event: "PostToolUse", at: 6_000 })).toBe(t);
+    expect(reduceTasks(t, { sessionId: SID, event: "UserPromptSubmit", at: 6_000 })).toBe(t);
+    expect(reduceTasks(t, { sessionId: SID, event: "SessionEnd", at: 7_000 })).toBeUndefined();
+    // a shell left running still ends the turn: the state is not moved by any of this
+    const started = reduceStatus(undefined, { sessionId: SID, event: "UserPromptSubmit", at: 1 });
+    expect(reduceStatus(started, stop(5_000, [WATCHER], [CRON]))?.state).toBe("waiting");
+  });
+
+  it("a command counts once it has outlived a minute. a wake-up counts at once", () => {
+    const t = reduceTasks(undefined, stop(5_000, [SLEEPER], [CRON]));
+    expect(liveTasks(t, 5_000 + TASK_MIN_MS - 1).map((x) => x.id)).toEqual(["73e8c792"]);
+    expect(liveTasks(t, 5_000 + TASK_MIN_MS).map((x) => x.id)).toEqual(["bjtknaehh", "73e8c792"]);
+    expect(liveTasks(undefined, 5_000)).toEqual([]);
   });
 });

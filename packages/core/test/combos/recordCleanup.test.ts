@@ -16,6 +16,7 @@ import {
   withoutRecord,
 } from "../../src/combos/recordCleanup.ts";
 import { syncComboFiles } from "../../src/combos/sync.ts";
+import { EVENT_MAX_BYTES } from "../../src/sessions/liveStatus.ts";
 import type { Combo } from "../../src/types.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
@@ -41,9 +42,13 @@ function project() {
   const appRoot = path.join(makeSandbox("grove-cleanup-"), "claude-ws");
   const root = path.join(appRoot, "auth-sso");
   cpSync(FIXTURE, root, { recursive: true });
-  // the paths 0.10 wrote are this machine's
+  // the paths 0.10 wrote are this machine's. its status hooks cut an event at 16KB, and 0.16 moved
+  // the cut: they are today's here, so a sync writes only what this file is about
   for (const [name, { text }] of Object.entries(snapshot(root))) {
-    writeFileSync(path.join(root, name), text.replaceAll(THEN, appRoot));
+    writeFileSync(
+      path.join(root, name),
+      text.replaceAll(THEN, appRoot).replaceAll("head -c 16384", `head -c ${EVENT_MAX_BYTES}`),
+    );
   }
   mkdirSync(path.join(root, "cards", "AUTH-1"), { recursive: true });
   writeFileSync(path.join(root, "cards", "AUTH-1", "card.md"), "# Point staging at okta\n");

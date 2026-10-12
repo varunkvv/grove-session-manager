@@ -189,6 +189,29 @@ export interface AgentRun {
   stoppedAt?: number;
 }
 
+/** something a session left running: a background command or Monitor, or a scheduled wake-up */
+export interface SessionTask {
+  id: string;
+  kind: "command" | "schedule";
+  /** command: the description its tool call gave it. schedule: the prompt it will submit */
+  description: string;
+  /** command only */
+  command?: string;
+  /** schedule only: the cron expression, and whether it fires more than once */
+  schedule?: string;
+  recurring?: boolean;
+  /** when grove first saw it at a Stop. a /loop's next wake-up keeps the one before it */
+  since: number;
+}
+
+/** what a session's last whole Stop listed */
+export interface SessionTasks {
+  tasks: SessionTask[];
+  /** the folder its transcript is in, for the output files */
+  slug?: string;
+  at: number;
+}
+
 /**
  * one subagent of a session, as far as anything on disk can say. there is no progress signal in
  * Claude Code - no percentage, no step count - so this is what it did last and when.
