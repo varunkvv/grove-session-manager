@@ -413,6 +413,78 @@ test("the list is live: a session that starts working, then needs him, and a new
   await expect(rows(page)).toHaveCount(46);
 });
 
+test("a session that left a Monitor and a wake-up running is Watching once it asks nothing, with its tasks in the panel", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await open(page);
+  const poll = sid(QUIET + 3);
+  const quiet = row(page, poll);
+  await expect(quiet).not.toHaveAttribute("data-state");
+
+  // the registry lists the other sessions' processes, so it has to list this one's: a session
+  // with no process has nothing running
+  liveSession(fx, { sessionId: poll, kind: "interactive", entrypoint: "claude-vscode" });
+  // its turn ended two minutes ago with a Monitor and a cron left. a Monitor comes as a shell,
+  // and a command counts once it is a minute old
+  hookEvent(
+    fx,
+    poll,
+    "Stop",
+    {
+      last_assistant_message: "Watching the deploy.",
+      background_tasks: [
+        {
+          id: "br6y21j9k",
+          type: "shell",
+          status: "running",
+          description: "deploy watcher",
+          command: "gh run watch",
+        },
+      ],
+      session_crons: [
+        { id: "73e8c792", schedule: "*/5 * * * *", recurring: true, prompt: "say hi" },
+      ],
+    },
+    2 * MIN,
+  );
+  // the turn that ended is his to read first: it is under Needs you like any other
+  await expect(quiet).toHaveAttribute("data-state", "turn");
+  await quiet.click();
+  await expect(panel(page)).toHaveAttribute("data-id", poll);
+  // the panel lists what it left running, whatever the session is at
+  const tasks = panel(page).getByTestId("panel-tasks");
+  await expect(tasks).toContainText("Background tasks");
+  await expect(tasks.getByTestId("panel-task")).toHaveCount(2);
+  await expect(tasks.getByTestId("panel-task").nth(0)).toContainText("deploy watcher");
+  await expect(tasks.getByTestId("panel-task").nth(1)).toContainText("say hi");
+  await expect(tasks.getByTestId("panel-task").nth(1)).toContainText("repeats · */5 * * * *");
+
+  // dismissed, it is not done: under Working as Watching, with what it left on its second line
+  await panel(page).getByTestId("panel-dismiss").click();
+  await expect(quiet).toHaveAttribute("data-state", "watching");
+  await expect(group(page, "working").locator(`[data-id="${poll}"]`)).toHaveCount(1);
+  await expect(quiet.getByTestId("state")).toHaveText("Watching");
+  await expect(quiet.getByTestId("session-tasks")).toHaveText(
+    "2 background tasks · deploy watcher",
+  );
+  // how long it has watched, where a working one says how long its turn has run
+  await expect(quiet).toContainText(/for [23]m/);
+  await expect(panel(page)).toHaveAttribute("data-id", poll);
+  await expect(panel(page).getByTestId("state")).toHaveAttribute("data-state", "watching");
+  await expect(tasks.getByTestId("panel-task")).toHaveCount(2);
+  // it needs nothing, so nothing counts it
+  await expect(projectItem(page, "auth-sso").getByTestId("count")).toHaveText("3");
+
+  // the Monitor expired and the cron was deleted: its next Stop lists nothing
+  hookEvent(fx, poll, "Stop", {
+    last_assistant_message: "The deploy is out.",
+    background_tasks: [],
+    session_crons: [],
+  });
+  await expect(quiet).toHaveAttribute("data-state", "turn");
+  await expect(panel(page).getByTestId("panel-tasks")).toHaveCount(0);
+});
+
 test("Dismiss on a session that stopped days ago leaves the panel on it, down in Older", async () => {
   fx = makeFixture({ withCompanion: true });
   root = writeProject(fx, { name: "auth-sso" }).root;

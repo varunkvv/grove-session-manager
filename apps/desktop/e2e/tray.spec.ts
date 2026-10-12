@@ -97,6 +97,50 @@ test("a working session is listed under what keeps the Mac awake, and a click sh
     .toContain("The Mac can sleep · nothing working");
 });
 
+test("a session that left a wake-up scheduled is watching: it keeps the Mac awake between turns, and a click shows its tasks", async () => {
+  app = await launchApp(setup());
+  const g = await ready(app);
+  // its turn ends with a cron left. a wake-up counts at once, a command would a minute in
+  hookEvent(fx, QUIET, "Stop", {
+    last_assistant_message: "Checking again in five minutes.",
+    background_tasks: [],
+    session_crons: [
+      { id: "73e8c792", schedule: "*/5 * * * *", recurring: true, prompt: "check the export" },
+    ],
+  });
+  // under the line, where a working one would be, with what it left running
+  const row = { label: "csv columns", sublabel: "billing-export · check the export" };
+  await expect.poll(() => g.trayMenu(), { timeout: 15_000 }).toContainEqual(row);
+  const menu = await g.trayMenu();
+  const at = menu.findIndex((i) => i.label === row.label && i.sublabel === row.sublabel);
+  expect(menu[at - 1]).toEqual({
+    label: "Keeping the Mac awake · 1 watching · just started",
+    enabled: false,
+  });
+  // the turn that ended needs him as well: it is counted, and listed above with the other two
+  expect(await g.trayTitle()).toBe("3");
+  await g.closeMain();
+  await expect.poll(() => g.isMainVisible()).toBe(false);
+  await g.trayClick(at);
+  await expect.poll(() => g.isMainVisible()).toBe(true);
+  await expect(app.page.getByTestId("session-panel")).toHaveAttribute("data-id", QUIET);
+  const task = app.page.getByTestId("panel-tasks").getByTestId("panel-task");
+  await expect(task).toHaveCount(1);
+  await expect(task).toContainText("check the export");
+  await expect(task).toContainText("repeats · */5 * * * *");
+
+  // the cron is deleted: its next Stop lists nothing, and nothing keeps the Mac awake
+  hookEvent(fx, QUIET, "Stop", {
+    last_assistant_message: "Stopped checking.",
+    background_tasks: [],
+    session_crons: [],
+  });
+  await expect
+    .poll(async () => (await g.trayMenu()).map((i) => i.label), { timeout: 15_000 })
+    .toContain("The Mac can sleep · nothing working");
+  await expect(app.page.getByTestId("panel-tasks")).toHaveCount(0);
+});
+
 test("the close button hides the window, the app stays, and Open Grove brings it back", async () => {
   app = await launchApp(setup());
   const g = await ready(app);
