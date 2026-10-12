@@ -1,29 +1,28 @@
-## 0.15
+## 0.16
 
-Grove tells you which Claude Code agents need you, and gets you to them. 0.15 adds a screen for what they used.
+Grove tells you which Claude Code agents need you, and gets you to them. 0.16 knows what a session left running.
 
 New:
 
-- **Usage**, under All sessions in the sidebar (`⌘3`, or `⌘K`): API-equivalent cost, agent time and tokens for the last
-  week, month or year, with the change against the range before
-- one chart, bars stacked by project in each project's own colour. a click on a tile picks what it measures, and
-  pointing at a bar says its split
-- under it the same range by project and by model, and sessions, subagents, cache hit rate, the most agents working at
-  once and the longest single turn
-- the cost is what the same tokens would cost on the API at list prices, priced by Grove from the transcripts. on a
-  plan you are not billed this way
-- agent time counts every agent: three subagents working ten minutes at once is thirty minutes
-- the numbers stay when Claude Code deletes an old transcript, so the year view fills in over the year
-- the first launch reads every transcript once to count it. the screen says how far it has got
+- **Background tasks**: a command a session left in the background, a Monitor, a wake-up it scheduled (a cron, a
+  `/loop`). one entry per task, however often it polls
+- a session between turns with one of them is **Watching**: under Working, with a ring that does not pulse, what it
+  left on its second line and how long it has watched
+- the panel lists each task with one line of status: the last line a command wrote, `wakes at 14:07` for a wake-up
+  that fires once, its cron for one that repeats
+- the Mac stays awake while any session is watching, not only while a turn runs. the menu bar counts them,
+  `Keeping the Mac awake · 2 working · 1 watching · for 1h 12m`, and lists them under the working ones
+- a command counts once it is still there a minute after the turn that left it. a one-off script never shows
+- a session whose process is gone holds nothing, and the list is kept across a restart of Grove
 
-None of the numbers show anywhere but on the Usage screen.
+Keep in mind:
 
-Also new: the app icon. Three glass trees on violet, white for the session that needs you. On macOS 26 the system
-draws the glass itself, and the icon follows the Dark, Clear and Tinted icon styles. The menu bar mark is the same
-three trees.
-
-The menu bar's menu now says how many sessions need you on one line, `2 need you`, and lists them by title. A row
-says its kind only when it is not a finished turn, so `Your turn` no longer heads every row.
+- every wake-up counts, however far off. a session left open with a daily cron keeps the Mac awake until you close
+  it or the cron expires. the menu bar names it
+- each wake-up of a `/loop` and each Monitor event is a turn, so that session is under Needs you again when it
+  ends. Dismiss puts it back under Working as Watching
+- the hooks in every project are rewritten once, on the first launch: an event is now kept up to 64KB, since the
+  list comes after the turn's last message
 
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
 verified.

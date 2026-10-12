@@ -138,7 +138,9 @@ shows how many sessions in the archived projects need you. Archiving a project n
 - **Needs you** - the sessions waiting on you, newest first. Two lines each: the title, what it is at, its project,
   where it runs and when, then what it asks. Only these are counted in the sidebar, the menu bar and the dock
 - **Working** - the sessions in a turn now. A second line says what each was last asked, and the time says how long
-  the turn has run (`for 12m`)
+  the turn has run (`for 12m`). With them are the sessions that are **Watching**: between turns, with a
+  [background task](#background-tasks) left running. Their second line says what they left and what it last wrote,
+  and the time says how long they have watched
 - **Today**, **Yesterday**, then the two days before by their weekday - the rest by the day they last moved, newest
   first, one line each: the title, its project, where it runs, when
 - **Older** - what last moved before the start of the day three days ago. It is closed, with its count, until you
@@ -147,9 +149,9 @@ shows how many sessions in the archived projects need you. Archiving a project n
 
 A group with nothing in it is not there: when nothing needs you, the screen starts at Working or Today. The sessions
 of a project are the ones a project's own screen lists (below). Sessions in no project are here too, with their
-folder's name where the others have a project. A scripted one (`claude -p`, an SDK app) is listed only while it runs.
-So is a session of an archived project: it is here while it needs you or is running, and on its project's own screen
-after that.
+folder's name where the others have a project. A scripted one (`claude -p`, an SDK app) is listed only while it runs
+or watches. So is a session of an archived project: it is here while it needs you, is running or is watching, and on
+its project's own screen after that.
 
 The rows under Needs you:
 
@@ -164,15 +166,16 @@ Once a session has a [recap](#recaps), the line under Your turn, Failed and Stop
 do. A Needs permission row keeps the tool: that is exact, and it is what you answer.
 
 Each state keeps one colour everywhere: orange for permission, the accent for your turn, red for failed and stopped,
-green for working. **Dismiss** takes a row out of Needs you. Opening the session in the editor does the same for Needs
+green for working and for watching. Working is a dot that pulses, watching a ring that does not. **Dismiss** takes a
+row out of Needs you. Opening the session in the editor does the same for Needs
 permission, Your turn and Failed, which come back on that session's next event. A Stopped row stays until it is
 dismissed, the session runs again, or a week has passed. A dismissed session is still listed, under the day it last
 moved, and the panel goes on to the next row that needs you.
 
 A click on a project shows **its sessions**, all of them, in the same groups. A row has the title, the state, the
 branch, where it runs and the time, and here Dismiss leaves the panel on the session. The list is the sessions started
-in the project's folder, plus any started in a subfolder or a working copy that needs you or is running now. A
-finished session in a subfolder is found from `⌘K`. The top bar also has **New session**, **Open in VS Code** for the
+in the project's folder, plus any started in a subfolder or a working copy that needs you, is running now or is
+watching. A finished session in a subfolder is found from `⌘K`. The top bar also has **New session**, **Open in VS Code** for the
 project's window, and **Edit**. An archived project's screen is the same list, with `Archived` after its name and
 **Unarchive** where New session is. Both lists follow the sessions as they change, with no refresh.
 
@@ -186,7 +189,9 @@ screen. `⌘K` still searches everything, including the sessions no list has.
 
 **The panel.** A click on a row, in either list, opens that session in a panel on the right half of the window. Its
 head has the state, the title, **Open in VS Code**, the project, the branch, where it runs, and the session's
-[recap](#recaps): Goal, Done, Now, Needs you. Under that is the conversation, opened at its end. A turn is what you
+[recap](#recaps): Goal, Done, Now, Needs you. A session that left something running has **Background tasks** above
+the recap, whatever it is at: each task, how long Grove has seen it, and one line of status. Under that is the
+conversation, opened at its end. A turn is what you
 typed, one line for the work (`12 steps · 3 files edited · 4m`) and the message the turn ended on. A compaction, an
 interrupt and an API error are a line each. The steps inside a turn, its thinking and its tools' output are not shown:
 those are in the editor. The panel gets the last 100 turns, with a prompt cut at 4,000 characters and a message at
@@ -221,10 +226,12 @@ finished turn says so first: `Needs permission`, `Failed` or `Stopped`. Then wha
 `and 2 more` opens All sessions. Closing the window hides it: the app stays in the menu bar until it is quit.
 
 What is working starts with one line that says whether Grove is keeping the Mac awake, how many sessions are working
-and for how long it has held: `Keeping the Mac awake · 3 working · for 1h 12m`, `The Mac can sleep · nothing working`,
-or `Keep awake is off · 2 working` with the switch off. Under it are the sessions that are mid-turn, up to five, each
-with its project and how long its turn has run. They are what keeps the Mac awake. A click on one opens the window on
-it. The times are to the minute: the menu is drawn again once a minute while something works.
+or watching and for how long it has held: `Keeping the Mac awake · 3 working · 1 watching · for 1h 12m`,
+`The Mac can sleep · nothing working`, or `Keep awake is off · 2 working` with the switch off. Under it are the
+sessions that are mid-turn, each with its project and how long its turn has run, then the ones watching, each with
+its project and the first thing it left running. Up to five in all. They are what keeps the Mac awake. A click on one
+opens the window on it. The times are to the minute: the menu is drawn again once a minute while something works or
+watches.
 
 What an agent wrote is not trusted. It is rendered as markdown without any HTML (a `<script>` shows as text), images
 show their description, and only `http(s)` links open - in your browser, never in the app. A recap is plain text: it
@@ -330,14 +337,42 @@ dock badge carries the same count as the menu bar. **Notifications** in Settings
 A notification plays a short chime of Grove's own. macOS decides whether it sounds: System Settings, Notifications,
 Grove.
 
+## Background tasks
+
+A session can leave something running when its turn ends: a command in the background, a Monitor, or a wake-up it
+scheduled (a cron, a `/loop`). Claude Code lists them in the hook that ends each turn, and Grove keeps that list per
+session. One task is one entry however often it polls. A `/loop` is one too, counted from its first wake-up, though it
+schedules a new one each time.
+
+- a wake-up counts as soon as it is listed
+- a command or a Monitor counts once it is still there a minute after the turn that left it. A one-off script that
+  finishes sooner is never shown. Neither is one that starts and ends inside a turn
+- a subagent is not a task here: a turn that waits on one is still Working
+
+A session with a task that counts is **Watching** once its turn has ended and you have looked at it. Until then its
+row is under Needs you like any finished turn, and its panel already lists the tasks. Each wake-up of a `/loop` and
+each Monitor event is a turn, so such a session comes back under Needs you every time one ends.
+
+The line of status under a task is the last line the command wrote, read from the file Claude Code keeps its output
+in (`/tmp/claude-<uid>/<project folder>/<session id>/tasks/<task id>.output`), every ten seconds. That path is
+observed, not documented: when the file is not there the task has no status line and nothing else changes. A wake-up
+says `wakes at 14:07` when it fires once, and `repeats ·` with its cron when it repeats.
+
+A task goes when the session's next turn ends without it, when the session ends, or when its process is gone. The list
+is kept across a restart of Grove.
+
 ## Staying awake
 
-While any session Grove can see is mid-turn, Grove keeps the Mac and its display from going to sleep on their own, and
-lets them go when the last turn ends. It is what `caffeinate -d -i` takes, held by Grove itself: no terminal and no
-extra process. A laptop on battery with its lid shut still sleeps. A session waiting on you does not count. It holds
-only while Grove is running: closing the window keeps Grove in the menu bar, quitting lets go. The menu bar's menu
-says whether it holds, for how long and for which sessions. **Keep the Mac awake while agents work** in Settings
-switches it off.
+While any session Grove can see is mid-turn, or is watching a [background task](#background-tasks), Grove keeps the
+Mac and its display from going to sleep on their own, and lets them go when the last of them is done. It is what
+`caffeinate -d -i` takes, held by Grove itself: no terminal and no extra process. A laptop on battery with its lid
+shut still sleeps. A session waiting on you with nothing left running does not count. It holds only while Grove is
+running: closing the window keeps Grove in the menu bar, quitting lets go. The menu bar's menu says whether it holds,
+for how long and for which sessions. **Keep the Mac awake while agents work** in Settings switches it off.
+
+Every scheduled wake-up counts, however far off: a Mac that sleeps does not fire it. So a session left open with a
+daily cron keeps the Mac awake until the session is closed or the cron expires, which Claude Code does after seven
+days. The menu bar names that session.
 
 ## Opening and starting agents
 
@@ -412,8 +447,9 @@ edited. The workspace file and the references are written when the project is op
   reviewed.json     what you dismissed, as `<project>/<key>`. hand-editable, same treatment
   settings.json     optional: editor, binary paths, appearance, notifications, recaps, keep awake
   .grove/           cache and runtime - safe to delete
-    events/         where session status hooks write
+    events/         where session status hooks write, each event cut at 64KB
     interrupted.json  sessions whose process went away mid-turn, kept for a week
+    live-tasks.json  what each session left running at its last turn's end
     recaps.v1.json  the recaps, by transcript. deleting it has them written again
     session-index.v1.json  the sessions as last read, with each one's usage by day. rebuilt from the transcripts
     usage-retired.json  the usage of sessions whose transcript is gone. this one cannot be rebuilt
@@ -464,7 +500,8 @@ never under Needs you: with the switch on it notifies, and its notification open
 ## After a restart
 
 Quitting Grove changes nothing for the agents. The hooks keep writing events into `.grove/events/`, and Grove reads
-what it missed when it starts. Sessions that went away mid-turn while it was closed are Stopped rows under Needs you,
+what it missed when it starts. What each session had left running is kept too, and the ones whose process is gone
+are dropped. Sessions that went away mid-turn while it was closed are Stopped rows under Needs you,
 without a notification. What you dismissed is in `reviewed.json`.
 
 Closing VS Code ends the sessions in its tabs. One that was between turns shows as `Closed`, and opening it resumes
@@ -564,6 +601,15 @@ What did not run, or does not work:
   copy
 - past six projects or models in a range, the smallest are one row and one grey part of a bar, `Other`
 - the Usage screen was run against fixture transcripts by Playwright, and its numbers against one real machine
+- background tasks were checked on the built app with hand-written hook events: the hold, the menu bar, the row and
+  the panel. no real `/loop` or Monitor session was watched through Grove from start to end
+- a `/loop`'s wake-up was read in Claude Code's hook schema, not seen in a run. a cron was
+- a task you stop from Claude Code's own task list while the session is idle stays in Grove until that session's
+  next turn ends: nothing tells Grove before then
+- a turn whose closing message is longer than 64KB loses the list in its hook, and Grove keeps the one from before
+- a command counts a minute after the turn that left it ended, not a minute after it started
+- a session with a `/loop` or a Monitor is under Needs you again each time a wake-up's turn ends, and notifies when
+  that turn ran over a minute
 - macOS on Apple Silicon only
 
 ## Keyboard
@@ -665,6 +711,11 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **a session says Stopped after its tab was closed** - it was mid-turn when the tab went
 - **a project is missing from the sidebar** - it is archived. it is under Archived, at the foot of the projects
 - **a session is missing from its project's list** - it was started in a subfolder and has finished. it is in `⌘K`
+- **the Mac did not sleep overnight** - a session left open has a wake-up scheduled or a command still running. the
+  menu bar's menu names it under `watching`. close that session, or switch off Keep the Mac awake
+- **a session with a /loop keeps coming back under Needs you** - each wake-up is a turn, and a turn that ends is
+  your turn. Dismiss puts it back under Working as Watching
+- **a background task has no status line** - its output file was not where Grove looks, or it has written nothing
 - **a session is missing from All sessions** - it last moved more than three days ago and is under Older, which is
   closed until you click it (search finds it without that). or its project is archived and it needs nothing: it is
   on that project's own screen. or it is one no list has: a finished one from a subfolder, or a scripted run outside
