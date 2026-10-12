@@ -385,8 +385,9 @@ export function SettingsDialog() {
             />
           </div>
           <span className="mt-1 block text-meta text-fg-3">
-            Held only while a turn is running, in any session Grove can see. The display stays on
-            too. A laptop on battery with its lid shut still sleeps.
+            Held while a turn is running, or a session has a background task or a scheduled wake-up
+            left, in any session Grove can see. The display stays on too. A laptop on battery with
+            its lid shut still sleeps.
           </span>
         </div>
         {error && <p className="text-danger">{error}</p>}

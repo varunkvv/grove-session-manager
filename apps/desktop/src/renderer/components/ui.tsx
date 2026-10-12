@@ -579,7 +579,7 @@ export function Time({ at, since, className }: { at: number; since?: number; cla
   );
 }
 
-type Glyph = Exclude<SessionState, "working">;
+type Glyph = Exclude<SessionState, "working" | "watching">;
 
 const GLYPH: Record<Glyph, ReactNode> = {
   permission: <path d="M8 4.5v4.2M8 11.4v.01" />,
@@ -622,10 +622,30 @@ const STATES: Record<SessionState, { word: string; mark: string; tone: string }>
   failed: { word: KIND_WORD.failed, mark: "text-hue-red", tone: "text-danger" },
   stopped: { word: KIND_WORD.stopped, mark: "text-hue-red", tone: "text-danger" },
   working: { word: "Working", mark: "text-hue-green", tone: "text-working" },
+  // working's green, so it reads as alive: its mark is what tells the two apart
+  watching: { word: "Watching", mark: "text-hue-green", tone: "text-working" },
 };
 
 /** the state's word, for aria labels */
 export const stateWord = (state: SessionState): string => STATES[state].word;
+
+/**
+ * something left running between turns: working's dot as a ring, and still. beside a watching
+ * session's word, and beside each task in its panel
+ */
+export function TaskMark() {
+  return (
+    <svg
+      width={8}
+      height={8}
+      viewBox="0 0 8 8"
+      className="shrink-0 text-hue-green"
+      aria-hidden="true"
+    >
+      <circle cx="4" cy="4" r="3.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
 
 /** where the word gives way to its mark alone: a list beside the panel, the head of a narrow panel */
 const WORD = { list: "hidden @xl:inline", panel: "hidden @md:inline" };
@@ -656,6 +676,8 @@ export function StateLabel({
         {state === "working" ? (
           // a running session breathes
           <span className="live-pulse size-2 rounded-full bg-hue-green" />
+        ) : state === "watching" ? (
+          <TaskMark />
         ) : (
           <Disc glyph={state} size={12} />
         )}

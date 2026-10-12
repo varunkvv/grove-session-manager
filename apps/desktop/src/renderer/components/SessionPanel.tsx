@@ -1,6 +1,6 @@
 import type { ConversationView, TurnView } from "@grove/core/pure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { InboxRowView, ProjectId, RecapView, SessionRef } from "../../shared/ipc.ts";
+import type { InboxRowView, ProjectId, RecapView, SessionRef, TaskView } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import { type SessionState, workLine } from "../logic/views.ts";
 import { openWith, review } from "../state/actions.ts";
@@ -16,6 +16,7 @@ import {
   RuntimeChip,
   Spinner,
   StateLabel,
+  TaskMark,
   Time,
 } from "./ui.tsx";
 
@@ -93,6 +94,38 @@ function Recap({
   );
 }
 
+/**
+ * what the session left running, whatever it is at: each background command, Monitor or wake-up,
+ * how long grove has seen it, and under it one line of status. a command's is the last line it
+ * wrote, which is its own text: plain, one line, never markdown
+ */
+function Tasks({ tasks }: { tasks: readonly TaskView[] }) {
+  return (
+    <div className="mt-4" data-testid="panel-tasks">
+      <h3 className="text-sm font-medium text-fg-4">Background tasks</h3>
+      <ul className="mt-1.5 space-y-1.5">
+        {tasks.map((t) => (
+          <li key={t.id} data-testid="panel-task" data-kind={t.kind}>
+            <div className="flex items-center gap-2">
+              <TaskMark />
+              <span className="min-w-0 flex-1 truncate text-fg-2" title={t.description}>
+                {t.description}
+              </span>
+              <Time at={t.since} since={t.since} />
+            </div>
+            {t.status && (
+              // under the description, past the mark
+              <Mono className="block truncate pl-4 text-fg-3" title={t.status}>
+                {t.status}
+              </Mono>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** one line of what happened, where there is nothing to read: a compaction, an interrupt */
 const QUIET = "text-sm text-fg-4";
 
@@ -162,6 +195,7 @@ export function SessionPanel({
   state,
   at,
   row,
+  tasks,
   onClose,
 }: {
   session: SessionRef;
@@ -171,6 +205,8 @@ export function SessionPanel({
   at: number;
   /** its inbox row, while it needs the person: what Dismiss clears */
   row?: InboxRowView;
+  /** what it left running, when anything */
+  tasks?: readonly TaskView[];
   onClose: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
@@ -242,6 +278,7 @@ export function SessionPanel({
           <RuntimeChip runtime={session.runtime} />
           <Time at={at} />
         </div>
+        {!!tasks?.length && <Tasks tasks={tasks} />}
         {session.recap && (
           <Recap
             recap={session.recap}

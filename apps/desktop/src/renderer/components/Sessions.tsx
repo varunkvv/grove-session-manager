@@ -2,7 +2,13 @@ import { tokenize } from "@grove/core/pure";
 import { useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ProjectId, ProjectView, SessionRef } from "../../shared/ipc.ts";
-import { groupSessions, type SessionItem, startBlocked } from "../logic/views.ts";
+import {
+  groupSessions,
+  type SessionItem,
+  startBlocked,
+  tasksLine,
+  tasksSince,
+} from "../logic/views.ts";
 import {
   drawMore,
   focusScreen,
@@ -35,8 +41,9 @@ import {
 
 /**
  * one line: which session, what it is at when it is at anything, and where it is. a working one
- * has a second, what it was last asked, and so has one a search found by what was said in it: the
- * words around the match. no other row does: the history stays quiet
+ * has a second, what it was last asked. a watching one has what it left running, and one a search
+ * found by what was said in it the words around the match. no other row does: the history stays
+ * quiet
  */
 function SessionRow({
   item,
@@ -57,7 +64,8 @@ function SessionRow({
 }) {
   const { hit, state, snippet } = item;
   const home = screen === "inbox";
-  const doing = state === "working" ? hit.doing : undefined;
+  const watching = state === "watching" ? hit.tasks : undefined;
+  const doing = state === "working" ? hit.doing : watching && tasksLine(watching);
   return (
     <div
       id={optionId(hit.sessionId)}
@@ -114,10 +122,10 @@ function SessionRow({
         <span className={cx("hidden w-[80px]", home ? "@3xl:block" : "@xl:block")}>
           <RuntimeChip runtime={hit.runtime} />
         </span>
-        {/* a working one says how long its turn has run */}
+        {/* a working one says how long its turn has run, a watching one how long it has watched */}
         <Time
           at={item.row?.at ?? hit.activityMs}
-          since={state === "working" ? hit.since : undefined}
+          since={state === "working" ? hit.since : watching && tasksSince(watching)}
           className="w-[60px] text-right"
         />
       </div>
@@ -128,7 +136,11 @@ function SessionRow({
         </p>
       ) : (
         doing && (
-          <p className="mt-0.5 truncate text-fg-4" title={doing} data-testid="session-doing">
+          <p
+            className="mt-0.5 truncate text-fg-4"
+            title={doing}
+            data-testid={watching ? "session-tasks" : "session-doing"}
+          >
             {doing}
           </p>
         )
@@ -194,8 +206,8 @@ const BAND =
   "mb-1 flex h-8 items-center gap-2 rounded-md bg-raised px-3 text-sm font-medium text-fg-2";
 
 /**
- * a list of sessions, all of them: the ones that need the person, the ones working, then the rest
- * by day, with what is older than three days folded away. a project's, or on the home screen
+ * a list of sessions, all of them: the ones that need the person, the ones working or watching,
+ * then the rest by day, with what is older than three days folded away. a project's, or on the home screen
  * (`scope` null) every project's and the ones in none. a click opens a session in the panel beside
  * the list
  */
@@ -266,6 +278,8 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
             state={open.state}
             at={open.row?.at ?? open.hit.activityMs}
             row={open.row}
+            // the list's, not the inbox row's: a session that needs him can have them too
+            tasks={open.hit.tasks}
             // the same as Escape
             onClose={() => perform({ type: "close-panel" })}
           />

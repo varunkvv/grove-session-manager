@@ -7,6 +7,7 @@ import type {
   ProjectId,
   ProjectView,
   SessionHit,
+  TaskView,
 } from "../../shared/ipc.ts";
 
 /** how many of a project's sessions need the person: the count beside it in the sidebar */
@@ -48,8 +49,11 @@ export function projectHues(projects: readonly { id: ProjectId }[]): Map<Project
   return out;
 }
 
-/** what a row says a session is at: the inbox's four, or working. a quiet one says nothing */
-export type SessionState = InboxKind | "working";
+/**
+ * what a row says a session is at: the inbox's four, working, or watching, which is between turns
+ * with a background command or a wake-up left running. a quiet one says nothing
+ */
+export type SessionState = InboxKind | "working" | "watching";
 
 export interface SessionItem {
   hit: SessionHit;
@@ -119,9 +123,9 @@ export function filterSessions(
 
 /**
  * a list of sessions as its screen draws it: the ones that need the person in the inbox's order,
- * the ones working, then the rest by the day they last moved: today, yesterday, the two days
- * before by their weekday, and Older. `hits` is newest first, and each group keeps that. empty
- * groups are left out.
+ * the ones working and with them the ones watching, then the rest by the day they last moved:
+ * today, yesterday, the two days before by their weekday, and Older. `hits` is newest first, and
+ * each group keeps that. empty groups are left out.
  *
  * Older is closed until its header is pressed, and then draws a page at a time. while something
  * is typed it is open whatever its header was left at: a search hides nothing without saying so
@@ -172,6 +176,8 @@ export function groupSessions(i: ListInput): SessionGroup[] {
     const row = rows.get(hit.sessionId)?.[0];
     if (row) groups.needs.push({ hit, state: row.kind, row, snippet });
     else if (hit.live === "running") groups.working.push({ hit, state: "working", snippet });
+    // its turn ended and something it started still runs: it is not done, and it asks nothing
+    else if (hit.tasks?.length) groups.working.push({ hit, state: "watching", snippet });
     else {
       // older than three days: it last moved before the start of the day three days ago
       const back = cuts.findIndex((cut) => hit.activityMs >= cut);
@@ -206,6 +212,21 @@ export function runningFor(since: number, now: number): string {
   const min = Math.floor(Math.max(0, now - since) / 60_000);
   return min < 1 ? "now" : `for ${min < 60 ? `${min}m` : `${Math.floor(min / 60)}h`}`;
 }
+
+/**
+ * a watching row's second line: its one task and what that last said, or how many there are and
+ * the first of them
+ */
+export function tasksLine(tasks: readonly TaskView[]): string {
+  const [first] = tasks;
+  if (!first) return "";
+  if (tasks.length > 1) return `${tasks.length} background tasks · ${first.description}`;
+  return first.status ? `${first.description} · ${first.status}` : first.description;
+}
+
+/** when the oldest of them was first seen: a watching row's time counts from there */
+export const tasksSince = (tasks: readonly TaskView[]): number | undefined =>
+  tasks.length ? Math.min(...tasks.map((t) => t.since)) : undefined;
 
 export interface StartBlock {
   case: "root";

@@ -10,9 +10,17 @@ import {
   runningFor,
   sessionOrder,
   startBlocked,
+  tasksLine,
+  tasksSince,
   workLine,
 } from "../../src/renderer/logic/views.ts";
-import type { InboxRowView, InboxView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
+import type {
+  InboxRowView,
+  InboxView,
+  ProjectView,
+  SessionHit,
+  TaskView,
+} from "../../src/shared/ipc.ts";
 
 // local time, like the days a list is cut into
 const NOW = new Date(2026, 9, 2, 15, 0).getTime();
@@ -167,6 +175,49 @@ describe("a list of sessions", () => {
         .map((x) => String(x).split(" ")[0]),
     );
     expect(sessionOrder(input())).not.toContain("old");
+  });
+
+  it("a quiet session that left something running is watching, under Working. one that needs him stays where it was", () => {
+    const tasks: TaskView[] = [
+      { id: "b1", kind: "command", description: "deploy watcher", since: NOW - 12 * 60_000 },
+    ];
+    const withTasks = hits.map((h) =>
+      ["yesterday", "asks", "working"].includes(h.sessionId) ? { ...h, tasks } : h,
+    );
+    expect(drawn({ hits: withTasks })).toEqual([
+      // it asks something: that is what its row says, and its panel still lists the task
+      ["Needs you", ["cut stopped", "asks turn"]],
+      // in a turn it is working. the one between turns keeps its place by when it last moved
+      ["Working", ["working working", "yesterday watching"]],
+      ["Today", ["today", "seen"]],
+      ["Wednesday", ["wednesday"]],
+      ["Tuesday", ["tuesday"]],
+      ["Older", []],
+    ]);
+    // with nothing in it the list is what it was
+    expect(drawn({ hits: withTasks.map((h) => ({ ...h, tasks: [] })) })).toEqual(drawn());
+  });
+
+  it("a watching row says its one task and what that last wrote, or how many there are", () => {
+    const task = (o: Partial<TaskView> = {}): TaskView => ({
+      id: "b1",
+      kind: "command",
+      description: "deploy watcher",
+      since: 5_000,
+      ...o,
+    });
+    expect(tasksLine([task()])).toBe("deploy watcher");
+    expect(tasksLine([task({ status: "run 4412 in progress" })])).toBe(
+      "deploy watcher · run 4412 in progress",
+    );
+    const wake = task({ id: "c1", kind: "schedule", description: "Autonomous loop", since: 2_000 });
+    expect(tasksLine([task({ status: "run 4412" }), wake])).toBe(
+      "2 background tasks · deploy watcher",
+    );
+    expect(tasksLine([])).toBe("");
+    // its time counts from the oldest of them
+    expect(tasksSince([task(), wake])).toBe(2_000);
+    expect(tasksSince([])).toBeUndefined();
   });
 
   it("Older draws a page when it opens, and as many more as it is told to", () => {
