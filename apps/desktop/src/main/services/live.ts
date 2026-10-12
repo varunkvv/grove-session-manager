@@ -10,12 +10,16 @@ import {
   drainStatusEvents,
   isObject,
   type LiveStatus,
+  liveTasks,
   needsYou,
   type RegistryEntry,
   readJsonGuarded,
   readRegistry,
   reduceAgentRuns,
   reduceStatus,
+  reduceTasks,
+  type SessionTask,
+  type SessionTasks,
   statusEventsDir,
   syncStatusHooks,
   watchStatusHooks,
@@ -29,6 +33,7 @@ import {
   parseInterruptions,
   vanished,
 } from "./interrupted.ts";
+import { claudeTmpRoot, lastLine, taskOutputFile } from "./taskOutput.ts";
 
 const POLL_MS = 10_000;
 const PERSIST_DEBOUNCE_MS = 1000;
@@ -38,6 +43,8 @@ const REGISTRY_RETRY_MS = 30_000;
 export const RUNNING_STALE_MS = 45 * 60_000;
 /** nobody is coming back to a "your turn" from last week */
 export const WAITING_EXPIRY_MS = 3 * 24 * 3_600_000;
+/** with no registry to say a process is gone: what a session left running a day ago, with no Stop since */
+export const TASKS_EXPIRY_MS = 24 * 3_600_000;
 
 export interface LiveServiceOptions {
   stateDir: string;
@@ -50,6 +57,8 @@ export interface LiveServiceOptions {
     agentRuns: ReadonlyMap<string, Readonly<Record<string, AgentRun>>>,
     /** sessions whose process is up, busy or idle. never a state of its own - see applyRegistry. */
     alive: ReadonlySet<string>,
+    /** what each session left running at its last Stop: commands, Monitors, wake-ups */
+    tasks: ReadonlyMap<string, SessionTasks>,
   ) => void;
   /** a session just started needing someone */
   onNeedsYou: (sessionId: string, status: LiveStatus) => void;
@@ -63,6 +72,8 @@ export interface LiveServiceOptions {
   now?: () => number;
   /** the user settings watch's debounce. only a test passes anything else. */
   hookDebounceMs?: number;
+  /** where Claude Code keeps a background command's output. only a test passes one. */
+  tmpRoot?: string;
 }
 
 /**
@@ -92,6 +103,26 @@ export function expireStatuses(
   return changed;
 }
 
+/** live-tasks.json, read back. it is ours, and it can still be another version's */
+export function parseTasks(value: unknown): Map<string, SessionTasks> {
+  const out = new Map<string, SessionTasks>();
+  if (!isObject(value)) return out;
+  for (const [id, t] of Object.entries(value)) {
+    if (!isObject(t) || typeof t.at !== "number" || !Array.isArray(t.tasks)) continue;
+    const tasks = t.tasks.filter(
+      (x): x is SessionTask =>
+        isObject(x) &&
+        typeof x.id === "string" &&
+        typeof x.description === "string" &&
+        typeof x.since === "number" &&
+        (x.kind === "command" || x.kind === "schedule"),
+    );
+    if (tasks.length === 0) continue;
+    out.set(id, { tasks, at: t.at, ...(typeof t.slug === "string" ? { slug: t.slug } : {}) });
+  }
+  return out;
+}
+
 /**
  * what each live session is doing, from the hook events Claude Code drops into `.grove/events/`.
  * the events are the source, this map is only their sum, persisted so a restart keeps the inbox.
@@ -103,6 +134,17 @@ export class LiveService {
   private statuses = new Map<string, LiveStatus>();
   /** by session id: what the subagent hooks said about each of its agents. never persisted. */
   private runs = new Map<string, Record<string, AgentRun>>();
+  /**
+   * by session id: what its last whole Stop said it left running. kept across restarts: between
+   * two wake-ups an hour apart no event says it again
+   */
+  private left = new Map<string, SessionTasks>();
+  private readonly tasksFile: string;
+  private readonly tmpRoot: string;
+  /** by task id: the last line a live command wrote. for its row, it never decides what is alive */
+  private lines = new Map<string, string>();
+  /** how many tasks counted at the last look. a command starts counting a minute in, with no event */
+  private liveCount = 0;
   /** session ids with a live process, from the last registry read */
   private alive = new Set<string>();
   /** the last registry read, by session id: who holds each live session */
@@ -130,6 +172,8 @@ export class LiveService {
     this.opts = opts;
     this.eventsDir = statusEventsDir(opts.stateDir);
     this.stateFile = path.join(opts.stateDir, "live-status.json");
+    this.tasksFile = path.join(opts.stateDir, "live-tasks.json");
+    this.tmpRoot = opts.tmpRoot ?? claudeTmpRoot();
     this.interruptedFile = path.join(opts.stateDir, INTERRUPTED_FILE);
   }
 
@@ -149,6 +193,8 @@ export class LiveService {
     }
     const kept = await readJsonGuarded(this.interruptedFile);
     if (kept.status === "ok") this.interrupted = parseInterruptions(kept.value);
+    const saved = await readJsonGuarded(this.tasksFile);
+    if (saved.status === "ok") this.left = parseTasks(saved.value);
     expireInterruptions(this.interrupted, this.now());
     // a session that was running when the app last looked, and has been quiet since: after a
     // reboot this is the only one of the three signals that is there
@@ -158,7 +204,8 @@ export class LiveService {
     await this.drain(false);
     // before the first paint, so a session that died while the app was closed never shows as running
     await this.syncRegistry();
-    this.opts.onChange(this.statuses, this.runs, this.alive);
+    await this.readTasks();
+    this.opts.onChange(this.statuses, this.runs, this.alive, this.left);
     this.opts.onInterrupted?.(this.interrupted);
     try {
       this.watcher = watch(this.eventsDir, () => void this.drain(true));
@@ -175,6 +222,7 @@ export class LiveService {
       if (expireInterruptions(this.interrupted, this.now()) || expired) this.changed();
       void this.drain(true);
       void this.syncRegistry();
+      void this.readTasks().then((moved) => moved && this.changed());
     }, POLL_MS);
     this.poll.unref?.();
   }
@@ -195,7 +243,16 @@ export class LiveService {
     const back = [...alive].filter((id) => this.interrupted.has(id));
     this.interrupt(gone);
     this.resume(back);
-    if (applied || moved || gone.length > 0 || back.length > 0) this.changed();
+    // a process that is gone has nothing running. this is what stops a session that crashed from
+    // holding the mac awake for good. with no registry to say so, a day without a Stop does
+    let dropped = false;
+    for (const [id, t] of this.left) {
+      if (entries.length > 0 ? !alive.has(id) : this.now() - t.at > TASKS_EXPIRY_MS) {
+        this.left.delete(id);
+        dropped = true;
+      }
+    }
+    if (applied || moved || dropped || gone.length > 0 || back.length > 0) this.changed();
     const background = entries
       .filter((e) => e.kind === "bg")
       .map((e) => `${e.sessionId}:${e.status}`)
@@ -280,6 +337,42 @@ export class LiveService {
     return this.runs;
   }
 
+  /** what each session left running, by session id */
+  tasks(): ReadonlyMap<string, SessionTasks> {
+    return this.left;
+  }
+
+  /** the last line a live command wrote, when its output file was found */
+  taskLine(taskId: string): string | undefined {
+    return this.lines.get(taskId);
+  }
+
+  /**
+   * reads the last line of each live command, for its row. true when one moved, or when how many
+   * tasks count did: a command starts counting a minute in, and no event says that
+   */
+  private async readTasks(): Promise<boolean> {
+    const now = this.now();
+    const lines = new Map<string, string>();
+    let live = 0;
+    for (const [sessionId, t] of this.left) {
+      for (const task of liveTasks(t, now)) {
+        live++;
+        if (task.kind !== "command" || !t.slug) continue;
+        const file = taskOutputFile(this.tmpRoot, t.slug, sessionId, task.id);
+        const line = file && (await lastLine(file));
+        if (line) lines.set(task.id, line);
+      }
+    }
+    const moved =
+      live !== this.liveCount ||
+      lines.size !== this.lines.size ||
+      [...lines].some(([id, line]) => this.lines.get(id) !== line);
+    this.liveCount = live;
+    this.lines = lines;
+    return moved;
+  }
+
   markSeen(sessionIds: Iterable<string>): void {
     let changed = false;
     for (const id of sessionIds) {
@@ -362,8 +455,12 @@ export class LiveService {
       const runs = reduceAgentRuns(this.runs.get(ev.sessionId), ev);
       if (runs) this.runs.set(ev.sessionId, runs);
       else this.runs.delete(ev.sessionId);
+      const tasks = reduceTasks(this.left.get(ev.sessionId), ev);
+      if (tasks) this.left.set(ev.sessionId, tasks);
+      else this.left.delete(ev.sessionId);
     }
     expireStatuses(this.statuses, this.now());
+    await this.readTasks();
     this.changed();
     if (notify) this.notifyEntered(before);
   }
@@ -389,13 +486,16 @@ export class LiveService {
   }
 
   private changed(): void {
-    this.opts.onChange(this.statuses, this.runs, this.alive);
+    this.opts.onChange(this.statuses, this.runs, this.alive, this.left);
     this.opts.onInterrupted?.(this.interrupted);
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
       void writeFileAtomic(this.stateFile, this.persistable()).catch((e) =>
         log.warn("status write:", e),
+      );
+      void writeFileAtomic(this.tasksFile, JSON.stringify(Object.fromEntries(this.left))).catch(
+        (e) => log.warn("tasks write:", e),
       );
       void this.persistInterrupted();
     }, PERSIST_DEBOUNCE_MS);
@@ -416,6 +516,7 @@ export class LiveService {
       // the app is quitting: a write that is only started is lost when the process goes, and the
       // inbox comes back without what changed in its last second
       writeNow(this.stateFile, this.persistable());
+      writeNow(this.tasksFile, JSON.stringify(Object.fromEntries(this.left)));
       writeNow(this.interruptedFile, JSON.stringify(Object.fromEntries(this.interrupted)));
     }
   }
