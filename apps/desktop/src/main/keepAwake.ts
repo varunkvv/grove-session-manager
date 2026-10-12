@@ -1,6 +1,7 @@
-// the mac and its display stay awake while an agent is mid-turn, and are let go when none is. it is
-// what `caffeinate -d -i` takes, held by grove's own process: no child to start, and none to outlive us.
-import type { LiveStatus } from "@grove/core";
+// the mac and its display stay awake while an agent is mid-turn or a session has left something
+// running, and are let go when none is. it is what `caffeinate -d -i` takes, held by grove's own
+// process: no child to start, and none to outlive us.
+import { type LiveStatus, liveTasks, type SessionTasks } from "@grove/core";
 
 /** electron's powerSaveBlocker, as far as this needs it */
 export interface PowerBlocker {
@@ -15,6 +16,23 @@ export interface PowerBlocker {
 export function runningCount(statuses: ReadonlyMap<string, LiveStatus>): number {
   let n = 0;
   for (const s of statuses.values()) if (s.state === "running") n++;
+  return n;
+}
+
+/**
+ * the sessions between turns that left something running: a background command, a Monitor, a
+ * wake-up. every wake-up counts, however far off: a mac that sleeps does not fire it. one that is
+ * mid-turn is runningCount's, so no session is counted twice
+ */
+export function watchingCount(
+  tasks: ReadonlyMap<string, SessionTasks>,
+  statuses: ReadonlyMap<string, LiveStatus>,
+  now: number,
+): number {
+  let n = 0;
+  for (const [id, t] of tasks) {
+    if (statuses.get(id)?.state !== "running" && liveTasks(t, now).length > 0) n++;
+  }
   return n;
 }
 

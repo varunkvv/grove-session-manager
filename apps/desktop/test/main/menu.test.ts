@@ -119,6 +119,8 @@ describe("the tray menu", () => {
         inbox: { rows },
         working: [],
         running: 0,
+        watching: [],
+        watchers: 0,
         awakeSince: null,
         keepAwake: true,
         now: NOW,
@@ -261,6 +263,80 @@ describe("the tray menu", () => {
     ]);
     click(8);
     expect(landed).toEqual([{ view: "inbox" }]);
+  });
+
+  /** sessions between turns that left something running, each with its first task */
+  const watching = (n: number): TrayView["watching"] =>
+    Array.from({ length: n }, (_, i) => ({
+      sessionId: `p${i}`,
+      title: `poll ${i}`,
+      where: "Data objects",
+      tasks: [
+        { id: `t${i}`, kind: "command", description: "deploy watcher", since: NOW - 60_000 },
+        { id: `c${i}`, kind: "schedule", description: "say hi", since: NOW - 60_000 },
+      ],
+    }));
+
+  it("a session that left something running keeps it awake too: counted as watching, under the working ones", () => {
+    const { items, click, opened } = menu([], {
+      working: working(1),
+      running: 1,
+      watching: watching(1),
+      watchers: 1,
+      awakeSince: NOW - 75 * 60_000,
+    });
+    expect(items.slice(2, 6)).toEqual([
+      { label: "Keeping the Mac awake · 1 working · 1 watching · for 1h 15m", enabled: false },
+      { label: "job 0", sublabel: "Chat features · for 12m", click: expect.any(Function) },
+      // what it left running, the first of them
+      { label: "poll 0", sublabel: "Data objects · deploy watcher", click: expect.any(Function) },
+      { type: "separator" },
+    ]);
+    click(4);
+    expect(opened).toEqual(["p0"]);
+  });
+
+  it("nothing in a turn and one watching: the line does not say nothing is working", () => {
+    const held = menu([], { watching: watching(1), watchers: 1, awakeSince: NOW - 3 * 60_000 });
+    expect(held.items[2]?.label).toBe("Keeping the Mac awake · 1 watching · for 3m");
+    const off = menu([], { keepAwake: false, watching: watching(2), watchers: 2 });
+    expect(off.items.slice(2, 5).map((i) => i.label)).toEqual([
+      "Keep awake is off · 2 watching",
+      "poll 0",
+      "poll 1",
+    ]);
+    // a long description is cut like every other line under a row
+    const long = menu([], {
+      watching: [
+        {
+          ...watching(1)[0]!,
+          tasks: [{ id: "t", kind: "command", description: "y".repeat(90), since: 0 }],
+        },
+      ],
+      watchers: 1,
+    });
+    expect(long.items[3]?.sublabel).toHaveLength(80);
+  });
+
+  it("names five across working and watching, working first, then how many more", () => {
+    const { items } = menu([], {
+      working: working(3),
+      running: 3,
+      watching: watching(4),
+      // one more by its tasks than a list can name
+      watchers: 5,
+      awakeSince: NOW - 60_000,
+    });
+    expect(items.slice(2, 10).map((i) => [i.label, i.enabled])).toEqual([
+      ["Keeping the Mac awake · 3 working · 5 watching · for 1m", false],
+      ["job 0", undefined],
+      ["job 1", undefined],
+      ["job 2", undefined],
+      ["poll 0", undefined],
+      ["poll 1", undefined],
+      ["and 2 more", undefined],
+      ["and 1 with no transcript yet", false],
+    ]);
   });
 
   it("a row with no summary is the project name alone", () => {

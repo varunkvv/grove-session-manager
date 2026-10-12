@@ -1,6 +1,6 @@
-import type { LiveStatus } from "@grove/core";
+import { type LiveStatus, type SessionTasks, TASK_MIN_MS } from "@grove/core";
 import { describe, expect, it } from "vitest";
-import { keepAwake, runningCount } from "../../src/main/keepAwake.ts";
+import { keepAwake, runningCount, watchingCount } from "../../src/main/keepAwake.ts";
 
 const status = (state: LiveStatus["state"]): LiveStatus => ({ state, at: 1, lastEventAt: 1 });
 
@@ -25,6 +25,34 @@ describe("keeping the mac awake", () => {
         ]),
       ),
     ).toBe(2);
+  });
+
+  it("counts the sessions between turns that left something running, once it counts", () => {
+    const NOW = 10 * 60_000;
+    const left = (kind: "command" | "schedule", since: number): SessionTasks => ({
+      at: since,
+      tasks: [{ id: "t", kind, description: "poll", since }],
+    });
+    const tasks = new Map([
+      // a Monitor ten minutes in, its session waiting on a person: it still polls
+      ["a", left("command", 0)],
+      // mid-turn: that is runningCount's, not counted twice
+      ["b", left("command", 0)],
+      // a script started seconds ago is not a task yet
+      ["c", left("command", NOW - TASK_MIN_MS + 1)],
+      // a wake-up counts at once, and with no status at all: the session's turn ended long ago
+      ["d", left("schedule", NOW)],
+    ]);
+    const statuses = new Map([
+      ["a", status("waiting")],
+      ["b", status("running")],
+      ["c", status("waiting")],
+    ]);
+    expect(watchingCount(tasks, statuses, NOW)).toBe(2);
+    // a second later the script is a minute old
+    expect(watchingCount(tasks, statuses, NOW + 1)).toBe(3);
+    expect(watchingCount(new Map(), statuses, NOW)).toBe(0);
+    expect(runningCount(statuses)).toBe(1);
   });
 
   it("takes one assertion however often it is told, and gives that one back", () => {

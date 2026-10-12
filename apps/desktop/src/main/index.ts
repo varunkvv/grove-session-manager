@@ -14,7 +14,7 @@ import type { MenuCommandId } from "../shared/ipc.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
-import { keepAwake, runningCount } from "./keepAwake.ts";
+import { keepAwake, runningCount, watchingCount } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import type { TrayView } from "./menuTemplate.ts";
@@ -142,10 +142,16 @@ async function start(): Promise<void> {
       sessions.setLive(statuses, agentRuns, alive, tasks);
       // a session that closed while idle changes no row, and its list still has to say Closed
       projects.sessionsChanged();
-      const running = runningCount(statuses);
-      awake.set(settings.keepAwake !== false && running > 0);
+      const { running, watchers } = holding();
+      awake.set(settings.keepAwake !== false && running + watchers > 0);
       // one with no transcript yet moves no list, and the menu bar still counts it
-      if (running !== trayView?.running || awake.since() !== trayView.awakeSince) showTray();
+      if (
+        running !== trayView?.running ||
+        watchers !== trayView.watchers ||
+        awake.since() !== trayView.awakeSince
+      ) {
+        showTray();
+      }
     },
     onNeedsYou: (sessionId, status) => {
       const row = sessions.byId(sessionId)[0];
@@ -173,6 +179,15 @@ async function start(): Promise<void> {
       sessions.setInterrupted(interrupted);
       projects.interruptedChanged(interrupted);
     },
+  });
+
+  /**
+   * what keeps the mac awake: the turns in flight, and the sessions between turns that left a
+   * command or a wake-up running
+   */
+  const holding = () => ({
+    running: runningCount(live.list()),
+    watchers: watchingCount(live.tasks(), live.list(), Date.now()),
   });
 
   // a background session keeps the environment it was dispatched with. Finder's is no good.
@@ -267,10 +282,12 @@ async function start(): Promise<void> {
     if (drawing) return;
     drawing = true;
     try {
+      const listed = projects.listSessions(null);
       trayView = {
         inbox: projects.inbox(),
-        working: projects.listSessions(null).filter((s) => s.live === "running"),
-        running: runningCount(live.list()),
+        working: listed.filter((s) => s.live === "running"),
+        watching: listed.filter((s) => s.live !== "running" && s.tasks?.length),
+        ...holding(),
         awakeSince: awake.since(),
         keepAwake: settings.keepAwake !== false,
         now: Date.now(),
@@ -288,7 +305,7 @@ async function start(): Promise<void> {
   };
   // "for 12m" is only as fresh as the menu's last build
   const trayTick = setInterval(() => {
-    if (trayView?.running) showTray();
+    if (trayView?.running || trayView?.watchers) showTray();
   }, 60_000);
   trayTick.unref();
 
@@ -366,7 +383,8 @@ async function start(): Promise<void> {
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       settings = s;
       if (recapsMoved) projects.recapsSwitched();
-      awake.set(s.keepAwake !== false && runningCount(live.list()) > 0);
+      const { running, watchers } = holding();
+      awake.set(s.keepAwake !== false && running + watchers > 0);
       showTray();
       electron.nativeTheme.themeSource = s.appearance;
     },

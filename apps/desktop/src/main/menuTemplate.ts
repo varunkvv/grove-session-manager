@@ -112,6 +112,10 @@ export interface TrayView {
   working: ReadonlyArray<Pick<SessionHit, "sessionId" | "title" | "where" | "since">>;
   /** the turns in flight by their status. more than `working` while one has no transcript read yet */
   running: number;
+  /** the sessions between turns that left something running, in the same order: they keep it awake too */
+  watching: ReadonlyArray<Pick<SessionHit, "sessionId" | "title" | "where" | "tasks">>;
+  /** how many of those there are by their tasks, as `running` is to `working` */
+  watchers: number;
   /** when the mac was told to stay awake. null while it may sleep */
   awakeSince: number | null;
   /** the setting */
@@ -138,26 +142,38 @@ function line(s: string, max: number): string {
 
 /**
  * whether the mac is being kept awake and for how long, then the sessions that keep it so: the
- * ones working. the line is always there, so the menu answers it with nothing running too
+ * ones working, then the ones watching, which left a command or a wake-up running. the line is
+ * always there, so the menu answers it with nothing running too
  */
 function workingItems(v: TrayView, a: TrayActions): MenuItemConstructorOptions[] {
-  const count = v.running > 0 ? `${v.running} working` : "nothing working";
+  const count =
+    [v.running > 0 && `${v.running} working`, v.watchers > 0 && `${v.watchers} watching`]
+      .filter(Boolean)
+      .join(" · ") || "nothing working";
   const head =
     v.awakeSince !== null
       ? `Keeping the Mac awake · ${count} · ${span(v.awakeSince, v.now)}`
       : `${v.keepAwake ? "The Mac can sleep" : "Keep awake is off"} · ${count}`;
-  const more = v.working.length - TRAY_WORKING;
-  // running by its status, and no transcript of it read yet: there is no title to give it
-  const unnamed = v.running - v.working.length;
+  // a working one says how long its turn has run, a watching one what it left running
+  const rows = [
+    ...v.working.map((s) => ({
+      s,
+      under: s.since === undefined ? s.where : `${s.where} · ${span(s.since, v.now)}`,
+    })),
+    ...v.watching.map((s) => ({
+      s,
+      under: [s.where, s.tasks?.[0]?.description].filter(Boolean).join(" · "),
+    })),
+  ];
+  const more = rows.length - TRAY_WORKING;
+  // counted by its status, and no transcript of it read yet: there is no title to give it
+  const unnamed = v.running + v.watchers - rows.length;
   return [
     { label: head, enabled: false },
-    ...v.working.slice(0, TRAY_WORKING).map(
-      (s): MenuItemConstructorOptions => ({
+    ...rows.slice(0, TRAY_WORKING).map(
+      ({ s, under }): MenuItemConstructorOptions => ({
         label: line(s.title, 60),
-        sublabel: line(
-          s.since === undefined ? s.where : `${s.where} · ${span(s.since, v.now)}`,
-          80,
-        ),
+        sublabel: line(under, 80),
         click: () => a.open(s.sessionId),
       }),
     ),
@@ -168,7 +184,8 @@ function workingItems(v: TrayView, a: TrayActions): MenuItemConstructorOptions[]
 
 /**
  * the menu bar item's menu: how many sessions need the person and the three newest of them across
- * every project, what is working and whether that keeps the mac awake, then Open Grove and Quit
+ * every project, what is working or watching and whether that keeps the mac awake, then Open Grove
+ * and Quit
  */
 export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOptions[] {
   const n = v.inbox.rows.length;
