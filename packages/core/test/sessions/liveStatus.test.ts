@@ -483,6 +483,8 @@ describe("what a session left running", () => {
     expect(ev.backgroundAgents).toBe(1);
     // nothing left is said too, and is not the same as not saying
     expect(stop(5_000, [], []).tasks).toEqual([]);
+    // one that has not started yet is in flight too
+    expect(stop(5_000, [{ ...SLEEPER, status: "pending" }], []).tasks).toHaveLength(1);
     // one that already ended, and an entry with no id, are not left running
     expect(
       stop(5_000, [{ ...SLEEPER, status: "completed" }, { type: "shell" }, "x"], []).tasks,

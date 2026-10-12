@@ -360,7 +360,9 @@ function leftRunning(payload: Record<string, unknown>): StatusEvent["tasks"] {
   for (const t of Array.isArray(shells) ? shells : []) {
     // a subagent has its own rows, and keeps the turn running: backgroundAgents counts those
     if (!isObject(t) || typeof t.id !== "string" || t.type === "subagent") continue;
-    if (t.status !== undefined && t.status !== "running") continue;
+    // the hook's schema says the array is what is in flight, running or pending. anything else
+    // it might ever say has ended, and must not keep a mac awake
+    if (t.status !== undefined && t.status !== "running" && t.status !== "pending") continue;
     const command = str(t.command);
     out.push({
       id: t.id,
