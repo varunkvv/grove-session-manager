@@ -424,7 +424,7 @@ test("a session that left a Monitor and a wake-up running is Watching once it as
   // the registry lists the other sessions' processes, so it has to list this one's: a session
   // with no process has nothing running
   liveSession(fx, { sessionId: poll, kind: "interactive", entrypoint: "claude-vscode" });
-  // its turn ended two minutes ago with a Monitor and a cron left. a Monitor comes as a shell,
+  // its turn ended three minutes ago with a Monitor and a cron left. a Monitor comes as a shell,
   // and a command counts once it is a minute old
   hookEvent(
     fx,
@@ -445,7 +445,8 @@ test("a session that left a Monitor and a wake-up running is Watching once it as
         { id: "73e8c792", schedule: "*/5 * * * *", recurring: true, prompt: "say hi" },
       ],
     },
-    2 * MIN,
+    // the page's clock moves every half minute, so the row says 2m or 3m
+    3 * MIN + 5_000,
   );
   // the turn that ended is his to read first: it is under Needs you like any other
   await expect(quiet).toHaveAttribute("data-state", "turn");
