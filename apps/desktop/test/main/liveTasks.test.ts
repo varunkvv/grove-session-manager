@@ -233,6 +233,15 @@ describe("what a session left running, in the live service", () => {
     // the machine went down with the session open: no Stop, no SessionEnd, and no process after
     rmSync(path.join(m.registryDir, "1.json"));
     const second = await m.start();
+    // the same wait as any missing process: a restart can land on a rewrite too
+    await until(
+      () => m.tasks().size === 0,
+      () => {
+        m.skip(TASKS_GONE_MS);
+        // not an entry: the folder moved, and the read is still empty
+        writeFileSync(path.join(m.registryDir, "touch.tmp"), String(Date.now()));
+      },
+    );
     expect(second.tasks().size).toBe(0);
     expect(m.tasks().size).toBe(0);
   });

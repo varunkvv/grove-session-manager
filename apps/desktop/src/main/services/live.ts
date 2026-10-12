@@ -230,8 +230,6 @@ export class LiveService {
     if (kept.status === "ok") this.interrupted = parseInterruptions(kept.value);
     const saved = await readJsonGuarded(this.tasksFile);
     if (saved.status === "ok") this.left = parseTasks(saved.value);
-    // what was kept is from before the app closed: the first read decides, with no wait
-    for (const id of this.left.keys()) this.missing.set(id, 0);
     expireInterruptions(this.interrupted, this.now());
     // a session that was running when the app last looked, and has been quiet since: after a
     // reboot this is the only one of the three signals that is there
