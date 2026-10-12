@@ -48,14 +48,15 @@ async function until(check: () => boolean, again: () => void) {
   }
 }
 
-function machine() {
+function machine(o: { registry?: boolean } = {}) {
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-live-tasks-")));
   const stateDir = path.join(dir, "state");
   const events = path.join(stateDir, "events");
   const registryDir = path.join(dir, "claude", "sessions");
   const tmpRoot = path.join(dir, "tmp", "claude-501");
   mkdirSync(events, { recursive: true });
-  mkdirSync(registryDir, { recursive: true });
+  // without it there is no registry at all: an older Claude Code, another config folder
+  if (o.registry !== false) mkdirSync(registryDir, { recursive: true });
   let n = 0;
   /** a Stop as the hook drops it, `agoMs` old: a task's `since` is its file's mtime */
   const stop = (sessionId: string, tasks: unknown[], crons: unknown[], agoMs = 0) => {
@@ -109,6 +110,7 @@ function machine() {
 describe("what a session left running, in the live service", () => {
   it("reaches the rows with the last line its command wrote, and goes when a Stop lists nothing", async () => {
     const m = machine();
+    m.register("1", SID.poll);
     m.stop(SID.poll, [WATCHER], [CRON], 2 * MIN);
     m.output(
       SID.poll,
@@ -136,6 +138,7 @@ describe("what a session left running, in the live service", () => {
 
   it("a command under a minute old is kept, and not read yet", async () => {
     const m = machine();
+    m.register("1", SID.poll);
     m.stop(SID.poll, [WATCHER], []);
     m.output(SID.poll, WATCHER.id, "tick\n");
     const live = await m.start();
@@ -145,6 +148,7 @@ describe("what a session left running, in the live service", () => {
 
   it("survives a restart: between two wake-ups an hour apart no event says it again", async () => {
     const m = machine();
+    m.register("1", SID.poll);
     m.stop(SID.poll, [], [CRON], 5 * MIN);
     const first = await m.start();
     const since = first.tasks().get(SID.poll)?.tasks[0]?.since;
@@ -189,8 +193,22 @@ describe("what a session left running, in the live service", () => {
     expect([...m.tasks().keys()]).toEqual([SID.other]);
   });
 
-  it("with no registry at all, is kept for a day after its last Stop and no longer", async () => {
+  it("after a reboot nothing is alive, and nothing is held: an empty registry that is there says so", async () => {
     const m = machine();
+    m.register("1", SID.poll);
+    m.stop(SID.poll, [], [CRON]);
+    const first = await m.start();
+    expect(m.ids(SID.poll)).toEqual(["73e8c792"]);
+    first.dispose();
+    // the machine went down with the session open: no Stop, no SessionEnd, and no process after
+    rmSync(path.join(m.registryDir, "1.json"));
+    const second = await m.start();
+    expect(second.tasks().size).toBe(0);
+    expect(m.tasks().size).toBe(0);
+  });
+
+  it("with no registry at all, is kept for a day after its last Stop and no longer", async () => {
+    const m = machine({ registry: false });
     m.stop(SID.poll, [], [CRON], TASKS_EXPIRY_MS + MIN);
     m.stop(SID.other, [], [CRON], TASKS_EXPIRY_MS - MIN);
     await m.start();

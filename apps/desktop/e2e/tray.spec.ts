@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { type Fixture, hookEvent, makeFixture, writeSession } from "./helpers/fixture.ts";
 import { groveTest, type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
-import { writeProject } from "./helpers/project.ts";
+import { liveSession, writeProject } from "./helpers/project.ts";
 
 const IDP = "aaaaaaaa-0000-4000-8000-000000000001";
 const EXPORT = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -100,6 +100,8 @@ test("a working session is listed under what keeps the Mac awake, and a click sh
 test("a session that left a wake-up scheduled is watching: it keeps the Mac awake between turns, and a click shows its tasks", async () => {
   app = await launchApp(setup());
   const g = await ready(app);
+  // its process is up: one that is gone has nothing running
+  liveSession(fx, { sessionId: QUIET, kind: "interactive", entrypoint: "claude-vscode" });
   // its turn ends with a cron left. a wake-up counts at once, a command would a minute in
   hookEvent(fx, QUIET, "Stop", {
     last_assistant_message: "Checking again in five minutes.",

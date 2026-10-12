@@ -43,7 +43,7 @@ const REGISTRY_RETRY_MS = 30_000;
 export const RUNNING_STALE_MS = 45 * 60_000;
 /** nobody is coming back to a "your turn" from last week */
 export const WAITING_EXPIRY_MS = 3 * 24 * 3_600_000;
-/** with no registry to say a process is gone: what a session left running a day ago, with no Stop since */
+/** with no registry at all to say a process is gone: what a session left running a day ago, with no Stop since */
 export const TASKS_EXPIRY_MS = 24 * 3_600_000;
 
 export interface LiveServiceOptions {
@@ -244,10 +244,13 @@ export class LiveService {
     this.interrupt(gone);
     this.resume(back);
     // a process that is gone has nothing running. this is what stops a session that crashed from
-    // holding the mac awake for good. with no registry to say so, a day without a Stop does
+    // holding the mac awake for good. unlike a status, an empty read counts while the registry is
+    // there: after a reboot nothing is alive, and nothing else would let go for a day. a Claude
+    // Code that lists what it left running keeps a registry. with none, a day without a Stop does
+    const registry = entries.length > 0 || existsSync(this.opts.registryDir);
     let dropped = false;
     for (const [id, t] of this.left) {
-      if (entries.length > 0 ? !alive.has(id) : this.now() - t.at > TASKS_EXPIRY_MS) {
+      if (registry ? !alive.has(id) : this.now() - t.at > TASKS_EXPIRY_MS) {
         this.left.delete(id);
         dropped = true;
       }
