@@ -45,6 +45,11 @@ export const RUNNING_STALE_MS = 45 * 60_000;
 export const WAITING_EXPIRY_MS = 3 * 24 * 3_600_000;
 /** with no registry at all to say a process is gone: what a session left running a day ago, with no Stop since */
 export const TASKS_EXPIRY_MS = 24 * 3_600_000;
+/**
+ * a registry file read while Claude Code rewrites it has no entry in it, and nothing says the tasks
+ * again for up to an hour: a process is gone once it has been missing this long
+ */
+export const TASKS_GONE_MS = 30_000;
 
 export interface LiveServiceOptions {
   stateDir: string;
@@ -103,6 +108,34 @@ export function expireStatuses(
   return changed;
 }
 
+/**
+ * the sessions whose tasks to let go of: their process is gone, which is what stops a session that
+ * crashed from holding the mac awake for good. `missing` is when each was first not alive, kept
+ * between reads. with no registry at all nothing says a process is gone, and a day with no Stop does
+ */
+export function goneTasks(
+  left: ReadonlyMap<string, SessionTasks>,
+  alive: ReadonlySet<string>,
+  registry: boolean,
+  missing: Map<string, number>,
+  now: number,
+): string[] {
+  for (const id of missing.keys()) if (!left.has(id) || alive.has(id)) missing.delete(id);
+  const gone: string[] = [];
+  for (const [id, t] of left) {
+    if (!registry) {
+      if (now - t.at > TASKS_EXPIRY_MS) gone.push(id);
+      continue;
+    }
+    if (alive.has(id)) continue;
+    const since = missing.get(id) ?? now;
+    missing.set(id, since);
+    if (now - since >= TASKS_GONE_MS) gone.push(id);
+  }
+  for (const id of gone) missing.delete(id);
+  return gone;
+}
+
 /** live-tasks.json, read back. it is ours, and it can still be another version's */
 export function parseTasks(value: unknown): Map<string, SessionTasks> {
   const out = new Map<string, SessionTasks>();
@@ -145,6 +178,8 @@ export class LiveService {
   private lines = new Map<string, string>();
   /** how many tasks counted at the last look. a command starts counting a minute in, with no event */
   private liveCount = 0;
+  /** by session id: when a session with tasks was first not alive. see goneTasks */
+  private missing = new Map<string, number>();
   /** session ids with a live process, from the last registry read */
   private alive = new Set<string>();
   /** the last registry read, by session id: who holds each live session */
@@ -195,6 +230,8 @@ export class LiveService {
     if (kept.status === "ok") this.interrupted = parseInterruptions(kept.value);
     const saved = await readJsonGuarded(this.tasksFile);
     if (saved.status === "ok") this.left = parseTasks(saved.value);
+    // what was kept is from before the app closed: the first read decides, with no wait
+    for (const id of this.left.keys()) this.missing.set(id, 0);
     expireInterruptions(this.interrupted, this.now());
     // a session that was running when the app last looked, and has been quiet since: after a
     // reboot this is the only one of the three signals that is there
@@ -243,19 +280,15 @@ export class LiveService {
     const back = [...alive].filter((id) => this.interrupted.has(id));
     this.interrupt(gone);
     this.resume(back);
-    // a process that is gone has nothing running. this is what stops a session that crashed from
-    // holding the mac awake for good. unlike a status, an empty read counts while the registry is
-    // there: after a reboot nothing is alive, and nothing else would let go for a day. a Claude
-    // Code that lists what it left running keeps a registry. with none, a day without a Stop does
+    // a process that is gone has nothing running. unlike a status, an empty read counts while the
+    // registry is there: after a reboot nothing is alive, and nothing else would let go for a day.
+    // a Claude Code that lists what it left running keeps a registry
     const registry = entries.length > 0 || existsSync(this.opts.registryDir);
-    let dropped = false;
-    for (const [id, t] of this.left) {
-      if (registry ? !alive.has(id) : this.now() - t.at > TASKS_EXPIRY_MS) {
-        this.left.delete(id);
-        dropped = true;
-      }
+    const dropped = goneTasks(this.left, alive, registry, this.missing, this.now());
+    for (const id of dropped) this.left.delete(id);
+    if (applied || moved || dropped.length > 0 || gone.length > 0 || back.length > 0) {
+      this.changed();
     }
-    if (applied || moved || dropped || gone.length > 0 || back.length > 0) this.changed();
     const background = entries
       .filter((e) => e.kind === "bg")
       .map((e) => `${e.sessionId}:${e.status}`)

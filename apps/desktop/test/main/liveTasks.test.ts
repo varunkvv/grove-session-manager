@@ -12,7 +12,13 @@ import os from "node:os";
 import path from "node:path";
 import type { SessionTasks } from "@grove/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { LiveService, parseTasks, TASKS_EXPIRY_MS } from "../../src/main/services/live.ts";
+import {
+  goneTasks,
+  LiveService,
+  parseTasks,
+  TASKS_EXPIRY_MS,
+  TASKS_GONE_MS,
+} from "../../src/main/services/live.ts";
 import { claudeTmpRoot, lastLine, taskOutputFile } from "../../src/main/services/taskOutput.ts";
 
 const SID = {
@@ -88,12 +94,18 @@ function machine(o: { registry?: boolean } = {}) {
     writeFileSync(file, text);
   };
   let seen: ReadonlyMap<string, SessionTasks> = new Map();
+  /** how far the service's clock runs ahead of the real one */
+  let ahead = 0;
+  const skip = (ms: number) => {
+    ahead += ms;
+  };
   const start = async () => {
     const live = new LiveService({
       stateDir,
       claudeSettingsFile: path.join(dir, "claude", "settings.json"),
       registryDir,
       tmpRoot,
+      now: () => Date.now() + ahead,
       onChange: (_statuses, _runs, _alive, tasks) => {
         seen = new Map(tasks);
       },
@@ -104,7 +116,7 @@ function machine(o: { registry?: boolean } = {}) {
     return live;
   };
   const ids = (sessionId: string) => seen.get(sessionId)?.tasks.map((t) => t.id);
-  return { stateDir, registryDir, stop, register, output, start, ids, tasks: () => seen };
+  return { stateDir, registryDir, stop, register, output, start, skip, ids, tasks: () => seen };
 }
 
 describe("what a session left running, in the live service", () => {
@@ -186,11 +198,29 @@ describe("what a session left running, in the live service", () => {
     expect([...m.tasks().keys()].sort()).toEqual([SID.poll, SID.other]);
     // the other session is still up: an empty registry would say nothing at all
     rmSync(path.join(m.registryDir, "1.json"));
+    // one read without it is not enough: it has to stay missing
     await until(
       () => !m.tasks().has(SID.poll),
-      () => m.register("2", SID.other),
+      () => {
+        m.skip(TASKS_GONE_MS);
+        m.register("2", SID.other);
+      },
     );
     expect([...m.tasks().keys()]).toEqual([SID.other]);
+  });
+
+  it("a read that misses a live session keeps its tasks: its file was being rewritten", () => {
+    const left = new Map([[SID.poll, { at: 0, tasks: [] }]]);
+    const missing = new Map<string, number>();
+    const alive = new Set([SID.poll]);
+    expect(goneTasks(left, new Set(), true, missing, 1000)).toEqual([]);
+    expect(goneTasks(left, new Set(), true, missing, 1000 + TASKS_GONE_MS - 1)).toEqual([]);
+    // back in the next read: the wait starts over
+    expect(goneTasks(left, alive, true, missing, 1000 + TASKS_GONE_MS)).toEqual([]);
+    expect(missing.size).toBe(0);
+    expect(goneTasks(left, new Set(), true, missing, 2 * TASKS_GONE_MS)).toEqual([]);
+    expect(goneTasks(left, new Set(), true, missing, 3 * TASKS_GONE_MS)).toEqual([SID.poll]);
+    expect(missing.size).toBe(0);
   });
 
   it("after a reboot nothing is alive, and nothing is held: an empty registry that is there says so", async () => {

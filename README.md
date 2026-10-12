@@ -359,7 +359,7 @@ in (`/tmp/claude-<uid>/<project folder>/<session id>/tasks/<task id>.output`), e
 observed, not documented: when the file is not there the task has no status line and nothing else changes. A wake-up
 says `wakes at 14:07` when it fires once, and `repeats ·` with its cron when it repeats.
 
-A task goes when the session's next turn ends without it, when the session ends, or when its process is gone. The list
+A task goes when the session's next turn ends without it, when the session ends, or when its process has been gone for half a minute. The list
 is kept across a restart of Grove.
 
 ## Staying awake
