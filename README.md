@@ -175,9 +175,10 @@ moved, and the panel goes on to the next row that needs you.
 A click on a project shows **its sessions**, all of them, in the same groups. A row has the title, the state, the
 branch, where it runs and the time, and here Dismiss leaves the panel on the session. The list is the sessions started
 in the project's folder, plus any started in a subfolder or a working copy that needs you, is running now or is
-watching. A finished session in a subfolder is found from `⌘K`. The top bar also has **New session**, **Open in VS Code** for the
-project's window, and **Edit**. An archived project's screen is the same list, with `Archived` after its name and
-**Unarchive** where New session is. Both lists follow the sessions as they change, with no refresh.
+watching. A finished session in a subfolder is found from `⌘K`. The top bar also has **New session**,
+**Open in VS Code** for the project's window, and **Edit**. An archived project's screen is the same list, with
+`Archived` after its name and **Unarchive** where New session is. Both lists follow the sessions as they change, with
+no refresh.
 
 **Search** is the field in the top bar, on both screens: every session on All sessions, the project's on a project's
 screen. Typing narrows the rows at once to the ones whose title, prompt or branch has every word typed (on All
@@ -349,9 +350,9 @@ schedules a new one each time.
   finishes sooner is never shown. Neither is one that starts and ends inside a turn
 - a subagent is not a task here: a turn that waits on one is still Working
 
-A session with a task that counts is **Watching** once its turn has ended and you have looked at it. Until then its
-row is under Needs you like any finished turn, and its panel already lists the tasks. Each wake-up of a `/loop` and
-each Monitor event is a turn, so such a session comes back under Needs you every time one ends.
+A session with a task that counts is **Watching** once its turn has ended and its row is dismissed or opened. Until
+then its row is under Needs you like any finished turn, and its panel already lists the tasks. Each wake-up of a
+`/loop` and each Monitor event is a turn, so such a session comes back under Needs you every time one ends.
 
 The line of status under a task is the last line the command wrote, read from the file Claude Code keeps its output
 in (`/tmp/claude-<uid>/<project folder>/<session id>/tasks/<task id>.output`), every ten seconds. That path is
@@ -371,8 +372,8 @@ running: closing the window keeps Grove in the menu bar, quitting lets go. The m
 for how long and for which sessions. **Keep the Mac awake while agents work** in Settings switches it off.
 
 Every scheduled wake-up counts, however far off: a Mac that sleeps does not fire it. So a session left open with a
-daily cron keeps the Mac awake until the session is closed or the cron expires, which Claude Code does after seven
-days. The menu bar names that session.
+daily cron keeps the Mac awake until the session is closed or the cron expires, which Claude Code does to a recurring
+one after seven days. The menu bar names that session.
 
 ## Opening and starting agents
 
@@ -712,7 +713,7 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **a project is missing from the sidebar** - it is archived. it is under Archived, at the foot of the projects
 - **a session is missing from its project's list** - it was started in a subfolder and has finished. it is in `⌘K`
 - **the Mac did not sleep overnight** - a session left open has a wake-up scheduled or a command still running. the
-  menu bar's menu names it under `watching`. close that session, or switch off Keep the Mac awake
+  menu bar's menu counts it as watching and names it. close that session, or switch off Keep the Mac awake
 - **a session with a /loop keeps coming back under Needs you** - each wake-up is a turn, and a turn that ends is
   your turn. Dismiss puts it back under Working as Watching
 - **a background task has no status line** - its output file was not where Grove looks, or it has written nothing
