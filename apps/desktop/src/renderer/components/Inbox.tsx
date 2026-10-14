@@ -6,6 +6,7 @@ import {
   cx,
   Highlighted,
   Icon,
+  NeedsLine,
   ProjectMark,
   RuntimeChip,
   StateLabel,
@@ -17,8 +18,9 @@ import {
 const openSession = (row: InboxRowView) => openWith(row.key, row.open, row.title);
 
 /**
- * a session that needs the person, on the home screen: two lines, which session and what it is at,
- * then what it asks at full width. the rows of Needs you there, above every other session
+ * a session that needs the person, on the home screen: which session and what it is at, what it is
+ * for, then what it asks at full width. the rows of Needs you there, above every other session.
+ * with no description yet, what it asks gets two lines as it did
  */
 export function InboxRow({
   row,
@@ -52,7 +54,8 @@ export function InboxRow({
       data-active={active || undefined}
       data-open={open || undefined}
       className={cx(
-        "cv-row group fade border-b border-line px-3 py-2 last:border-b-0",
+        "group fade border-b border-line px-3 py-2 last:border-b-0",
+        row.description && row.summary ? "cv-tall" : "cv-row",
         // the open row is marked whoever moved last. hover and the keyboard's row are the lighter grey
         open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
       )}
@@ -122,16 +125,30 @@ export function InboxRow({
           <Highlighted text={snippet} tokens={tokens} />
         </p>
       ) : (
-        row.summary && (
+        row.description && (
           <p
-            className="mt-0.5 line-clamp-2 text-fg-2"
-            title={row.summary}
-            data-testid="inbox-summary"
+            className="mt-0.5 truncate text-fg-2"
+            title={row.description}
+            data-testid="session-description"
           >
-            {row.summary}
+            <Highlighted text={row.description} tokens={tokens} />
           </p>
         )
       )}
+      {row.summary &&
+        (row.description ? (
+          <NeedsLine state={row.kind} text={row.summary} />
+        ) : (
+          !snippet && (
+            <p
+              className="mt-0.5 line-clamp-2 text-fg-2"
+              title={row.summary}
+              data-testid="inbox-summary"
+            >
+              {row.summary}
+            </p>
+          )
+        ))}
     </div>
   );
 }

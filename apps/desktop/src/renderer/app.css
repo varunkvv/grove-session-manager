@@ -206,10 +206,14 @@ input[type="checkbox"]:focus-visible {
   border-color: var(--color-line);
 }
 
-/* a long list only lays out the rows near the window. two lines in the inbox, one in a project's sessions */
+/* a long list only lays out the rows near the window: a row of one line, two, or three */
 .cv-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 57px;
+}
+.cv-tall {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 79px;
 }
 .cv-line {
   content-visibility: auto;

@@ -260,10 +260,12 @@ export class ProjectsService {
       typeof scope === "string"
         ? (r: SessionRow) => rowHaystack({ ...r, comboName: undefined, cwdBase: undefined })
         : rowHaystack;
-    // found by what was asked in it, not by its title: that prompt is why the row is there. on
-    // the home screen one found by its branch says the branch: a row there shows it nowhere else
+    // found by what was asked in it, not by its title or what it is for: that prompt is why the
+    // row is there. on the home screen one found by its branch says the branch: a row there shows
+    // it nowhere else
     const why = (r: SessionRow) =>
-      snippetAround(r.title ?? r.firstPrompt ?? "", tokens)
+      snippetAround(r.title ?? r.firstPrompt ?? "", tokens) ||
+      snippetAround(r.description ?? "", tokens)
         ? undefined
         : (snippetAround(r.lastPrompt ?? "", tokens) ??
           snippetAround(r.firstPrompt ?? "", tokens) ??

@@ -647,6 +647,37 @@ export function TaskMark() {
   );
 }
 
+/**
+ * what a session that needs the person asks of them, under its description: one line, after a
+ * small turn-arrow in the state's colour. the arrow is what keeps it from reading as a second
+ * description
+ */
+export function NeedsLine({ state, text }: { state: SessionState; text: string }) {
+  return (
+    <p className="mt-0.5 flex min-w-0 items-center gap-1.5" title={text}>
+      <svg
+        width={10}
+        height={10}
+        viewBox="0 0 10 10"
+        className={cx("shrink-0", STATES[state].mark)}
+        aria-hidden="true"
+      >
+        <path
+          d="M2 1.5v3.5a1.5 1.5 0 0 0 1.5 1.5H8.5M6.5 4.5l2 2-2 2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="min-w-0 truncate text-fg-3" data-testid="inbox-summary">
+        {text}
+      </span>
+    </p>
+  );
+}
+
 /** where the word gives way to its mark alone: a list beside the panel, the head of a narrow panel */
 const WORD = { list: "hidden @xl:inline", panel: "hidden @md:inline" };
 
@@ -922,13 +953,14 @@ const RECAP_ROWS: ReadonlyArray<[keyof Recap, string]> = [
  * the eye lands on. the lines are plain text on purpose. a model wrote them from an agent's
  * output, so they are never markdown and never a link
  */
-export function RecapBlock({ lines }: { lines: Recap }) {
+export function RecapBlock({ lines, goal = true }: { lines: Recap; goal?: boolean }) {
   return (
     <dl
       data-testid="recap"
       className="selectable space-y-1.5 rounded-lg bg-accent-soft px-3 py-2.5 @md:px-4 @md:py-3"
     >
-      {RECAP_ROWS.map(([key, label]) => (
+      {/* a session's description says what it is for, and is not written again every turn */}
+      {RECAP_ROWS.filter(([key]) => goal || key !== "goal").map(([key, label]) => (
         // the label runs into its line in a narrow panel, where every row of text counts, and
         // has a column of its own once there is room
         <div key={key} className="@md:grid @md:grid-cols-[72px_1fr] @md:gap-x-3">

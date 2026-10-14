@@ -249,7 +249,7 @@ describe("a list of sessions", () => {
     expect(older({ peek: "today" })).toMatchObject({ open: false, items: [] });
   });
 
-  it("the filter narrows by title, prompt and branch, every word, and leaves empty groups out", () => {
+  it("the filter narrows by title, description, prompt and branch, every word, and leaves empty groups out", () => {
     expect(drawn({ query: "login" })).toEqual([
       ["Needs you", ["asks turn"]],
       ["Today", ["today"]],
@@ -259,6 +259,11 @@ describe("a list of sessions", () => {
     expect(drawn({ query: "nothing like it" })).toEqual([]);
     expect(filterSessions(hits, "  ")).toHaveLength(hits.length);
     expect(sessionOrder(input({ query: "login" }))).toEqual(["asks", "today", "yesterday"]);
+    // and by what the session is for, which its title may not say
+    const described = [
+      hit("a", { title: "Ship 0.16", description: "Releases the okta login fix." }),
+    ];
+    expect(filterSessions(described, "okta fix").map((h) => h.sessionId)).toEqual(["a"]);
   });
 
   it("main's answer is joined in by session id: what it found in what was said, with the words around it", () => {

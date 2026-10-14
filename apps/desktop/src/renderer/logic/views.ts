@@ -104,8 +104,9 @@ export interface ListInput {
 }
 
 /**
- * the search, as far as the page can answer it at once: every word typed is in the title, a prompt
- * or the branch, and on the home screen (`home`) the project's name. what was said is main's
+ * the search, as far as the page can answer it at once: every word typed is in the title, the
+ * description, a prompt or the branch, and on the home screen (`home`) the project's name. what was
+ * said is main's
  */
 export function filterSessions(
   hits: readonly SessionHit[],
@@ -116,7 +117,7 @@ export function filterSessions(
   if (words.length === 0) return [...hits];
   return hits.filter((h) => {
     const hay =
-      `${h.title}\n${h.prompt ?? ""}\n${h.branch ?? ""}\n${home ? h.where : ""}`.toLowerCase();
+      `${h.title}\n${h.description ?? ""}\n${h.prompt ?? ""}\n${h.branch ?? ""}\n${home ? h.where : ""}`.toLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }

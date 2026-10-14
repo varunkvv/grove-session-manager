@@ -6,8 +6,8 @@ import path from "node:path";
  * plays the supervisor from a JSON file: `agents --json --all` prints it, `stop <id>` takes the
  * worker off the row, and `--bg` adds a row - or refuses, like 2.1.281 does in a folder the CLI
  * has not trusted, while the `untrusted` marker file exists. `-p` is the recap call: it logs the
- * prompt it was sent on stdin and answers from the `recap` file, by the first line of that file's
- * JSON map that the prompt holds. node, not sh: a prompt is typed text, quotes and newlines and
+ * prompt it was sent on stdin and answers from the `recap` file, by the first entry of that file's
+ * JSON list whose `when` the prompt holds. a title call goes the same way. node, not sh: a prompt is typed text, quotes and newlines and
  * all, and the log has to hold it exactly.
  */
 export interface FakeClaude {
@@ -54,7 +54,7 @@ if (input !== undefined) {
     process.stderr.write("Not logged in\\n");
     process.exit(1);
   }
-  const hit = answers.find((a) => input.includes(a.when));
+  const hit = answers.find((a) => [].concat(a.when).every((w) => input.includes(w)));
   if (!hit) process.exit(1);
   setTimeout(() => {
     process.stdout.write(hit.say);
@@ -99,8 +99,8 @@ process.exit(0);
 }
 
 export interface FakeRecap {
-  /** text the prompt holds: a session's title, its last message */
-  when: string;
+  /** text the prompt holds: a session's title, its last message. a list: all of them */
+  when: string | string[];
   /** what haiku says back, whole */
   say: string;
   /** how long it takes */
@@ -111,6 +111,13 @@ export interface FakeRecap {
 export function setFakeRecaps(fake: FakeClaude, answers: FakeRecap[]): void {
   writeFileSync(fake.recap, JSON.stringify(answers));
 }
+
+/** what every title prompt holds, and no recap prompt does */
+export const TITLE_ASK = "Name this session.";
+
+/** a title and a description, the way haiku sends them */
+export const titleSays = (title: string, description: string): string =>
+  `title: ${title}\n\ndescription: ${description}\n`;
 
 /** the four lines, the way haiku sends them */
 export const recapSays = (goal: string, done: string, state: string, needs: string): string =>

@@ -4,7 +4,14 @@
 // with `usage` only the Usage screen is drawn, from its own fixture.
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
-import { appendFileSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { recapSays, setFakeRecaps, writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
@@ -122,10 +129,155 @@ const SAID: Record<string, string> = {
     "The limiter keys on the api token, not on the okta user, so a shared token shares one budget.",
 };
 
+/**
+ * what grove has already named, by Claude Code's own title: the sessions that need him, the working
+ * ones and the first sixteen quiet ones. the rest are as a session is before its first look
+ */
+const NAMES: Record<string, { title: string; description: string }> = {
+  "auth-sso-12": {
+    title: "Okta app for staging and production",
+    description:
+      "Registers one okta app in the dev tenant with a redirect URI per environment, the secret kept in 1Password.",
+  },
+  "callback route": {
+    title: "State cookie check in the okta callback",
+    description: "Makes the callback check the state cookie before it trades the code, test first.",
+  },
+  "session store": {
+    title: "Redis session store",
+    description: "Moves the session middleware onto redis and runs the api suite against it.",
+  },
+  "token rotation": {
+    title: "Refresh token rotation",
+    description: "Rotates refresh tokens on every use and revokes the whole family on reuse.",
+  },
+  "login page": {
+    title: "Login page with the SSO button",
+    description:
+      "Builds the login page, its SSO button and the error states, a disabled org included.",
+  },
+  "idp config": {
+    title: "Staging on the okta dev tenant",
+    description:
+      "Wires staging to the okta dev tenant and checks which redirect URI sign-in lands on.",
+  },
+  "why is the staging deploy red": {
+    title: "Red staging deploy",
+    description: "Finds why the staging deploy fails after the okta change, and what fixes it.",
+  },
+  "sketch the login page states": {
+    title: "Login page states",
+    description: "Sketches every state of the login page: loading, error, locked out and SSO only.",
+  },
+  "okta research": {
+    title: "Okta plans and SCIM pricing",
+    description: "Reads up on okta's plans, what SCIM costs and which tier the dashboard needs.",
+  },
+  "read the SAML strategy": {
+    title: "Old SAML strategy review",
+    description: "Reads last year's SAML strategy to see what of it the okta work can reuse.",
+  },
+  "terraform state for staging": {
+    title: "Staging terraform state",
+    description: "Untangles the staging terraform state so the okta resources plan cleanly.",
+  },
+  "draft the rollout note": {
+    title: "SSO rollout note",
+    description:
+      "Drafts the note that says SSO reaches staging on Tuesday, and who keeps a password.",
+  },
+  "rate limit the callback endpoint": {
+    title: "Callback rate limit",
+    description: "Adds a per-IP rate limit to /auth/callback, with a test for the 429.",
+  },
+  "log out everywhere when the okta session ends": {
+    title: "Global logout from okta",
+    description: "Signs a user out of every dashboard session when their okta session ends.",
+  },
+  "move SSO settings into the admin panel": {
+    title: "SSO settings in the admin panel",
+    description: "Moves the SSO switches out of env vars and into a page of the admin panel.",
+  },
+  "compare okta and auth0 pricing for 400 seats, and what each wants for SCIM provisioning": {
+    title: "Okta and auth0 for 400 seats",
+    description: "Compares okta and auth0 for 400 seats, with what each charges for SCIM.",
+  },
+  "bump passport to 0.7": {
+    title: "Passport 0.7 upgrade",
+    description: "Upgrades passport to 0.7 and fixes the session regeneration it changed.",
+  },
+  "flaky test in the session middleware": {
+    title: "Flaky session middleware test",
+    description: "Finds why the session middleware test fails one run in ten, and fixes the race.",
+  },
+  "what does the redirect URI check do": {
+    title: "Redirect URI check",
+    description: "Explains what the redirect URI check lets through, and where it is too loose.",
+  },
+  "rename AUTH_PROVIDER to IDP": {
+    title: "AUTH_PROVIDER renamed to IDP",
+    description:
+      "Renames the AUTH_PROVIDER setting to IDP across the api, the docs and the env files.",
+  },
+  "audit log for sign-ins": {
+    title: "Sign-in audit log",
+    description: "Writes every sign-in, failed or not, to the audit log with the idp and the IP.",
+  },
+  "why does the cookie drop on safari": {
+    title: "Safari drops the session cookie",
+    description:
+      "Finds why Safari drops the session cookie after the okta redirect, and fixes SameSite.",
+  },
+  "threads backend": {
+    title: "Reply threads in chat",
+    description: "Adds reply_to to messages and backfills it, so chat can show threads.",
+  },
+  "notification channels": {
+    title: "Android notification channels",
+    description: "Groups the eleven android notification types into channels people can mute.",
+  },
+  "schema validation for custom objects": {
+    title: "Schema checks for custom objects",
+    description: "Validates a custom object against its schema on every write.",
+  },
+  "zsh startup is slow": {
+    title: "Slow zsh startup",
+    description: "Finds what makes a new shell take two seconds, and trims the zshrc.",
+  },
+};
+/** what a session is called once grove has named it */
+const named = (aiTitle: string) => NAMES[aiTitle]?.title ?? aiTitle;
+
+/**
+ * the names as a launch before this one left them, by session id: a session's Claude Code title is
+ * read back from its transcript. counted as named at 99 prompts, so none is due a look now
+ */
+function writeNames(fx: Fixture): void {
+  const ledger: Record<string, unknown> = {};
+  for (const dir of readdirSync(fx.projectsDir)) {
+    for (const file of readdirSync(path.join(fx.projectsDir, dir))) {
+      if (!file.endsWith(".jsonl")) continue;
+      const text = readFileSync(path.join(fx.projectsDir, dir, file), "utf8");
+      const ai = /"aiTitle":"([^"]*)"/.exec(text)?.[1];
+      const name = ai && NAMES[ai];
+      if (!name) continue;
+      ledger[file.slice(0, -6)] = {
+        ...name,
+        at: Date.now(),
+        prompts: 99,
+        compacts: 0,
+        titles: [name.title],
+      };
+    }
+  }
+  mkdirSync(path.join(fx.root, ".grove"), { recursive: true });
+  writeFileSync(path.join(fx.root, ".grove", "titles.v1.json"), JSON.stringify(ledger));
+}
+
 /** what the fake haiku says of a session, found by its title in the digest. the last one is everyone else's */
 const RECAPS = [
   {
-    when: "title: auth-sso-12",
+    when: `title: ${named("auth-sso-12")}`,
     say: recapSays(
       "Register one okta app for staging and production in the dev tenant, with the secret kept out of the repo",
       "Created the app with a redirect URI per environment. The client secret is in 1Password under okta-dev, and terraform plan is clean on feat/okta-staging.",
@@ -134,7 +286,7 @@ const RECAPS = [
     ),
   },
   {
-    when: "title: callback route",
+    when: `title: ${named("callback route")}`,
     say: recapSays(
       "Check the state cookie in the okta callback before it trades the code, test first",
       "Wrote the failing test for a callback with no state cookie.",
@@ -143,7 +295,7 @@ const RECAPS = [
     ),
   },
   {
-    when: "title: session store",
+    when: `title: ${named("session store")}`,
     say: recapSays(
       "Wire the redis store into the session middleware and run the api suite",
       "Read the session middleware. Nothing is changed yet.",
@@ -152,7 +304,7 @@ const RECAPS = [
     ),
   },
   {
-    when: "title: token rotation",
+    when: `title: ${named("token rotation")}`,
     say: recapSays(
       "Rotate refresh tokens on every use and revoke the whole family on reuse",
       "Nothing yet. The first request failed before any work.",
@@ -161,7 +313,7 @@ const RECAPS = [
     ),
   },
   {
-    when: "title: notification channels",
+    when: `title: ${named("notification channels")}`,
     say: recapSays(
       "Group android notifications into channels the user can mute one by one",
       "Listed the eleven notification types and where each is sent from.",
@@ -170,7 +322,7 @@ const RECAPS = [
     ),
   },
   {
-    when: "title: threads backend",
+    when: `title: ${named("threads backend")}`,
     say: recapSays(
       "Add the reply_to column to messages and backfill it",
       "Wrote the migration and the backfill script. Neither has run.",
@@ -179,7 +331,7 @@ const RECAPS = [
     ),
   },
   // never answer in time: their panels are the ones that show a recap being written
-  ...SLOW.map((title) => ({ when: `title: ${title}`, say: "", afterMs: 10 * 60_000 })),
+  ...SLOW.map((title) => ({ when: `title: ${named(title)}`, say: "", afterMs: 10 * 60_000 })),
   {
     when: "title: ",
     say: recapSays(
@@ -503,6 +655,7 @@ function build(scheme: string) {
     ageMs: ago(2, 11),
   });
   interrupted(fx, { [stopped]: Date.now() - 25 * MIN });
+  writeNames(fx);
   return { fx, turn };
 }
 
@@ -799,7 +952,10 @@ for (const scheme of schemes) {
     await shot("sessions-panel");
     await page.keyboard.press("Escape");
     // a quiet one, from further down the list
-    await page.getByTestId("session-row").filter({ hasText: "okta research" }).click();
+    await page
+      .getByTestId("session-row")
+      .filter({ hasText: named("okta research") })
+      .click();
     await page.getByTestId("panel-text").waitFor();
     await page.getByTestId("recap").waitFor();
     await shot("sessions-panel-quiet");
@@ -807,7 +963,7 @@ for (const scheme of schemes) {
     // one whose recap is still being written
     await page
       .getByTestId("session-row")
-      .filter({ hasText: SLOW[SIZES.findIndex((s) => s[0] === w)] })
+      .filter({ hasText: named(SLOW[SIZES.findIndex((s) => s[0] === w)] ?? "") })
       .click();
     await page.getByTestId("recap-writing").waitFor();
     await shot("sessions-panel-writing");

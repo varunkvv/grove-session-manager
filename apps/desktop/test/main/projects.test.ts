@@ -788,6 +788,25 @@ describe("a session's name", () => {
     t.svc.nameSessions([row("s-old").key, "/nowhere.jsonl", 42]);
     expect(t.named).toEqual([["s-old", ["Fix the rounding", "Release 0.16"]]]);
   });
+
+  it("a search that matches what a session is for leaves that on its row, not a prompt", async () => {
+    const t = setup();
+    t.project("chat");
+    t.rows.push(
+      row("s-1", {
+        ...inChat,
+        title: "Release 0.16",
+        description: "Ships the okta fix.",
+        lastPrompt: "and the okta notes",
+      }),
+      row("s-2", { ...inChat, title: "Notes", lastPrompt: "the okta notes" }),
+    );
+    const found = await t.svc.findSessions("okta", "chat");
+    expect(found.map((h) => [h.sessionId, h.description, h.snippet])).toEqual([
+      ["s-1", "Ships the okta fix.", undefined],
+      ["s-2", undefined, "the okta notes"],
+    ]);
+  });
 });
 
 describe("what a session left running", () => {

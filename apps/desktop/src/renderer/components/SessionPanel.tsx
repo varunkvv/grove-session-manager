@@ -56,11 +56,14 @@ export function useHandoff(screen: Section, ids: string[], loaded = true, query 
 function Recap({
   recap,
   working,
+  goal,
   onAgain,
 }: {
   recap: RecapView;
   /** it is in a turn now: no recap is written, and the one there is from before it */
   working: boolean;
+  /** with no description above it, the recap says what the session was for */
+  goal: boolean;
   onAgain: () => void;
 }) {
   const writing = (words: string) => (
@@ -76,7 +79,7 @@ function Recap({
   }
   return (
     <div className="mt-4">
-      <RecapBlock lines={recap.lines} />
+      <RecapBlock lines={recap.lines} goal={goal} />
       <div className="mt-1 flex min-h-6 flex-wrap items-center gap-x-2 px-1 text-sm text-fg-4">
         <span data-testid="recap-when">
           Written {recap.at !== undefined && <Time at={recap.at} />}
@@ -264,6 +267,12 @@ export function SessionPanel({
           the recap matters more. in the shortest window it leaves a strip of what is under it,
           and scrolls by itself past that */}
       <div className="max-h-[calc(100%-11rem)] shrink-0 overflow-y-auto px-4 pt-4 pb-3 @md:px-6 @md:pt-5 @md:pb-4 @xl:px-10">
+        {session.description && (
+          // what it is for, under its title: the recap under it says where it stands
+          <p className="selectable mb-3 break-words text-fg-2" data-testid="panel-description">
+            {session.description}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="panel-meta">
           <span className="flex min-w-0 items-center gap-1.5">
             {project && <ProjectMark id={project} />}
@@ -283,6 +292,7 @@ export function SessionPanel({
           <Recap
             recap={session.recap}
             working={state === "working"}
+            goal={!session.description}
             onAgain={() => void window.grove.writeRecap(session.key)}
           />
         )}

@@ -78,10 +78,10 @@ function useNamedInSight(ref: RefObject<HTMLDivElement | null>, key: string, nam
 }
 
 /**
- * one line: which session, what it is at when it is at anything, and where it is. a working one
- * has a second, what it was last asked. a watching one has what it left running, and one a search
- * found by what was said in it the words around the match. no other row does: the history stays
- * quiet
+ * which session, what it is at when it is at anything, and where it is, and under it what it is
+ * for: how he tells sessions apart. a watching one has what it left running under that. one a
+ * search found by what was said in it has the words around the match in the description's place.
+ * with no description yet a row is as it was: a working one says what it was last asked
  */
 function SessionRow({
   item,
@@ -105,7 +105,11 @@ function SessionRow({
   useNamedInSight(ref, hit.key, !!hit.description);
   const home = screen === "inbox";
   const watching = state === "watching" ? hit.tasks : undefined;
-  const doing = state === "working" ? hit.doing : watching && tasksLine(watching);
+  const described = hit.description;
+  // the last prompt is often "yes go ahead": what the session is for says more. the panel has it
+  const doing = state === "working" ? !described && hit.doing : watching && tasksLine(watching);
+  const lines =
+    1 + (snippet || described || doing ? 1 : 0) + (!snippet && described && doing ? 1 : 0);
   return (
     <div
       ref={ref}
@@ -120,8 +124,11 @@ function SessionRow({
       data-open={open || undefined}
       className={cx(
         "fade border-b border-line px-3 last:border-b-0",
-        // two lines are as tall as a row that needs him, one is a line
-        snippet || doing ? "cv-row py-2" : "cv-line flex h-9 flex-col justify-center",
+        lines === 1
+          ? "cv-line flex h-9 flex-col justify-center"
+          : lines === 2
+            ? "cv-row py-2"
+            : "cv-tall py-2",
         // the open row is marked whoever moved last. hover and the keyboard's row are the lighter grey
         open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
       )}
@@ -176,15 +183,24 @@ function SessionRow({
           <Highlighted text={snippet} tokens={tokens} />
         </p>
       ) : (
-        doing && (
+        described && (
           <p
-            className="mt-0.5 truncate text-fg-4"
-            title={doing}
-            data-testid={watching ? "session-tasks" : "session-doing"}
+            className="mt-0.5 truncate text-fg-2"
+            title={described}
+            data-testid="session-description"
           >
-            {doing}
+            <Highlighted text={described} tokens={tokens} />
           </p>
         )
+      )}
+      {doing && !snippet && (
+        <p
+          className="mt-0.5 truncate text-fg-4"
+          title={doing}
+          data-testid={watching ? "session-tasks" : "session-doing"}
+        >
+          {doing}
+        </p>
       )}
     </div>
   );
