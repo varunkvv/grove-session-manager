@@ -178,6 +178,9 @@ describe("a session's title and description", () => {
     });
     expect(shown?.title).toBe("Ship the watch fix in 0.16");
     expect(existsSync(h.pending)).toBe(true);
+    // he renamed it before it landed: his name stays, and there is nothing left to hand over
+    h.svc.named({ sessionId: SID, title: "staging okta", titleSource: "customTitle" });
+    await expect.poll(() => existsSync(h.pending)).toBe(false);
   });
 
   it("a name the person gave it wins for good, and its description is still written", async () => {

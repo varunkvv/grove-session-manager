@@ -252,7 +252,7 @@ const NAME_INSTRUCTIONS = `Below is a digest of one Claude Code session: a codin
 Reply with exactly these two lines and nothing else. Plain words, no markdown, no quotes, no preamble.
 
 title: 3 to 7 words, under 50 characters, in sentence case: a capital first letter, the rest lower case except names
-description: one sentence, under 140 characters: what the session is for and how far it reaches
+description: one sentence, under 140 characters, that starts with a verb in the present tense (Fixes, Adds, Plans, Investigates): what the session is for and how far it reaches
 
 The title names the whole session, never only its latest turn: a session that started on a flaky test and turned into a release is the release. Say what is specific to it: the feature, the file, the bug, never "Coding session" or "Bug fix". Never give it the title of one of the person's other sessions listed below. Go by the digest alone.
 `;
@@ -335,9 +335,12 @@ const bare = (v: string) =>
 
 const SAME = /^same\.?$/i;
 
+const LABEL = /^(title|description):/i;
+
 /**
  * the answer: `{}` when it says same, a new title or description or both, null when it is
- * anything else. what a model said is drawn as it is, so only the two labelled lines count
+ * anything else. what a model said is drawn as it is, so only the two lines count: labelled, or
+ * both without their labels (3 of 37 real answers), in that order
  */
 export function parseName(answer: string): Partial<SessionName> | null {
   const lines = answer
@@ -346,8 +349,10 @@ export function parseName(answer: string): Partial<SessionName> | null {
     .filter(Boolean);
   if (lines.length === 1 && SAME.test(bare(lines[0] ?? ""))) return {};
   if (lines.length !== 2) return null;
-  const title = /^title:\s*(\S.*)$/i.exec(lines[0] ?? "")?.[1];
-  const description = /^description:\s*(\S.*)$/i.exec(lines[1] ?? "")?.[1];
+  const [first = "", second = ""] = lines;
+  const bareLines = !LABEL.test(first) && !LABEL.test(second);
+  const title = bareLines ? first : /^title:\s*(\S.*)$/i.exec(first)?.[1];
+  const description = bareLines ? second : /^description:\s*(\S.*)$/i.exec(second)?.[1];
   if (!title || !description) return null;
   const out: Partial<SessionName> = {};
   if (!SAME.test(bare(title))) out.title = squash(bare(title), NAME_TITLE_MAX);

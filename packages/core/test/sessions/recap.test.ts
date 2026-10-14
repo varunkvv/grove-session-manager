@@ -333,6 +333,13 @@ describe("a session's name", () => {
       title: "Ship the watch fix",
       description: "Fixes it.",
     });
+    // haiku dropped the labels in 3 of 37 real answers, and kept the order
+    expect(
+      parseName("Shard collapse design for CDI\nDesigns shard collapse for CDI scaling."),
+    ).toEqual({
+      title: "Shard collapse design for CDI",
+      description: "Designs shard collapse for CDI scaling.",
+    });
     // one line kept, the other new
     expect(parseName("title: same\ndescription: Broader now.")).toEqual({
       description: "Broader now.",
@@ -343,6 +350,8 @@ describe("a session's name", () => {
       "title: x",
       "description: y\ntitle: x",
       "title: a\ndescription: b\nnotes: c",
+      "title: a\nb",
+      "a\ndescription: b",
     ]) {
       expect(parseName(junk), junk).toBeNull();
     }

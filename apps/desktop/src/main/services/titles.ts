@@ -31,7 +31,11 @@ import { recapArgs, type Slots } from "./recaps.ts";
 export const TITLE_FILE = "titles.v1.json";
 /** the newest ones kept */
 const KEEP = 2000;
-const TIMEOUT_MS = 30_000;
+/**
+ * nobody waits on a title, so this is longer than a recap's 30s: 9 of 35 calls on real sessions
+ * took 30 to 43s (p50 16s), two at a time on a busy machine
+ */
+const TIMEOUT_MS = 60_000;
 /** sessions this recent are named on their own. an older one when its row comes into sight */
 export const RECENT_MS = 7 * 24 * 3_600_000;
 /** Claude Code deletes a transcript after 30 days: a title still pending by then never lands */
@@ -121,18 +125,18 @@ export class TitleService {
 
   /**
    * what a row is called: grove's title unless the person named it, and the description. undefined
-   * leaves Claude Code's title alone. one side effect: a title Claude Code has now is not pending
+   * leaves Claude Code's title alone. one side effect: a title that Claude Code has now, or that the
+   * person's own name has put out of reach, is not pending
    */
   named(r: Named): { title?: string; description: string } | undefined {
     if (!this.o.enabled()) return undefined;
     const k = this.kept.get(r.sessionId);
     if (!k) return undefined;
-    if (custom(r) && r.title === k.title && this.pending.delete(r.sessionId)) {
+    const mine = theirs(r, k);
+    if ((mine || (custom(r) && r.title === k.title)) && this.pending.delete(r.sessionId)) {
       void unlink(path.join(this.dir, r.sessionId)).catch(() => {});
     }
-    return theirs(r, k)
-      ? { description: k.description }
-      : { title: k.title, description: k.description };
+    return mine ? { description: k.description } : { title: k.title, description: k.description };
   }
 
   /**
