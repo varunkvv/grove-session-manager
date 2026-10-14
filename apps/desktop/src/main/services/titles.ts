@@ -5,7 +5,7 @@
 //
 // a name is looked at again only as the session grows: when its prompts have doubled, and after a
 // compaction. never while a turn runs. and a name the person gave it themselves always wins.
-import { mkdir, readdir, stat, unlink } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -187,6 +187,23 @@ export class TitleService {
     } finally {
       this.o.slots.release();
       this.looking.delete(id);
+    }
+  }
+
+  /**
+   * a switch moved. off: nothing is pending, so the hook has nothing to say wherever it still is.
+   * on: what grove named in the last week reaches Claude Code at each session's next prompt. the
+   * hook leaves a name the person gave it alone
+   */
+  async switched(): Promise<void> {
+    this.seen.clear();
+    if (!this.o.enabled() || !this.o.renames()) {
+      this.pending.clear();
+      await rm(this.dir, { recursive: true, force: true }).catch(() => {});
+      return;
+    }
+    for (const [id, k] of this.kept) {
+      if (k.titles.length && this.now() - k.at < RECENT_MS) await this.hand(id, k);
     }
   }
 

@@ -356,19 +356,37 @@ export function SettingsDialog() {
           </span>
         </div>
         <div>
-          <span className="mb-1.5 block text-sm font-medium text-fg-2">Recaps</span>
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 text-sm text-fg-2">Write recaps with Claude</span>
-            <Switch
-              checked={draft.recaps !== false}
-              onChange={(v) => setDraft({ ...draft, recaps: v })}
-              label="Write recaps with Claude"
-              testId="setting-recaps"
-            />
+          <span className="mb-1.5 block text-sm font-medium text-fg-2">Recaps and titles</span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Write recaps, titles and descriptions with Claude
+              </span>
+              <Switch
+                checked={draft.recaps !== false}
+                onChange={(v) => setDraft({ ...draft, recaps: v })}
+                label="Write recaps, titles and descriptions with Claude"
+                testId="setting-recaps"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Rename sessions in Claude Code
+              </span>
+              <Switch
+                checked={draft.renameSessions !== false}
+                onChange={(v) => setDraft({ ...draft, renameSessions: v })}
+                label="Rename sessions in Claude Code"
+                testId="setting-rename"
+                disabled={draft.recaps === false}
+              />
+            </div>
           </div>
           <span className="mt-1 block text-meta text-fg-3">
-            A few lines on what a session was for and what it needs from you, written when it starts
-            needing you or you open it. It uses your Claude login and the haiku model.
+            A title and a line on what each session is for, looked at again as it grows, and a few
+            lines on what it needs from you when it starts needing you. It uses your Claude login
+            and the haiku model. Renaming hands each title to Claude Code at the session's next
+            prompt, as /rename would. A name you gave a session yourself is never changed.
           </span>
         </div>
         <div>

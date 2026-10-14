@@ -407,11 +407,14 @@ export function Switch({
   onChange,
   label,
   testId,
+  disabled,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
   testId?: string;
+  /** it means nothing while another switch is off */
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -420,9 +423,10 @@ export function Switch({
       aria-checked={checked}
       aria-label={label}
       data-testid={testId}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cx(
-        "no-drag fade relative h-4 w-7 shrink-0 rounded-full",
+        "no-drag fade relative h-4 w-7 shrink-0 rounded-full disabled:opacity-40",
         checked ? "bg-fg-2" : "bg-line-strong",
       )}
     >

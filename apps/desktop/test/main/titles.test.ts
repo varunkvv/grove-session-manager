@@ -2,6 +2,7 @@ import {
   appendFileSync,
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   writeFileSync,
@@ -202,6 +203,28 @@ describe("a session's title and description", () => {
     // an agent name is the same as a custom title
     expect(theirs({ sessionId: SID, title: "x", titleSource: "agentName" })).toBe(true);
     expect(theirs({ sessionId: SID, title: "x", titleSource: "aiTitle" })).toBe(false);
+  });
+
+  it("switched off: nothing is shown and nothing pending. renames off: kept to grove", async () => {
+    const h = harness();
+    h.state.renames = false;
+    writeFileSync(h.key, turn("p1"));
+    await h.svc.want(h.row(), () => []);
+    expect(h.svc.named(h.row())?.title).toBe("Fix the flaky watch test");
+    expect(existsSync(path.dirname(h.pending))).toBe(false);
+
+    // on again: what grove named this week goes to Claude Code at its next prompt
+    h.state.renames = true;
+    await h.svc.switched();
+    expect(readdirSync(path.dirname(h.pending))).toEqual([SID]);
+
+    h.state.enabled = false;
+    await h.svc.switched();
+    expect(h.svc.named(h.row())).toBeUndefined();
+    expect(existsSync(path.dirname(h.pending))).toBe(false);
+    appendFileSync(h.key, turn("p2") + turn("p3"));
+    await h.svc.want(h.row(), () => []);
+    expect(h.calls).toHaveLength(1);
   });
 
   it("an answer that is not the two lines is no name, and the row stays as it was", async () => {

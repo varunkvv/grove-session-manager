@@ -409,8 +409,16 @@ async function start(): Promise<void> {
       // File > Open Project in {editor} names it
       if (s.editor !== settings.editor) menu(resolveEditor(s).label);
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
+      const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
       settings = s;
       if (recapsMoved) projects.recapsSwitched();
+      if (recapsMoved || renamesMoved) {
+        sessions.retitle();
+        // the title hook in or out of every file grove manages, and nothing left pending when out
+        void titles.switched();
+        void combos.syncAll();
+        void live.syncUserHooks();
+      }
       const { running, left } = holding();
       awake.set(s.keepAwake !== false && running + left > 0);
       showTray();

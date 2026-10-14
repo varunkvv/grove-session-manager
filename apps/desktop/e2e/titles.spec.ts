@@ -233,3 +233,50 @@ test("a working row says what it is for, not its last prompt, and a row that nee
   // neither was due a look: both were named at two prompts, and have two
   expect(titleCalls().filter((c) => c.input?.includes("rotate the okta"))).toHaveLength(0);
 });
+
+test("switched off, rows are as they were before titles and nothing is left pending. renaming off keeps grove's titles in grove", async () => {
+  seed();
+  known({ [SID.work]: WORK });
+  // what a launch before this one handed over, and Claude Code has not taken yet
+  mkdirSync(pendingDir(), { recursive: true });
+  writeFileSync(path.join(pendingDir(), SID.work), `"${WORK.title}"\n`);
+  app = await launchApp(fx, { GROVE_CLAUDE_BIN: fake.bin });
+  const { page } = app;
+  await page.locator('[data-testid="project-item"][data-id="auth-sso"]').click();
+  const work = row(page, SID.work);
+  await expect(work).toContainText(WORK.title, { timeout: 15_000 });
+  await expect.poll(settingsLocal).toContain("# grove-title");
+
+  const settings = async (flip: string[]) => {
+    await page.keyboard.press("Meta+,");
+    for (const id of flip) await page.getByTestId(id).click();
+    await page.getByTestId("save-settings").click();
+    await expect(page.getByTestId("settings-dialog")).toBeHidden();
+  };
+
+  // off: Claude Code's own title, no description, nothing pending, no title hook
+  await settings(["setting-recaps"]);
+  await expect(work).toContainText("idp config");
+  await expect(work.getByTestId("session-description")).toHaveCount(0);
+  await expect.poll(() => existsSync(pendingDir())).toBe(false);
+  await expect.poll(settingsLocal).not.toContain("# grove-title");
+  expect(settingsLocal()).toContain("# grove-status");
+  // the second switch means nothing while the first is off
+  await page.keyboard.press("Meta+,");
+  await expect(page.getByTestId("setting-rename")).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  // on again with renaming off: grove shows its names, and keeps them to itself
+  await settings(["setting-recaps", "setting-rename"]);
+  await expect(work).toContainText(WORK.title);
+  await expect(work.getByTestId("session-description")).toHaveText(WORK.description);
+  expect(existsSync(pendingDir())).toBe(false);
+  expect(settingsLocal()).not.toContain("# grove-title");
+
+  // renaming on: what grove named this week waits for its session's next prompt
+  await settings(["setting-rename"]);
+  await expect.poll(settingsLocal).toContain("# grove-title");
+  await expect.poll(() => existsSync(path.join(pendingDir(), SID.work))).toBe(true);
+  const saved = JSON.parse(readFileSync(path.join(fx.root, "settings.json"), "utf8"));
+  expect([saved.recaps, saved.renameSessions]).toEqual([true, true]);
+});
