@@ -35,6 +35,7 @@ import type { LiveService } from "./live.ts";
 import { openPlanOf } from "./openPlan.ts";
 import type { RecapService } from "./recaps.ts";
 import type { SessionService } from "./sessions.ts";
+import { RECENT_MS, type TitleService } from "./titles.ts";
 
 /** the person's dismissals: `<project id>/<key>` in reviewed.json (ReviewedService) */
 export interface ReviewMarks {
@@ -50,6 +51,8 @@ export interface ProjectsOptions {
   reviewed: ReviewMarks;
   /** each session's recap, and where to ask for one */
   recaps?: Pick<RecapService, "view" | "want">;
+  /** where to ask for a session's title and description. they come back on its row */
+  titles?: Pick<TitleService, "want">;
   /** a row came, went or changed */
   onInbox?: (inbox: InboxView) => void;
   /** what a project's sessions list shows may have changed: the page asks again */
@@ -199,6 +202,18 @@ export class ProjectsService {
     return this.inboxView;
   }
 
+  /**
+   * rows came into sight: a session older than a week is named now. the ones from the last week
+   * are named without being asked
+   */
+  nameSessions(keys: readonly unknown[]): void {
+    const index = this.index(this.list().projects);
+    for (const key of keys.slice(0, 200)) {
+      const row = typeof key === "string" ? this.o.sessions.get(key) : undefined;
+      if (row) void this.o.titles?.want(row, () => siblings(row, index));
+    }
+  }
+
   /** Dismiss: a stop is marked in reviewed.json, a status that needs the person is marked seen */
   async review(project: ProjectId, keys: readonly string[], reviewed: boolean): Promise<void> {
     if (
@@ -346,8 +361,9 @@ export class ProjectsService {
     // writes, and the page asks again on its own clock for it. every project's list is in this
     // one, an archived project's quiet rows too: its own screen still draws them. then which of
     // them the home screen has
+    const listed = this.scoped(null, index, true);
     const sessions = JSON.stringify([
-      this.scoped(null, index, true).map((r) => {
+      listed.map((r) => {
         const { activityMs: _, ...shown } = this.hit(r, index);
         return shown;
       }),
@@ -356,6 +372,15 @@ export class ProjectsService {
     if (sessions !== this.sessionsJson) {
       this.sessionsJson = sessions;
       this.o.onSessions?.();
+    }
+    // names: what a list holds from the last week, and what is still open. a look is cheap for a
+    // session that has not moved, and waits for the Stop of one that is in a turn. not before
+    // start(): until then no session is known to be in a turn
+    const now = Date.now();
+    for (const r of this.stopped ? listed : []) {
+      if (now - r.activityMs < RECENT_MS || this.o.live.isAlive(r.sessionId)) {
+        void this.o.titles?.want(r, () => siblings(r, index));
+      }
     }
   }
 
@@ -435,6 +460,7 @@ export class ProjectsService {
       branch: row.gitBranch,
       open: openPlanOf(runtime, row),
       recap: this.o.recaps?.view(row.key),
+      ...(row.description ? { description: row.description } : {}),
     };
   }
 
@@ -472,6 +498,22 @@ export class ProjectsService {
 
 const projectOf = (row: SessionRow, index: Index): ProjectId | undefined =>
   row.comboName ? index.projectOf.get(row.comboName) : undefined;
+
+/**
+ * what the other sessions where this one runs are called, the last week's: a new title must not
+ * be one of them. where is its project, or its folder when it is in none
+ */
+function siblings(row: SessionRow, index: Index): string[] {
+  const now = Date.now();
+  const here = (r: SessionRow) =>
+    row.comboName ? r.comboName === row.comboName : !r.comboName && r.cwd === row.cwd;
+  return [...index.rows.values()]
+    .filter(
+      (r) => r.sessionId !== row.sessionId && now - r.activityMs < RECENT_MS && r.title && here(r),
+    )
+    .sort(newest)
+    .map((r) => r.title ?? "");
+}
 
 /** it left something running that counts by now: a wake-up, or a command a minute old */
 const watching = (row: SessionRow): boolean => liveTasks(row.tasks, Date.now()).length > 0;

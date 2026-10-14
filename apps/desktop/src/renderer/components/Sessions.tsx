@@ -1,5 +1,5 @@
 import { tokenize } from "@grove/core/pure";
-import { useEffect, useMemo, useRef } from "react";
+import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ProjectId, ProjectView, SessionRef } from "../../shared/ipc.ts";
 import {
@@ -39,6 +39,44 @@ import {
   useRowDoubleClick,
 } from "./ui.tsx";
 
+/** rows with no description that came into sight, sent to main together a moment later */
+const inSight = new Set<string>();
+const askedFor = new Set<string>();
+const keyOf = new WeakMap<Element, string>();
+let sending: ReturnType<typeof setTimeout> | undefined;
+const sight =
+  typeof IntersectionObserver === "undefined"
+    ? undefined
+    : new IntersectionObserver((seen) => {
+        for (const e of seen) {
+          const key = keyOf.get(e.target);
+          if (!e.isIntersecting || !key) continue;
+          sight?.unobserve(e.target);
+          if (!askedFor.has(key)) inSight.add(key);
+          askedFor.add(key);
+        }
+        if (!inSight.size) return;
+        clearTimeout(sending);
+        sending = setTimeout(() => {
+          void window.grove.nameSessions([...inSight]).catch(() => {});
+          inSight.clear();
+        }, 300);
+      });
+
+/**
+ * a session from the last week is named without being asked. an older one is named when its row
+ * comes into sight: Older draws a page at a time, so this is what he scrolls to
+ */
+function useNamedInSight(ref: RefObject<HTMLDivElement | null>, key: string, named: boolean) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || named || !sight) return;
+    keyOf.set(el, key);
+    sight.observe(el);
+    return () => sight.unobserve(el);
+  }, [ref, key, named]);
+}
+
 /**
  * one line: which session, what it is at when it is at anything, and where it is. a working one
  * has a second, what it was last asked. a watching one has what it left running, and one a search
@@ -63,11 +101,14 @@ function SessionRow({
   onClick: () => void;
 }) {
   const { hit, state, snippet } = item;
+  const ref = useRef<HTMLDivElement>(null);
+  useNamedInSight(ref, hit.key, !!hit.description);
   const home = screen === "inbox";
   const watching = state === "watching" ? hit.tasks : undefined;
   const doing = state === "working" ? hit.doing : watching && tasksLine(watching);
   return (
     <div
+      ref={ref}
       id={optionId(hit.sessionId)}
       role="option"
       aria-selected={active}

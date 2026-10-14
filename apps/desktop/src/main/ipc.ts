@@ -395,6 +395,10 @@ function buildHandlers(deps: Deps): Handlers {
       if (row) void deps.recaps.want(row, { again: true });
     },
 
+    async nameSessions(keys) {
+      if (Array.isArray(keys)) projects.nameSessions(keys);
+    },
+
     async usage() {
       const { projects: list } = projects.views();
       return sessions.usage(new Map(list.map((p) => [p.name, p.id])));

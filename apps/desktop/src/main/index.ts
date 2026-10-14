@@ -334,6 +334,7 @@ async function start(): Promise<void> {
     live,
     reviewed,
     recaps,
+    titles,
     onInbox: (inbox) => {
       pusher.send("inbox:changed", { ...inbox, rev: pusher.nextRev("inbox") });
       showTray();

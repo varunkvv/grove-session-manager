@@ -48,6 +48,8 @@ function setup() {
   /** what the recap service would say of a session, by its key, and every recap asked for */
   const recaps = new Map<string, RecapView>();
   const wanted: Array<[string, unknown]> = [];
+  /** every name asked for: the session, and what its siblings are called */
+  const named: Array<[string, readonly string[]]> = [];
   const got = {
     inbox: [] as InboxView[],
     sessions: 0,
@@ -99,6 +101,11 @@ function setup() {
         wanted.push([r.sessionId, how]);
       },
     },
+    titles: {
+      want: async (r, siblings) => {
+        named.push([r.sessionId, siblings()]);
+      },
+    },
     onInbox: (v) => got.inbox.push(v),
     onSessions: () => got.sessions++,
     onStopped: (s) => got.stopped.push(s),
@@ -138,6 +145,7 @@ function setup() {
     hits,
     recaps,
     wanted,
+    named,
     got,
   };
 }
@@ -748,6 +756,37 @@ describe("projects and sessions", () => {
     expect(moved()).toBe(0);
     t.rows.push(row("s-2", inChat));
     expect(moved()).toBe(1);
+  });
+});
+
+describe("a session's name", () => {
+  it("is asked for what a list holds from the last week and what is still open, once grove has started", () => {
+    const t = setup();
+    t.project("chat");
+    const DAY = 24 * 3_600_000;
+    const now = Date.now();
+    t.rows.push(row("s-new", { ...inChat, activityMs: now - DAY, title: "Fix the rounding" }));
+    t.rows.push(row("s-sib", { ...inChat, activityMs: now - 2 * DAY, title: "Release 0.16" }));
+    t.rows.push(row("s-old", { ...inChat, activityMs: now - 9 * DAY, title: "Old work" }));
+    t.rows.push(row("s-away", { activityMs: now - DAY, title: "Elsewhere", cwd: "/x" }));
+    // open in a window for a month
+    t.session("s-open", { ...inChat, activityMs: now - 30 * DAY });
+    t.svc.sessionsChanged();
+    t.svc.inbox();
+    // until start() no session is known to be in a turn
+    expect(t.named).toEqual([]);
+    t.svc.start();
+    t.svc.inbox();
+    const asked = new Map(t.named);
+    expect([...asked.keys()].sort()).toEqual(["s-away", "s-new", "s-open", "s-sib"]);
+    // the other titles where it runs from the last week: never its own, never another project's
+    expect(asked.get("s-new")).toEqual(["Release 0.16"]);
+    expect(asked.get("s-away")).toEqual([]);
+
+    // an older row came into sight. a key grove does not list asks for nothing
+    t.named.length = 0;
+    t.svc.nameSessions([row("s-old").key, "/nowhere.jsonl", 42]);
+    expect(t.named).toEqual([["s-old", ["Fix the rounding", "Release 0.16"]]]);
   });
 });
 

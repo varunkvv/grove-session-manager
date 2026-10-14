@@ -424,6 +424,8 @@ export interface Api {
   sessionConversation(key: SessionKey): Promise<ConversationView | null>;
   /** Write again: a new recap whatever is kept. it arrives with the session's row */
   writeRecap(key: SessionKey): Promise<void>;
+  /** rows that came into sight with no description: an older session is named now */
+  nameSessions(keys: SessionKey[]): Promise<void>;
   /**
    * the Usage screen's numbers, folded from what the session scan keeps. nothing is read from
    * disk for it. asked when the screen opens and while it is open, never otherwise
@@ -481,6 +483,7 @@ export const INVOKE_CHANNELS = [
   "listSessions",
   "sessionConversation",
   "writeRecap",
+  "nameSessions",
   "usage",
   "takeLanding",
   "setVisibleProject",
