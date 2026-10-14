@@ -11,7 +11,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ClaudeRun, RunClaude } from "../../src/main/services/background.ts";
 import { recapArgs, Slots } from "../../src/main/services/recaps.ts";
-import { TITLE_FILE, TitleService } from "../../src/main/services/titles.ts";
+import { TITLE_FILE, TitleService, theirs } from "../../src/main/services/titles.ts";
 import type { SessionRow } from "../../src/shared/ipc.ts";
 
 const NOW = Date.parse("2026-10-14T18:00:00.000Z");
@@ -147,6 +147,31 @@ describe("a session's title and description", () => {
     expect(h.calls).toHaveLength(2);
     await h.svc.want(h.row(), () => []);
     expect(h.calls).toHaveLength(3);
+  });
+
+  it("a name the person gave it wins for good, and its description is still written", async () => {
+    let reply = NAME;
+    const h = harness({ reply: () => ({ code: 0, stdout: reply, stderr: "" }) });
+    writeFileSync(h.key, turn("p1"));
+    const mine = { title: "my okta thing", titleSource: "customTitle" as const };
+    expect(theirs({ sessionId: SID, ...mine })).toBe(true);
+    await h.svc.want(h.row(mine), () => []);
+    expect(h.svc.named({ sessionId: SID, ...mine })).toEqual({
+      description: "Finds why the watch test fails on CI.",
+    });
+    expect(existsSync(h.pending)).toBe(false);
+    expect(h.calls[0]).not.toContain("same");
+
+    // renamed after grove titled it: grove's name is no longer shown or handed over
+    reply = "title: Something new\ndescription: Broader now.";
+    appendFileSync(h.key, turn("p2") + turn("p3"));
+    await h.svc.want(h.row(mine), () => []);
+    expect(h.calls[1]).toContain("title: my okta thing");
+    expect(h.svc.named({ sessionId: SID, ...mine })).toEqual({ description: "Broader now." });
+    expect(existsSync(h.pending)).toBe(false);
+    // an agent name is the same as a custom title
+    expect(theirs({ sessionId: SID, title: "x", titleSource: "agentName" })).toBe(true);
+    expect(theirs({ sessionId: SID, title: "x", titleSource: "aiTitle" })).toBe(false);
   });
 
   it("an answer that is not the two lines is no name, and the row stays as it was", async () => {

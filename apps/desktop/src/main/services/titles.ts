@@ -2,7 +2,7 @@
 // written from, through the person's own `claude -p`.
 //
 // a name is looked at again only as the session grows: when its prompts have doubled, and after a
-// compaction. never while a turn runs.
+// compaction. never while a turn runs. and a name the person gave it themselves always wins.
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,7 +24,7 @@ import { log } from "../log.ts";
 import { type RunClaude, runClaude } from "./background.ts";
 import { recapArgs, type Slots } from "./recaps.ts";
 
-/** in grove's state dir. a cache: safe to delete */
+/** in grove's state dir. safe to delete: a session whose title grove gave it then reads as named by the person */
 export const TITLE_FILE = "titles.v1.json";
 /** the newest ones kept */
 const KEEP = 2000;
@@ -38,12 +38,18 @@ interface Kept extends SessionName {
   /** how many prompts the session had then, and compactions */
   prompts: number;
   compacts: number;
-  /** every title grove gave it, oldest first */
+  /** every title grove gave it, oldest first. a custom title that is none of these is the person's */
   titles: string[];
 }
 
-/** what Claude Code calls a session */
+/** what Claude Code calls a session, and where that came from */
 export type Named = { sessionId: string; title?: string; titleSource?: TitleSource };
+
+const custom = (r: Named) => r.titleSource === "customTitle" || r.titleSource === "agentName";
+
+/** the person named it, with `/rename` or the tab's menu: a custom title grove never gave it */
+export const theirs = (r: Named, k?: Pick<Kept, "titles">): boolean =>
+  custom(r) && !k?.titles.includes(r.title ?? "");
 
 export interface TitlesOptions {
   stateDir: string;
@@ -94,14 +100,16 @@ export class TitleService {
   }
 
   /**
-   * what a row is called: grove's title and the description. undefined
+   * what a row is called: grove's title unless the person named it, and the description. undefined
    * leaves Claude Code's title alone
    */
   named(r: Named): { title?: string; description: string } | undefined {
     if (!this.o.enabled()) return undefined;
     const k = this.kept.get(r.sessionId);
     if (!k) return undefined;
-    return { title: k.title, description: k.description };
+    return theirs(r, k)
+      ? { description: k.description }
+      : { title: k.title, description: k.description };
   }
 
   /**
@@ -129,12 +137,14 @@ export class TitleService {
       const look = nameLook(state);
       const k = this.kept.get(id);
       if (!nameDue(k, look)) return;
+      const mine = theirs(now, k);
       const answer = await this.ask(now, state, siblings(), k);
       const title = answer?.title ?? k?.title;
       const description = answer?.description ?? k?.description;
       // a first look that says "same" has nothing to keep
       if (!title || !description) return;
-      const moved = title !== k?.title;
+      // the person's own name stays: grove's is kept, and never shown or handed over
+      const moved = title !== k?.title && !mine;
       const titles = k?.titles ?? [];
       const next: Kept = {
         title,
@@ -172,7 +182,8 @@ export class TitleService {
     k: Kept | undefined,
   ): Promise<Partial<SessionName> | null> {
     const prompt = namePrompt(state, {
-      current: k && { title: k.title, description: k.description },
+      // the person's own title, when they named it: the description is still grove's to write
+      current: k && { title: row.title ?? k.title, description: k.description },
       project: row.comboName ?? row.cwdBase,
       branch: row.gitBranch,
       siblings,
