@@ -28,8 +28,6 @@ import { type RunClaude, runClaude } from "./background.ts";
 export const RECAP_FILE = "recaps.v1.json";
 /** the newest ones kept */
 const KEEP = 500;
-/** this spends the person's own Claude login, so it never fans out */
-const CONCURRENCY = 2;
 /** measured on 13 real sessions: 8 to 20s a call */
 const TIMEOUT_MS = 30_000;
 /** a call that failed is not made again for the same conversation sooner than this */
@@ -56,6 +54,33 @@ export function recapArgs(): string[] {
     "--tools",
     "",
   ];
+}
+
+/**
+ * the calls grove makes through the person's own Claude login: recaps and titles together, never
+ * more than `max` at once. a recap is waited on (a notification, an open panel), so it goes ahead
+ * of every title in line: a first launch queues about 50 of those
+ */
+export class Slots {
+  private running = 0;
+  private readonly lines: [Array<() => void>, Array<() => void>] = [[], []];
+  private readonly max: number;
+
+  constructor(max = 2) {
+    this.max = max;
+  }
+
+  async take(first = false): Promise<void> {
+    if (this.running < this.max) this.running++;
+    else await new Promise<void>((next) => this.lines[first ? 0 : 1].push(next));
+  }
+
+  /** a slot that is given up goes straight to the next in line */
+  release(): void {
+    const next = this.lines[0].shift() ?? this.lines[1].shift();
+    if (next) next();
+    else this.running--;
+  }
 }
 
 /** what grove itself knows about where a session stands, as the digest's last line */
@@ -97,6 +122,8 @@ export interface RecapsOptions {
   read?: (key: SessionKey) => Promise<ConversationState>;
   run?: RunClaude;
   now?: () => number;
+  /** shared with the titles. its own when not given */
+  slots?: Slots;
 }
 
 export class RecapService {
@@ -112,11 +139,11 @@ export class RecapService {
   private redo = new Map<SessionKey, { row: SessionRow; how: How }>();
   /** where the conversation ended when a call for it failed, and when that was */
   private failed = new Map<SessionKey, { end: number; at: number }>();
-  private running = 0;
-  private waiting: Array<() => void> = [];
+  private readonly slots: Slots;
 
   constructor(o: RecapsOptions) {
     this.o = o;
+    this.slots = o.slots ?? new Slots();
   }
 
   async load(): Promise<void> {
@@ -172,7 +199,7 @@ export class RecapService {
       if (this.kept.has(key)) this.old.add(key);
       this.writing.add(key);
       this.o.onChange();
-      await this.slot();
+      await this.slots.take(true);
       try {
         // again, now that it is this one's turn: the wait can be long
         state = await this.read(key);
@@ -185,7 +212,7 @@ export class RecapService {
           await this.save();
         }
       } finally {
-        this.release();
+        this.slots.release();
       }
     } catch (e) {
       // the transcript is gone or cannot be read: what is kept stays
@@ -237,7 +264,14 @@ export class RecapService {
 
   /** the call. null when it failed, timed out or answered anything but the four lines */
   private async ask(row: SessionRow, state: ConversationState): Promise<Recap | null> {
-    const prompt = recapPrompt(recapDigest(state, { title: row.title, now: standing(row) }));
+    const prompt = recapPrompt(
+      recapDigest(state, {
+        title: row.title,
+        // what the session is for, so the recap does not have to work it out again
+        description: row.description,
+        now: standing(row),
+      }),
+    );
     // never a repo: a temp dir skips the workspace trust prompt and loads nobody's CLAUDE.md
     const cwd = path.join(tmpdir(), "grove-recap");
     await mkdir(cwd, { recursive: true });
@@ -257,18 +291,6 @@ export class RecapService {
       );
     }
     return lines;
-  }
-
-  /** at most CONCURRENCY calls at once. a slot that is given up goes straight to the next in line */
-  private async slot(): Promise<void> {
-    if (this.running < CONCURRENCY) this.running++;
-    else await new Promise<void>((next) => this.waiting.push(next));
-  }
-
-  private release(): void {
-    const next = this.waiting.shift();
-    if (next) next();
-    else this.running--;
   }
 
   private save(): Promise<void> {

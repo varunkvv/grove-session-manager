@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { ConversationFold } from "../../src/sessions/conversation.ts";
 import { readConversation } from "../../src/sessions/conversationFile.ts";
 import {
+  nameDue,
+  nameLook,
+  namePrompt,
+  parseName,
   parseRecap,
   RECAP_LINE_MAX,
   recapDigest,
@@ -29,7 +33,7 @@ const FIXTURE = path.join(
   "../fixtures/conversation/78b60000-0000-4000-8000-000000000001.jsonl",
 );
 
-function digest(lines: object[], o: { title?: string; now?: string } = {}): string {
+function folded(lines: object[]) {
   const fold = new ConversationFold();
   let offset = 0;
   for (const l of lines) {
@@ -37,7 +41,11 @@ function digest(lines: object[], o: { title?: string; now?: string } = {}): stri
     fold.line(line, offset, line.length);
     offset += line.length + 1;
   }
-  return recapDigest(fold.state, o);
+  return fold.state;
+}
+
+function digest(lines: object[], o: { title?: string; now?: string } = {}): string {
+  return recapDigest(folded(lines), o);
 }
 
 describe("the digest a recap is written from", () => {
@@ -246,5 +254,100 @@ describe("the answer, parsed", () => {
     expect(recapLine({ ...r, needs: "Nothing unless you want the write scopes" })).toBe(
       "Nothing unless you want the write scopes",
     );
+  });
+});
+
+describe("a session's name", () => {
+  /** n prompts, each answered in words. `tools` of them made a tool call first */
+  const session = (n: number, tools = n) =>
+    folded(
+      Array.from({ length: n }, (_, i) => [
+        prompt(`prompt ${i + 1}`, i * 10),
+        ...(i < tools
+          ? [
+              says(`c${i}`, call(`t${i}`, "Bash", { command: "ls" }), i * 10 + 1),
+              result(`t${i}`, "ok", i * 10 + 2),
+            ]
+          : []),
+        says(`m${i}`, text(`answer ${i + 1}`), i * 10 + 3),
+      ]).flat(),
+    );
+
+  it("is first written once a turn did some work, never for a hello", () => {
+    expect(nameLook(session(1, 0))).toEqual({ prompts: 1, compacts: 0, worked: false });
+    expect(nameDue(undefined, nameLook(session(1, 0)))).toBe(false);
+    expect(nameDue(undefined, nameLook(session(2, 1)))).toBe(true);
+  });
+
+  it("is looked at again when the prompts have doubled, about 7 times in 100, and after a compaction", () => {
+    let last = { prompts: 1, compacts: 0 };
+    const looks = [1];
+    for (let prompts = 2; prompts <= 100; prompts++) {
+      if (nameDue(last, { prompts, compacts: 0, worked: true })) {
+        looks.push(prompts);
+        last = { prompts, compacts: 0 };
+      }
+    }
+    expect(looks).toEqual([1, 3, 6, 12, 24, 48, 96]);
+    expect(nameDue({ prompts: 40, compacts: 1 }, { prompts: 41, compacts: 2, worked: true })).toBe(
+      true,
+    );
+    expect(
+      nameLook(folded([prompt("go", 0), compactBoundary(1), compactSummary("sum", 2)])).compacts,
+    ).toBe(1);
+  });
+
+  it("is asked for with the middle of a long session, the other titles there, and the name to keep", () => {
+    const p = namePrompt(session(40), {
+      current: { title: "Fix the watch test", description: "Makes the watch test pass." },
+      project: "grove",
+      branch: "project-manager",
+      siblings: ["Release 0.16", "Release 0.16", "Usage screen"],
+    });
+    expect(p).toContain("reply with the single word same");
+    expect(p).toContain("title: Fix the watch test\ndescription: Makes the watch test pass.");
+    expect(p).toContain("project: grove\nbranch: project-manager");
+    expect(p).toContain("  - Release 0.16\n  - Usage screen\n");
+    // the first 3, 10 of the 29 between, and the last 8
+    expect(p).toContain("… 29 more. 10 of them, spread evenly:");
+    expect(p.match(/^ {2}- prompt \d+$/gm)).toHaveLength(21);
+    expect(p).toContain("  - prompt 5\n");
+    // a first name has nothing to keep
+    expect(namePrompt(session(2))).not.toContain("same");
+    expect(namePrompt(session(2))).toContain("title: (none)");
+  });
+
+  it("is two labelled lines, or same", () => {
+    expect(
+      parseName(
+        "title: Ship the watch fix\n\ndescription: Fixes the flaky watch test and releases it as 0.16.\n",
+      ),
+    ).toEqual({
+      title: "Ship the watch fix",
+      description: "Fixes the flaky watch test and releases it as 0.16.",
+    });
+    expect(parseName("same")).toEqual({});
+    expect(parseName("Same.\n")).toEqual({});
+    // quotes and a full stop round a title go, a description keeps its own
+    expect(parseName('title: "Ship the watch fix."\ndescription: "Fixes it."')).toEqual({
+      title: "Ship the watch fix",
+      description: "Fixes it.",
+    });
+    // one line kept, the other new
+    expect(parseName("title: same\ndescription: Broader now.")).toEqual({
+      description: "Broader now.",
+    });
+    for (const junk of [
+      "",
+      "Here is a title: x",
+      "title: x",
+      "description: y\ntitle: x",
+      "title: a\ndescription: b\nnotes: c",
+    ]) {
+      expect(parseName(junk), junk).toBeNull();
+    }
+    expect(
+      parseName(`title: ${"word ".repeat(30)}\ndescription: d`)?.title?.length,
+    ).toBeLessThanOrEqual(60);
   });
 });

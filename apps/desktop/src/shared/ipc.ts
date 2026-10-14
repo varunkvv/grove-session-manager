@@ -45,8 +45,12 @@ export interface BackgroundView {
 export interface SessionRow {
   key: SessionKey;
   sessionId: string;
+  /** grove's title for it, unless the person named it themselves. else Claude Code's */
   title?: string;
+  /** where Claude Code's own title came from. a custom one grove never gave it is the person's */
   titleSource?: TitleSource;
+  /** one line on what it is for and how far it reaches, written by grove */
+  description?: string;
   firstPrompt?: string;
   lastPrompt?: string;
   /** full path. tooltips only, never shown on a row. */
@@ -146,7 +150,7 @@ export interface AppSettings {
   trackAllSessions?: boolean;
   /** a macOS notification when a session starts needing you. on unless switched off. */
   notifications?: boolean;
-  /** a recap of a session, written by haiku through the person's own claude. on unless switched off. */
+  /** recaps, titles and descriptions, written by haiku through the person's own claude. on unless switched off. */
   recaps?: boolean;
   /** the mac and its display do not idle-sleep while an agent is mid-turn. on unless switched off. */
   keepAwake?: boolean;
@@ -212,6 +216,8 @@ export interface SessionRef {
   sessionId: string;
   /** row.title ?? the first prompt squashed ?? "Untitled session" */
   title: string;
+  /** what it is for, one line. absent until grove has written one, and while that is switched off */
+  description?: string;
   /** the project name, else row.projectLabel */
   where: string;
   runtime: Runtime;

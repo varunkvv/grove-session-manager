@@ -1,5 +1,6 @@
 // the refresher of a session: four lines a small model writes from a digest of the conversation.
-// pure: the digest, the prompt and the parse. the call and the cache are the app's.
+// and from the same digest its name: a title and a one-line description.
+// pure: the digest, the prompts and the parses. the calls and the caches are the app's.
 import { squash } from "../transcript/title.ts";
 import { answerOf, type ConversationState, EDITS, type Turn } from "./conversation.ts";
 import { toolLabel } from "./timeline.ts";
@@ -81,11 +82,8 @@ function ending(
  * compacted away, the files edited, the last turn's tool calls and the message it ended on. a
  * tool's output is never in it. every part is the session's own words, so all of it is untrusted
  */
-export function recapDigest(
-  state: ConversationState,
-  o: { title?: string; now?: string } = {},
-): string {
-  const turns = turnsOf(state);
+/** what the person typed, oldest first, the files edited, and the newest turn the person started */
+function gather(turns: readonly Turn[]): { typed: string[]; files: Set<string>; asked: number } {
   const typed: string[] = [];
   const files = new Set<string>();
   /** the newest turn the person started. what came after it is still that turn's work */
@@ -106,14 +104,40 @@ export function recapDigest(
       files.add(name);
     }
   });
+  return { typed, files, asked };
+}
 
-  const out = [`title: ${o.title ? squash(o.title, 200) : "(none)"}`, ""];
-  out.push("what the person typed, oldest first:");
+export function recapDigest(
+  state: ConversationState,
+  o: {
+    title?: string;
+    description?: string;
+    now?: string;
+    /** this many of the prompts between the first and the last few, spread evenly */
+    middle?: number;
+  } = {},
+): string {
+  const turns = turnsOf(state);
+  const { typed, files, asked } = gather(turns);
+
+  const out = [`title: ${o.title ? squash(o.title, 200) : "(none)"}`];
+  if (o.description) out.push(`description: ${squash(o.description, 300)}`);
+  out.push("", "what the person typed, oldest first:");
   const line = (text: string, i: number) => `  - ${squash(text, i === 0 ? FIRST_PROMPT : PROMPT)}`;
   if (typed.length <= FIRST + LAST) out.push(...typed.map(line));
   else {
     out.push(...typed.slice(0, FIRST).map(line));
-    out.push(`  … ${typed.length - FIRST - LAST} more …`);
+    const between = typed.slice(FIRST, -LAST);
+    const k = Math.min(o.middle ?? 0, between.length);
+    if (k === 0) out.push(`  … ${between.length} more …`);
+    else if (k === between.length) out.push(...between.map((t) => line(t, 1)));
+    else {
+      out.push(`  … ${between.length} more. ${k} of them, spread evenly:`);
+      for (let i = 0; i < k; i++) {
+        out.push(line(between[Math.floor(((i + 0.5) * between.length) / k)] ?? "", 1));
+      }
+      out.push("  …");
+    }
     out.push(...typed.slice(-LAST).map((t) => line(t, 1)));
   }
   if (typed.length === 0) out.push("  (nothing)");
@@ -206,4 +230,130 @@ export function parseRecap(answer: string): Recap | null {
  */
 export function recapLine(r: Recap): string {
   return /^(nothing|none|n\/a)\b[.!]?$/i.test(r.needs) ? r.state : r.needs;
+}
+
+// ---------- a session's name: a title and a one-line description
+
+/** what a list tells sessions apart by */
+export interface SessionName {
+  title: string;
+  description: string;
+}
+
+/** past these the model did not do as asked, and the rest is cut */
+const NAME_TITLE_MAX = 60;
+const NAME_DESCRIPTION_MAX = 200;
+/** the prompts from the middle of a long session the title call also sees */
+const NAME_MIDDLE = 10;
+const SIBLINGS = 30;
+
+const NAME_INSTRUCTIONS = `Below is a digest of one Claude Code session: a coding agent working for a person. They run many sessions at once and tell them apart in a list by a title and a one-line description. Name this session.
+
+Reply with exactly these two lines and nothing else. Plain words, no markdown, no quotes, no preamble.
+
+title: 3 to 7 words, under 50 characters, in sentence case: a capital first letter, the rest lower case except names
+description: one sentence, under 140 characters: what the session is for and how far it reaches
+
+The title names the whole session, never only its latest turn: a session that started on a flaky test and turned into a release is the release. Say what is specific to it: the feature, the file, the bug, never "Coding session" or "Bug fix". Never give it the title of one of the person's other sessions listed below. Go by the digest alone.
+`;
+
+const NAME_KEEP = `It already has the title and the description at the top of the digest. Keep them unless the work has clearly outgrown them. When one changes it gets broader, never narrower. Keeping both is the normal answer: then reply with the single word same.
+`;
+
+/** how far a session has come, for when its name is looked at again */
+export interface NameLook {
+  /** what the person typed: prompts, and what they said while it worked */
+  prompts: number;
+  /** times it was compacted */
+  compacts: number;
+  /** a turn called a tool. a "hey" with no work gets no name: Claude Code's own title covers it */
+  worked: boolean;
+}
+
+export function nameLook(state: ConversationState): NameLook {
+  const turns = turnsOf(state);
+  return {
+    prompts: gather(turns).typed.length,
+    compacts: state.items.filter((i) => i.kind === "compact").length,
+    worked: turns.some((t) => t.work.toolCount > 0),
+  };
+}
+
+/**
+ * whether a session's name is due a look: the first once it has done some work, then each time
+ * the prompts have doubled (at about 1, 3, 6, 12, 24 ... prompts), and after a compaction. so a
+ * name changes less often the longer a session runs
+ */
+export function nameDue(
+  last: Pick<NameLook, "prompts" | "compacts"> | undefined,
+  now: NameLook,
+): boolean {
+  if (!last) return now.worked;
+  return now.prompts >= Math.max(3, last.prompts * 2) || now.compacts > last.compacts;
+}
+
+/**
+ * what the title call is sent: the recap's digest with prompts from the middle too, where the
+ * session is, and what the person's other recent sessions there are called. with `current` the
+ * model is asked to keep it
+ */
+export function namePrompt(
+  state: ConversationState,
+  o: {
+    current?: SessionName;
+    project?: string;
+    branch?: string;
+    /** the titles of the other sessions in its project from the last week */
+    siblings?: readonly string[];
+  } = {},
+): string {
+  const out = [NAME_INSTRUCTIONS];
+  if (o.current) out.push(NAME_KEEP);
+  if (o.project) out.push(`project: ${squash(o.project, 100)}`);
+  if (o.branch) out.push(`branch: ${squash(o.branch, 100)}`);
+  const siblings = [...new Set(o.siblings ?? [])].slice(0, SIBLINGS);
+  out.push(
+    "the person's other sessions here from the last week:",
+    ...(siblings.length ? siblings.map((t) => `  - ${squash(t, 100)}`) : ["  (none)"]),
+    "",
+    recapDigest(state, {
+      title: o.current?.title,
+      description: o.current?.description,
+      middle: NAME_MIDDLE,
+    }),
+  );
+  return `${out.join("\n")}\n`;
+}
+
+/** a line's value without the quotes or the full stop a model puts round a name */
+const bare = (v: string) =>
+  v
+    .trim()
+    .replace(/^["'`*]+|["'`*]+$/g, "")
+    .replace(/(?<!\.)\.$/, "")
+    .trim();
+
+const SAME = /^same\.?$/i;
+
+/**
+ * the answer: `{}` when it says same, a new title or description or both, null when it is
+ * anything else. what a model said is drawn as it is, so only the two labelled lines count
+ */
+export function parseName(answer: string): Partial<SessionName> | null {
+  const lines = answer
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 1 && SAME.test(bare(lines[0] ?? ""))) return {};
+  if (lines.length !== 2) return null;
+  const title = /^title:\s*(\S.*)$/i.exec(lines[0] ?? "")?.[1];
+  const description = /^description:\s*(\S.*)$/i.exec(lines[1] ?? "")?.[1];
+  if (!title || !description) return null;
+  const out: Partial<SessionName> = {};
+  if (!SAME.test(bare(title))) out.title = squash(bare(title), NAME_TITLE_MAX);
+  // a description is a sentence: its full stop stays
+  if (!SAME.test(bare(description))) {
+    out.description = squash(description.replace(/^["'`]+|["'`]+$/g, ""), NAME_DESCRIPTION_MAX);
+  }
+  return out.title === "" || out.description === "" ? null : out;
 }

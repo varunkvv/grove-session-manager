@@ -43,6 +43,8 @@ export interface SessionServiceOptions {
   maxParsed?: number;
   /** the rows changed. at most one call per 150ms */
   onChange: () => void;
+  /** grove's title and description for a session, over what Claude Code calls it */
+  named?: (record: SessionRecord) => { title?: string; description?: string } | undefined;
 }
 
 /** a row the instant filter could not find, found in its conversation instead */
@@ -101,6 +103,7 @@ function toRow(
   background: ReadonlyMap<string, BackgroundEntry>,
   interrupted: ReadonlyMap<string, { at: number }>,
   tasks: ReadonlyMap<string, SessionTasks>,
+  named?: SessionServiceOptions["named"],
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -113,6 +116,9 @@ function toRow(
   };
   if (record.title) row.title = record.title;
   if (record.titleSource) row.titleSource = record.titleSource;
+  const name = named?.(record);
+  if (name?.title) row.title = name.title;
+  if (name?.description) row.description = name.description;
   if (record.firstPrompt) row.firstPrompt = record.firstPrompt;
   if (record.lastPrompt) row.lastPrompt = record.lastPrompt;
   if (cwd) {
@@ -273,6 +279,11 @@ export class SessionService {
   /** the live service noticed a process go away mid-turn, or a session come back */
   setInterrupted(interrupted: ReadonlyMap<string, { at: number }>): void {
     this.interrupted = new Map(interrupted);
+    this.rebuild();
+  }
+
+  /** a title or a description grove keeps changed, or was switched off or on */
+  retitle(): void {
     this.rebuild();
   }
 
@@ -461,7 +472,16 @@ export class SessionService {
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
     const next = views.map((v) =>
-      toRow(v, labels, this.live, this.agents, this.background, this.interrupted, this.tasks),
+      toRow(
+        v,
+        labels,
+        this.live,
+        this.agents,
+        this.background,
+        this.interrupted,
+        this.tasks,
+        this.opts.named,
+      ),
     );
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);
     if (upserts.length === 0 && removes.length === 0) return;

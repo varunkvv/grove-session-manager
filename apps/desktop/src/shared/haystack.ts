@@ -10,6 +10,7 @@ export function rowHaystack(r: SessionRow): string {
   if (h === undefined) {
     h = [
       r.title,
+      r.description,
       r.firstPrompt,
       r.lastPrompt,
       r.comboName,

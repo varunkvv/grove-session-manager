@@ -29,11 +29,12 @@ import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { LONG_TURN_MS, Notifier } from "./services/notify.ts";
 import { ProjectsService } from "./services/projects.ts";
-import { RecapService } from "./services/recaps.ts";
+import { RecapService, Slots } from "./services/recaps.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
 import { ReviewedService } from "./services/reviewed.ts";
 import { SessionService } from "./services/sessions.ts";
+import { TitleService } from "./services/titles.ts";
 import { createTray, updateTray } from "./tray.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
@@ -92,11 +93,29 @@ async function start(): Promise<void> {
     path.join(packageDir, "..", "..", "extension", "dist"),
   ]);
 
+  /** recaps, titles and descriptions are written: the switch, and a claude this may run */
+  const writing = () =>
+    settings.recaps !== false && (!appEnv.customRoot || appEnv.claudeBinOverride !== undefined);
+  // the calls through the person's own login: two at a time, recaps first
+  const slots = new Slots();
+  const titles = new TitleService({
+    stateDir: appEnv.stateDir,
+    claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
+    env: () => loginEnv.get(),
+    // a test root never runs the real claude, only a stub it names
+    enabled: writing,
+    // a name reaches the page with its session's row
+    onChange: () => sessions.retitle(),
+    slots,
+    row: (key) => sessions.get(key),
+  });
+
   const sessions = new SessionService({
     projectsDir,
     cacheDir: appEnv.stateDir,
     maxParsed: settings.maxParsedSessions,
     onChange: () => projects.sessionsChanged(),
+    named: (record) => titles.named(record),
   });
 
   const reveals = new Reveals({ raise: showMain, notify: () => pusher.send("app:land", {}) });
@@ -214,11 +233,10 @@ async function start(): Promise<void> {
     stateDir: appEnv.stateDir,
     claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
     env: () => loginEnv.get(),
-    // a test root never runs the real claude, only a stub it names
-    enabled: () =>
-      settings.recaps !== false && (!appEnv.customRoot || appEnv.claudeBinOverride !== undefined),
+    enabled: writing,
     // a recap reaches the page with its session's row
     onChange: () => projects.sessionsChanged(),
+    slots,
   });
 
   // packaged, or under GROVE_ROOT. a dev build next to the installed app leaves its projects, and
@@ -364,6 +382,7 @@ async function start(): Promise<void> {
   // what was dismissed under 0.10 is filed under each project's card prefix: it moves to its id
   await reviewed.load(cleanRecord ? await recordPrefixes(combos.list()) : undefined);
   await recaps.load();
+  await titles.load();
   await sessions.loadCached(combos.list());
 
   const handlers = registerIpc({
