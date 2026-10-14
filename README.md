@@ -135,17 +135,22 @@ shows how many sessions in the archived projects need you. Archiving a project n
 
 **All sessions** is the screen Grove opens on: every session, whichever project it is in, in groups.
 
-- **Needs you** - the sessions waiting on you, newest first. Two lines each: the title, what it is at, its project,
-  where it runs and when, then what it asks. Only these are counted in the sidebar, the menu bar and the dock
-- **Working** - the sessions in a turn now. A second line says what each was last asked, and the time says how long
-  the turn has run (`for 12m`). With them are the sessions that are **Watching**: between turns, with a
-  [background task](#background-tasks) left running. Their second line says what they left and what it last wrote,
-  and the time says how long they have watched
+- **Needs you** - the sessions waiting on you, newest first. Three lines each: the title, what it is at, its project,
+  where it runs and when, then its [description](#titles-and-descriptions), then what it asks after a small arrow in
+  the state's colour. Only these are counted in the sidebar, the menu bar and the dock
+- **Working** - the sessions in a turn now, with their description under the title. The time says how long the turn
+  has run (`for 12m`). With them are the sessions that are **Watching**: between turns, with a
+  [background task](#background-tasks) left running. Under the description they say what they left and what it last
+  wrote, and the time says how long they have watched
 - **Today**, **Yesterday**, then the two days before by their weekday - the rest by the day they last moved, newest
-  first, one line each: the title, its project, where it runs, when
+  first: the title, its project, where it runs, when, and the description under it
 - **Older** - what last moved before the start of the day three days ago. It is closed, with its count, until you
   click it. Open, it draws 50 rows, and 50 more each time you scroll near its end. It is closed again whenever the
   screen comes up
+
+A session with no description yet is a line shorter: a working one says what it was last asked in its place, and a
+row under Needs you gives what it asks two lines. A session gets one once a turn of it has done some work, so a
+"hey" never does.
 
 A group with nothing in it is not there: when nothing needs you, the screen starts at Working or Today. The sessions
 of a project are the ones a project's own screen lists (below). Sessions in no project are here too, with their
@@ -181,16 +186,18 @@ watching. A finished session in a subfolder is found from `⌘K`. The top bar al
 no refresh.
 
 **Search** is the field in the top bar, on both screens: every session on All sessions, the project's on a project's
-screen. Typing narrows the rows at once to the ones whose title, prompt or branch has every word typed (on All
+screen. Typing narrows the rows at once to the ones whose title, description, prompt or branch has every word typed (on All
 sessions the project's name counts too). A moment later Grove adds the sessions where the words are in what was said,
-by you, the agent or its subagents. One found that way has a second line with the words around the match, marked.
+by you, the agent or its subagents. One found that way has the words around the match, marked, where its
+description was.
 One found by its branch has the branch marked on its row, and on All sessions, where a row shows no branch, on a
 second line. While something is typed Older is not folded: its matches are listed. What is typed is cleared when you go to another
 screen. `⌘K` still searches everything, including the sessions no list has.
 
 **The panel.** A click on a row, in either list, opens that session in a panel on the right half of the window. Its
-head has the state, the title, **Open in VS Code**, the project, the branch, where it runs, and the session's
-[recap](#recaps): Goal, Done, Now, Needs you. A session that left something running has **Background tasks** above
+head has the state, the title, **Open in VS Code**, the session's description, the project, the branch, where it
+runs, and its [recap](#recaps): Done, Now, Needs you. The recap's Goal is there only while the session has no
+description: the description says the same, and is not written again every turn. A session that left something running has **Background tasks** above
 the recap, whatever it is at: each task, how long Grove has seen it, and one line of status. Under that is the
 conversation, opened at its end. A turn is what you
 typed, one line for the work (`12 steps · 3 files edited · 4m`) and the message the turn ended on. A compaction, an
@@ -257,7 +264,7 @@ run from an empty temp folder with the prompt on stdin. Nothing is left on disk,
 own status hooks do not fire for it), no MCP server starts, and the call has no tool: it can only answer. At most two
 run at once, each for at most 30 seconds. A call takes 8 to 20 seconds.
 
-What it is written from is a digest of the session, about 12KB at most: the title, the first three and the last eight
+What it is written from is a digest of the session, about 12KB at most: the title and the description, the first three and the last eight
 things you typed, Claude Code's own summary of the part it compacted away, the names of the files edited, the last
 turn's tool calls by name and target, the message the last turn ended on, and what Grove knows about where the session
 stands. A tool's output is never in it.
@@ -274,12 +281,51 @@ is old when the conversation has moved, not when the file has grown: Claude Code
 long after a turn is over. While a new one is being written the panel keeps the old lines and says so, and the row
 goes back to the end of the last message.
 
-**Write recaps with Claude** in Settings switches all of it off. With it off, with no `claude` to run, or when a call
+**Write recaps, titles and descriptions with Claude** in Settings switches all of it off. With it off, with no `claude` to run, or when a call
 fails or answers anything but the four lines, there is no recap and the panel is the conversation alone. A failed call
 says nothing. It is made again when the conversation moves, when you open the panel a minute later, or on Write again.
 
 The digest is an agent's words, file names and commands, so it is not trusted, and neither is what comes back. The
 worst a session can do through it is get a wrong recap written about itself.
+
+## Titles and descriptions
+
+Claude Code names a session after the first thing you asked it, and keeps that name. A session that started as "fix
+the flaky watch test" and turned into a release is still called after the test. So Grove gives each session its own
+title, three to seven words for the whole session, and a description, one line on what it is for and how far it
+reaches. The description is how the lists tell sessions apart, and it is searched like the title.
+
+Both come from one call to haiku through your own `claude`, the same call as a [recap](#recaps) and in the same two
+slots (a recap goes first). It is sent the recap's digest, ten of the prompts from the middle of a long session, the
+project, the branch, the title and description it has now, and what the project's other sessions of the last week are
+called, so a new title is not one of theirs.
+
+They change rarely, and when they change they get broader:
+
+- the first look is at the end of the first turn that did some work
+- after that a session is looked at again only when its prompts have doubled (about 1, 3, 6, 12, 24, 48, 96), and
+  after a compaction. a 100-prompt session gets about seven looks
+- each look is told to keep both unless the work has clearly outgrown them, and "same" is the usual answer
+- never while a session is working: the look waits for the turn to end
+- the first launch of 0.17 names the sessions of the last week and the ones still open, about 50 calls on the machine
+  it was built on, two at a time. an older one is named when its row comes into sight
+
+**Rename sessions in Claude Code** sends the title on to Claude Code, so the VS Code tab, `/resume`, the terminal and
+claude.ai show it too. Grove never writes into a transcript. It leaves the title in a file, and a hook prints it at the
+session's next prompt or resume, which Claude Code applies as it would `/rename`. A session you are not typing in keeps
+its old tab title until you come back to it, while Grove shows the new one at once. A session no Grove hook covers (in
+no project, with Track sessions outside projects off) gets the title in Grove only.
+
+A name you gave a session yourself, with `/rename` or the tab's menu, always wins. Grove keeps every title it handed
+out, and a custom title that is none of them is yours: Grove stops titling that session for good, and goes on writing
+its description. The hook also checks the session's current title before it prints anything, which covers a rename
+Grove has not seen yet.
+
+**Write recaps, titles and descriptions with Claude** in Settings switches all of it off: no calls, and the rows are
+as they were in 0.16. **Rename sessions in Claude Code** (on) is its own switch, since it writes into your sessions.
+Off, Grove keeps its titles to itself and the hook is taken out. Titles, descriptions and the titles handed out are
+in `.grove/titles.v1.json`, the newest 2,000. Deleting it is safe, but a session Grove had already renamed then reads
+as one you named yourself, and keeps that name.
 
 ## Usage
 
@@ -435,7 +481,7 @@ prompt shows up as a Needs permission row.
 ```
 
 In `.claude/settings.local.json` Grove owns its entries in `permissions.additionalDirectories` (the project's
-references) and the hook groups marked `# grove-status`. It never writes `defaultMode`. A file that is not valid JSON
+references) and the hook groups marked `# grove-status` and `# grove-title`. It never writes `defaultMode`. A file that is not valid JSON
 is left alone, and the project says so.
 
 The hooks are kept current when Grove starts, when its window comes forward, on `⌘R`, and when a project is created or
@@ -447,12 +493,14 @@ edited. The workspace file and the references are written when the project is op
 ~/claude-ws/
   combos.json       the projects. source of truth. hand-editable. unknown keys and formatting are preserved
   reviewed.json     what you dismissed, as `<project>/<key>`. hand-editable, same treatment
-  settings.json     optional: editor, binary paths, appearance, notifications, recaps, keep awake
+  settings.json     optional: editor, binary paths, appearance, notifications, recaps, renaming, keep awake
   .grove/           cache and runtime - safe to delete
     events/         where session status hooks write, each event cut at 64KB
     interrupted.json  sessions whose process went away mid-turn, kept for a week
     live-tasks.json  what each session left running at its last turn's end
     recaps.v1.json  the recaps, by transcript. deleting it has them written again
+    titles.v1.json  the titles and descriptions, and every title handed to Claude Code, by session
+    titles/pending/ a title waiting for its session's next prompt, one small file each
     session-index.v1.json  the sessions as last read, with each one's usage by day. rebuilt from the transcripts
     usage-retired.json  the usage of sessions whose transcript is gone. this one cannot be rebuilt
 ~/Library/Sounds/
@@ -486,6 +534,12 @@ hook's input into `~/claude-ws/.grove/events/`. Claude Code watches its settings
 running pick the hooks up too - and later write the copy they loaded at startup back over them, which silently drops
 whatever was added since. So the app watches each project's settings file and puts its own entries back when that
 happens. Only the entries carrying its marker are touched.
+
+While both title switches are on, the same files get one more hook, marked `# grove-title`, on `UserPromptSubmit` and
+`SessionStart`. It is not async: Claude Code only reads what a hook prints when it waits for it. It is shell builtins
+and one `cat` until there is a title to hand over, about 8ms more than starting a shell at all (18ms in all on a busy
+machine, against 10ms for `sh -c 'exit 0'`). Grove before 0.17 and its extension only strip `# grove-status`, so they
+leave this hook alone.
 
 Hooks only cover the sessions that have them. Every live Claude Code process also keeps a file in
 `~/.claude/sessions/<pid>.json`, which the app reads (never writes) to fill in sessions no hook covers, to say where an
@@ -569,6 +623,17 @@ What did not run, or does not work:
   one with background tasks after its last message. Goal and Done were right in all six. Needs you was exact for the
   question and the permission prompt, and listed later work as well in the long ones
 - a recap is a model's reading of a digest, and it can be wrong. the conversation under it is the session's own words
+- the title prompt was tried by hand on 8 real sessions, from 3 to 85 prompts, at each point Grove would look at them
+  (35 calls). no session changed its title more than once after the first: five changed once and three kept theirs.
+  four of the five changes were broader (a TOCTOU check in one PR to every connector, a GCS fix to GCS and S3, a
+  deploy-order question to the whole production rollout, recent-sessions search to the project manager). one went
+  sideways, from the analysis a session began with to the design it turned into. descriptions changed more often than
+  titles. 9 of the 35 calls took over 30 seconds (the longest 43), so a title call waits up to 60
+- a title or a description is haiku's too, and can be wrong. `/rename` puts yours in its place for good
+- that Claude Code retitles an open VS Code tab when a hook sets a title is read from its code, not seen. the
+  transcript line and the `/resume` name were seen, with `claude -p` on 2.1.296
+- a session no Grove hook covers gets its title in Grove only
+- the title waits in a file until the session's next prompt or resume. one never resumed keeps it for 30 days
 - the conversation has no steps, no thinking, no search, and at most the last 100 turns
 - a working session's panel shows a new turn when the turn starts and ends, and otherwise catches up twice a minute
 - the panel folds the whole transcript each time it reads it: 90ms for a 60MB one
@@ -728,7 +793,15 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **a session has no recap** - it is working, the switch is off, `claude` was not found (set its path in Settings), you
   are not logged in to Claude Code, or the call failed. a failed one is tried again a minute later
 - **a recap says something the session did not** - it is haiku's reading of a digest. Write again asks once more
-- **`claude -p` runs show up in Activity Monitor** - those are the recap calls, two at most
+- **a session has no description** - none of its turns has done any work yet, it is older than a week and its row has
+  not come into sight, the switch is off, or the call failed. a failed one is tried again when the session moves
+- **a session's tab in VS Code changed its name** - that is Rename sessions in Claude Code. `/rename` gives it yours
+  for good, or switch it off in Settings
+- **the VS Code tab still has the old name** - it changes at the session's next prompt, or when it is resumed
+- **a title did not change after a lot of work** - it is looked at again only when the prompts double, and "same" is
+  the usual answer
+- **`claude -p` runs show up in Activity Monitor** - those are the recap and title calls, two at most. the first
+  launch of 0.17 makes about one per session of the last week
 - **a session is missing from `⌘K`** - Claude Code deletes transcripts after 30 days (`cleanupPeriodDays`). the VS Code
   panel also archives sessions after 14 days idle (`claudeCode.archiveInactiveSessions`). those still show here
 - **an agent says the grove tools are gone** - it was open across the upgrade from 0.10. restart it

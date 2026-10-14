@@ -1,3 +1,31 @@
+## 0.17
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.17 names your sessions.
+
+New:
+
+- every session gets a **title** of its own, for the whole session rather than the first thing you asked, and a
+  **description**: one line on what it is for and how far it reaches
+- every row shows the description under its title, the rows under Needs you too. there, what the session asks is a
+  third line, after a small arrow in its state's colour. a working row no longer shows its last prompt
+- the panel opens with the title and the description. the recap under them drops its Goal, which said the same
+- the description is searched like the title, in the lists and in `⌘K`
+- names change rarely and get broader: a session is looked at again only when its prompts have doubled, or after a
+  compaction, and never while it works. "same" is the usual answer
+- **Rename sessions in Claude Code** hands each title to Claude Code at the session's next prompt or resume, as
+  `/rename` would, so the VS Code tab and `/resume` show it too. a name you gave a session yourself always wins
+
+Keep in mind:
+
+- the first launch names the sessions of the last week and the ones still open, two at a time on your Claude login.
+  about 50 calls on the machine it was built on, a few minutes. an older session is named when its row comes into sight
+- the hooks in every project get one more, synchronous one on `UserPromptSubmit` and `SessionStart`. it costs about
+  8ms per prompt over starting a shell
+- **Write recaps, titles and descriptions with Claude** off: no calls, and the rows are as in 0.16. Rename sessions
+  in Claude Code off: Grove keeps its titles to itself and the hook is taken out
+- a session you are not typing in keeps its old tab title until you come back to it. Grove shows the new one at once
+- not seen on a real VS Code tab yet: Claude Code's own code retitles the open tab when a hook sets a title
+
 ## 0.16
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.16 knows what a session left running.
