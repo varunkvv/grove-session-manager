@@ -296,6 +296,11 @@ describe("the tray menu", () => {
     expect(opened).toEqual(["p0"]);
   });
 
+  it("held for a command in its first minute: the line says it holds, and names nothing yet", () => {
+    const held = menu([], { awakeSince: NOW - 12 * 60_000 });
+    expect(held.items[2]?.label).toBe("Keeping the Mac awake · for 12m");
+  });
+
   it("nothing in a turn and one watching: the line does not say nothing is working", () => {
     const held = menu([], { watching: watching(1), watchers: 1, awakeSince: NOW - 3 * 60_000 });
     expect(held.items[2]?.label).toBe("Keeping the Mac awake · 1 watching · for 3m");

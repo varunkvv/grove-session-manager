@@ -36,6 +36,23 @@ export function watchingCount(
   return n;
 }
 
+/**
+ * what holds the mac between turns: every session that left anything running, a command under a
+ * minute old too. the minute is for what the lists show. a turn that just ended held the mac, and
+ * letting go until the minute is up would put a mac nobody touched to sleep right there, with the
+ * watcher in it
+ */
+export function leftRunningCount(
+  tasks: ReadonlyMap<string, SessionTasks>,
+  statuses: ReadonlyMap<string, LiveStatus>,
+): number {
+  let n = 0;
+  for (const [id, t] of tasks) {
+    if (statuses.get(id)?.state !== "running" && t.tasks.length > 0) n++;
+  }
+  return n;
+}
+
 export interface KeepAwake {
   set(on: boolean): void;
   /** when it was last told to stay awake. null while the mac may sleep */

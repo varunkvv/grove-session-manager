@@ -1,6 +1,11 @@
 import { type LiveStatus, type SessionTasks, TASK_MIN_MS } from "@grove/core";
 import { describe, expect, it } from "vitest";
-import { keepAwake, runningCount, watchingCount } from "../../src/main/keepAwake.ts";
+import {
+  keepAwake,
+  leftRunningCount,
+  runningCount,
+  watchingCount,
+} from "../../src/main/keepAwake.ts";
 
 const status = (state: LiveStatus["state"]): LiveStatus => ({ state, at: 1, lastEventAt: 1 });
 
@@ -53,6 +58,10 @@ describe("keeping the mac awake", () => {
     expect(watchingCount(tasks, statuses, NOW + 1)).toBe(3);
     expect(watchingCount(new Map(), statuses, NOW)).toBe(0);
     expect(runningCount(statuses)).toBe(1);
+    // the hold does not wait for the minute: a watcher started seconds before its turn ended
+    // keeps the mac up from that Stop on, with no gap after the turn
+    expect(leftRunningCount(tasks, statuses)).toBe(3);
+    expect(leftRunningCount(new Map(), statuses)).toBe(0);
   });
 
   it("takes one assertion however often it is told, and gives that one back", () => {

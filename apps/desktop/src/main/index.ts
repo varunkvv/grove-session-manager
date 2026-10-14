@@ -14,7 +14,7 @@ import type { MenuCommandId } from "../shared/ipc.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
-import { keepAwake, runningCount, watchingCount } from "./keepAwake.ts";
+import { keepAwake, leftRunningCount, runningCount, watchingCount } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import type { TrayView } from "./menuTemplate.ts";
@@ -142,8 +142,8 @@ async function start(): Promise<void> {
       sessions.setLive(statuses, agentRuns, alive, tasks);
       // a session that closed while idle changes no row, and its list still has to say Closed
       projects.sessionsChanged();
-      const { running, watchers } = holding();
-      awake.set(settings.keepAwake !== false && running + watchers > 0);
+      const { running, watchers, left } = holding();
+      awake.set(settings.keepAwake !== false && running + left > 0);
       // one with no transcript yet moves no list, and the menu bar still counts it
       if (
         running !== trayView?.running ||
@@ -183,11 +183,12 @@ async function start(): Promise<void> {
 
   /**
    * what keeps the mac awake: the turns in flight, and the sessions between turns that left a
-   * command or a wake-up running
+   * command or a wake-up running. `watchers` is the ones the lists show, a minute in
    */
   const holding = () => ({
     running: runningCount(live.list()),
     watchers: watchingCount(live.tasks(), live.list(), Date.now()),
+    left: leftRunningCount(live.tasks(), live.list()),
   });
 
   // a background session keeps the environment it was dispatched with. Finder's is no good.
@@ -383,8 +384,8 @@ async function start(): Promise<void> {
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       settings = s;
       if (recapsMoved) projects.recapsSwitched();
-      const { running, watchers } = holding();
-      awake.set(s.keepAwake !== false && running + watchers > 0);
+      const { running, left } = holding();
+      awake.set(s.keepAwake !== false && running + left > 0);
       showTray();
       electron.nativeTheme.themeSource = s.appearance;
     },

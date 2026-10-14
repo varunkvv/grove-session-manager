@@ -12,7 +12,8 @@ New:
   that fires once, its cron for one that repeats
 - the Mac stays awake while any session is watching, not only while a turn runs. the menu bar counts them,
   `Keeping the Mac awake · 2 working · 1 watching · for 1h 12m`, and lists them under the working ones
-- a command counts once it is still there a minute after the turn that left it. a one-off script never shows
+- a command shows once it is still there a minute after the turn that left it. a one-off script never shows. the Mac
+  is kept awake from the turn's end, so a watcher a turn just started does not lose the hold in that minute
 - a session whose process is gone holds nothing, and the list is kept across a restart of Grove
 
 Keep in mind:

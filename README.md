@@ -346,8 +346,9 @@ session. One task is one entry however often it polls. A `/loop` is one too, cou
 schedules a new one each time.
 
 - a wake-up counts as soon as it is listed
-- a command or a Monitor counts once it is still there a minute after the turn that left it. A one-off script that
-  finishes sooner is never shown. Neither is one that starts and ends inside a turn
+- a command or a Monitor shows once it is still there a minute after the turn that left it. A one-off script that
+  finishes sooner is never shown. Neither is one that starts and ends inside a turn. It keeps the Mac awake from
+  that turn's end, so the hold has no gap between the turn and the row
 - a subagent is not a task here: a turn that waits on one is still Working
 
 A session with a task that counts is **Watching** once its turn has ended and its row is dismissed or opened. Until

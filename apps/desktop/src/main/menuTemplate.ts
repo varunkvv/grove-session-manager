@@ -146,14 +146,17 @@ function line(s: string, max: number): string {
  * always there, so the menu answers it with nothing running too
  */
 function workingItems(v: TrayView, a: TrayActions): MenuItemConstructorOptions[] {
-  const count =
-    [v.running > 0 && `${v.running} working`, v.watchers > 0 && `${v.watchers} watching`]
-      .filter(Boolean)
-      .join(" · ") || "nothing working";
+  const counts = [
+    v.running > 0 && `${v.running} working`,
+    v.watchers > 0 && `${v.watchers} watching`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  // held with neither: a command a turn just left, in its first minute. nothing to name yet
   const head =
     v.awakeSince !== null
-      ? `Keeping the Mac awake · ${count} · ${span(v.awakeSince, v.now)}`
-      : `${v.keepAwake ? "The Mac can sleep" : "Keep awake is off"} · ${count}`;
+      ? ["Keeping the Mac awake", counts, span(v.awakeSince, v.now)].filter(Boolean).join(" · ")
+      : `${v.keepAwake ? "The Mac can sleep" : "Keep awake is off"} · ${counts || "nothing working"}`;
   // a working one says how long its turn has run, a watching one what it left running
   const rows = [
     ...v.working.map((s) => ({
