@@ -68,6 +68,7 @@ function harness(o: { reply?: (input: string) => ClaudeRun } = {}) {
       claudeBin: async () => "/bin/claude",
       env: async () => ({}),
       enabled: () => state.enabled,
+      renames: () => state.renames,
       onChange: () => state.changes++,
       slots: new Slots(),
       run,
@@ -89,7 +90,7 @@ function harness(o: { reply?: (input: string) => ClaudeRun } = {}) {
 }
 
 describe("a session's title and description", () => {
-  it("is written once a turn did some work, and kept", async () => {
+  it("is written once a turn did some work, and handed to Claude Code through a pending file", async () => {
     const h = harness();
     writeFileSync(h.key, turn("hey", false));
     await h.svc.want(h.row(), () => []);
@@ -107,8 +108,13 @@ describe("a session's title and description", () => {
     };
     expect(h.svc.named(h.row())).toEqual(name);
     expect(h.state.changes).toBe(1);
+    expect(readFileSync(h.pending, "utf8")).toBe('"Fix the flaky watch test"\n');
     const kept = JSON.parse(readFileSync(path.join(h.dir, TITLE_FILE), "utf8"))[SID];
     expect(kept).toEqual({ ...name, at: NOW, prompts: 2, compacts: 0, titles: [name.title] });
+
+    // once Claude Code has it, nothing is pending
+    h.svc.named({ sessionId: SID, title: name.title, titleSource: "customTitle" });
+    await expect.poll(() => existsSync(h.pending)).toBe(false);
 
     // and it is all there after a restart
     const next = h.make();
@@ -147,6 +153,30 @@ describe("a session's title and description", () => {
     expect(h.calls).toHaveLength(2);
     await h.svc.want(h.row(), () => []);
     expect(h.calls).toHaveLength(3);
+  });
+
+  it("a new title gets broader, and the hook may replace the one grove gave before", async () => {
+    let reply = NAME;
+    const h = harness({ reply: () => ({ code: 0, stdout: reply, stderr: "" }) });
+    writeFileSync(h.key, turn("p1"));
+    await h.svc.want(h.row(), () => []);
+    reply = "title: Ship the watch fix in 0.16\ndescription: Fixes the watch test and releases it.";
+    appendFileSync(h.key, turn("p2") + turn("p3"));
+    await h.svc.want(
+      h.row({ title: "Fix the flaky watch test", titleSource: "customTitle" }),
+      () => [],
+    );
+    expect(readFileSync(h.pending, "utf8")).toBe(
+      '"Ship the watch fix in 0.16"\n"Fix the flaky watch test"\n',
+    );
+    // Claude Code still has the first: grove shows its newest, and it stays pending
+    const shown = h.svc.named({
+      sessionId: SID,
+      title: "Fix the flaky watch test",
+      titleSource: "customTitle",
+    });
+    expect(shown?.title).toBe("Ship the watch fix in 0.16");
+    expect(existsSync(h.pending)).toBe(true);
   });
 
   it("a name the person gave it wins for good, and its description is still written", async () => {

@@ -50,6 +50,8 @@ function project() {
       text.replaceAll(THEN, appRoot).replaceAll("head -c 16384", `head -c ${EVENT_MAX_BYTES}`),
     );
   }
+  // 0.17's title hook is the hook tests' to check: off here, for the same reason
+  writeFileSync(path.join(appRoot, "settings.json"), JSON.stringify({ renameSessions: false }));
   mkdirSync(path.join(root, "cards", "AUTH-1"), { recursive: true });
   writeFileSync(path.join(root, "cards", "AUTH-1", "card.md"), "# Point staging at okta\n");
   mkdirSync(path.join(root, "conclusions"));

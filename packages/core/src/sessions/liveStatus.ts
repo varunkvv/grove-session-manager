@@ -4,6 +4,7 @@ import path from "node:path";
 import { settingsLocalPath } from "../combos/settingsSync.ts";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "../fsx.ts";
 import { getStateDir } from "../paths.ts";
+import { loadSettings } from "../settings.ts";
 import { squash } from "../transcript/title.ts";
 import type {
   AgentRun,
@@ -69,19 +70,66 @@ export function statusHookCommand(eventsDir: string): string {
   );
 }
 
+/**
+ * grove's title for a session reaches Claude Code through these: a hook's `sessionTitle` has the
+ * same effect as `/rename`. SessionStart covers a resume
+ */
+export const TITLE_HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"] as const;
+
+/** its own marker: a grove or an extension from before 0.17 strips only `# grove-status` */
+const TITLE_MARKER = "# grove-title";
+
+/** `<state>/titles/pending/<session id>`: a title waiting for its session's next prompt or resume */
+export function pendingTitlesDir(stateDir: string): string {
+  return path.join(stateDir, "titles", "pending");
+}
+
+/**
+ * runs on every prompt, synchronously, so it is shell builtins until there is something to say.
+ * the session id is the payload's first field. a pending file holds the title to hand over on its
+ * first line, as a JSON string, and every title grove gave the session before under it. it is
+ * printed only when the session's current custom title is none or one of grove's: anything else
+ * is the person's own `/rename`, which grove has not seen yet
+ */
+export function titleHookCommand(pendingDir: string, event: string): string {
+  return (
+    `p=$(cat); i=\${p#*'"session_id":"'}; i=\${i%%'"'*}; ` +
+    `case "$i" in ''|*[!0-9a-f-]*) exit 0;; esac; ` +
+    `f=${shellQuote(pendingDir)}/"$i"; [ -f "$f" ] || exit 0; ` +
+    `t=$(printf '%s' "$p" | sed -nE 's/.*"session_title":("([^"\\\\]|\\\\.)*").*/\\1/p'); ` +
+    `if [ -z "$t" ] || tail -n +2 "$f" | grep -qxF -- "$t"; then ` +
+    `printf '{"hookSpecificOutput":{"hookEventName":"${event}","sessionTitle":%s}}' "$(head -n 1 "$f")"; ` +
+    `fi ${TITLE_MARKER}`
+  );
+}
+
 type HookGroup = { matcher?: string; hooks?: unknown[] };
 
 function isOurs(group: unknown): boolean {
   if (!isObject(group) || !Array.isArray(group.hooks)) return false;
   return group.hooks.some(
-    (h) => isObject(h) && typeof h.command === "string" && h.command.includes(MARKER),
+    (h) =>
+      isObject(h) &&
+      typeof h.command === "string" &&
+      (h.command.includes(MARKER) || h.command.includes(TITLE_MARKER)),
   );
 }
 
-/** `hooks` with our entries replaced (or removed when `command` is null). everything else is kept. */
-export function withStatusHooks(hooks: unknown, command: string | null): Record<string, unknown> {
+/**
+ * `hooks` with our entries replaced (or removed when `command` is null). everything else is kept.
+ * with `titles`, the pending titles' dir, the title hook goes in beside the status hooks
+ */
+export function withStatusHooks(
+  hooks: unknown,
+  command: string | null,
+  titles?: string | null,
+): Record<string, unknown> {
   const out: Record<string, unknown> = isObject(hooks) ? { ...hooks } : {};
-  const events = new Set<string>([...Object.keys(out), ...STATUS_HOOK_EVENTS]);
+  const events = new Set<string>([
+    ...Object.keys(out),
+    ...STATUS_HOOK_EVENTS,
+    ...TITLE_HOOK_EVENTS,
+  ]);
   for (const event of events) {
     const list = Array.isArray(out[event]) ? (out[event] as unknown[]) : [];
     const kept = list.filter((g) => !isOurs(g));
@@ -92,6 +140,13 @@ export function withStatusHooks(hooks: unknown, command: string | null): Record<
         hooks: [{ type: "command", command, async: true, timeout: 10 }],
       };
       kept.push(group);
+    }
+    if (command && titles && (TITLE_HOOK_EVENTS as readonly string[]).includes(event)) {
+      // not async: Claude Code only reads what a hook prints when it waits for it
+      kept.push({
+        matcher: "",
+        hooks: [{ type: "command", command: titleHookCommand(titles, event), timeout: 5 }],
+      } satisfies HookGroup);
     }
     if (kept.length) out[event] = kept;
     else delete out[event];
@@ -118,6 +173,8 @@ export async function syncStatusHooks(
   eventsDir: string,
   enabled: boolean,
   also: (settings: Record<string, unknown>) => Record<string, unknown> = (settings) => settings,
+  /** the pending titles' dir when the title hook belongs too */
+  titles?: string | null,
 ): Promise<{ status: HookSyncStatus; warning?: Warning }> {
   const read = await readJsonGuarded(settingsFile);
   if (read.status === "invalid") {
@@ -132,14 +189,17 @@ export async function syncStatusHooks(
   const command = enabled ? statusHookCommand(eventsDir) : null;
   if (read.status === "missing") {
     if (!command) return { status: "unchanged" };
-    await writeFileAtomic(settingsFile, stringifyLike({ hooks: withStatusHooks({}, command) }));
+    await writeFileAtomic(
+      settingsFile,
+      stringifyLike({ hooks: withStatusHooks({}, command, titles) }),
+    );
     return { status: "created" };
   }
   const root = read.value;
   if (!isObject(root) || (root.hooks !== undefined && !isObject(root.hooks))) {
     return { status: "skipped-unexpected-shape" };
   }
-  const next = also({ ...root, hooks: withStatusHooks(root.hooks, command) });
+  const next = also({ ...root, hooks: withStatusHooks(root.hooks, command, titles) });
   const before = { ...root, hooks: root.hooks ?? {} };
   if (JSON.stringify(next) === JSON.stringify(before)) return { status: "unchanged" };
   if (isObject(next.hooks) && Object.keys(next.hooks).length === 0) delete next.hooks;
@@ -147,8 +207,19 @@ export async function syncStatusHooks(
   return { status: "written" };
 }
 
+/**
+ * the title hook belongs while both switches are on: titles are written, and they go to Claude
+ * Code. read from the settings file, so the app, the extension and the cli agree
+ */
+export async function titleHooksDir(appRoot: string): Promise<string | undefined> {
+  const s = await loadSettings(appRoot);
+  return s.recaps !== false && s.renameSessions !== false
+    ? pendingTitlesDir(getStateDir(appRoot))
+    : undefined;
+}
+
 /** every session started in a combo reports its status. the combo's settings.local.json is ours to edit. */
-export function syncComboStatusHooks(
+export async function syncComboStatusHooks(
   appRoot: string,
   combo: Combo,
   also?: (settings: Record<string, unknown>) => Record<string, unknown>,
@@ -158,6 +229,7 @@ export function syncComboStatusHooks(
     statusEventsDir(getStateDir(appRoot)),
     true,
     also,
+    await titleHooksDir(appRoot),
   );
 }
 
@@ -226,7 +298,11 @@ export function watchComboStatusHooks(
   combo: Combo,
   opts: HookWatchOptions = {},
 ): Disposable | null {
-  return watchStatusHooks(settingsLocalPath(combo), statusEventsDir(getStateDir(appRoot)), opts);
+  return watchStatusHooks(settingsLocalPath(combo), statusEventsDir(getStateDir(appRoot)), {
+    // the title hook too, when it belongs
+    resync: () => syncComboStatusHooks(appRoot, combo),
+    ...opts,
+  });
 }
 
 export interface StatusEvent {

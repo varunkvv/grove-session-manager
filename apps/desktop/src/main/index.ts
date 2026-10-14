@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   loadSettings,
+  pendingTitlesDir,
   projectIdOf,
   recordPrefixes,
   removeRecordRuntime,
@@ -104,6 +105,7 @@ async function start(): Promise<void> {
     env: () => loginEnv.get(),
     // a test root never runs the real claude, only a stub it names
     enabled: writing,
+    renames: () => settings.renameSessions !== false,
     // a name reaches the page with its session's row
     onChange: () => sessions.retitle(),
     slots,
@@ -157,6 +159,11 @@ async function start(): Promise<void> {
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
     registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
+    // the title hook goes in beside the status hooks while both switches are on
+    titles: () =>
+      settings.recaps !== false && settings.renameSessions !== false
+        ? pendingTitlesDir(appEnv.stateDir)
+        : undefined,
     onChange: (statuses, agentRuns, alive, tasks) => {
       sessions.setLive(statuses, agentRuns, alive, tasks);
       // a session that closed while idle changes no row, and its list still has to say Closed

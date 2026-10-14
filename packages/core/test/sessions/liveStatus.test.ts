@@ -16,8 +16,11 @@ import {
   STATUS_HOOK_EVENTS,
   type StatusEvent,
   statusHookCommand,
+  syncComboStatusHooks,
   syncStatusHooks,
   TASK_MIN_MS,
+  TITLE_HOOK_EVENTS,
+  titleHookCommand,
   watchStatusHooks,
   withStatusHooks,
 } from "../../src/sessions/liveStatus.ts";
@@ -264,6 +267,84 @@ describe("session status from hook events", () => {
     // running it again replaces ours rather than stacking a second copy
     expect(withStatusHooks(added, "echo y # grove-status").Stop).toHaveLength(2);
     expect(withStatusHooks(added, null)).toEqual(theirs);
+  });
+
+  it("the title hook goes in beside them, waited for, under a marker of its own", () => {
+    const theirs = { SessionStart: [{ matcher: "", hooks: [{ type: "command", command: "x" }] }] };
+    const added = withStatusHooks(theirs, "echo x # grove-status", "/state/titles/pending");
+    for (const event of TITLE_HOOK_EVENTS) {
+      const ours = (added[event] as Array<{ hooks: Array<Record<string, unknown>> }>).flatMap(
+        (g) => g.hooks,
+      );
+      const title = ours.find((h) => String(h.command).includes("# grove-title"));
+      expect(title, event).toMatchObject({ type: "command", timeout: 5 });
+      expect(title?.async, event).toBeUndefined();
+      expect(String(title?.command)).toContain(`"hookEventName":"${event}"`);
+      // a grove or an extension from before 0.17 strips only its own marker, and leaves this one
+      expect(String(title?.command)).not.toContain("# grove-status");
+    }
+    expect(added.SessionStart).toHaveLength(2);
+    expect(withStatusHooks(added, "echo x # grove-status", "/state/titles/pending")).toEqual(added);
+    // without the dir, or with the status hooks out, the title hook goes too
+    expect(withStatusHooks(added, "echo x # grove-status").SessionStart).toEqual(
+      theirs.SessionStart,
+    );
+    expect(withStatusHooks(added, null, "/state/titles/pending")).toEqual(theirs);
+  });
+
+  it("the title hook prints a pending title until it is the session's own, and never over the person's", () => {
+    const dir = path.join(makeSandbox("grove-titles-"), "it's pending");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, SID), '"Ship the \\"watch\\" fix"\n"Fix the flaky watch test"\n');
+    const hook = (payload: Record<string, unknown>, event = "UserPromptSubmit") =>
+      execFileSync("/bin/sh", ["-c", titleHookCommand(dir, event)], {
+        input: JSON.stringify({ session_id: SID, hook_event_name: event, ...payload }),
+      }).toString();
+    const said = (out: string) => JSON.parse(out).hookSpecificOutput;
+    // no custom title yet: Claude Code's own ai-title is not in the payload
+    expect(said(hook({ prompt: 'hi "session_title":"x"' }))).toEqual({
+      hookEventName: "UserPromptSubmit",
+      sessionTitle: 'Ship the "watch" fix',
+    });
+    // the one grove gave it before
+    expect(
+      said(hook({ source: "resume", session_title: "Fix the flaky watch test" }, "SessionStart")),
+    ).toEqual({
+      hookEventName: "SessionStart",
+      sessionTitle: 'Ship the "watch" fix',
+    });
+    // already there, the person's own, another session, an id that is not one
+    expect(hook({ prompt: "go", session_title: 'Ship the "watch" fix' })).toBe("");
+    expect(hook({ prompt: "go", session_title: "my name for it" })).toBe("");
+    expect(
+      execFileSync("/bin/sh", ["-c", titleHookCommand(dir, "UserPromptSubmit")], {
+        input: JSON.stringify({
+          session_id: "bbbbbbbb-0000-4000-8000-000000000002",
+          prompt: "x".repeat(200_000),
+        }),
+      }).toString(),
+    ).toBe("");
+    expect(
+      execFileSync("/bin/sh", ["-c", titleHookCommand(dir, "UserPromptSubmit")], {
+        input: JSON.stringify({ session_id: `../${path.basename(dir)}/${SID}`, prompt: "go" }),
+      }).toString(),
+    ).toBe("");
+  });
+
+  it("a project gets the title hook unless the person switched titles off or out of Claude Code", async () => {
+    const appRoot = makeSandbox("grove-app-");
+    const combo = { name: "p", root: path.join(appRoot, "p"), folders: [] };
+    const file = path.join(combo.root, ".claude", "settings.local.json");
+    const titled = () => readFileSync(file, "utf8").includes("# grove-title");
+    await syncComboStatusHooks(appRoot, combo);
+    expect(titled()).toBe(true);
+    writeFileSync(path.join(appRoot, "settings.json"), JSON.stringify({ renameSessions: false }));
+    expect((await syncComboStatusHooks(appRoot, combo)).status).toBe("written");
+    expect(titled()).toBe(false);
+    writeFileSync(path.join(appRoot, "settings.json"), JSON.stringify({ recaps: false }));
+    await syncComboStatusHooks(appRoot, combo);
+    expect(titled()).toBe(false);
+    expect(readFileSync(file, "utf8")).toContain("# grove-status");
   });
 
   it("a settings file that is not JSON is left byte for byte", async () => {

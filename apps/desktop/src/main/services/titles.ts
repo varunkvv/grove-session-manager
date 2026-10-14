@@ -1,9 +1,11 @@
 // a title and a one-line description per session: haiku writes both from the digest a recap is
-// written from, through the person's own `claude -p`.
+// written from, through the person's own `claude -p`. grove's title reaches Claude Code through a
+// hook (`sessionTitle`, the same as `/rename`): a pending file the hook prints at the session's
+// next prompt or resume. grove never writes into a transcript.
 //
 // a name is looked at again only as the session grows: when its prompts have doubled, and after a
 // compaction. never while a turn runs. and a name the person gave it themselves always wins.
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -13,6 +15,7 @@ import {
   nameLook,
   namePrompt,
   parseName,
+  pendingTitlesDir,
   readConversation,
   readJsonGuarded,
   type SessionName,
@@ -31,6 +34,10 @@ const KEEP = 2000;
 const TIMEOUT_MS = 30_000;
 /** sessions this recent are named on their own. an older one when its row comes into sight */
 export const RECENT_MS = 7 * 24 * 3_600_000;
+/** Claude Code deletes a transcript after 30 days: a title still pending by then never lands */
+const PENDING_MS = 30 * 24 * 3_600_000;
+/** a pending file is named by its session id, and a hook builds a path from it */
+const ID = /^[0-9a-f-]{8,64}$/;
 
 interface Kept extends SessionName {
   /** when it was last looked at */
@@ -57,6 +64,8 @@ export interface TitlesOptions {
   env: () => Promise<NodeJS.ProcessEnv>;
   /** titles and descriptions are written, and there is a claude this may run. read fresh */
   enabled: () => boolean;
+  /** and they go to Claude Code */
+  renames: () => boolean;
   /** a title or a description changed */
   onChange: () => void;
   /** shared with the recaps, which go first */
@@ -70,13 +79,17 @@ export interface TitlesOptions {
 
 export class TitleService {
   private readonly o: TitlesOptions;
+  private readonly dir: string;
   private kept = new Map<string, Kept>();
   /** by transcript: the activity it was last looked at with. one that has not moved is left */
   private seen = new Map<SessionKey, number>();
   private looking = new Set<string>();
+  /** session ids with a pending file */
+  private pending = new Set<string>();
 
   constructor(o: TitlesOptions) {
     this.o = o;
+    this.dir = pendingTitlesDir(o.stateDir);
   }
 
   async load(): Promise<void> {
@@ -97,16 +110,26 @@ export class TitleService {
         });
       }
     }
+    for (const name of await readdir(this.dir).catch(() => [])) {
+      if (!ID.test(name)) continue;
+      const file = path.join(this.dir, name);
+      const at = (await stat(file).catch(() => null))?.mtimeMs ?? 0;
+      if (this.now() - at > PENDING_MS) await unlink(file).catch(() => {});
+      else this.pending.add(name);
+    }
   }
 
   /**
    * what a row is called: grove's title unless the person named it, and the description. undefined
-   * leaves Claude Code's title alone
+   * leaves Claude Code's title alone. one side effect: a title Claude Code has now is not pending
    */
   named(r: Named): { title?: string; description: string } | undefined {
     if (!this.o.enabled()) return undefined;
     const k = this.kept.get(r.sessionId);
     if (!k) return undefined;
+    if (custom(r) && r.title === k.title && this.pending.delete(r.sessionId)) {
+      void unlink(path.join(this.dir, r.sessionId)).catch(() => {});
+    }
     return theirs(r, k)
       ? { description: k.description }
       : { title: k.title, description: k.description };
@@ -156,6 +179,7 @@ export class TitleService {
       };
       this.kept.set(id, next);
       await this.save();
+      if (moved) await this.hand(id, next);
       if (title !== k?.title || description !== k?.description) this.o.onChange();
     } catch (e) {
       // the transcript is gone or cannot be read: what is kept stays
@@ -172,6 +196,18 @@ export class TitleService {
 
   private read(key: SessionKey): Promise<ConversationState> {
     return this.o.read?.(key) ?? readConversation(key);
+  }
+
+  /**
+   * the title to hand over first, as a JSON string, and every one grove gave before it under it:
+   * the hook prints the first when the session's current custom title is none or one of those
+   */
+  private async hand(id: string, k: Kept): Promise<void> {
+    if (!this.o.renames() || !ID.test(id)) return;
+    const lines = [k.title, ...k.titles.filter((t) => t !== k.title)].map((t) => JSON.stringify(t));
+    await mkdir(this.dir, { recursive: true });
+    await writeFileAtomic(path.join(this.dir, id), `${lines.join("\n")}\n`);
+    this.pending.add(id);
   }
 
   /** the call. null when it failed, timed out or answered anything but the two lines or "same" */

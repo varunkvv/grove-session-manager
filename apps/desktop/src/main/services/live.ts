@@ -79,6 +79,8 @@ export interface LiveServiceOptions {
   hookDebounceMs?: number;
   /** where Claude Code keeps a background command's output. only a test passes one. */
   tmpRoot?: string;
+  /** the pending titles' dir, while the title hook belongs in the user settings too */
+  titles?: () => string | undefined;
 }
 
 /**
@@ -431,7 +433,7 @@ export class LiveService {
       this.userHooks?.dispose();
       this.userHooks = null;
     }
-    const r = await syncStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, enabled);
+    const r = await this.syncHooks(enabled);
     if (r.warning) throw new Error(r.warning.message);
     if (r.status === "skipped-unexpected-shape") {
       throw new Error(
@@ -444,10 +446,18 @@ export class LiveService {
   /** window focus: catches a revert the watch missed, or one made while the app was closed */
   async syncUserHooks(): Promise<void> {
     if (!this.tracking || this.disposed) return;
-    await syncStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, true).catch((e) =>
-      log.warn("user status hooks:", e),
-    );
+    await this.syncHooks(true).catch((e) => log.warn("user status hooks:", e));
     this.watchUserHooks();
+  }
+
+  private syncHooks(enabled: boolean) {
+    return syncStatusHooks(
+      this.opts.claudeSettingsFile,
+      this.eventsDir,
+      enabled,
+      undefined,
+      this.opts.titles?.(),
+    );
   }
 
   /** idempotent. null until the config dir exists - the next sync tries again, nothing retries. */
@@ -456,6 +466,7 @@ export class LiveService {
     this.userHooks = watchStatusHooks(this.opts.claudeSettingsFile, this.eventsDir, {
       ...(this.opts.hookDebounceMs !== undefined ? { debounceMs: this.opts.hookDebounceMs } : {}),
       onError: (e) => log.warn("user status hook watch:", e),
+      resync: () => this.syncHooks(true),
     });
   }
 

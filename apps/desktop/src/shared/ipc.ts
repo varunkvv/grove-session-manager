@@ -152,6 +152,8 @@ export interface AppSettings {
   notifications?: boolean;
   /** recaps, titles and descriptions, written by haiku through the person's own claude. on unless switched off. */
   recaps?: boolean;
+  /** grove's titles go to Claude Code too, through a hook. on unless switched off. */
+  renameSessions?: boolean;
   /** the mac and its display do not idle-sleep while an agent is mid-turn. on unless switched off. */
   keepAwake?: boolean;
 }
