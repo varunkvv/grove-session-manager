@@ -111,6 +111,35 @@ describe("the acp proxy between zed and claude code", () => {
     expect(await p.close()).toBe(0);
   });
 
+  it("in a combo window the combo folder is the cwd, whatever order zed sends the folders in", async () => {
+    const p = start();
+    // sorts before the combo folder, the way zed hands them over
+    const ref = path.join(p.dir, "a-ref");
+    mkdirSync(ref);
+    writeFileSync(
+      path.join(p.dir, "combos.json"),
+      JSON.stringify({
+        combos: [{ name: "combo", root: p.root, folders: [{ path: ref, mode: "reference" }] }],
+      }),
+    );
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root });
+    const zedSays = { cwd: ref, mcpServers: [], additionalDirectories: [p.root] };
+    p.send(req(7, "session/new", zedSays));
+    await vi.waitFor(() => expect(p.out).toHaveLength(4), { timeout: 10_000 });
+    // a second thread in the same window, nothing handed over: a new one, at the combo folder too
+    p.send(req(8, "session/new", zedSays));
+    await vi.waitFor(() => expect(p.out).toHaveLength(5), { timeout: 10_000 });
+
+    const atRoot = { cwd: p.root, mcpServers: [], additionalDirectories: [ref] };
+    expect(parsed(p.received())).toEqual([
+      { jsonrpc: "2.0", id: 7, method: "session/load", params: { ...atRoot, sessionId: SID } },
+      { jsonrpc: "2.0", id: 8, method: "session/new", params: atRoot },
+    ]);
+    expect(parsed(p.out)[0].result.sessionId).toBe(SID);
+    expect(parsed(p.out)[4].result.sessionId).toBe("new-1");
+    expect(await p.close()).toBe(0);
+  });
+
   it("a folder nothing was handed over for gets a plain new thread", async () => {
     const p = start();
     const other = path.join(p.dir, "other");

@@ -15,7 +15,9 @@ import {
   getAppRoot,
   getStateDir,
   listIntents,
+  loadCombos,
   matchIntent,
+  samePath,
   sweepIntents,
   zedAdapterPath,
 } from "@grove/core";
@@ -71,6 +73,8 @@ function describe(m: Message | null): string {
   const sid = m.params?.sessionId ?? m.result?.sessionId;
   if (typeof sid === "string") parts.push(`sid=${sid}`);
   if (typeof m.params?.cwd === "string") parts.push(`cwd=${m.params.cwd}`);
+  if (Array.isArray(m.params?.additionalDirectories))
+    parts.push(`dirs=${m.params.additionalDirectories.length}`);
   if (m.error !== undefined) parts.push("error");
   return parts.join(" ");
 }
@@ -91,6 +95,32 @@ function eachLine(stream: NodeJS.ReadableStream, each: (line: string) => void, e
 }
 
 const toZed = (line: string) => process.stdout.write(`${line}\n`);
+
+/**
+ * zed hands the agent a window's folders in its own order (alphabetical, seen 2026-10-15), so the
+ * first one is not the combo folder. in a combo the combo folder is the cwd, as in vs code: its
+ * CLAUDE.md and hooks apply, the session is listed under the combo, and a handoff can match it.
+ */
+async function comboFirst(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const { cwd, additionalDirectories } = params;
+  if (typeof cwd !== "string" || !Array.isArray(additionalDirectories)) return params;
+  const extra = additionalDirectories.filter((d): d is string => typeof d === "string");
+  try {
+    const { combos } = await loadCombos(appRoot);
+    const root = extra.find((d) => combos.some((c) => samePath(c.root, d)));
+    if (!root) return params;
+    return {
+      ...params,
+      cwd: root,
+      additionalDirectories: [cwd, ...extra.filter((d) => d !== root)],
+    };
+  } catch (e) {
+    log(`combos failed ${String(e)}`);
+    return params;
+  }
+}
+
+const SESSION_SETUP = new Set(["session/new", "session/load", "session/resume"]);
 
 /** the session the app handed over for this folder, taken so no other window lands on it too */
 async function claimFor(cwd: string): Promise<string | null> {
@@ -143,9 +173,18 @@ function proxy(adapter: string): void {
   /** the one rewritten session/new in flight, and the replayed history held until its answer */
   let pending: { id: Id; sessionId: string; original: string; buffer: string[] } | null = null;
 
-  async function fromZed(line: string): Promise<void> {
-    const m = parse(line);
+  async function fromZed(received: string): Promise<void> {
+    let line = received;
+    let m = parse(line);
     log(`zed ${describe(m)}`);
+    if (m?.params && SESSION_SETUP.has(m.method ?? "")) {
+      const params = await comboFirst(m.params);
+      if (params !== m.params) {
+        log(`cwd ${String(m.params.cwd)} -> ${String(params.cwd)}`);
+        m = { ...m, params };
+        line = JSON.stringify(m);
+      }
+    }
     const cwd = m?.params?.cwd;
     if (m?.method === "session/new" && m.id !== undefined && !pending && typeof cwd === "string") {
       const sessionId = await claimFor(cwd);
