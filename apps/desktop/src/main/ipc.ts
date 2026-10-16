@@ -5,10 +5,12 @@ import {
   type Combo,
   classifyPath,
   conversationView,
+  type EditorTarget,
   isValidSessionId,
   openInEditor,
   prepareFolderOpen,
   projectIdOf,
+  type Runtime,
   readConversation,
   runDetached,
   type Settings,
@@ -174,6 +176,27 @@ function notTrusted(cwd: string): AppError {
 const TERMINAL_MESSAGE =
   "Opened in Terminal. Accept the trust prompt there, and it goes to the background.";
 
+/**
+ * a second process on a live conversation is a copy of it. what to say instead of landing, or
+ * null to land. vs code and cursor land on one live in an editor in the window that has it. zed
+ * cannot, so it would start a second claude on the transcript. a thread live in zed itself is
+ * `sdk-ts` in Claude Code's session file, which is "elsewhere" (seen 2026-10-16)
+ */
+function liveElsewhere(runtime: Runtime, editor: Pick<EditorTarget, "id" | "label">) {
+  if (runtime === "terminal") {
+    return `This agent is running in a terminal. Quit it there, then open it in ${editor.label}.`;
+  }
+  if (runtime === "elsewhere") {
+    return editor.id === "zed"
+      ? "This agent is already open in Zed, or running in claude -p or an SDK app. Open it here once it has finished."
+      : `This agent is running outside ${editor.label}, in claude -p or an SDK app. Open it here once it has finished.`;
+  }
+  if (runtime === "vscode" && editor.id === "zed") {
+    return "This agent is open in another editor window. Close it there, then open it in Zed.";
+  }
+  return null;
+}
+
 /** a claude command that failed, as something a person can read */
 function claudeFailure(what: string, out: { code: number | null; stderr: string; stdout: string }) {
   const said = (out.stderr || out.stdout).trim().split("\n").slice(-3).join(" ");
@@ -283,15 +306,11 @@ function buildHandlers(deps: Deps): Handlers {
       // again at call time: the plan the page showed may have moved since
       const runtime = projects.runtimeFor(row.sessionId, row);
       const combo = combos.list().find((c) => c.name === row.comboName);
-      if (runtime === "terminal" || runtime === "elsewhere") {
-        // a second process on a live conversation is a copy of it. the project opens, nothing lands
+      const elsewhere = liveElsewhere(runtime, editor.current());
+      if (elsewhere) {
+        // the project opens, nothing lands
         if (combo) await openWindow(combo);
-        return {
-          message:
-            runtime === "terminal"
-              ? `This agent is running in a terminal. Quit it there, then open it in ${label}.`
-              : `This agent is running outside ${label}, in claude -p or an SDK app. Open it here once it has finished.`,
-        };
+        return { message: elsewhere };
       }
       if (runtime === "background") {
         // the supervisor holds it: the editor's resume would be refused. `claude stop`, never

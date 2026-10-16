@@ -10,7 +10,7 @@ import {
   writeSession,
 } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
-import { writeProject } from "./helpers/project.ts";
+import { liveSession, writeProject } from "./helpers/project.ts";
 
 // a real zed settings.json: header comments, another agent, trailing commas
 const ZED_SETTINGS = readFileSync(
@@ -25,7 +25,8 @@ test.afterEach(async () => {
   await app?.close();
 });
 
-test("with zed as the editor, grove's agent goes into zed's settings and a session opens one window, root first", async () => {
+/** zed as the editor, its settings.json in the sandbox, and a project with one session */
+function seed() {
   const fx = makeFixture();
   writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ editor: "zed" }));
   // GROVE_EXTENSIONS_DIR is the sandbox's: the real ~/.config/zed is never read or written
@@ -37,6 +38,11 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
     folders: [{ path: docs, mode: "reference" }],
   });
   writeSession(fx, { cwd: root, sessionId: SID, title: "landing in zed" });
+  return { fx, zedSettings, docs, id, root };
+}
+
+test("with zed as the editor, grove's agent goes into zed's settings and a session opens one window, root first", async () => {
+  const { fx, zedSettings, docs, id, root } = seed();
 
   app = await launchApp(fx);
   const { page } = app;
@@ -82,4 +88,27 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   // once the window is up, its agent panel: the new thread there is the one that lands
   await waitFor(async () => readExecLog(fx).length > 1, 10_000);
   expect(readExecLog(fx)[1]).toEqual({ bin: "open", argv: ["zed://agent"] });
+});
+
+test("a session live in a vs code window opens its project in zed, and not a second copy of it", async () => {
+  const { fx, docs, id, root } = seed();
+  liveSession(fx, { sessionId: SID, kind: "interactive", entrypoint: "claude-vscode" });
+
+  app = await launchApp(fx);
+  const { page } = app;
+  await page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
+  await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).dblclick();
+  await expect(
+    page.getByTestId("toast").filter({
+      hasText: "This agent is open in another editor window. Close it there, then open it in Zed.",
+    }),
+  ).toBeVisible();
+  // the project's window, and nothing for zed's agent to land
+  await waitFor(async () => readExecLog(fx).length > 0);
+  expect(readExecLog(fx)[0]?.argv).toEqual(["-n", root, docs]);
+  expect(pendingIntents(fx, "pending-zed")).toEqual([]);
+  expect(pendingIntents(fx)).toEqual([]);
+  // past the moment a landing would open the agent panel
+  await page.waitForTimeout(4000);
+  expect(readExecLog(fx)).toHaveLength(1);
 });
