@@ -22,6 +22,16 @@ Keep in mind:
 - the VS Code extension's status bar, drift warning and find-session shortcut have no Zed version. Zed has no
   extension API for them
 
+Fixed since 0.18.30:
+
+- Claude (with Grove) runs on the node built into Grove, so it starts in a Zed opened from the Dock. the banner says
+  a 0.18.30 entry is out of date, and **Update** moves it over
+- a Zed window Grove opens gets your shell's environment, PATH and all, as from a terminal
+- a VS Code window on the same project no longer takes a session meant for Zed. no extension update needed
+- a Zed window that opens with its agent panel showing lands on the session, not on the thread it restored
+- a session open in VS Code or Cursor is not opened a second time in Zed. Grove opens the project and says to close
+  it there first
+
 ## 0.17
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.17 names your sessions.

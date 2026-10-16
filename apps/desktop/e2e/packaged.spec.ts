@@ -40,7 +40,7 @@ test("the packaged app opens on its projects and carries the companion extension
     expect(existsSync(path.join(APP, "Contents/Resources/extension/grove-companion.vsix"))).toBe(
       true,
     );
-    // zed's node runs the proxy, so it sits outside the asar too
+    // zed runs the proxy by its path, so it sits outside the asar too
     expect(existsSync(path.join(APP, "Contents/Resources/acp-proxy/grove-acp.cjs"))).toBe(true);
     const status = await page.evaluate(() => window.grove.editorStatus(true));
     expect(status.bundledCompanionVersion).not.toBeNull();
