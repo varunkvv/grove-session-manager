@@ -19,6 +19,7 @@ import {
   matchIntent,
   samePath,
   sweepIntents,
+  ZED_AGENT_LINK_DELAY_MS,
   zedAdapterPath,
 } from "@grove/core";
 
@@ -123,6 +124,12 @@ async function comboFirst(params: Record<string, unknown>): Promise<Record<strin
 const SESSION_SETUP = new Set(["session/new", "session/load", "session/resume"]);
 /** how long a new thread that may land waits for zed to start another one in its place */
 const SETTLE_MS = 300;
+/**
+ * past the moment the app sends `zed://agent`, how long the thread that link starts may take to
+ * get here. a window that opens with its agent panel showing starts a thread at once, and the
+ * link's own comes 2s later (seen 2026-10-16): zed shows the link's
+ */
+const LINK_GRACE_MS = 1500;
 
 /** a handoff of a session for exactly this folder, not yet taken */
 async function findIntent(cwd: string) {
@@ -192,7 +199,9 @@ function proxy(adapter: string): void {
   /**
    * a new thread that may land, held a moment before it does. the first time a window's agent
    * panel opens, zed restores a draft thread, starts the new one 2ms later and closes the draft
-   * (zed://agent in a fresh window, seen 2026-10-15). so the last new thread of a burst lands.
+   * (zed://agent in a fresh window, seen 2026-10-15). a window that opens with its panel showing
+   * starts its draft before the link comes at all. so the last new thread lands, once the link's
+   * own has had time to come.
    */
   let held: { m: Message; line: string; cwd: string; timer: NodeJS.Timeout } | null = null;
 
@@ -234,14 +243,21 @@ function proxy(adapter: string): void {
       } else if (held) {
         await land(held);
       }
-      if (await findIntent(cwd).catch(() => undefined)) {
+      const found = await findIntent(cwd).catch(() => undefined);
+      if (found) {
+        // the link goes out ZED_AGENT_LINK_DELAY_MS after the intent. a later thread supersedes
+        // this one, and waits for the same moment
+        const linked = found.intent.issuedAt + ZED_AGENT_LINK_DELAY_MS + LINK_GRACE_MS;
         const h = {
           m,
           line,
           cwd,
-          timer: setTimeout(() => {
-            chain = chain.then(() => land(h));
-          }, SETTLE_MS),
+          timer: setTimeout(
+            () => {
+              chain = chain.then(() => land(h));
+            },
+            Math.max(SETTLE_MS, linked - Date.now()),
+          ),
         };
         held = h;
         return;

@@ -64,6 +64,10 @@ function start(env: Record<string, string> = {}) {
   };
 }
 
+/** an intent whose zed://agent link went out a while ago: a thread lands after the short settle */
+const linkSent = () => Date.now() - 10_000;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const req = (id: number, method: string, params: object) =>
   JSON.stringify({ jsonrpc: "2.0", id, method, params });
 const parsed = (lines: string[]) => lines.map((l) => JSON.parse(l));
@@ -96,7 +100,11 @@ describe("the acp proxy between zed and claude code", () => {
 
   it("a new thread in the handed-over folder loads the session, its history after the answer", async () => {
     const p = start();
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, prompt: "continue" }, "zed");
+    await writeIntent(
+      p.dir,
+      { sessionId: SID, cwd: p.root, prompt: "continue", issuedAt: linkSent() },
+      "zed",
+    );
     p.send(req(7, "session/new", { cwd: p.root, mcpServers: [] }));
     await vi.waitFor(() => expect(p.out).toHaveLength(4), { timeout: 10_000 });
 
@@ -137,7 +145,7 @@ describe("the acp proxy between zed and claude code", () => {
         combos: [{ name: "combo", root: p.root, folders: [{ path: ref, mode: "reference" }] }],
       }),
     );
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root }, "zed");
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, issuedAt: linkSent() }, "zed");
     const zedSays = { cwd: ref, mcpServers: [], additionalDirectories: [p.root] };
     p.send(req(7, "session/new", zedSays));
     await vi.waitFor(() => expect(p.out).toHaveLength(4), { timeout: 10_000 });
@@ -157,7 +165,7 @@ describe("the acp proxy between zed and claude code", () => {
 
   it("of two new threads at once, the second lands: zed closes the first, its restored draft", async () => {
     const p = start();
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root }, "zed");
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, issuedAt: linkSent() }, "zed");
     const draft = req(7, "session/new", { cwd: p.root, mcpServers: [] });
     p.send(draft);
     p.send(req(8, "session/new", { cwd: p.root, mcpServers: [] }));
@@ -166,6 +174,33 @@ describe("the acp proxy between zed and claude code", () => {
     const sent = p.received();
     expect(sent[0]).toBe(draft);
     expect(JSON.parse(sent[1]!)).toMatchObject({
+      id: 8,
+      method: "session/load",
+      params: { sessionId: SID },
+    });
+    const answers = parsed(p.out).filter((o) => o.id !== undefined);
+    expect(answers.find((a) => a.id === 7).result.sessionId).toBe("new-1");
+    expect(answers.find((a) => a.id === 8).result.sessionId).toBe(SID);
+    expect(await p.close()).toBe(0);
+  });
+
+  it("a thread zed started as the window opened waits for the one grove's link starts, seconds later", async () => {
+    const p = start();
+    p.send(req(1, "initialize", { protocolVersion: 1, clientCapabilities: {} }));
+    await vi.waitFor(() => expect(p.out).toHaveLength(1), { timeout: 10_000 });
+    // the link goes 3s after the intent and its thread may take 1.5s more: about 2.5s from now
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, issuedAt: Date.now() - 2000 }, "zed");
+    const draft = req(7, "session/new", { cwd: p.root, mcpServers: [] });
+    p.send(draft);
+    await sleep(1000);
+    // well past the short settle, still held
+    expect(p.received()).toHaveLength(1);
+    p.send(req(8, "session/new", { cwd: p.root, mcpServers: [] }));
+    await vi.waitFor(() => expect(p.out).toHaveLength(6), { timeout: 10_000 });
+
+    const sent = p.received();
+    expect(sent[1]).toBe(draft);
+    expect(JSON.parse(sent[2]!)).toMatchObject({
       id: 8,
       method: "session/load",
       params: { sessionId: SID },
@@ -197,7 +232,7 @@ describe("the acp proxy between zed and claude code", () => {
 
   it("a session that will not load falls back to the new thread zed asked for", async () => {
     const p = start({ FAKE_LOAD_FAILS: "1" });
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root }, "zed");
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, issuedAt: linkSent() }, "zed");
     const line = req(7, "session/new", { cwd: p.root, mcpServers: [] });
     p.send(line);
     await vi.waitFor(() => expect(p.out).toHaveLength(1), { timeout: 10_000 });
