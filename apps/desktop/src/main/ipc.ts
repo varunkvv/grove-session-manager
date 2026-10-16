@@ -75,6 +75,8 @@ export interface Deps {
   reveals: Reveals;
   notifier: Notifier;
   editor: EditorService;
+  /** the person's shell environment, asked again each time. zed starts with it */
+  shellEnv: () => Promise<NodeJS.ProcessEnv>;
   pusher: Pusher;
   window: () => BrowserWindow | null;
 }
@@ -213,13 +215,25 @@ function buildHandlers(deps: Deps): Handlers {
     setTimeout(() => void runDetached(env.openBin, [ZED_AGENT_LINK]), ZED_AGENT_LINK_DELAY_MS);
   }
 
+  /**
+   * zed, started by its cli, keeps the cli's environment, which is the app's: from the Dock, a
+   * PATH with nothing of the person's in it. so it gets their shell's, as from a terminal. vs code
+   * and cursor look up their own. asked before a handoff is written: zed's agent times the link
+   * from the handoff
+   */
+  async function editorEnv(): Promise<NodeJS.ProcessEnv | undefined> {
+    return editor.current().id === "zed" ? deps.shellEnv() : undefined;
+  }
+
   /** the project's window in the editor, on a session when one is given */
   async function openWindow(combo: Combo, sessionId?: string): Promise<OpenReport> {
+    const env = await editorEnv();
     const report = await combos.open(combo, sessionId, { editor: editor.current().id });
-    const launched = await openInEditor(editor.current(), {
-      workspaceFile: report.workspaceFile,
-      folders: workspaceFolders(combo),
-    });
+    const launched = await openInEditor(
+      editor.current(),
+      { workspaceFile: report.workspaceFile, folders: workspaceFolders(combo) },
+      env,
+    );
     if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
     if (sessionId) openZedAgentPanelSoon();
     for (const warning of report.warnings) {
@@ -338,13 +352,14 @@ function buildHandlers(deps: Deps): Handlers {
         throw new AppError("cwd-missing", "That session's folder no longer exists.");
       }
       const folder = row.cwd as string;
+      const launchEnv = await editorEnv();
       const prepared = await prepareFolderOpen(env.appRoot, folder, {
         sessionId: row.sessionId,
         source: "app",
         editor: editor.current().id,
       });
       if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
-      const launched = await openInEditor(editor.current(), { folders: [folder] });
+      const launched = await openInEditor(editor.current(), { folders: [folder] }, launchEnv);
       if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
       openZedAgentPanelSoon();
       return (await editor.companionInstalled()) ? {} : missing;

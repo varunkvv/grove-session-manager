@@ -103,17 +103,25 @@ function launchEnv(): NodeJS.ProcessEnv {
   return stripLaunchEnv(process.env);
 }
 
-/** fire and forget, but a missing binary comes back as a value instead of an unhandled error */
+/**
+ * fire and forget, but a missing binary comes back as a value instead of an unhandled error. the
+ * app's own environment unless given another, and never what electron leaves in either
+ */
 export function runDetached(
   bin: string,
   args: string[],
+  env?: NodeJS.ProcessEnv,
 ): Promise<Result<{ bin: string; args: string[] }>> {
   return new Promise((resolve) => {
     if (!path.isAbsolute(bin))
       return resolve(err("not-absolute", `${bin} is not an absolute path`));
     if (!existsSync(bin)) return resolve(err("editor-missing", `${bin} does not exist`));
     try {
-      const child = spawn(bin, args, { detached: true, stdio: "ignore", env: launchEnv() });
+      const child = spawn(bin, args, {
+        detached: true,
+        stdio: "ignore",
+        env: env ? stripLaunchEnv(env) : launchEnv(),
+      });
       child.once("error", (e) => resolve(err("spawn-failed", String(e))));
       child.once("spawn", () => {
         child.unref();
@@ -140,12 +148,16 @@ export function editorLaunchArgs(editor: EditorTarget, target: LaunchTarget): st
   return [target.workspaceFile ?? target.folders[0]!];
 }
 
-/** `code <path>` returns straight away: there is no "opened" signal. */
+/**
+ * `code <path>` returns straight away: there is no "opened" signal. `env` is what the editor
+ * starts with, when it is not the app's own
+ */
 export function openInEditor(
   editor: EditorTarget,
   target: LaunchTarget,
+  env?: NodeJS.ProcessEnv,
 ): Promise<Result<{ bin: string; args: string[] }>> {
-  return runDetached(editor.bin, editorLaunchArgs(editor, target));
+  return runDetached(editor.bin, editorLaunchArgs(editor, target), env);
 }
 
 export function buildSessionUri(uriScheme: string, sessionId: string, prompt?: string): string {

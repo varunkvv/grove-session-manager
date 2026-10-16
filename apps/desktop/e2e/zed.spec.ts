@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { stripJsonc } from "@grove/core";
 import { expect, test } from "@playwright/test";
@@ -7,6 +8,7 @@ import {
   makePlainDir,
   pendingIntents,
   readExecLog,
+  readExecPaths,
   writeSession,
 } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
@@ -77,6 +79,11 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   const [launch] = readExecLog(fx);
   expect(launch?.argv).toEqual(["-n", root, docs]);
   expect(launch?.argv.some((a) => a.endsWith(".code-workspace"))).toBe(false);
+  // zed keeps the cli's environment: the person's shell's, which a test root stands in for with
+  // the usual places ahead of the app's own Dock PATH
+  expect(readExecPaths(fx)[0]).toBe(
+    `${os.homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+  );
   // still written: switching back to vs code keeps working
   expect(existsSync(path.join(root, `${path.basename(root)}.code-workspace`))).toBe(true);
   // what the proxy in zed takes on the first new thread there. never where a vs code window's
@@ -88,6 +95,8 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   // once the window is up, its agent panel: the new thread there is the one that lands
   await waitFor(async () => readExecLog(fx).length > 1, 10_000);
   expect(readExecLog(fx)[1]).toEqual({ bin: "open", argv: ["zed://agent"] });
+  // `open` hands the link to the zed already running: the app's own environment
+  expect(readExecPaths(fx)[1]).toBe("/usr/bin:/bin:/usr/sbin:/sbin");
 });
 
 test("a session live in a vs code window opens its project in zed, and not a second copy of it", async () => {

@@ -39,11 +39,14 @@ export interface FixtureOptions {
 const COMPANION_ID = "varunkvv.grove-companion";
 const CLAUDE_ID = "anthropic.claude-code";
 
-/** argv recorder. stands in for `code` and for `open`, so no window ever appears during a test. */
+/**
+ * argv recorder. stands in for `code` and for `open`, so no window ever appears during a test.
+ * the PATH each run got goes to a file of its own, a line per run
+ */
 function writeFakeBin(file: string, label: string): void {
   writeFileSync(
     file,
-    `#!/bin/sh\nprintf '{"bin":"%s","argv":%s}\\n' "${label}" "$(printf '%s\\n' "$@" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | awk 'BEGIN{printf "["} {printf "%s\\"%s\\"", sep, $0; sep=","} END{printf "]"}')" >> "$GROVE_FAKE_LOG"\n`,
+    `#!/bin/sh\nprintf '{"bin":"%s","argv":%s}\\n' "${label}" "$(printf '%s\\n' "$@" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | awk 'BEGIN{printf "["} {printf "%s\\"%s\\"", sep, $0; sep=","} END{printf "]"}')" >> "$GROVE_FAKE_LOG"\nprintf '%s\\n' "$PATH" >> "$GROVE_FAKE_LOG.path"\n`,
   );
   chmodSync(file, 0o755);
 }
@@ -493,6 +496,12 @@ export function pendingIntents(
   const dir = path.join(fx.root, ".grove", folder);
   if (!existsSync(dir)) return [];
   return readdirSync(dir).map((n) => JSON.parse(readFileSync(path.join(dir, n), "utf8")));
+}
+
+/** the PATH each run in the exec log got, in the same order */
+export function readExecPaths(fx: Fixture): string[] {
+  const file = `${fx.execLog}.path`;
+  return existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean) : [];
 }
 
 export function readExecLog(fx: Fixture): ExecLine[] {

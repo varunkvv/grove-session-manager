@@ -445,6 +445,7 @@ async function start(): Promise<void> {
     reveals,
     notifier,
     editor,
+    shellEnv: () => loginEnv.fresh(),
     pusher,
     window: () => win,
   });

@@ -123,6 +123,46 @@ describe("the login shell's environment", () => {
     expect(calls).toBe(0);
   });
 
+  it("for zed, it is asked every time, and only the shell's own is kept", async () => {
+    let calls = 0;
+    const run: ShellRun = async () => {
+      calls++;
+      return `${ENV_MARKER}\0${dump({ PATH: `/shell/${calls}`, SHLVL: "1", PWD: HOME, CLAUDE_CONFIG_DIR: "/x", ELECTRON_RUN_AS_NODE: "1" })}`;
+    };
+    const env = new LoginEnv({
+      home: HOME,
+      base: { PATH: "/usr/bin" },
+      // grove's own config dir is not zed's business
+      claudeConfigDir: () => "/fixture/claude",
+      useShell: true,
+      shell: "/bin/zsh",
+      run,
+    });
+    expect(await env.fresh()).toEqual({ PATH: "/shell/1", CLAUDE_CONFIG_DIR: "/x" });
+    expect((await env.fresh()).PATH).toBe("/shell/2");
+  });
+
+  it("a shell that takes too long is given up on", async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-shell-")));
+    const shell = path.join(dir, "slow-zsh");
+    writeFileSync(
+      shell,
+      `#!/bin/sh\nsleep 5\nprintf '${ENV_MARKER}\\000'\nPATH=/never /usr/bin/env -0\n`,
+    );
+    chmodSync(shell, 0o755);
+    const started = Date.now();
+    const env = await new LoginEnv({
+      home: HOME,
+      base: { PATH: "/usr/bin:/bin" },
+      claudeConfigDir: () => `${HOME}/.claude`,
+      useShell: true,
+      shell,
+      timeoutMs: 200,
+    }).fresh();
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(env.PATH).toBe("/Users/you/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
+  });
+
   it("runs a real shell with stdin closed and reads its dump", async () => {
     const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-shell-")));
     const shell = path.join(dir, "fake-zsh");

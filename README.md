@@ -466,7 +466,8 @@ still opens and Grove says to start the conversation there.
 
 A background session keeps the environment it was dispatched with for good, and an app opened from Finder has almost
 none (`PATH=/usr/bin:/bin:/usr/sbin:/sbin`: no node, no pnpm, no gh). So every `claude` Grove runs itself gets your
-login shell's environment, read once per app run.
+login shell's environment, read once per app run. Zed gets it too, read again on each open: started by its CLI, Zed
+keeps the CLI's environment for its terminals, git and agents, and does not look up your shell's itself.
 
 Since Claude Code 2.1.281, a folder has to have passed the CLI's trust prompt once before anything can be sent to the
 background there, and a project only ever opened from VS Code has not. The first time, Grove offers **Start in

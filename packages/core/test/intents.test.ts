@@ -1,6 +1,6 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { prepareComboOpen } from "../src/combos/prepare.ts";
 import {
   buildNewConversationUri,
@@ -278,6 +278,22 @@ describe("editor handoff", () => {
       ok: false,
       error: { code: "editor-missing" },
     });
+  });
+
+  it("a program started with an environment of its own gets that one, minus what electron leaves", async () => {
+    const dir = makeSandbox("grove-run-");
+    const bin = path.join(dir, "fake-zed");
+    const out = path.join(dir, "env.txt");
+    writeFileSync(
+      bin,
+      `#!/bin/sh\nprintf '%s|%s|%s' "$PATH" "$FROM_SHELL" "$ELECTRON_RUN_AS_NODE" > "$1"\n`,
+    );
+    chmodSync(bin, 0o755);
+    const env = { PATH: "/from/shell:/usr/bin:/bin", FROM_SHELL: "yes", ELECTRON_RUN_AS_NODE: "1" };
+    expect(await runDetached(bin, [out], env)).toMatchObject({ ok: true });
+    await vi.waitFor(() =>
+      expect(readFileSync(out, "utf8")).toBe("/from/shell:/usr/bin:/bin|yes|"),
+    );
   });
 
   it("installed extensions come from the editor's registry, minus uninstalled leftovers", async () => {

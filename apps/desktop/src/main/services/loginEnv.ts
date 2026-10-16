@@ -13,6 +13,8 @@ import { log } from "../log.ts";
  */
 export const ENV_MARKER = "__GROVE_ENV__";
 const TIMEOUT_MS = 5000;
+/** the shell's own bookkeeping, which means nothing to a program started elsewhere */
+const SHELL_KEYS = ["PWD", "OLDPWD", "SHLVL", "_"];
 
 /** what the shell runs. rc files can print anything first, so the dump starts after a marker. */
 export function loginShellArgs(): string[] {
@@ -54,7 +56,7 @@ export function finishEnv(
   o: { home: string; claudeConfigDir: string },
 ): NodeJS.ProcessEnv {
   const out = stripLaunchEnv(env);
-  for (const key of ["PWD", "OLDPWD", "SHLVL", "_"]) delete out[key];
+  for (const key of SHELL_KEYS) delete out[key];
   if (path.resolve(o.claudeConfigDir) !== path.join(o.home, ".claude")) {
     out.CLAUDE_CONFIG_DIR = o.claudeConfigDir;
   }
@@ -94,6 +96,7 @@ export interface LoginEnvOptions {
   useShell: boolean;
   shell?: string;
   run?: ShellRun;
+  timeoutMs?: number;
 }
 
 /** the login shell's environment, asked once per app run and kept */
@@ -112,11 +115,27 @@ export class LoginEnv {
     );
   }
 
+  /**
+   * asked again, for zed: started by its cli, it takes over the cli's environment for its
+   * terminals, git and agents, and skips its own login shell. a terminal would hand it the
+   * person's shell, so this does. as the shell has it now, and nothing of grove's own added
+   */
+  async fresh(): Promise<NodeJS.ProcessEnv> {
+    const env = stripLaunchEnv(await this.resolve());
+    for (const key of SHELL_KEYS) delete env[key];
+    return env;
+  }
+
   private async resolve(): Promise<NodeJS.ProcessEnv> {
     const base = stripLaunchEnv(this.opts.base);
     if (this.opts.useShell) {
       const shell = this.opts.shell || safeShell() || "/bin/zsh";
-      const out = await (this.opts.run ?? runShell)(shell, loginShellArgs(), base, TIMEOUT_MS);
+      const out = await (this.opts.run ?? runShell)(
+        shell,
+        loginShellArgs(),
+        base,
+        this.opts.timeoutMs ?? TIMEOUT_MS,
+      );
       const env = out === null ? null : parseEnvDump(out);
       if (env) return env;
       log.warn(`login shell environment from ${shell} unavailable, using the app's own`);
