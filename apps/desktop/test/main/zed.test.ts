@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Settings, stripJsonc } from "@grove/core";
@@ -74,6 +82,18 @@ describe("grove's entry in zed's settings.json", () => {
     expect(await registeredZedProxy(file)).toBeNull();
     await writeZedAgentServer(file, ENTRY);
     expect(await registeredZedProxy(file)).toBe(ENTRY.args[0]);
+  });
+
+  it("keeps the file as private as it was, and makes a new one private", async () => {
+    const dir = sandbox();
+    const file = path.join(dir, "settings.json");
+    writeFileSync(file, "{}\n");
+    chmodSync(file, 0o600);
+    await writeZedAgentServer(file, ENTRY);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const fresh = path.join(dir, "fresh", "settings.json");
+    await writeZedAgentServer(fresh, ENTRY);
+    expect(statSync(fresh).mode & 0o777).toBe(0o600);
   });
 
   it("an unparseable file is left alone", async () => {

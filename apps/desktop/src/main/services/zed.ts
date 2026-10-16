@@ -1,5 +1,6 @@
 // zed has no extension api, so grove's part in zed is one entry in its settings.json: the acp
 // proxy, registered as a custom agent server. the file is the person's own, comments and all.
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import {
   type EditorTarget,
@@ -54,8 +55,15 @@ export async function writeZedAgentServer(file: string, entry: ZedAgentEntry): P
     );
   }
   // a settings.json linked in from a dotfiles repo stays a link
+  const target = realpathLoose(file);
+  // zed keeps it private (0600) and it can hold api keys, so it stays as private as it was
+  const mode = await stat(target).then(
+    (s) => s.mode & 0o777,
+    () => 0o600,
+  );
   await writeFileAtomic(
-    realpathLoose(file),
+    target,
     upsertZedAgentServer(read.status === "ok" ? read.text : "", entry),
+    mode,
   );
 }
