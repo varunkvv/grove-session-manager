@@ -25,3 +25,12 @@ function nodeBundle(entry, outfile) {
 
 export const mainOptions = () => nodeBundle("src/main/index.ts", "main/index.cjs");
 export const preloadOptions = () => nodeBundle("src/preload/index.ts", "preload/index.cjs");
+/**
+ * the agent zed runs, under whatever `node` zed finds rather than electron, so it needs nothing
+ * from the app and runs on an older node. `.cjs`: Resources/ has no package.json to say otherwise
+ */
+export const acpProxyOptions = () => ({
+  ...nodeBundle("src/acp-proxy/main.ts", "acp-proxy/grove-acp.cjs"),
+  target: "node20",
+  external: [],
+});
