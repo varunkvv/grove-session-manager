@@ -87,17 +87,19 @@ export function Banner() {
   let reason: string;
   let message: string;
   let action: { label: string; run: () => void } | null = null;
+  // zed has no extensions: grove's part there is an agent in its settings
+  const companion = editor.id === "zed" ? "Grove agent" : "Grove extension";
   if (!editor.binFound) {
     reason = "editor-missing";
     message = `${editor.label} was not found at ${editor.bin}.`;
     action = { label: "Choose editor", run: () => set({ dialog: { kind: "settings" } }) };
   } else if (editor.companionState === "missing") {
     reason = "companion-missing";
-    message = `Landing on a session needs the Grove extension in ${editor.label}.`;
+    message = `Landing on a session needs the ${companion} in ${editor.label}.`;
     action = { label: "Install", run: () => void installCompanion() };
   } else if (editor.companionState === "outdated") {
     reason = "companion-outdated";
-    message = `The Grove extension in ${editor.label} is out of date.`;
+    message = `The ${companion} in ${editor.label} is out of date.`;
     action = { label: "Update", run: () => void installCompanion() };
   } else if (problem) {
     reason = "projects-problem";

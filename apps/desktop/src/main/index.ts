@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   loadSettings,
@@ -88,11 +89,20 @@ async function start(): Promise<void> {
 
   const queue = new OpQueue<Lane>({ mutate: 1, read: 4 });
   const pusher = new Pusher(() => win?.webContents ?? null);
-  const editor = new EditorService(settings, [
-    // packaged, then a checkout where `pnpm ext:package` has run
-    path.join(process.resourcesPath ?? outDir, "extension"),
-    path.join(packageDir, "..", "..", "extension", "dist"),
-  ]);
+  const editor = new EditorService(
+    settings,
+    [
+      // packaged, then a checkout where `pnpm ext:package` has run
+      path.join(process.resourcesPath ?? outDir, "extension"),
+      path.join(packageDir, "..", "..", "extension", "dist"),
+    ],
+    // zed's agent: packaged, then this build's own
+    [
+      path.join(process.resourcesPath ?? outDir, "acp-proxy", "grove-acp.cjs"),
+      path.join(outDir, "acp-proxy", "grove-acp.cjs"),
+    ].find((f) => existsSync(f)) ?? null,
+    appEnv.appRoot,
+  );
 
   /** recaps, titles and descriptions are written: the switch, and a claude this may run */
   const writing = () =>

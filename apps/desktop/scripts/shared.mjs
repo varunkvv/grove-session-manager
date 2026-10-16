@@ -18,6 +18,8 @@ function nodeBundle(entry, outfile) {
     format: "cjs",
     target: "node24",
     external: ["electron"],
+    // jsonc-parser's "main" is a umd build whose inner requires esbuild cannot follow
+    mainFields: ["module", "main"],
     sourcemap: true,
     logLevel: "info",
   };

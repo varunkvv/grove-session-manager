@@ -300,7 +300,7 @@ function buildHandlers(deps: Deps): Handlers {
       // landing on a session is looking at it
       deps.live.markSeen([row.sessionId]);
       const missing = {
-        message: `${label} opened without landing: the companion extension is missing.`,
+        message: `${label} opened without landing: Grove is not set up there.`,
       };
       if (combo && row.comboRelation === "root") {
         return (await openWindow(combo, row.sessionId)).landing ? {} : missing;
@@ -329,6 +329,13 @@ function buildHandlers(deps: Deps): Handlers {
       const label = editor.current().label;
 
       if (req.where === "editor") {
+        if (editor.current().id === "zed") {
+          // zed's own + is the new thread. nothing outside zed can start one in its window
+          await openWindow(combo);
+          return {
+            message: `Opened ${combo.name} in Zed - start a new thread there with +`,
+          };
+        }
         const { companionVersion } = await editor.status();
         // an older companion cannot start a conversation, and an unpinned link would go to
         // whichever window has focus. the project still opens, and the person starts it there.

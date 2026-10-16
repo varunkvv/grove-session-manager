@@ -11,10 +11,13 @@ import {
   isObject,
   resolveEditor,
   type Settings,
+  samePath,
+  zedAdapterPath,
 } from "@grove/core";
 import type { EditorStatus } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
+import { registeredZedProxy, writeZedAgentServer, zedSettingsFile } from "./zed.ts";
 
 const INSTALL_TIMEOUT_MS = 60_000;
 
@@ -63,11 +66,21 @@ export class EditorService {
   private target: EditorTarget;
   private bundled: BundledCompanion | null = null;
   private readonly bundleDirs: readonly string[];
+  /** zed's agent: the built acp proxy, and the app root it lands sessions from */
+  private readonly proxyFile: string | null;
+  private readonly appRoot: string;
   private cached: EditorStatus | null = null;
 
-  constructor(settings: Settings, bundleDirs: readonly string[]) {
+  constructor(
+    settings: Settings,
+    bundleDirs: readonly string[],
+    proxyFile: string | null,
+    appRoot: string,
+  ) {
     this.target = resolveEditor(settings);
     this.bundleDirs = bundleDirs;
+    this.proxyFile = proxyFile;
+    this.appRoot = appRoot;
   }
 
   current(): EditorTarget {
@@ -81,6 +94,10 @@ export class EditorService {
 
   async status(refresh = false): Promise<EditorStatus> {
     if (this.cached && !refresh) return this.cached;
+    if (this.target.id === "zed") {
+      this.cached = await this.zedStatus();
+      return this.cached;
+    }
     if (!this.bundled || refresh) this.bundled = await findBundledCompanion(this.bundleDirs);
     const companionVersion = await installedExtensionVersion(this.target, COMPANION_EXTENSION_ID);
     const claude = await installedExtensionVersion(this.target, CLAUDE_EXTENSION_ID);
@@ -106,23 +123,64 @@ export class EditorService {
     return this.cached;
   }
 
+  /**
+   * zed's "companion" is grove's entry in its settings.json, and its version is the proxy that
+   * entry runs: the one next to this app is ok, any other (a moved checkout, an older app) is out
+   * of date
+   */
+  private async zedStatus(): Promise<EditorStatus> {
+    const registered = await registeredZedProxy(zedSettingsFile(this.target));
+    return {
+      id: this.target.id,
+      label: this.target.label,
+      bin: this.target.bin,
+      binFound: existsSync(this.target.bin),
+      companionVersion: registered,
+      bundledCompanionVersion: this.proxyFile,
+      companionState: !this.proxyFile
+        ? "unavailable"
+        : !registered
+          ? "missing"
+          : samePath(registered, this.proxyFile)
+            ? "ok"
+            : "outdated",
+      claudeExtensionInstalled: existsSync(zedAdapterPath()),
+    };
+  }
+
   /** landing on a session needs the companion. without it the editor still opens, just not on the session. */
   async companionInstalled(): Promise<boolean> {
     return (await this.status()).companionVersion !== null;
   }
 
   async installCompanion(): Promise<void> {
+    if (!existsSync(this.target.bin)) {
+      throw new AppError(
+        "editor-missing",
+        `${this.target.label} was not found at ${this.target.bin}.`,
+      );
+    }
+    if (this.target.id === "zed") {
+      if (!this.proxyFile) {
+        throw new AppError(
+          "no-proxy",
+          "The Grove agent was not found next to the app. Run `pnpm app:build`.",
+        );
+      }
+      await writeZedAgentServer(zedSettingsFile(this.target), {
+        command: "node",
+        args: [this.proxyFile],
+        // zed's environment does not carry the app's
+        env: { GROVE_ROOT: this.appRoot },
+      });
+      this.cached = null;
+      return;
+    }
     if (!this.bundled) this.bundled = await findBundledCompanion(this.bundleDirs);
     if (!this.bundled) {
       throw new AppError(
         "no-vsix",
         "The extension was not found next to the app. Run `pnpm ext:package`.",
-      );
-    }
-    if (!existsSync(this.target.bin)) {
-      throw new AppError(
-        "editor-missing",
-        `${this.target.label} was not found at ${this.target.bin}.`,
       );
     }
     const args = installExtensionArgs(this.bundled.vsix);

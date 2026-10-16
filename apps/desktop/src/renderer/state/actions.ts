@@ -277,14 +277,22 @@ export async function refresh(): Promise<void> {
 }
 
 export async function installCompanion(): Promise<void> {
+  const zed = state().editor?.id === "zed";
   const res = await api().installCompanion();
-  if (report("Could not install the extension", res)) {
-    state().toast({
-      level: "info",
-      title: "Extension installed",
-      body: "Reload open editor windows to activate it.",
-    });
-  }
+  if (!report(zed ? "Could not set up Zed" : "Could not install the extension", res)) return;
+  state().toast(
+    zed
+      ? {
+          level: "info",
+          title: "Grove agent added to Zed",
+          body: "To land on a session, start a new thread with grove-claude (+ in the agent panel) within five minutes of opening it.",
+        }
+      : {
+          level: "info",
+          title: "Extension installed",
+          body: "Reload open editor windows to activate it.",
+        },
+  );
 }
 
 // ---------- the keyboard and the menu ----------
