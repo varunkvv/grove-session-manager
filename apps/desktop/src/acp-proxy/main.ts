@@ -126,7 +126,7 @@ const SETTLE_MS = 300;
 
 /** a handoff of a session for exactly this folder, not yet taken */
 async function findIntent(cwd: string) {
-  return (await listIntents(appRoot)).find(
+  return (await listIntents(appRoot, "zed")).find(
     (i) => i.intent.kind === "resume" && matchIntent(i.intent, { root: cwd }) === "exact",
   );
 }
@@ -279,7 +279,7 @@ function proxy(adapter: string): void {
     else toZed(JSON.stringify({ ...m, result: { ...m.result, sessionId: p.sessionId } }));
     for (const held of p.buffer) toZed(held);
     log(`flush id=${p.id} sid=${p.sessionId} n=${p.buffer.length}`);
-    void sweepIntents(appRoot).catch(() => {});
+    void sweepIntents(appRoot, "zed").catch(() => {});
   }
 
   // zed's lines go to the adapter in the order they came, even while one waits on an intent

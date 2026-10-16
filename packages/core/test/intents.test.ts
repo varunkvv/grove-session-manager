@@ -154,6 +154,35 @@ describe("resume intents", () => {
     expect(await listIntents(app)).toEqual([]);
   });
 
+  it("a handoff for zed waits where the vs code extension does not look", async () => {
+    const app = makeSandbox("grove-intent-");
+    const root = path.join(app, "ops");
+    mkdirSync(root);
+    const report = await prepareComboOpen(
+      app,
+      { name: "ops", root, folders: [] },
+      { sessionId: SID.a, source: "app", editor: "zed" },
+    );
+    expect(path.dirname(report.intentFile!)).toBe(path.join(app, ".grove", "pending-zed"));
+    expect(path.dirname(report.intentFile!)).toBe(pendingDir(app, "zed"));
+    // what the companion in a vs code window on the same folder sees
+    expect(await listIntents(app)).toEqual([]);
+    expect((await listIntents(app, "zed")).map((i) => i.intent)).toMatchObject([
+      { kind: "resume", sessionId: SID.a, cwd: root },
+    ]);
+    // vs code and cursor keep the folder the companion reads
+    for (const editor of ["vscode", "cursor"] as const) {
+      const file = await writeIntent(app, { sessionId: SID.b, cwd: root }, editor);
+      expect(path.dirname(file)).toBe(pendingDir(app));
+    }
+    // each sweep keeps to its own folder
+    writeFileSync(path.join(pendingDir(app, "zed"), "junk.json"), "{ nope");
+    expect(await sweepIntents(app)).toBe(0);
+    expect(await sweepIntents(app, "zed")).toBe(1);
+    expect(readdirSync(pendingDir(app, "zed"))).toEqual([path.basename(report.intentFile!)]);
+    expect(readdirSync(pendingDir(app))).toHaveLength(1);
+  });
+
   it("a session id that is not a uuid is refused at write time", async () => {
     await expect(
       writeIntent(makeSandbox(), { sessionId: "../../etc/passwd", cwd: "/" }),

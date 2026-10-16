@@ -73,10 +73,12 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   expect(launch?.argv.some((a) => a.endsWith(".code-workspace"))).toBe(false);
   // still written: switching back to vs code keeps working
   expect(existsSync(path.join(root, `${path.basename(root)}.code-workspace`))).toBe(true);
-  // what the proxy in zed takes on the first new thread there
-  const intents = pendingIntents(fx);
+  // what the proxy in zed takes on the first new thread there. never where a vs code window's
+  // extension looks: it would take it first
+  const intents = pendingIntents(fx, "pending-zed");
   expect(intents).toHaveLength(1);
   expect(intents[0]).toMatchObject({ kind: "resume", sessionId: SID, cwd: root });
+  expect(pendingIntents(fx)).toEqual([]);
   // once the window is up, its agent panel: the new thread there is the one that lands
   await waitFor(async () => readExecLog(fx).length > 1, 10_000);
   expect(readExecLog(fx)[1]).toEqual({ bin: "open", argv: ["zed://agent"] });

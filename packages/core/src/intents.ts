@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
+import type { EditorTarget } from "./editor.ts";
 import { isObject, writeFileAtomic } from "./fsx.ts";
 import { getStateDir, pathRelation, realpathLoose, samePath } from "./paths.ts";
 import { isValidSessionId } from "./sessions/resume.ts";
@@ -39,8 +40,13 @@ export type IntentRequest =
 
 export const INTENT_TTL_MS = 5 * 60_000;
 
-export function pendingDir(appRoot: string): string {
-  return path.join(getStateDir(appRoot), "pending");
+/**
+ * zed's handoffs wait in a folder of their own. an intent does not say which editor it is for,
+ * and the vs code extension reads `pending/`: a vs code window open on the same folder took one
+ * meant for zed a second before zed's agent asked (2026-10-16)
+ */
+export function pendingDir(appRoot: string, editor?: EditorTarget["id"]): string {
+  return path.join(getStateDir(appRoot), editor === "zed" ? "pending-zed" : "pending");
 }
 
 /** one intent per folder: the last click wins. readers match on content, the name is opaque. */
@@ -48,11 +54,15 @@ export function intentFileName(cwd: string): string {
   return `${createHash("sha1").update(realpathLoose(cwd)).digest("hex").slice(0, 16)}.json`;
 }
 
-export async function writeIntent(appRoot: string, intent: IntentRequest): Promise<string> {
+export async function writeIntent(
+  appRoot: string,
+  intent: IntentRequest,
+  editor?: EditorTarget["id"],
+): Promise<string> {
   if (intent.kind !== "new" && !isValidSessionId(intent.sessionId)) {
     throw new Error("not a session id");
   }
-  const file = path.join(pendingDir(appRoot), intentFileName(intent.cwd));
+  const file = path.join(pendingDir(appRoot, editor), intentFileName(intent.cwd));
   const at = { version: 1 as const, issuedAt: Date.now() };
   const cwd = realpathLoose(intent.cwd);
   const body: Intent =
@@ -83,10 +93,11 @@ function parseIntent(raw: unknown, now: number, ttl: number): Intent | null {
 
 export async function listIntents(
   appRoot: string,
+  editor?: EditorTarget["id"],
   now: number = Date.now(),
   ttl: number = INTENT_TTL_MS,
 ): Promise<Array<{ file: string; intent: Intent }>> {
-  const dir = pendingDir(appRoot);
+  const dir = pendingDir(appRoot, editor);
   let names: string[];
   try {
     names = (await readdir(dir)).filter((n) => n.endsWith(".json"));
@@ -140,10 +151,11 @@ export async function claimIntent(file: string): Promise<Intent | null> {
 
 export async function sweepIntents(
   appRoot: string,
+  editor?: EditorTarget["id"],
   now: number = Date.now(),
   ttl: number = INTENT_TTL_MS,
 ): Promise<number> {
-  const dir = pendingDir(appRoot);
+  const dir = pendingDir(appRoot, editor);
   let removed = 0;
   let names: string[];
   try {
@@ -151,7 +163,9 @@ export async function sweepIntents(
   } catch {
     return 0;
   }
-  const live = new Set((await listIntents(appRoot, now, ttl)).map((i) => path.basename(i.file)));
+  const live = new Set(
+    (await listIntents(appRoot, editor, now, ttl)).map((i) => path.basename(i.file)),
+  );
   for (const name of names) {
     if (live.has(name)) continue;
     const file = path.join(dir, name);

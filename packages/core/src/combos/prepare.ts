@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import type { EditorTarget } from "../editor.ts";
 import { ensureWorktrees } from "../git/worktrees.ts";
 import { writeIntent } from "../intents.ts";
 import { getStateDir } from "../paths.ts";
@@ -18,6 +19,8 @@ export interface PrepareOptions {
   repairStale?: boolean;
   gitPath?: string;
   source?: string;
+  /** the editor that takes the handoff. zed's waits where only zed's agent looks */
+  editor?: EditorTarget["id"];
   onOutcome?: (outcome: FolderOutcome) => void;
 }
 
@@ -66,9 +69,9 @@ export async function prepareComboOpen(
     source: opts.source,
   };
   if (opts.sessionId) {
-    intentFile = await writeIntent(appRoot, { ...common, sessionId: opts.sessionId });
+    intentFile = await writeIntent(appRoot, { ...common, sessionId: opts.sessionId }, opts.editor);
   } else if (opts.newConversation) {
-    intentFile = await writeIntent(appRoot, { ...common, kind: "new" });
+    intentFile = await writeIntent(appRoot, { ...common, kind: "new" }, opts.editor);
   }
   return {
     combo,
@@ -86,18 +89,17 @@ export async function prepareComboOpen(
 export async function prepareFolderOpen(
   appRoot: string,
   cwd: string,
-  opts: { sessionId: string; prompt?: string; source?: string },
+  opts: { sessionId: string; prompt?: string; source?: string; editor?: EditorTarget["id"] },
 ): Promise<Result<{ cwd: string; intentFile: string }>> {
   try {
     if (!(await stat(cwd)).isDirectory()) return err("cwd-missing", `${cwd} is not a directory`);
   } catch {
     return err("cwd-missing", `${cwd} no longer exists`);
   }
-  const intentFile = await writeIntent(appRoot, {
-    sessionId: opts.sessionId,
-    cwd,
-    prompt: opts.prompt,
-    source: opts.source,
-  });
+  const intentFile = await writeIntent(
+    appRoot,
+    { sessionId: opts.sessionId, cwd, prompt: opts.prompt, source: opts.source },
+    opts.editor,
+  );
   return ok({ cwd, intentFile });
 }

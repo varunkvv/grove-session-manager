@@ -320,8 +320,8 @@ export class ComboService {
   open(
     combo: Combo,
     sessionId?: string,
-    /** a new conversation instead of a session, with its prompt */
-    land: Pick<PrepareOptions, "newConversation" | "prompt"> = {},
+    /** a new conversation instead of a session, with its prompt, and the editor taking it */
+    land: Pick<PrepareOptions, "newConversation" | "prompt" | "editor"> = {},
   ): Promise<{ workspaceFile: string; outcomes: FolderOutcome[]; warnings: string[] }> {
     return this.mutate(async () => {
       this.setBusyAll(combo, "creating");

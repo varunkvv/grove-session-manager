@@ -192,7 +192,7 @@ function buildHandlers(deps: Deps): Handlers {
 
   /** the project's window in the editor, on a session when one is given */
   async function openWindow(combo: Combo, sessionId?: string): Promise<OpenReport> {
-    const report = await combos.open(combo, sessionId);
+    const report = await combos.open(combo, sessionId, { editor: editor.current().id });
     const launched = await openInEditor(editor.current(), {
       workspaceFile: report.workspaceFile,
       folders: workspaceFolders(combo),
@@ -322,6 +322,7 @@ function buildHandlers(deps: Deps): Handlers {
       const prepared = await prepareFolderOpen(env.appRoot, folder, {
         sessionId: row.sessionId,
         source: "app",
+        editor: editor.current().id,
       });
       if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
       const launched = await openInEditor(editor.current(), { folders: [folder] });

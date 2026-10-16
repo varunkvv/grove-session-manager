@@ -94,9 +94,11 @@ if (cmd === "list" || cmd === "search") {
 } else if (cmd === "open") {
   const combo = await findCombo(args[0]);
   const sessionAt = rest.indexOf("--session");
+  const editor = resolveEditor(await loadSettings(getAppRoot()));
   const report = await prepareComboOpen(getAppRoot(), combo, {
     sessionId: sessionAt >= 0 ? rest[sessionAt + 1] : undefined,
     source: "cli",
+    editor: editor.id,
   });
   for (const o of report.outcomes)
     console.log(`${o.action.padEnd(16)} ${o.target}  ${o.message ?? ""}`);
@@ -104,7 +106,7 @@ if (cmd === "list" || cmd === "search") {
     `workspace: ${report.workspaceFile}${report.intentFile ? `\nintent:    ${report.intentFile}` : ""}`,
   );
   if (!flags.has("--no-launch")) {
-    const res = await openInEditor(resolveEditor(await loadSettings(getAppRoot())), {
+    const res = await openInEditor(editor, {
       workspaceFile: report.workspaceFile,
       folders: workspaceFolders(combo),
     });

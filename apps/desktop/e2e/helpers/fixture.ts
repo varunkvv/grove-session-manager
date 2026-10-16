@@ -485,9 +485,12 @@ export interface ExecLine {
   argv: string[];
 }
 
-/** what the app left for the editor's window, and nothing else */
-export function pendingIntents(fx: Fixture): Array<Record<string, unknown>> {
-  const dir = path.join(fx.root, ".grove", "pending");
+/** what the app left for the editor's window, and nothing else. zed's wait in `pending-zed` */
+export function pendingIntents(
+  fx: Fixture,
+  folder: "pending" | "pending-zed" = "pending",
+): Array<Record<string, unknown>> {
+  const dir = path.join(fx.root, ".grove", folder);
   if (!existsSync(dir)) return [];
   return readdirSync(dir).map((n) => JSON.parse(readFileSync(path.join(dir, n), "utf8")));
 }

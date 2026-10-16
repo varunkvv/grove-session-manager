@@ -96,7 +96,7 @@ describe("the acp proxy between zed and claude code", () => {
 
   it("a new thread in the handed-over folder loads the session, its history after the answer", async () => {
     const p = start();
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, prompt: "continue" });
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root, prompt: "continue" }, "zed");
     p.send(req(7, "session/new", { cwd: p.root, mcpServers: [] }));
     await vi.waitFor(() => expect(p.out).toHaveLength(4), { timeout: 10_000 });
 
@@ -117,7 +117,7 @@ describe("the acp proxy between zed and claude code", () => {
       true,
     );
     // taken, so no other window lands on it
-    expect(readdirSync(pendingDir(p.dir))).toEqual([]);
+    expect(readdirSync(pendingDir(p.dir, "zed"))).toEqual([]);
 
     const log = readFileSync(path.join(p.dir, ".grove", "acp.log"), "utf8");
     expect(log).toMatch(new RegExp(`rewrite id=7 sid=${SID}`));
@@ -137,7 +137,7 @@ describe("the acp proxy between zed and claude code", () => {
         combos: [{ name: "combo", root: p.root, folders: [{ path: ref, mode: "reference" }] }],
       }),
     );
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root });
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root }, "zed");
     const zedSays = { cwd: ref, mcpServers: [], additionalDirectories: [p.root] };
     p.send(req(7, "session/new", zedSays));
     await vi.waitFor(() => expect(p.out).toHaveLength(4), { timeout: 10_000 });
@@ -157,7 +157,7 @@ describe("the acp proxy between zed and claude code", () => {
 
   it("of two new threads at once, the second lands: zed closes the first, its restored draft", async () => {
     const p = start();
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root });
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root }, "zed");
     const draft = req(7, "session/new", { cwd: p.root, mcpServers: [] });
     p.send(draft);
     p.send(req(8, "session/new", { cwd: p.root, mcpServers: [] }));
@@ -180,21 +180,24 @@ describe("the acp proxy between zed and claude code", () => {
     const p = start();
     const other = path.join(p.dir, "other");
     mkdirSync(other);
-    await writeIntent(p.dir, { sessionId: SID, cwd: other });
+    await writeIntent(p.dir, { sessionId: SID, cwd: other }, "zed");
     // a new conversation has no session to load: zed's own new thread is already that
-    await writeIntent(p.dir, { kind: "new", cwd: p.root });
+    await writeIntent(p.dir, { kind: "new", cwd: p.root }, "zed");
+    // a handoff for vs code's extension is not zed's to take
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root });
     const line = req(7, "session/new", { cwd: p.root, mcpServers: [] });
     p.send(line);
     await vi.waitFor(() => expect(p.out).toHaveLength(1), { timeout: 10_000 });
     expect(p.received()).toEqual([line]);
     expect(parsed(p.out)[0].result.sessionId).toBe("new-1");
-    expect(readdirSync(pendingDir(p.dir))).toHaveLength(2);
+    expect(readdirSync(pendingDir(p.dir, "zed"))).toHaveLength(2);
+    expect(readdirSync(pendingDir(p.dir))).toHaveLength(1);
     expect(await p.close()).toBe(0);
   });
 
   it("a session that will not load falls back to the new thread zed asked for", async () => {
     const p = start({ FAKE_LOAD_FAILS: "1" });
-    await writeIntent(p.dir, { sessionId: SID, cwd: p.root });
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root }, "zed");
     const line = req(7, "session/new", { cwd: p.root, mcpServers: [] });
     p.send(line);
     await vi.waitFor(() => expect(p.out).toHaveLength(1), { timeout: 10_000 });
