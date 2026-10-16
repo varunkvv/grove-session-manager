@@ -17,8 +17,8 @@ Keep in mind:
 - start one thread with Claude (with Grove) (**+** in Zed's agent panel) first. Grove opens the panel on the session,
   and Zed starts that thread with the agent you used last
 - every open in Zed is a new window. Grove does not look for one already open
-- the agent runs `node` from the PATH Zed sees, and the Claude Code agent from where Zed installed it. if you never
-  opened a thread with Zed's own Claude Agent, do that once
+- the agent runs the Claude Code agent from where Zed installed it. if you never opened a thread with Zed's own
+  Claude Agent, do that once
 - the VS Code extension's status bar, drift warning and find-session shortcut have no Zed version. Zed has no
   extension API for them
 

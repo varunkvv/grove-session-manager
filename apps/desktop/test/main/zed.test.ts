@@ -13,7 +13,7 @@ import { type Settings, stripJsonc } from "@grove/core";
 import { describe, expect, it } from "vitest";
 import { EditorService } from "../../src/main/services/editor.ts";
 import {
-  registeredZedProxy,
+  registeredZedAgent,
   upsertZedAgentServer,
   writeZedAgentServer,
 } from "../../src/main/services/zed.ts";
@@ -24,9 +24,9 @@ const FIXTURE = readFileSync(
   "utf8",
 );
 const ENTRY = {
-  command: "node",
+  command: "/Applications/Grove.app/Contents/MacOS/Grove",
   args: ["/Applications/Grove.app/Contents/Resources/acp-proxy/grove-acp.cjs"],
-  env: { GROVE_ROOT: "/Users/you/claude-ws" },
+  env: { ELECTRON_RUN_AS_NODE: "1", GROVE_ROOT: "/Users/you/claude-ws" },
 };
 const sandbox = () => realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-zed-")));
 const parse = (text: string) => JSON.parse(stripJsonc(text));
@@ -74,16 +74,19 @@ describe("grove's entry in zed's settings.json", () => {
     }
   });
 
-  it("reads back the proxy it registered, and nothing from a file without one", async () => {
+  it("reads back what runs the proxy it registered, and nothing from a file without one", async () => {
     const dir = sandbox();
     const file = path.join(dir, "settings.json");
-    expect(await registeredZedProxy(file)).toBeNull();
+    expect(await registeredZedAgent(file)).toBeNull();
     writeFileSync(file, "{ not json");
-    expect(await registeredZedProxy(file)).toBeNull();
+    expect(await registeredZedAgent(file)).toBeNull();
     writeFileSync(file, FIXTURE);
-    expect(await registeredZedProxy(file)).toBeNull();
+    expect(await registeredZedAgent(file)).toBeNull();
     await writeZedAgentServer(file, ENTRY);
-    expect(await registeredZedProxy(file)).toBe(ENTRY.args[0]);
+    expect(await registeredZedAgent(file)).toEqual({
+      command: ENTRY.command,
+      proxy: ENTRY.args[0],
+    });
   });
 
   it("keeps the file as private as it was, and makes a new one private", async () => {
@@ -118,6 +121,9 @@ describe("the editor service, with zed as the editor", () => {
     writeFileSync(bin, "");
     const proxy = path.join(dir, "grove-acp.cjs");
     writeFileSync(proxy, "");
+    // stands in for the Grove binary
+    const grove = path.join(dir, "Grove");
+    writeFileSync(grove, "");
     // never the real ~/.config/zed: extensionsDir is where zed's settings.json is looked for
     const settings: Settings = {
       editor: "zed",
@@ -125,8 +131,8 @@ describe("the editor service, with zed as the editor", () => {
       editorBin: bin,
       extensionsDir: zedDir,
     };
-    const service = (proxyFile: string | null) =>
-      new EditorService(settings, [], proxyFile, "/Users/you/claude-ws");
+    const service = (proxyFile: string | null, executable = grove) =>
+      new EditorService(settings, [], proxyFile, "/Users/you/claude-ws", executable);
 
     const editor = service(proxy);
     expect(await editor.status(true)).toMatchObject({ id: "zed", companionState: "missing" });
@@ -142,16 +148,32 @@ describe("the editor service, with zed as the editor", () => {
     const entry = parse(readFileSync(path.join(zedDir, "settings.json"), "utf8")).agent_servers[
       "Claude (with Grove)"
     ];
+    // grove's own binary as node: zed's PATH may have no node, as on a Dock-launched zed
     expect(entry).toEqual({
       type: "custom",
-      command: "node",
+      command: grove,
       args: [proxy],
-      env: { GROVE_ROOT: "/Users/you/claude-ws" },
+      env: { ELECTRON_RUN_AS_NODE: "1", GROVE_ROOT: "/Users/you/claude-ws" },
     });
 
     const elsewhere = path.join(dir, "other.cjs");
     writeFileSync(elsewhere, "");
     expect((await service(elsewhere).status(true)).companionState).toBe("outdated");
+    // another app's binary, an older grove's
+    expect((await service(proxy, path.join(dir, "Other")).status(true)).companionState).toBe(
+      "outdated",
+    );
+    // what 0.18.30 wrote, and what a person may have put there by hand
+    for (const command of ["node", "/Users/you/.asdf/installs/nodejs/24.13.1/bin/node"]) {
+      const file = path.join(zedDir, "settings.json");
+      writeFileSync(
+        file,
+        upsertZedAgentServer(readFileSync(file, "utf8"), { ...entry, command, env: {} }),
+      );
+      expect((await service(proxy).status(true)).companionState).toBe("outdated");
+    }
+    await service(proxy).installCompanion();
+    expect((await service(proxy).status(true)).companionState).toBe("ok");
     expect((await service(null).status(true)).companionState).toBe("unavailable");
     await expect(service(null).installCompanion()).rejects.toMatchObject({ code: "no-proxy" });
   });

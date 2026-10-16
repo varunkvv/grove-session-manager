@@ -102,6 +102,8 @@ async function start(): Promise<void> {
       path.join(outDir, "acp-proxy", "grove-acp.cjs"),
     ].find((f) => existsSync(f)) ?? null,
     appEnv.appRoot,
+    // the Grove binary when packaged, electron's in a checkout. zed runs the proxy with it
+    process.execPath,
   );
 
   /** recaps, titles and descriptions are written: the switch, and a claude this may run */

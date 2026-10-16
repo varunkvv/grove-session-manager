@@ -441,10 +441,11 @@ Landing needs the companion extension in that editor. Without it the window open
 **Zed** is the third editor in Settings. Grove opens the project as one new Zed window, `cli -n <root> <references>`,
 and when it lands on a session, opens that window's agent panel (`zed://agent`) a few seconds later. That starts a
 new thread with the agent Zed last used, and with **Claude (with Grove)** the thread is the session, with its history.
-Claude (with Grove) is Grove's entry in Zed's `agent_servers`, which the banner adds. It runs Claude Code's own agent, the
-one Zed installed, and passes everything through as it is but two things: in a project's window the project folder
-is the agent's folder (Zed hands a window's folders over alphabetically), and a new thread in a folder the app has
-just handed a session to becomes that session. Start one thread with Claude (with Grove) (**+** in the agent panel) once, so
+Claude (with Grove) is Grove's entry in Zed's `agent_servers`, which the banner adds. Zed runs it with Grove's own
+binary as node, so it needs no node on Zed's PATH. It runs Claude Code's own agent, the one Zed installed, and passes
+everything through as it is but two things: in a project's window the project folder is the agent's folder (Zed
+hands a window's folders over alphabetically), and a new thread in a folder the app has just handed a session to
+becomes that session. Start one thread with Claude (with Grove) (**+** in the agent panel) once, so
 that it is the agent Zed last used. **New session** opens the project, and you start the thread there.
 
 **New session** is in a project's top bar, on a project with no sessions, in `⌘K`, and a double-click on the project
@@ -833,8 +834,9 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
   when Zed was not running: the panel can open before the new window does
 - **every open of a project in Zed is a new window** - Grove opens it with `-n`, and does not look for one already
   open
-- **Claude (with Grove) does not start in Zed** - it runs `node` from the PATH Zed sees, and Claude Code's agent from where
-  Zed installed it. Open a thread with Zed's own Claude agent once, so Zed installs that
+- **Claude (with Grove) does not start in Zed** - it runs Claude Code's agent from where Zed installed it. Open a thread
+  with Zed's own Claude agent once, so Zed installs that. An entry from 0.18.30 runs `node` from Zed's PATH, which a
+  Zed started from the Dock may not have: the banner says it is out of date, and Update fixes it
 - **Zed asks whether to trust the project** - Zed's own prompt, once per folder, unless `trust_all_worktrees` is on
 
 The transcript format is internal to Claude Code and changes between releases. What this project relies on, and how it was

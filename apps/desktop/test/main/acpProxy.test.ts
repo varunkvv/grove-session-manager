@@ -25,12 +25,16 @@ function start(env: Record<string, string> = {}) {
   mkdirSync(root);
   const fakeLog = path.join(dir, "fake.log");
   writeFileSync(fakeLog, "");
+  const envLog = path.join(dir, "fake-env.json");
   const child = spawn(process.execPath, [PROXY], {
     env: {
       ...process.env,
+      // a terminal in vs code exports it. a test sets it when it wants it
+      ELECTRON_RUN_AS_NODE: undefined,
       GROVE_ROOT: dir,
       GROVE_ACP_ADAPTER: FAKE,
       FAKE_ACP_LOG: fakeLog,
+      FAKE_ACP_ENV_LOG: envLog,
       ...env,
     },
     stdio: ["pipe", "pipe", "inherit"],
@@ -49,6 +53,8 @@ function start(env: Record<string, string> = {}) {
     out,
     /** what the adapter was sent, line by line */
     received: () => readFileSync(fakeLog, "utf8").split("\n").filter(Boolean),
+    /** what the adapter found in its environment */
+    adapterEnv: () => JSON.parse(readFileSync(envLog, "utf8")),
     send: (line: string) => child.stdin.write(`${line}\n`),
     /** zed closes the pipe: the adapter ends, then the proxy */
     close: () => {
@@ -76,6 +82,15 @@ describe("the acp proxy between zed and claude code", () => {
       }),
     );
     expect(p.received()).toEqual([init]);
+    expect(await p.close()).toBe(0);
+  });
+
+  it("run by grove's binary as node, the adapter does not pass that on to what it starts", async () => {
+    // node ignores the variable, so this is zed running grove's binary, without electron
+    const p = start({ ELECTRON_RUN_AS_NODE: "1" });
+    p.send(req(1, "initialize", { protocolVersion: 1, clientCapabilities: {} }));
+    await vi.waitFor(() => expect(p.out).toHaveLength(1), { timeout: 10_000 });
+    expect(p.adapterEnv()).toEqual({ ELECTRON_RUN_AS_NODE: null });
     expect(await p.close()).toBe(0);
   });
 

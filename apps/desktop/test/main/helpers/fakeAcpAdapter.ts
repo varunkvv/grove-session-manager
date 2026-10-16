@@ -13,6 +13,12 @@ const update = (sessionId: string, text: string) => ({
   },
 });
 
+// what it was started with, for a test that needs to know
+if (process.env.FAKE_ACP_ENV_LOG) {
+  const seen = { ELECTRON_RUN_AS_NODE: process.env.ELECTRON_RUN_AS_NODE ?? null };
+  appendFileSync(process.env.FAKE_ACP_ENV_LOG, JSON.stringify(seen));
+}
+
 for await (const line of createInterface({ input: process.stdin })) {
   if (process.env.FAKE_ACP_LOG) appendFileSync(process.env.FAKE_ACP_LOG, `${line}\n`);
   const m = JSON.parse(line);

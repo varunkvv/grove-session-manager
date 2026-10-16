@@ -55,7 +55,10 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   expect(text.startsWith("// Zed settings")).toBe(true);
   expect(text).toContain('"claude-acp"');
   const entry = JSON.parse(stripJsonc(text)).agent_servers["Claude (with Grove)"];
-  expect(entry).toMatchObject({ type: "custom", command: "node" });
+  // the app's own binary runs the proxy as node: zed's PATH may have none
+  const executable = await app.app.evaluate(() => process.execPath);
+  expect(entry).toMatchObject({ type: "custom", command: executable });
+  expect(entry.env.ELECTRON_RUN_AS_NODE).toBe("1");
   expect(entry.args[0]).toMatch(/grove-acp\.cjs$/);
   expect(existsSync(entry.args[0])).toBe(true);
   expect(entry.env.GROVE_ROOT).toBe(fx.root);

@@ -24,14 +24,18 @@ export function zedSettingsFile(editor: Pick<EditorTarget, "extensionsDir">): st
   return path.join(editor.extensionsDir, "settings.json");
 }
 
-/** the proxy zed runs as grove's agent, or null when there is no such entry */
-export async function registeredZedProxy(file: string): Promise<string | null> {
+/** what zed runs as grove's agent: the program and the proxy it is given. null without an entry */
+export async function registeredZedAgent(
+  file: string,
+): Promise<{ command: string; proxy: string } | null> {
   const read = await readJsoncTolerant(file);
   if (read.status !== "ok" || !isObject(read.value)) return null;
   const servers = read.value.agent_servers;
   const entry = isObject(servers) ? servers[ZED_AGENT_ID] : undefined;
   if (!isObject(entry) || !Array.isArray(entry.args)) return null;
-  return typeof entry.args[0] === "string" ? entry.args[0] : null;
+  const proxy = entry.args[0];
+  if (typeof proxy !== "string") return null;
+  return { command: typeof entry.command === "string" ? entry.command : "", proxy };
 }
 
 /** grove's entry, set. every other byte of the text stays as it was */

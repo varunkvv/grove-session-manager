@@ -17,7 +17,7 @@ import {
 import type { EditorStatus } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
-import { registeredZedProxy, writeZedAgentServer, zedSettingsFile } from "./zed.ts";
+import { registeredZedAgent, writeZedAgentServer, zedSettingsFile } from "./zed.ts";
 
 const INSTALL_TIMEOUT_MS = 60_000;
 
@@ -69,6 +69,8 @@ export class EditorService {
   /** zed's agent: the built acp proxy, and the app root it lands sessions from */
   private readonly proxyFile: string | null;
   private readonly appRoot: string;
+  /** what runs the proxy in zed: this app's own binary, as node. zed's PATH may have no node */
+  private readonly executable: string;
   private cached: EditorStatus | null = null;
 
   constructor(
@@ -76,11 +78,13 @@ export class EditorService {
     bundleDirs: readonly string[],
     proxyFile: string | null,
     appRoot: string,
+    executable: string,
   ) {
     this.target = resolveEditor(settings);
     this.bundleDirs = bundleDirs;
     this.proxyFile = proxyFile;
     this.appRoot = appRoot;
+    this.executable = executable;
   }
 
   current(): EditorTarget {
@@ -125,23 +129,24 @@ export class EditorService {
 
   /**
    * zed's "companion" is grove's entry in its settings.json, and its version is the proxy that
-   * entry runs: the one next to this app is ok, any other (a moved checkout, an older app) is out
-   * of date
+   * entry runs. ok is the proxy next to this app, run by this app's binary. anything else (a moved
+   * checkout, an older app, 0.18.30's bare `node`) is out of date
    */
   private async zedStatus(): Promise<EditorStatus> {
-    const registered = await registeredZedProxy(zedSettingsFile(this.target));
+    const registered = await registeredZedAgent(zedSettingsFile(this.target));
     return {
       id: this.target.id,
       label: this.target.label,
       bin: this.target.bin,
       binFound: existsSync(this.target.bin),
-      companionVersion: registered,
+      companionVersion: registered?.proxy ?? null,
       bundledCompanionVersion: this.proxyFile,
       companionState: !this.proxyFile
         ? "unavailable"
         : !registered
           ? "missing"
-          : samePath(registered, this.proxyFile)
+          : samePath(registered.proxy, this.proxyFile) &&
+              samePath(registered.command, this.executable)
             ? "ok"
             : "outdated",
       claudeExtensionInstalled: existsSync(zedAdapterPath()),
@@ -168,10 +173,12 @@ export class EditorService {
         );
       }
       await writeZedAgentServer(zedSettingsFile(this.target), {
-        command: "node",
+        // the person's node may not be on zed's PATH, or may be broken. electron runs as node
+        // with ELECTRON_RUN_AS_NODE, and the proxy keeps that from reaching claude's tools
+        command: this.executable,
         args: [this.proxyFile],
         // zed's environment does not carry the app's
-        env: { GROVE_ROOT: this.appRoot },
+        env: { ELECTRON_RUN_AS_NODE: "1", GROVE_ROOT: this.appRoot },
       });
       this.cached = null;
       return;

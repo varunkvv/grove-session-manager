@@ -171,8 +171,17 @@ function answerMissing(adapter: string): void {
   );
 }
 
+/**
+ * zed runs this with grove's own binary as node (ELECTRON_RUN_AS_NODE), and the adapter runs on
+ * the same binary. the variable must not reach what the adapter starts: claude's tools run `code`
+ * and other electron apps, and it turns them into node. so the adapter drops it before it starts
+ */
+const FORGET_RUN_AS_NODE = "data:text/javascript,delete process.env.ELECTRON_RUN_AS_NODE";
+
 function proxy(adapter: string): void {
-  const child = spawn(process.execPath, [adapter, ...process.argv.slice(2)], {
+  const args = [adapter, ...process.argv.slice(2)];
+  if (process.env.ELECTRON_RUN_AS_NODE) args.unshift("--import", FORGET_RUN_AS_NODE);
+  const child = spawn(process.execPath, args, {
     // its stderr still reaches Zed.log
     stdio: ["pipe", "pipe", "inherit"],
   });
