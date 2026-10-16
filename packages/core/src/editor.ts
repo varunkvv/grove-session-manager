@@ -111,12 +111,27 @@ export function runDetached(
   });
 }
 
-/** opens a folder or a .code-workspace file. `code <path>` returns straight away: there is no "opened" signal. */
+export interface LaunchTarget {
+  workspaceFile?: string;
+  /** the window's roots, the cwd first */
+  folders: string[];
+}
+
+/**
+ * vs code and cursor open the .code-workspace file, or the folder. zed has no workspace file:
+ * `-n` opens one new window with every root, and its agent takes the first as its cwd.
+ */
+export function editorLaunchArgs(editor: EditorTarget, target: LaunchTarget): string[] {
+  if (editor.id === "zed") return ["-n", ...target.folders];
+  return [target.workspaceFile ?? target.folders[0]!];
+}
+
+/** `code <path>` returns straight away: there is no "opened" signal. */
 export function openInEditor(
-  target: string,
   editor: EditorTarget,
+  target: LaunchTarget,
 ): Promise<Result<{ bin: string; args: string[] }>> {
-  return runDetached(editor.bin, [target]);
+  return runDetached(editor.bin, editorLaunchArgs(editor, target));
 }
 
 export function buildSessionUri(uriScheme: string, sessionId: string, prompt?: string): string {

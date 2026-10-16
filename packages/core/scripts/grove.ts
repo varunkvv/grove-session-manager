@@ -18,6 +18,7 @@ import {
   reconcileCombo,
   resolveEditor,
   searchSessions,
+  workspaceFolders,
 } from "../src/index.ts";
 
 const [cmd = "list", ...rest] = process.argv.slice(2);
@@ -103,10 +104,10 @@ if (cmd === "list" || cmd === "search") {
     `workspace: ${report.workspaceFile}${report.intentFile ? `\nintent:    ${report.intentFile}` : ""}`,
   );
   if (!flags.has("--no-launch")) {
-    const res = await openInEditor(
-      report.workspaceFile,
-      resolveEditor(await loadSettings(getAppRoot())),
-    );
+    const res = await openInEditor(resolveEditor(await loadSettings(getAppRoot())), {
+      workspaceFile: report.workspaceFile,
+      folders: workspaceFolders(combo),
+    });
     console.log(res.ok ? `launched ${res.value.bin}` : `could not launch: ${res.error.message}`);
   }
 } else {

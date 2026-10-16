@@ -13,6 +13,7 @@ import {
   runDetached,
   type Settings,
   saveSettings,
+  workspaceFolders,
 } from "@grove/core";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
@@ -184,7 +185,10 @@ function buildHandlers(deps: Deps): Handlers {
   /** the project's window in the editor, on a session when one is given */
   async function openWindow(combo: Combo, sessionId?: string): Promise<OpenReport> {
     const report = await combos.open(combo, sessionId);
-    const launched = await openInEditor(report.workspaceFile, editor.current());
+    const launched = await openInEditor(editor.current(), {
+      workspaceFile: report.workspaceFile,
+      folders: workspaceFolders(combo),
+    });
     if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
     for (const warning of report.warnings) {
       pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
@@ -311,7 +315,7 @@ function buildHandlers(deps: Deps): Handlers {
         source: "app",
       });
       if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
-      const launched = await openInEditor(folder, editor.current());
+      const launched = await openInEditor(editor.current(), { folders: [folder] });
       if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
       return (await editor.companionInstalled()) ? {} : missing;
     },
@@ -341,7 +345,10 @@ function buildHandlers(deps: Deps): Handlers {
           };
         }
         const report = await combos.open(combo, undefined, { newConversation: true });
-        const launched = await openInEditor(report.workspaceFile, editor.current());
+        const launched = await openInEditor(editor.current(), {
+          workspaceFile: report.workspaceFile,
+          folders: workspaceFolders(combo),
+        });
         if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
         for (const warning of report.warnings) {
           pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });

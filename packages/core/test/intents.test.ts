@@ -5,6 +5,8 @@ import { prepareComboOpen } from "../src/combos/prepare.ts";
 import {
   buildNewConversationUri,
   buildSessionUri,
+  EDITOR_PRESETS,
+  editorLaunchArgs,
   installedExtensionVersion,
   resolveEditor,
   runDetached,
@@ -224,6 +226,18 @@ describe("editor handoff", () => {
     expect(resolveEditor({ editor: "zed" }, { GROVE_EXTENSIONS_DIR: "/tmp/z" }).extensionsDir).toBe(
       "/tmp/z",
     );
+  });
+
+  it("vs code opens the workspace file, or the folder. zed opens one window, the root first", () => {
+    const { vscode, zed } = EDITOR_PRESETS;
+    expect(
+      editorLaunchArgs(vscode, { workspaceFile: "/c/c.code-workspace", folders: ["/c", "/r"] }),
+    ).toEqual(["/c/c.code-workspace"]);
+    expect(editorLaunchArgs(vscode, { folders: ["/src/api"] })).toEqual(["/src/api"]);
+    expect(
+      editorLaunchArgs(zed, { workspaceFile: "/c/c.code-workspace", folders: ["/c", "/r"] }),
+    ).toEqual(["-n", "/c", "/r"]);
+    expect(editorLaunchArgs(zed, { folders: ["/src/api"] })).toEqual(["-n", "/src/api"]);
   });
 
   it("a missing or relative binary is a result, not an exception", async () => {
