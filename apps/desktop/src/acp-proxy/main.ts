@@ -121,13 +121,20 @@ async function comboFirst(params: Record<string, unknown>): Promise<Record<strin
 }
 
 const SESSION_SETUP = new Set(["session/new", "session/load", "session/resume"]);
+/** how long a new thread that may land waits for zed to start another one in its place */
+const SETTLE_MS = 300;
+
+/** a handoff of a session for exactly this folder, not yet taken */
+async function findIntent(cwd: string) {
+  return (await listIntents(appRoot)).find(
+    (i) => i.intent.kind === "resume" && matchIntent(i.intent, { root: cwd }) === "exact",
+  );
+}
 
 /** the session the app handed over for this folder, taken so no other window lands on it too */
 async function claimFor(cwd: string): Promise<string | null> {
   try {
-    const pick = (await listIntents(appRoot)).find(
-      (i) => i.intent.kind === "resume" && matchIntent(i.intent, { root: cwd }) === "exact",
-    );
+    const pick = await findIntent(cwd);
     if (!pick) return null;
     const intent = await claimIntent(pick.file);
     if (intent?.kind !== "resume") return null;
@@ -173,6 +180,28 @@ function proxy(adapter: string): void {
   /** the one rewritten session/new in flight, and the replayed history held until its answer */
   let pending: { id: Id; sessionId: string; original: string; buffer: string[] } | null = null;
 
+  /**
+   * a new thread that may land, held a moment before it does. the first time a window's agent
+   * panel opens, zed restores a draft thread, starts the new one 2ms later and closes the draft
+   * (zed://agent in a fresh window, seen 2026-10-15). so the last new thread of a burst lands.
+   */
+  let held: { m: Message; line: string; cwd: string; timer: NodeJS.Timeout } | null = null;
+
+  async function land(h: NonNullable<typeof held>): Promise<void> {
+    if (held !== h) return;
+    held = null;
+    const sessionId = pending ? null : await claimFor(h.cwd);
+    if (!sessionId || h.m.id === undefined) {
+      toAgent(h.line);
+      return;
+    }
+    pending = { id: h.m.id, sessionId, original: h.line, buffer: [] };
+    log(`rewrite id=${h.m.id} sid=${sessionId} cwd=${h.cwd}`);
+    toAgent(
+      JSON.stringify({ ...h.m, method: "session/load", params: { ...h.m.params, sessionId } }),
+    );
+  }
+
   async function fromZed(received: string): Promise<void> {
     let line = received;
     let m = parse(line);
@@ -187,13 +216,25 @@ function proxy(adapter: string): void {
     }
     const cwd = m?.params?.cwd;
     if (m?.method === "session/new" && m.id !== undefined && !pending && typeof cwd === "string") {
-      const sessionId = await claimFor(cwd);
-      if (sessionId) {
-        pending = { id: m.id, sessionId, original: line, buffer: [] };
-        log(`rewrite id=${m.id} sid=${sessionId} cwd=${cwd}`);
-        toAgent(
-          JSON.stringify({ ...m, method: "session/load", params: { ...m.params, sessionId } }),
-        );
+      if (held && samePath(held.cwd, cwd)) {
+        // the draft zed is about to close: a plain new thread
+        log(`superseded id=${held.m.id}`);
+        clearTimeout(held.timer);
+        toAgent(held.line);
+        held = null;
+      } else if (held) {
+        await land(held);
+      }
+      if (await findIntent(cwd).catch(() => undefined)) {
+        const h = {
+          m,
+          line,
+          cwd,
+          timer: setTimeout(() => {
+            chain = chain.then(() => land(h));
+          }, SETTLE_MS),
+        };
+        held = h;
         return;
       }
     }
@@ -240,7 +281,14 @@ function proxy(adapter: string): void {
       chain = chain.then(() => fromZed(line));
     },
     () => {
-      chain = chain.then(() => void child.stdin.end());
+      chain = chain.then(() => {
+        if (held) {
+          clearTimeout(held.timer);
+          toAgent(held.line);
+          held = null;
+        }
+        child.stdin.end();
+      });
     },
   );
   eachLine(child.stdout, fromAgent, () => {});

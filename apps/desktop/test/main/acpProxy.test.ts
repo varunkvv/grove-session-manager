@@ -140,6 +140,27 @@ describe("the acp proxy between zed and claude code", () => {
     expect(await p.close()).toBe(0);
   });
 
+  it("of two new threads at once, the second lands: zed closes the first, its restored draft", async () => {
+    const p = start();
+    await writeIntent(p.dir, { sessionId: SID, cwd: p.root });
+    const draft = req(7, "session/new", { cwd: p.root, mcpServers: [] });
+    p.send(draft);
+    p.send(req(8, "session/new", { cwd: p.root, mcpServers: [] }));
+    await vi.waitFor(() => expect(p.out).toHaveLength(5), { timeout: 10_000 });
+
+    const sent = p.received();
+    expect(sent[0]).toBe(draft);
+    expect(JSON.parse(sent[1]!)).toMatchObject({
+      id: 8,
+      method: "session/load",
+      params: { sessionId: SID },
+    });
+    const answers = parsed(p.out).filter((o) => o.id !== undefined);
+    expect(answers.find((a) => a.id === 7).result.sessionId).toBe("new-1");
+    expect(answers.find((a) => a.id === 8).result.sessionId).toBe(SID);
+    expect(await p.close()).toBe(0);
+  });
+
   it("a folder nothing was handed over for gets a plain new thread", async () => {
     const p = start();
     const other = path.join(p.dir, "other");
