@@ -4,7 +4,7 @@ _Tells you which Claude Code agents need you, and gets you to them._
 
 Grove is for one person running many Claude Code sessions across several projects. It watches every session, says
 which ones are waiting on you (a permission prompt, a finished turn, a failure, a session that stopped mid-turn), and
-opens the one you pick in VS Code or Cursor.
+opens the one you pick in VS Code, Cursor or Zed.
 
 In the repo:
 
@@ -14,6 +14,9 @@ In the repo:
   layer
 - the companion extension (`extension/`) - the few things that can only happen from inside VS Code or Cursor: landing a
   window on a session, starting a conversation with a prompt waiting, syncing a project's references, showing drift
+- the Zed agent (`apps/desktop/src/acp-proxy`) - Zed has no extension API, so landing there goes through a small ACP
+  proxy between Zed and Claude Code's agent. It turns the first new thread in the project's window into the session
+  Grove handed over
 
 Grove never types into a running session. It keeps files on disk, starts a session with one prompt when you ask for
 one, and hands off to the editor. You answer an agent in the agent's own chat. The one thing it asks a model for is a
@@ -21,8 +24,8 @@ one, and hands off to the editor. You answer an agent in the agent's own chat. T
 
 ## First run
 
-Needs macOS on Apple Silicon, git, VS Code or Cursor with the Claude Code extension, and the `claude` CLI for agents in
-the background. Checked against Claude Code 2.1.286 and 2.1.287.
+Needs macOS on Apple Silicon, git, VS Code or Cursor with the Claude Code extension (or Zed with its Claude Code agent),
+and the `claude` CLI for agents in the background. Checked against Claude Code 2.1.286 and 2.1.287.
 
 1. [Install it](#install-it) and open it. With no project yet, the window is the **New project** form
 2. Give the project a name and the repos the work needs, then **Create project**. Grove makes the project's folder
@@ -435,6 +438,13 @@ one after seven days. The menu bar names that session.
 
 Landing needs the companion extension in that editor. Without it the window opens and Grove says it could not land.
 
+**Zed** is the third editor in Settings. Grove opens the project as one new Zed window, `cli -n <root> <references>`,
+the root first so that it is the agent's folder. Zed opens that window on its own last thread, and nothing outside Zed
+can pick another, so landing takes one click: **+** in the agent panel, a new thread with **grove-claude**, within five
+minutes. That thread is the session, with its history. grove-claude is Grove's entry in Zed's `agent_servers`, which
+the banner adds. It runs Claude Code's own agent, the one Zed installed, and passes everything else through as it is.
+**New session** opens the project, and you start the thread there.
+
 **New session** is in a project's top bar, on a project with no sessions, in `⌘K`, and a double-click on the project
 in the sidebar. The project opens in VS Code
 (or Cursor) on a new conversation in the Claude panel, and what the session should do is typed there. Grove asks
@@ -503,6 +513,7 @@ edited. The workspace file and the references are written when the project is op
     titles/pending/ a title waiting for its session's next prompt, one small file each
     session-index.v1.json  the sessions as last read, with each one's usage by day. rebuilt from the transcripts
     usage-retired.json  the usage of sessions whose transcript is gone. this one cannot be rebuilt
+    acp.log         what grove-claude did in Zed: each request and each landing, never what was said. emptied past 1MB
 ~/Library/Sounds/
   Grove.wav         the notification chime, about 40KB. written at launch, and again whenever it differs from Grove's own
 ```
@@ -516,7 +527,9 @@ out by hand and the app follows. Only `true` means anything: the app never write
 other value the next time it saves the file. No other key of the project moves when it is archived.
 
 Outside `~/claude-ws` and the projects' own folders the app writes two things: `Grove.wav`, and the opt-in status hooks
-below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. It never writes Claude Code's
+below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. With Zed as the editor it also
+keeps one entry, `agent_servers.grove-claude`, in `~/.config/zed/settings.json`. Comments and your other entries are
+preserved, and a file that is not valid JSON is left alone. It never writes Claude Code's
 folder trust, never copies a transcript, never deletes a branch, and never passes `--force` to `git worktree remove`:
 a working copy with uncommitted work is kept and reported. The folder of a project you delete goes to the Trash,
 never straight off the disk.
@@ -617,6 +630,8 @@ against a fixture project written by 0.10's own code.
 What did not run, or does not work:
 
 - no test drives a real editor tab, and the double-clicks (a row, a project) were only driven by Playwright's mouse
+- no test drives a real Zed window. the Zed agent was run headless against Zed's Claude Code agent 0.91.0, and the
+  rest of Zed's side is read from its source and its log
 - you cannot answer from Grove, and Grove cannot wake an agent. you answer in the agent's chat
 - no test runs the real `claude`. the recap prompt was tried by hand on six real sessions (13 calls): a short one, a
   60MB one compacted four times, one that ended on a question, one stopped mid-turn, one cut at a permission prompt and
@@ -725,6 +740,9 @@ pnpm app:package        # apps/desktop/dist/*.dmg, ad-hoc signed
 pnpm app:packaged       # smoke test the packaged app
 ```
 
+`pnpm app:build` also builds the Zed agent, `apps/desktop/out/acp-proxy/grove-acp.cjs`, which the banner registers
+from a checkout. `pnpm app:dev` does not.
+
 `pnpm app:dev` refuses to start without `GROVE_ROOT`. A dev build beside the installed app would read the same
 `~/claude-ws/.grove/events/` and take hook events away from it. Point `GROVE_ROOT` at any folder: it stands in for
 `~/claude-ws`, and projects are created under it. `CLAUDE_CONFIG_DIR` moves Claude's config dir the same way, and the
@@ -806,8 +824,15 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
   panel also archives sessions after 14 days idle (`claudeCode.archiveInactiveSessions`). those still show here
 - **an agent says the grove tools are gone** - it was open across the upgrade from 0.10. restart it
 - **the app does not open from a download** - it is ad-hoc signed. `xattr -dr com.apple.quarantine "Grove.app"`
-- **landing opened a fresh conversation** - the companion extension is not installed in that editor (the app shows a banner
-  and can install it), or the transcript expired
+- **landing opened a fresh conversation** - the companion extension is not installed in that editor, or, in Zed, the
+  Grove agent is not registered (the app shows a banner and can do either), or the transcript expired
+- **Zed opened the project but not on the session** - Zed reopens its own last thread. Press **+** and start a thread
+  with grove-claude within five minutes of opening. A thread with Zed's own Claude agent does not land
+- **every open of a project in Zed is a new window** - Grove opens it with `-n`, and does not look for one already
+  open
+- **grove-claude does not start in Zed** - it runs `node` from the PATH Zed sees, and Claude Code's agent from where
+  Zed installed it. Open a thread with Zed's own Claude agent once, so Zed installs that
+- **Zed asks whether to trust the project** - Zed's own prompt, once per folder, unless `trust_all_worktrees` is on
 
 The transcript format is internal to Claude Code and changes between releases. What this project relies on, and how it was
 verified, is in [docs/claude-code-facts.md](docs/claude-code-facts.md).

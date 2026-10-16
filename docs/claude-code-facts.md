@@ -149,3 +149,22 @@ Verified on 44.4.3: main reported `shouldUseDarkColors: true` while the page sti
 on `:root` (carried on the page URL, so the first frame is already right) and keeps `themeSource`
 only for the window frame and the native menus. Re-check on an Electron upgrade: if it starts
 working, the attribute can go.
+
+## Zed 1.24.2
+
+Verified on 2026-10-15 against Zed 1.24.2 (installed), Zed's main source, `~/Library/Logs/Zed/Zed.log`, and
+`@agentclientprotocol/claude-agent-acp` 0.91.0, the Claude Code agent Zed installs from its registry under
+`~/Library/Application Support/Zed/external_agents/registry/npx/claude-acp/`. `cli -n <root> <ref>...` opens one new
+window with every root, in that order, and the agent panel takes the first as the agent's `cwd` and the rest as
+`additionalDirectories` (`crates/agent_servers/src/acp/v2.rs`): the same rule as VS Code's folder 0. There is no
+workspace file, no `zed://` link that opens a session by id, no default-agent setting, and no extension API for
+commands, a status bar or watchers. A custom agent is `agent_servers.<name>` in `~/.config/zed/settings.json`
+(`{"type": "custom", "command", "args", "env"}`), and a bare `command` resolves on Zed's PATH. The agent speaks
+JSON-RPC 2.0 on stdio, one object per line. It loads settings from user, project and local, so a project's CLAUDE.md
+and hooks apply, and transcripts land in `~/.claude/projects/` as usual. `session/load` takes the `session/new` params
+plus `sessionId`, replays the transcript as `session/update` notifications before it answers, and answers with
+`sessionId` (the Claude session id), `modes` and `configOptions`. An `available_commands_update` follows the answer.
+A load needs no login, an id with no transcript is an error, and a load appends `mode` and `cost-state` records when
+the agent exits. Reopening a project sends `session/load` for Zed's own last thread, and `session/new` only comes
+on **+**. That is why landing in Zed is one click. The load facts were seen by running Grove's built proxy headless
+against the real agent, with a copy of one real transcript under a temp `CLAUDE_CONFIG_DIR`.

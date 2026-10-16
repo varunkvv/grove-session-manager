@@ -53,5 +53,8 @@ Keep in mind:
 - the hooks in every project are rewritten once, on the first launch: an event is now kept up to 64KB, since the
   list comes after the turn's last message
 
+Landing on a session needs the companion extension in VS Code or Cursor, or the Grove agent entry in Zed's settings.
+Grove offers to install either the first time you open it.
+
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
 verified.
