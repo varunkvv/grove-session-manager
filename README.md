@@ -440,11 +440,11 @@ Landing needs the companion extension in that editor. Without it the window open
 
 **Zed** is the third editor in Settings. Grove opens the project as one new Zed window, `cli -n <root> <references>`,
 and when it lands on a session, opens that window's agent panel (`zed://agent`) a few seconds later. That starts a
-new thread with the agent Zed last used, and with **grove-claude** the thread is the session, with its history.
-grove-claude is Grove's entry in Zed's `agent_servers`, which the banner adds. It runs Claude Code's own agent, the
+new thread with the agent Zed last used, and with **Claude (with Grove)** the thread is the session, with its history.
+Claude (with Grove) is Grove's entry in Zed's `agent_servers`, which the banner adds. It runs Claude Code's own agent, the
 one Zed installed, and passes everything through as it is but two things: in a project's window the project folder
 is the agent's folder (Zed hands a window's folders over alphabetically), and a new thread in a folder the app has
-just handed a session to becomes that session. Start one thread with grove-claude (**+** in the agent panel) once, so
+just handed a session to becomes that session. Start one thread with Claude (with Grove) (**+** in the agent panel) once, so
 that it is the agent Zed last used. **New session** opens the project, and you start the thread there.
 
 **New session** is in a project's top bar, on a project with no sessions, in `⌘K`, and a double-click on the project
@@ -515,7 +515,7 @@ edited. The workspace file and the references are written when the project is op
     titles/pending/ a title waiting for its session's next prompt, one small file each
     session-index.v1.json  the sessions as last read, with each one's usage by day. rebuilt from the transcripts
     usage-retired.json  the usage of sessions whose transcript is gone. this one cannot be rebuilt
-    acp.log         what grove-claude did in Zed: each request and each landing, never what was said. emptied past 1MB
+    acp.log         what Claude (with Grove) did in Zed: each request and each landing, never what was said. emptied past 1MB
 ~/Library/Sounds/
   Grove.wav         the notification chime, about 40KB. written at launch, and again whenever it differs from Grove's own
 ```
@@ -530,7 +530,7 @@ other value the next time it saves the file. No other key of the project moves w
 
 Outside `~/claude-ws` and the projects' own folders the app writes two things: `Grove.wav`, and the opt-in status hooks
 below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. With Zed as the editor it also
-keeps one entry, `agent_servers.grove-claude`, in `~/.config/zed/settings.json`. Comments and your other entries are
+keeps one entry, `agent_servers["Claude (with Grove)"]`, in `~/.config/zed/settings.json`. Comments and your other entries are
 preserved, and a file that is not valid JSON is left alone. It never writes Claude Code's
 folder trust, never copies a transcript, never deletes a branch, and never passes `--force` to `git worktree remove`:
 a working copy with uncommitted work is kept and reported. The folder of a project you delete goes to the Trash,
@@ -828,12 +828,12 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **the app does not open from a download** - it is ad-hoc signed. `xattr -dr com.apple.quarantine "Grove.app"`
 - **landing opened a fresh conversation** - the companion extension is not installed in that editor, or, in Zed, the
   Grove agent is not registered (the app shows a banner and can do either), or the transcript expired
-- **Zed opened the project but not on the session** - the agent Zed last used is not grove-claude, so the panel
-  opened a thread with that one. Press **+** and start a thread with grove-claude within five minutes. The same
+- **Zed opened the project but not on the session** - the agent Zed last used is not Claude (with Grove), so the panel
+  opened a thread with that one. Press **+** and start a thread with Claude (with Grove) within five minutes. The same
   when Zed was not running: the panel can open before the new window does
 - **every open of a project in Zed is a new window** - Grove opens it with `-n`, and does not look for one already
   open
-- **grove-claude does not start in Zed** - it runs `node` from the PATH Zed sees, and Claude Code's agent from where
+- **Claude (with Grove) does not start in Zed** - it runs `node` from the PATH Zed sees, and Claude Code's agent from where
   Zed installed it. Open a thread with Zed's own Claude agent once, so Zed installs that
 - **Zed asks whether to trust the project** - Zed's own prompt, once per folder, unless `trust_all_worktrees` is on
 

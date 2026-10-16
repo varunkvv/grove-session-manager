@@ -285,7 +285,7 @@ export async function installCompanion(): Promise<void> {
       ? {
           level: "info",
           title: "Grove agent added to Zed",
-          body: "Start one thread with grove-claude in Zed's agent panel (+). From then on, opening a session in Zed lands on it.",
+          body: "Start one thread with Claude (with Grove) in Zed's agent panel (+). From then on, opening a session in Zed lands on it.",
         }
       : {
           level: "info",

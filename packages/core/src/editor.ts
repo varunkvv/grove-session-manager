@@ -47,12 +47,15 @@ export const EDITOR_PRESETS: Record<EditorTarget["id"], EditorTarget> = {
   },
 };
 
-/** grove's entry under `agent_servers` in zed's settings.json: the acp proxy that lands a thread */
-export const ZED_AGENT_ID = "grove-claude";
+/**
+ * grove's entry under `agent_servers` in zed's settings.json: the acp proxy that lands a thread.
+ * zed has no name field for a custom agent, so this key is also what its agent menu says
+ */
+export const ZED_AGENT_ID = "Claude (with Grove)";
 
 /**
  * focuses zed's agent panel in its active window and starts a new thread there with the agent
- * zed last used. with grove-claude, that thread is the one the proxy lands on the session
+ * zed last used. with grove's, that thread is the one the proxy lands on the session
  */
 export const ZED_AGENT_LINK = "zed://agent";
 /**

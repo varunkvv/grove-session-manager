@@ -50,11 +50,11 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   await expect(
     page.getByTestId("toast").filter({ hasText: "Grove agent added to Zed" }),
   ).toBeVisible();
-  await waitFor(async () => readFileSync(zedSettings, "utf8").includes('"grove-claude"'));
+  await waitFor(async () => readFileSync(zedSettings, "utf8").includes('"Claude (with Grove)"'));
   const text = readFileSync(zedSettings, "utf8");
   expect(text.startsWith("// Zed settings")).toBe(true);
   expect(text).toContain('"claude-acp"');
-  const entry = JSON.parse(stripJsonc(text)).agent_servers["grove-claude"];
+  const entry = JSON.parse(stripJsonc(text)).agent_servers["Claude (with Grove)"];
   expect(entry).toMatchObject({ type: "custom", command: "node" });
   expect(entry.args[0]).toMatch(/grove-acp\.cjs$/);
   expect(existsSync(entry.args[0])).toBe(true);

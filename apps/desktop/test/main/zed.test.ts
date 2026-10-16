@@ -40,7 +40,7 @@ describe("grove's entry in zed's settings.json", () => {
     expect(out).toContain('"claude-acp"');
     expect(out).toContain('"model": "haiku"');
     const parsed = parse(out);
-    expect(parsed.agent_servers["grove-claude"]).toEqual({ type: "custom", ...ENTRY });
+    expect(parsed.agent_servers["Claude (with Grove)"]).toEqual({ type: "custom", ...ENTRY });
     expect(parsed.agent_servers["claude-acp"]).toEqual({
       default_config_options: { model: "haiku" },
       type: "registry",
@@ -60,15 +60,17 @@ describe("grove's entry in zed's settings.json", () => {
   it("a moved proxy replaces the old path, and only that", () => {
     const once = upsertZedAgentServer(FIXTURE, ENTRY);
     const moved = upsertZedAgentServer(once, { ...ENTRY, args: ["/src/grove/grove-acp.cjs"] });
-    expect(parse(moved).agent_servers["grove-claude"].args).toEqual(["/src/grove/grove-acp.cjs"]);
+    expect(parse(moved).agent_servers["Claude (with Grove)"].args).toEqual([
+      "/src/grove/grove-acp.cjs",
+    ]);
     expect(moved.replace("/src/grove/grove-acp.cjs", ENTRY.args[0]!)).toBe(once);
   });
 
   it("an empty or missing file gets a file with just the entry", () => {
     for (const text of ["", "\n"]) {
-      expect(parse(upsertZedAgentServer(text, ENTRY)).agent_servers["grove-claude"].type).toBe(
-        "custom",
-      );
+      expect(
+        parse(upsertZedAgentServer(text, ENTRY)).agent_servers["Claude (with Grove)"].type,
+      ).toBe("custom");
     }
   });
 
@@ -138,7 +140,7 @@ describe("the editor service, with zed as the editor", () => {
     });
     expect(await editor.companionInstalled()).toBe(true);
     const entry = parse(readFileSync(path.join(zedDir, "settings.json"), "utf8")).agent_servers[
-      "grove-claude"
+      "Claude (with Grove)"
     ];
     expect(entry).toEqual({
       type: "custom",
