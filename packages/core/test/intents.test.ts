@@ -212,6 +212,20 @@ describe("editor handoff", () => {
     );
   });
 
+  it("zed: its cli, and the folder its settings.json lives in", () => {
+    const zed = resolveEditor({ editor: "zed" }, {});
+    expect(zed).toMatchObject({
+      id: "zed",
+      label: "Zed",
+      bin: "/Applications/Zed.app/Contents/MacOS/cli",
+    });
+    expect(zed.extensionsDir.endsWith(path.join(".config", "zed"))).toBe(true);
+    // the e2e sandbox reaches it through the same override as the extensions folder
+    expect(resolveEditor({ editor: "zed" }, { GROVE_EXTENSIONS_DIR: "/tmp/z" }).extensionsDir).toBe(
+      "/tmp/z",
+    );
+  });
+
   it("a missing or relative binary is a result, not an exception", async () => {
     expect(await runDetached("code", ["x"])).toMatchObject({
       ok: false,

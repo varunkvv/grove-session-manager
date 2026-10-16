@@ -311,6 +311,7 @@ export function SettingsDialog() {
           >
             <option value="vscode">VS Code</option>
             <option value="cursor">Cursor</option>
+            <option value="zed">Zed</option>
           </Select>
         </Field>
         <Field

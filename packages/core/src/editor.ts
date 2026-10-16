@@ -12,11 +12,12 @@ export const COMPANION_EXTENSION_ID = "varunkvv.grove-companion";
 export const CLAUDE_EXTENSION_ID = "anthropic.claude-code";
 
 export interface EditorTarget {
-  id: "vscode" | "cursor";
+  id: "vscode" | "cursor" | "zed";
   label: string;
   /** absolute path. a GUI app launched from Finder does not inherit the shell PATH. */
   bin: string;
   uriScheme: string;
+  /** vs code and cursor: where extensions.json lives. zed: where its settings.json lives. */
   extensionsDir: string;
 }
 
@@ -37,7 +38,25 @@ export const EDITOR_PRESETS: Record<EditorTarget["id"], EditorTarget> = {
     uriScheme: "cursor",
     extensionsDir: path.join(HOME, ".cursor", "extensions"),
   },
+  zed: {
+    id: "zed",
+    label: "Zed",
+    bin: "/Applications/Zed.app/Contents/MacOS/cli",
+    uriScheme: "zed",
+    extensionsDir: path.join(HOME, ".config", "zed"),
+  },
 };
+
+/** grove's entry under `agent_servers` in zed's settings.json: the acp proxy that lands a thread */
+export const ZED_AGENT_ID = "grove-claude";
+
+/** where zed installs claude code's acp adapter from its agent registry */
+export function zedAdapterPath(home: string = HOME): string {
+  return path.join(
+    home,
+    "Library/Application Support/Zed/external_agents/registry/npx/claude-acp/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js",
+  );
+}
 
 export function resolveEditor(
   settings: Pick<Settings, "editor" | "editorBin" | "extensionsDir">,

@@ -5,7 +5,7 @@ import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "./fsx
 export type Appearance = "system" | "light" | "dark";
 
 export interface Settings {
-  editor: "vscode" | "cursor";
+  editor: "vscode" | "cursor" | "zed";
   /** follows macOS unless it is pinned. "system" is the default. */
   appearance: Appearance;
   /** absolute path to the editor's CLI. overrides the preset. */
@@ -36,7 +36,9 @@ export function settingsFilePath(appRoot: string): string {
 function clean(raw: unknown): Settings {
   const s: Settings = { ...DEFAULT_SETTINGS };
   if (!isObject(raw)) return s;
-  if (raw.editor === "cursor" || raw.editor === "vscode") s.editor = raw.editor;
+  if (raw.editor === "cursor" || raw.editor === "vscode" || raw.editor === "zed") {
+    s.editor = raw.editor;
+  }
   if (raw.appearance === "light" || raw.appearance === "dark" || raw.appearance === "system") {
     s.appearance = raw.appearance;
   }

@@ -127,7 +127,7 @@ export interface PathInfoView {
 }
 
 export interface EditorStatus {
-  id: "vscode" | "cursor";
+  id: "vscode" | "cursor" | "zed";
   label: string;
   bin: string;
   binFound: boolean;
@@ -138,7 +138,7 @@ export interface EditorStatus {
 }
 
 export interface AppSettings {
-  editor: "vscode" | "cursor";
+  editor: "vscode" | "cursor" | "zed";
   appearance: "system" | "light" | "dark";
   editorBin?: string;
   extensionsDir?: string;
