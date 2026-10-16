@@ -439,11 +439,13 @@ one after seven days. The menu bar names that session.
 Landing needs the companion extension in that editor. Without it the window opens and Grove says it could not land.
 
 **Zed** is the third editor in Settings. Grove opens the project as one new Zed window, `cli -n <root> <references>`,
-the root first so that it is the agent's folder. Zed opens that window on its own last thread, and nothing outside Zed
-can pick another, so landing takes one click: **+** in the agent panel, a new thread with **grove-claude**, within five
-minutes. That thread is the session, with its history. grove-claude is Grove's entry in Zed's `agent_servers`, which
-the banner adds. It runs Claude Code's own agent, the one Zed installed, and passes everything else through as it is.
-**New session** opens the project, and you start the thread there.
+and when it lands on a session, opens that window's agent panel (`zed://agent`) a few seconds later. That starts a
+new thread with the agent Zed last used, and with **grove-claude** the thread is the session, with its history.
+grove-claude is Grove's entry in Zed's `agent_servers`, which the banner adds. It runs Claude Code's own agent, the
+one Zed installed, and passes everything through as it is but two things: in a project's window the project folder
+is the agent's folder (Zed hands a window's folders over alphabetically), and a new thread in a folder the app has
+just handed a session to becomes that session. Start one thread with grove-claude (**+** in the agent panel) once, so
+that it is the agent Zed last used. **New session** opens the project, and you start the thread there.
 
 **New session** is in a project's top bar, on a project with no sessions, in `⌘K`, and a double-click on the project
 in the sidebar. The project opens in VS Code
@@ -826,8 +828,9 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **the app does not open from a download** - it is ad-hoc signed. `xattr -dr com.apple.quarantine "Grove.app"`
 - **landing opened a fresh conversation** - the companion extension is not installed in that editor, or, in Zed, the
   Grove agent is not registered (the app shows a banner and can do either), or the transcript expired
-- **Zed opened the project but not on the session** - Zed reopens its own last thread. Press **+** and start a thread
-  with grove-claude within five minutes of opening. A thread with Zed's own Claude agent does not land
+- **Zed opened the project but not on the session** - the agent Zed last used is not grove-claude, so the panel
+  opened a thread with that one. Press **+** and start a thread with grove-claude within five minutes. The same
+  when Zed was not running: the panel can open before the new window does
 - **every open of a project in Zed is a new window** - Grove opens it with `-n`, and does not look for one already
   open
 - **grove-claude does not start in Zed** - it runs `node` from the PATH Zed sees, and Claude Code's agent from where

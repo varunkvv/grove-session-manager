@@ -50,6 +50,17 @@ export const EDITOR_PRESETS: Record<EditorTarget["id"], EditorTarget> = {
 /** grove's entry under `agent_servers` in zed's settings.json: the acp proxy that lands a thread */
 export const ZED_AGENT_ID = "grove-claude";
 
+/**
+ * focuses zed's agent panel in its active window and starts a new thread there with the agent
+ * zed last used. with grove-claude, that thread is the one the proxy lands on the session
+ */
+export const ZED_AGENT_LINK = "zed://agent";
+/**
+ * how long after `cli -n` the link waits, so that the new window is the active one. the cli was
+ * back in about a second on 2026-10-15. sent with the folders in one call, zed drops the folders
+ */
+export const ZED_AGENT_LINK_DELAY_MS = 3000;
+
 /** where zed installs claude code's acp adapter from its agent registry */
 export function zedAdapterPath(home: string = HOME): string {
   return path.join(

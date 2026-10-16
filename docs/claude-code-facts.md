@@ -155,8 +155,9 @@ working, the attribute can go.
 Verified on 2026-10-15 against Zed 1.24.2 (installed), Zed's main source, `~/Library/Logs/Zed/Zed.log`, and
 `@agentclientprotocol/claude-agent-acp` 0.91.0, the Claude Code agent Zed installs from its registry under
 `~/Library/Application Support/Zed/external_agents/registry/npx/claude-acp/`. `cli -n <root> <ref>...` opens one new
-window with every root, in that order, and the agent panel takes the first as the agent's `cwd` and the rest as
-`additionalDirectories` (`crates/agent_servers/src/acp/v2.rs`): the same rule as VS Code's folder 0. There is no
+window with every root. The agent panel takes the first of the window's folders as the agent's `cwd` and the rest
+as `additionalDirectories` (`crates/agent_servers/src/acp/v2.rs`), but the window's folders come in alphabetical
+order, not the cli's: a combo opened root first still sent a reference as `cwd`. There is no
 workspace file, no `zed://` link that opens a session by id, no default-agent setting, and no extension API for
 commands, a status bar or watchers. A custom agent is `agent_servers.<name>` in `~/.config/zed/settings.json`
 (`{"type": "custom", "command", "args", "env"}`), and a bare `command` resolves on Zed's PATH. The agent speaks
@@ -166,5 +167,11 @@ plus `sessionId`, replays the transcript as `session/update` notifications befor
 `sessionId` (the Claude session id), `modes` and `configOptions`. An `available_commands_update` follows the answer.
 A load needs no login, an id with no transcript is an error, and a load appends `mode` and `cost-state` records when
 the agent exits. Reopening a project sends `session/load` for Zed's own last thread, and `session/new` only comes
-on **+**. That is why landing in Zed is one click. The load facts were seen by running Grove's built proxy headless
-against the real agent, with a copy of one real transcript under a temp `CLAUDE_CONFIG_DIR`.
+on **+**. The load facts were seen by running Grove's built proxy headless against the real agent, with a copy of
+one real transcript under a temp `CLAUDE_CONFIG_DIR`.
+
+Seen in Zed itself the same day: opening a window starts no agent while its agent panel is closed. `zed://agent`
+(`OpenRequestKind::AgentPanel` in `crates/zed/src/main.rs`) goes to the active window, focuses the panel and starts a
+new thread with the agent Zed last used, across windows. The first time a window's panel opens, focusing it restores
+a draft thread too: two `session/new` 2ms apart, then `session/close` for the first. Passed to the cli together with
+folders, the link wins and the folders are not opened. `cli -n` returned about a second after it was called.

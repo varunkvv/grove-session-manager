@@ -74,4 +74,7 @@ test("with zed as the editor, grove's agent goes into zed's settings and a sessi
   const intents = pendingIntents(fx);
   expect(intents).toHaveLength(1);
   expect(intents[0]).toMatchObject({ kind: "resume", sessionId: SID, cwd: root });
+  // once the window is up, its agent panel: the new thread there is the one that lands
+  await waitFor(async () => readExecLog(fx).length > 1, 10_000);
+  expect(readExecLog(fx)[1]).toEqual({ bin: "open", argv: ["zed://agent"] });
 });

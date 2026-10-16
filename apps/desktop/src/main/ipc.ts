@@ -14,6 +14,8 @@ import {
   type Settings,
   saveSettings,
   workspaceFolders,
+  ZED_AGENT_LINK,
+  ZED_AGENT_LINK_DELAY_MS,
 } from "@grove/core";
 import type { BrowserWindow, OpenDialogOptions } from "electron";
 import * as electron from "electron";
@@ -182,6 +184,12 @@ function buildHandlers(deps: Deps): Handlers {
   const { sessions, combos, projects, editor, pusher, env } = deps;
   let lastPickedDir: string | undefined;
 
+  /** zed, landing: the new window's agent panel, once that window is up. see ZED_AGENT_LINK */
+  function openZedAgentPanelSoon(): void {
+    if (editor.current().id !== "zed") return;
+    setTimeout(() => void runDetached(env.openBin, [ZED_AGENT_LINK]), ZED_AGENT_LINK_DELAY_MS);
+  }
+
   /** the project's window in the editor, on a session when one is given */
   async function openWindow(combo: Combo, sessionId?: string): Promise<OpenReport> {
     const report = await combos.open(combo, sessionId);
@@ -190,6 +198,7 @@ function buildHandlers(deps: Deps): Handlers {
       folders: workspaceFolders(combo),
     });
     if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+    if (sessionId) openZedAgentPanelSoon();
     for (const warning of report.warnings) {
       pusher.send("toast", { level: "error", title: `${combo.name}: ${warning}` });
     }
@@ -317,6 +326,7 @@ function buildHandlers(deps: Deps): Handlers {
       if (!prepared.ok) throw new AppError(prepared.error.code, prepared.error.message);
       const launched = await openInEditor(editor.current(), { folders: [folder] });
       if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
+      openZedAgentPanelSoon();
       return (await editor.companionInstalled()) ? {} : missing;
     },
 
