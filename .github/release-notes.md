@@ -1,3 +1,27 @@
+## 0.18
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.18 works with Zed.
+
+New:
+
+- **Zed** is the third editor in Settings, next to VS Code and Cursor. a project opens as one new Zed window, with its
+  references as extra folders
+- opening a session in Zed lands on it, history and all, as in VS Code. it goes through **Claude (with Grove)**, an
+  agent the banner adds to Zed's settings. it runs the Claude Code agent Zed installed and passes everything through,
+  your model, effort and permission pickers included
+- every Claude (with Grove) thread in a project's window runs in the project folder, so the project's CLAUDE.md and
+  hooks load and the session is listed under the project. Zed on its own would pick a reference repo
+
+Keep in mind:
+
+- start one thread with Claude (with Grove) (**+** in Zed's agent panel) first. Grove opens the panel on the session,
+  and Zed starts that thread with the agent you used last
+- every open in Zed is a new window. Grove does not look for one already open
+- the agent runs `node` from the PATH Zed sees, and the Claude Code agent from where Zed installed it. if you never
+  opened a thread with Zed's own Claude Agent, do that once
+- the VS Code extension's status bar, drift warning and find-session shortcut have no Zed version. Zed has no
+  extension API for them
+
 ## 0.17
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.17 names your sessions.
@@ -53,7 +77,7 @@ Keep in mind:
 - the hooks in every project are rewritten once, on the first launch: an event is now kept up to 64KB, since the
   list comes after the turn's last message
 
-Landing on a session needs the companion extension in VS Code or Cursor, or the Grove agent entry in Zed's settings.
+Landing on a session needs the companion extension in VS Code or Cursor, or Claude (with Grove) in Zed's settings.
 Grove offers to install either the first time you open it.
 
 The [README](https://github.com/varunkvv/grove-session-manager#readme) has the rest, with what was and was not
