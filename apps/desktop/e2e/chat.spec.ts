@@ -1027,6 +1027,21 @@ test("the files pane lists what is not committed, each opening its diff", async 
   await expect(chat.getByTestId("viewer-diff").getByTestId("diff")).toHaveText("+# notes");
 });
 
+test("a text file picked from the session's own folder goes in as an @ mention, not an attachment", async () => {
+  const s = seed(true);
+  const inside = path.join(s.root, "notes.md");
+  writeFileSync(inside, "# notes\n");
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("chat-attach").click();
+  const chooser = chat.waitForEvent("filechooser");
+  await chat.getByTestId("attach-menu").getByTestId("menu-item").first().click();
+  await (await chooser).setFiles([inside]);
+  await expect(chat.getByTestId("composer")).toHaveValue("@notes.md ");
+  await expect(chat.getByTestId("chip")).toHaveCount(0);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

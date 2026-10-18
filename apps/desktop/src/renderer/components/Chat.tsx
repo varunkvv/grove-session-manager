@@ -678,10 +678,27 @@ export function ChatApp() {
 
   /** picked, dropped or pasted: what claude can take is attached, the rest is said why */
   const attach = async (list: FileList | null | undefined) => {
+    // a text file or a pdf from the session's own folder is named with @, not attached: claude
+    // reads it from there (probe: @path in prompt text is expanded), and it is not sent again with
+    // every later turn
+    const all = [...(list ?? [])];
+    const inside = (f: File) => {
+      const at = window.grove.pathOf(f);
+      const kind = attachKind(f.type, f.name);
+      return at.startsWith(`${target?.cwd}/`) && (kind === "text" || kind === "pdf")
+        ? at.slice((target?.cwd.length ?? 0) + 1)
+        : null;
+    };
+    const mentioned = all.flatMap((f) => (inside(f) !== null ? [inside(f) as string] : []));
+    if (mentioned.length) {
+      setDraft(
+        (d) => `${d}${d && !/\s$/.test(d) ? " " : ""}${mentioned.map((m) => `@${m}`).join(" ")} `,
+      );
+    }
     const got = await Promise.all(
-      [...(list ?? [])].map((f) =>
-        readAttachment(f).catch(() => ({ refused: `${f.name} could not be read.` })),
-      ),
+      all
+        .filter((f) => inside(f) === null)
+        .map((f) => readAttachment(f).catch(() => ({ refused: `${f.name} could not be read.` }))),
     );
     const taken = got.filter((g): g is Attached => "kind" in g);
     const paths = got.flatMap((g) => ("path" in g ? [g.path] : []));
@@ -698,7 +715,7 @@ export function ChatApp() {
       );
     }
     setError(refused.length ? refused.join(" ") : undefined);
-    if (taken.length || paths.length) warm();
+    if (taken.length || paths.length || mentioned.length) warm();
     composer.current?.focus();
   };
 
