@@ -7,6 +7,7 @@ import {
   type ConversationItem,
   type ConversationState,
   conversationView,
+  filesWritten,
   type Turn,
   type TurnView,
   turnNumbers,
@@ -523,7 +524,18 @@ describe("the conversation as the page gets it", () => {
       expect(Object.keys(x).every((k) => TURN_KEYS.includes(k))).toBe(true);
     }
   });
-  const TURN_KEYS = ["kind", "prompt", "said", "tools", "files", "agents", "ms", "text", "note"];
+  const TURN_KEYS = [
+    "kind",
+    "prompt",
+    "said",
+    "tools",
+    "files",
+    "agents",
+    "ms",
+    "text",
+    "note",
+    "outputs",
+  ];
 
   it("says who started a turn, the work in numbers, and the message it ended on", async () => {
     const v = await view([
@@ -645,5 +657,57 @@ describe("the conversation as the page gets it", () => {
 
   it("is empty for a transcript nobody said anything in", async () => {
     expect(await view([title("a title")])).toEqual({ older: 0, items: [] });
+  });
+});
+
+describe("the files a turn showed", () => {
+  const view = async (lines: object[]) =>
+    conversationView(await readConversation(sandboxFile(jsonl(lines))));
+
+  it("cards what it wrote that can be drawn and the images it read, once each", async () => {
+    const v = await view([
+      prompt("draw it", 0),
+      says("m1", call("t1", "Read", { file_path: "/w/shot.png" }), 1),
+      result("t1", "[image]", 2),
+      says("m2", call("t2", "Read", { file_path: "/w/notes.md" }), 3),
+      result("t2", "notes", 4),
+      says("m3", call("t3", "Write", { file_path: "/w/plan.md" }), 5),
+      result("t3", "ok", 6),
+      says("m4", call("t4", "Edit", { file_path: "/w/plan.md" }), 7),
+      result("t4", "ok", 8),
+      says("m5", call("t5", "Write", { file_path: "/w/app.ts" }), 9),
+      result("t5", "ok", 10),
+      says("m6", call("t6", "Write", { file_path: "/w/gone.svg" }), 11),
+      result("t6", "denied", 12, { isError: true }),
+      says("m7", call("t7", "Write", { file_path: "/w/page.html" }), 13),
+      result("t7", "ok", 14),
+      says("m8", text("Done."), 15),
+    ]);
+    const turn = v.items[0] as TurnView;
+    expect(turn.outputs).toEqual([
+      { path: "/w/shot.png", read: true },
+      { path: "/w/plan.md" },
+      { path: "/w/page.html" },
+    ]);
+  });
+
+  it("lists every file the session wrote, the latest first", async () => {
+    const state = await readConversation(
+      sandboxFile(
+        jsonl([
+          prompt("one", 0),
+          says("m1", call("t1", "Write", { file_path: "/w/a.ts" }), 1),
+          result("t1", "ok", 2),
+          says("m2", call("t2", "Read", { file_path: "/w/r.ts" }), 3),
+          result("t2", "ok", 4),
+          prompt("two", 5),
+          says("m3", call("t3", "MultiEdit", { file_path: "/w/b.ts" }), 6),
+          result("t3", "ok", 7),
+          says("m4", call("t4", "Edit", { file_path: "/w/a.ts" }), 8),
+          result("t4", "ok", 9),
+        ]),
+      ),
+    );
+    expect(filesWritten(state)).toEqual(["/w/a.ts", "/w/b.ts"]);
   });
 });

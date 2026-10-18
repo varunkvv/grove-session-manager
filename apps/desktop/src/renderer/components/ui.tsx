@@ -36,7 +36,8 @@ export type IconName =
   | "x"
   | "warning"
   | "check"
-  | "chart";
+  | "chart"
+  | "file";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -65,6 +66,9 @@ const PATHS: Record<IconName, ReactNode> = {
   warning: <path d="M8 2.25 14.25 13H1.75L8 2.25ZM8 6.5v3M8 11.25v.01" />,
   check: <path d="m3.5 8.5 3 3 6-7" />,
   chart: <path d="M3.5 13V8.5M8 13V3M12.5 13V6" />,
+  file: (
+    <path d="M4 1.75h4.75L12 5v8.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1ZM8.75 1.75V5H12" />
+  ),
 };
 
 export function Icon({

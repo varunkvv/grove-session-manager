@@ -6,6 +6,7 @@ import {
   classifyPath,
   conversationView,
   type EditorTarget,
+  filesWritten,
   isValidSessionId,
   openInEditor,
   prepareFolderOpen,
@@ -63,7 +64,7 @@ import type { Reveals } from "./services/reveal.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { parseStartAgent } from "./services/startAgent.ts";
 import { keptFolderToast } from "./services/views.ts";
-import { TEMP_ROOTS } from "./sessionFiles.ts";
+import { listFiles, readText, TEMP_ROOTS, within } from "./sessionFiles.ts";
 
 export interface Deps {
   env: AppEnv;
@@ -673,6 +674,8 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
   "auto",
 ]);
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
+  "chatReadFile",
+  "chatWatch",
   "chatWarm",
   "chatSend",
   "chatInterrupt",
@@ -730,6 +733,14 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
   };
   const where = (row: SessionRow) => whereOf(deps, row);
 
+  /** a path the page sent, as long as it is a file of the session's */
+  async function allowed(id: string, file: unknown): Promise<string> {
+    const roots = isText(file, 4096) && (await chatRoots(deps, id));
+    const real = roots && (await within(roots, file as string));
+    if (!real) throw new AppError("not-allowed", "That file is not in this session's folders.");
+    return real;
+  }
+
   /** why it cannot be talked to from here: another app has it. one process per session */
   function readOnly(id: string, row: SessionRow): string | undefined {
     const runtime = projects.runtimeFor(id, row);
@@ -774,7 +785,29 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     async chatConversation(id) {
       const row = newestRow(deps, id);
       if (!row) return null;
-      return readConversation(row.key).then(conversationView, () => null);
+      return readConversation(row.key).then(
+        (state) => ({ ...conversationView(state), written: filesWritten(state) }),
+        () => null,
+      );
+    },
+
+    async chatFiles(id) {
+      const row = newestRow(deps, id);
+      const combo = row && deps.combos.list().find((c) => c.name === row.comboName);
+      if (!combo) return { plans: [], artifacts: [] };
+      const [plans, artifacts] = await Promise.all([
+        listFiles(path.join(combo.root, "plans")),
+        listFiles(path.join(combo.root, "artifacts")),
+      ]);
+      return { plans, artifacts };
+    },
+
+    async chatReadFile(id, file) {
+      return readText(await allowed(id, file));
+    },
+
+    async chatWatch(id, file) {
+      chat.watch(id, file === null ? null : await allowed(id, file));
     },
 
     async chatWarm(id) {

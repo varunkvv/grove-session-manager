@@ -44,6 +44,8 @@ export interface ToolStep {
   ref?: LineRef;
   /** ran on the api side (the advisor): it counts as nothing and there is nothing to open */
   server?: boolean;
+  /** the file a Read, Write or edit named, whole: `target` is it shortened */
+  path?: string;
 }
 
 export interface TextStep {
@@ -142,6 +144,15 @@ export function shortPath(p: string, cwd?: string, home?: string): string {
   if (cwd && p.startsWith(`${cwd}/`)) return p.slice(cwd.length + 1);
   if (home && p.startsWith(`${home}/`)) return `~/${p.slice(home.length + 1)}`;
   return p;
+}
+
+const FILE_TOOLS = new Set(["Read", "Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+/** the file a tool call reads or writes, as it named it: always absolute for these tools */
+function filePath(name: string, input: unknown): { path?: string } {
+  if (!FILE_TOOLS.has(name) || !isObject(input)) return {};
+  const p = str(input.file_path) ?? str(input.notebook_path);
+  return p ? { path: p } : {};
 }
 
 /** the keys a tool's input says the most in, most specific first */
@@ -401,6 +412,7 @@ export class TimelineFold {
           at,
           use: line,
           ...(server ? { server: true } : {}),
+          ...filePath(name, block.input),
         };
         this.pending.set(toolId, this.push(step));
       } else if (typeof block.tool_use_id === "string" && block.type !== "tool_result") {

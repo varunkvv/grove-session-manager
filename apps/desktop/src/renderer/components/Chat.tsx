@@ -1,12 +1,20 @@
 // grove chat's window: one session, its conversation in a reading column, the composer under it.
 // the transcript is what is drawn, as in the panel. the host adds what is not in it yet: the
 // answer being streamed, and what the agent is waiting on the person for.
-import { type ConversationView, modelLabel, type TurnView } from "@grove/core/pure";
+import { modelLabel, type TurnView } from "@grove/core/pure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ChatAnswer, ChatAsk, ChatStatus, ChatTarget, Outcome } from "../../shared/ipc.ts";
+import type {
+  ChatAnswer,
+  ChatAsk,
+  ChatConversation,
+  ChatStatus,
+  ChatTarget,
+  Outcome,
+} from "../../shared/ipc.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
+import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import {
@@ -14,6 +22,8 @@ import {
   Button,
   Choice,
   cx,
+  Icon,
+  IconButton,
   ModePill,
   Mono,
   ProjectMark,
@@ -204,7 +214,9 @@ export function ChatApp() {
   const [opened, setOpened] = useState(false);
   const [status, setStatus] = useState<ChatStatus>();
   /** null: the transcript is gone. undefined: not read yet */
-  const [talk, setTalk] = useState<ConversationView | null>();
+  const [talk, setTalk] = useState<ChatConversation | null>();
+  /** beside the conversation: the session's files, or one of them. closed when the window opens */
+  const [pane, setPane] = useState<{ file?: string } | null>(null);
   /** the answer as main streams it, and as it is drawn: see `reading` */
   const stream = useRef("");
   const [shown, setShown] = useState("");
@@ -271,6 +283,7 @@ export function ChatApp() {
       api().on("chat:open", () => {
         setOpened(true);
         setSent(null);
+        setPane(null);
         void load();
       }),
       api().on("chat:status", (s) => setStatus(s)),
@@ -409,7 +422,11 @@ export function ChatApp() {
 
   const toEditor = () => (running ? setMoving(!moving) : void openInEditor("now"));
   editorKey.current = toEditor;
-  const scope = { session: session.sessionId, base: target.cwd };
+  const scope = {
+    session: session.sessionId,
+    base: target.cwd,
+    open: (file: string) => setPane({ file }),
+  };
 
   return (
     <div
@@ -462,6 +479,15 @@ export function ChatApp() {
         <Button size="sm" data-testid="chat-open-editor" title="cmd-shift-Enter" onClick={toEditor}>
           Open in {target.editor}
         </Button>
+        <IconButton
+          label="Files"
+          aria-pressed={!!pane}
+          data-testid="chat-files"
+          className={cx(pane && "bg-raised text-fg")}
+          onClick={() => setPane(pane ? null : {})}
+        >
+          <Icon name="file" />
+        </IconButton>
       </header>
       {moving && (
         <div
@@ -482,128 +508,144 @@ export function ChatApp() {
           </Button>
         </div>
       )}
-      <div
-        ref={scroller}
-        className="min-h-0 flex-1 overflow-y-auto"
-        data-testid="conversation"
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-        }}
-      >
-        <ChatScopeContext.Provider value={scope}>
-          <div className={cx(COLUMN, "pt-6 pb-8")}>
-            {session.description && (
-              <p className="selectable mb-6 break-words text-fg-2" data-testid="chat-description">
-                {session.description}
-              </p>
-            )}
-            {talk === null && !pending && (
-              <p className={QUIET} data-testid="chat-gone">
-                This session's transcript is not there. Claude Code deletes one after 30 days.
-              </p>
-            )}
-            {!!talk?.older && (
-              <p className={`${QUIET} mb-6`}>
-                {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {target.editor}.
-              </p>
-            )}
-            {rows.map((item, i) =>
-              item.kind === "compact" ? (
-                // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-                <p key={(talk?.older ?? 0) + i} className={`${QUIET} mt-6`}>
-                  Compacted: what came before was summarised.
-                </p>
-              ) : (
-                <Turn
-                  // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-                  key={(talk?.older ?? 0) + i}
-                  turn={item}
-                  last={i === end}
-                  working={running}
-                />
-              ),
-            )}
-            {running && s.tool && (
-              <p className={cx(QUIET, "mt-2 flex items-center gap-1.5")} data-testid="chat-tool">
-                <Spinner size={10} />
-                {s.tool}
-              </p>
-            )}
-            {s.asks.map((a) => (
-              <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
-            ))}
-            {s.queued.map((q, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: two sends can be the same words
-              <div key={i} className="mt-3" data-testid="chat-queued">
-                <h3 className="text-sm font-medium text-fg-4">You, queued</h3>
-                <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-2">{q}</p>
+      <ChatScopeContext.Provider value={scope}>
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div
+              ref={scroller}
+              className="min-h-0 flex-1 overflow-y-auto"
+              data-testid="conversation"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+              }}
+            >
+              <div className={cx(COLUMN, "pt-6 pb-8")}>
+                {session.description && (
+                  <p
+                    className="selectable mb-6 break-words text-fg-2"
+                    data-testid="chat-description"
+                  >
+                    {session.description}
+                  </p>
+                )}
+                {talk === null && !pending && (
+                  <p className={QUIET} data-testid="chat-gone">
+                    This session's transcript is not there. Claude Code deletes one after 30 days.
+                  </p>
+                )}
+                {!!talk?.older && (
+                  <p className={`${QUIET} mb-6`}>
+                    {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in{" "}
+                    {target.editor}.
+                  </p>
+                )}
+                {rows.map((item, i) =>
+                  item.kind === "compact" ? (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+                    <p key={(talk?.older ?? 0) + i} className={`${QUIET} mt-6`}>
+                      Compacted: what came before was summarised.
+                    </p>
+                  ) : (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+                    <div key={(talk?.older ?? 0) + i}>
+                      <Turn turn={item} last={i === end} working={running} />
+                      {item.outputs && <OutputCards outputs={item.outputs} />}
+                    </div>
+                  ),
+                )}
+                {running && s.tool && (
+                  <p
+                    className={cx(QUIET, "mt-2 flex items-center gap-1.5")}
+                    data-testid="chat-tool"
+                  >
+                    <Spinner size={10} />
+                    {s.tool}
+                  </p>
+                )}
+                {s.asks.map((a) => (
+                  <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
+                ))}
+                {s.queued.map((q, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: two sends can be the same words
+                  <div key={i} className="mt-3" data-testid="chat-queued">
+                    <h3 className="text-sm font-medium text-fg-4">You, queued</h3>
+                    <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-2">{q}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <footer className="shrink-0 border-t border-line">
+              <div className={cx(COLUMN, "py-3")}>
+                {note && !error && (
+                  <p className="mb-2 text-sm text-fg-3" data-testid="chat-note">
+                    {note}
+                  </p>
+                )}
+                {(error || s.error) && (
+                  <p className="mb-2 break-words text-sm text-danger" data-testid="chat-error">
+                    {error ?? s.error}
+                  </p>
+                )}
+                {readOnly ? (
+                  <p className="text-fg-3" data-testid="chat-readonly">
+                    {readOnly}
+                  </p>
+                ) : (
+                  <>
+                    <textarea
+                      ref={composer}
+                      // the window is opened to write in
+                      autoFocus
+                      rows={1}
+                      value={draft}
+                      placeholder={running ? "Queue a message…" : "Message Claude…"}
+                      data-testid="composer"
+                      className="no-drag max-h-[40vh] min-h-9 w-full resize-none rounded-lg border border-line-strong bg-canvas px-3 py-2 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        // the first keystroke starts claude, so the send does not wait for it
+                        warm();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void send();
+                        } else if (e.key === "Escape" && running) {
+                          e.preventDefault();
+                          void api().chatInterrupt();
+                        } else if (e.key === "ArrowUp" && !draft && last.current) {
+                          e.preventDefault();
+                          setDraft(last.current);
+                        } else if (e.key === "Tab" && e.shiftKey) {
+                          e.preventDefault();
+                          void stepMode();
+                        }
+                      }}
+                    />
+                    <p className="mt-1.5 flex items-center gap-1 text-meta text-fg-4">
+                      {s.starting && <Spinner size={10} />}
+                      {s.starting
+                        ? "Starting Claude…"
+                        : running
+                          ? "Esc stops the turn. What you send now waits for it."
+                          : "Enter sends, Shift-Enter is a new line, Shift-Tab changes the mode."}
+                    </p>
+                  </>
+                )}
+              </div>
+            </footer>
           </div>
-        </ChatScopeContext.Provider>
-      </div>
-      <footer className="shrink-0 border-t border-line">
-        <div className={cx(COLUMN, "py-3")}>
-          {note && !error && (
-            <p className="mb-2 text-sm text-fg-3" data-testid="chat-note">
-              {note}
-            </p>
-          )}
-          {(error || s.error) && (
-            <p className="mb-2 break-words text-sm text-danger" data-testid="chat-error">
-              {error ?? s.error}
-            </p>
-          )}
-          {readOnly ? (
-            <p className="text-fg-3" data-testid="chat-readonly">
-              {readOnly}
-            </p>
+          {pane?.file ? (
+            <Viewer file={pane.file} onList={() => setPane({})} onClose={() => setPane(null)} />
           ) : (
-            <>
-              <textarea
-                ref={composer}
-                // the window is opened to write in
-                autoFocus
-                rows={1}
-                value={draft}
-                placeholder={running ? "Queue a message…" : "Message Claude…"}
-                data-testid="composer"
-                className="no-drag max-h-[40vh] min-h-9 w-full resize-none rounded-lg border border-line-strong bg-canvas px-3 py-2 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  // the first keystroke starts claude, so the send does not wait for it
-                  warm();
-                }}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  } else if (e.key === "Escape" && running) {
-                    e.preventDefault();
-                    void api().chatInterrupt();
-                  } else if (e.key === "ArrowUp" && !draft && last.current) {
-                    e.preventDefault();
-                    setDraft(last.current);
-                  } else if (e.key === "Tab" && e.shiftKey) {
-                    e.preventDefault();
-                    void stepMode();
-                  }
-                }}
-              />
-              <p className="mt-1.5 flex items-center gap-1 text-meta text-fg-4">
-                {s.starting && <Spinner size={10} />}
-                {s.starting
-                  ? "Starting Claude…"
-                  : running
-                    ? "Esc stops the turn. What you send now waits for it."
-                    : "Enter sends, Shift-Enter is a new line, Shift-Tab changes the mode."}
-              </p>
-            </>
+            pane && (
+              <FileList written={talk?.written ?? []} rev={s.rev} onClose={() => setPane(null)} />
+            )
           )}
         </div>
-      </footer>
+      </ChatScopeContext.Provider>
     </div>
   );
 }

@@ -613,6 +613,54 @@ export interface TurnView {
   text?: string;
   /** how it ended when not on a message: an interrupt, an api error */
   note?: string;
+  /** files it wrote that can be looked at, and images it read: what a chat window shows a card for */
+  outputs?: FileMark[];
+}
+
+/** a file a turn showed: one it wrote or edited, or with `read` an image it looked at */
+export interface FileMark {
+  path: string;
+  read?: true;
+}
+
+/** what a file's name says it is, for what a chat window can draw of it */
+export function fileKind(path: string): "image" | "markdown" | "html" | undefined {
+  const ext = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase();
+  if (!ext) return undefined;
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
+  if (ext === "md" || ext === "markdown") return "markdown";
+  if (ext === "html" || ext === "htm") return "html";
+  return undefined;
+}
+
+/** a turn's files worth a card: written ones that can be drawn, read ones that are images */
+function fileMarks(work: TimelineState): FileMark[] {
+  const marks = new Map<string, FileMark>();
+  for (const s of work.steps) {
+    if (s.kind !== "tool" || !s.path || s.isError) continue;
+    const kind = fileKind(s.path);
+    const read = s.name === "Read";
+    if (!kind || (read && kind !== "image")) continue;
+    // written after it was read: a card for what it wrote
+    if (read && marks.has(s.path)) continue;
+    marks.delete(s.path);
+    marks.set(s.path, read ? { path: s.path, read: true } : { path: s.path });
+  }
+  return [...marks.values()];
+}
+
+/** every file the session wrote or edited, the latest first */
+export function filesWritten(state: ConversationState): string[] {
+  const seen = new Set<string>();
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const item = state.items[i];
+    if (item?.kind !== "turn") continue;
+    for (let j = item.work.steps.length - 1; j >= 0; j--) {
+      const s = item.work.steps[j];
+      if (s?.kind === "tool" && s.path && EDITS.has(s.name) && !s.isError) seen.add(s.path);
+    }
+  }
+  return [...seen];
 }
 
 export type ConversationViewItem = TurnView | { kind: "compact" };
@@ -644,6 +692,7 @@ export function conversationView(state: ConversationState): ConversationView {
       const text = answer || (words?.kind === "text" ? words.text : "");
       const max = last ? VIEW_LAST_TEXT : VIEW_TEXT;
       const error = item.work.last?.error ?? (answer ? undefined : item.apiError);
+      const outputs = fileMarks(item.work);
       return {
         kind: "turn",
         ...(item.prompt
@@ -656,6 +705,7 @@ export function conversationView(state: ConversationState): ConversationView {
         ...(n.durationMs !== undefined ? { ms: n.durationMs } : {}),
         ...(text ? { text: text.length > max ? `…${text.slice(1 - max)}` : text } : {}),
         ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
+        ...(outputs.length ? { outputs } : {}),
       };
     }),
   };

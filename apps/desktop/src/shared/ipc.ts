@@ -537,6 +537,8 @@ export interface PushEvents {
   "chat:status": ChatStatus;
   /** a chat window only: the answer being streamed, from `at` on */
   "chat:text": { at: number; text: string };
+  /** a chat window only: the file its viewer shows changed on disk */
+  "chat:file": { path: string };
 }
 
 export const PUSH_CHANNELS = [
@@ -551,6 +553,7 @@ export const PUSH_CHANNELS = [
   "chat:open",
   "chat:status",
   "chat:text",
+  "chat:file",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 // ---------- grove chat: a session grove runs itself, through the agent sdk, in a window of its own
@@ -637,6 +640,14 @@ export interface ChatTarget {
   readOnly?: string;
 }
 
+/** a chat window's conversation: the turns, and every file the session wrote, the latest first */
+export interface ChatConversation extends ConversationView {
+  written: string[];
+}
+
+/** what the viewer reads of a file */
+export type ChatFileText = { text: string } | { binary: true; size: number } | { tooBig: number };
+
 /**
  * a chat window's calls. each acts on the window's own session, which main knows by the window:
  * no call names one, so no page can reach a session it was not opened on
@@ -645,7 +656,13 @@ export interface ChatApi {
   /** null for a window that has no session yet: the spare */
   chatTarget(): Promise<ChatTarget | null>;
   /** its transcript's turns, as the panel gets them */
-  chatConversation(): Promise<ConversationView | null>;
+  chatConversation(): Promise<ChatConversation | null>;
+  /** the project's plans/ and artifacts/, newest first. empty for a session in no project */
+  chatFiles(): Promise<{ plans: string[]; artifacts: string[] }>;
+  /** a file of the session's, for the viewer. refused outside its folders */
+  chatReadFile(path: string): Promise<Outcome<ChatFileText>>;
+  /** the file the viewer shows, so a change to it is pushed (`chat:file`). null: none */
+  chatWatch(path: string | null): Promise<Outcome>;
   /** the first keystroke: claude starts now, so the first send does not wait for it */
   chatWarm(): Promise<Outcome>;
   chatSend(text: string): Promise<Outcome>;
@@ -660,6 +677,9 @@ export interface ChatApi {
 export const CHAT_CHANNELS = [
   "chatTarget",
   "chatConversation",
+  "chatFiles",
+  "chatReadFile",
+  "chatWatch",
   "chatWarm",
   "chatSend",
   "chatInterrupt",

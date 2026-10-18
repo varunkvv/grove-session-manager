@@ -1,6 +1,8 @@
 // grove chat's host: one claude per session grove runs itself, through the agent sdk, kept in main
 // so it outlives the window it was opened from. no electron import: a window is a PushTarget.
 import { randomUUID } from "node:crypto";
+import { type FSWatcher, watch } from "node:fs";
+import path from "node:path";
 import type {
   CanUseTool,
   PermissionResult,
@@ -166,6 +168,8 @@ interface Hosted {
   afterTurn: Array<() => void>;
   /** a model picked before claude was up */
   model?: string;
+  /** the file its window's viewer shows: a change to it is pushed there */
+  watching?: FSWatcher;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -287,6 +291,34 @@ export class ChatHost {
     if (!h) return;
     h.windows.delete(target);
     h.lastActive = this.now();
+    if (h.windows.size === 0) this.watch(id, null);
+  }
+
+  /**
+   * `file` changed on disk: its window hears of it, and its viewer reads it again. the folder is
+   * watched, not the file, so a file written as a new one and renamed over it still counts. null
+   * stops. the path was checked against the session's folders by the caller
+   */
+  watch(id: string, file: string | null): void {
+    const h = this.entry(id);
+    h.watching?.close();
+    h.watching = undefined;
+    if (!file) return;
+    const name = path.basename(file);
+    let soon: NodeJS.Timeout | undefined;
+    try {
+      h.watching = watch(path.dirname(file), (_event, changed) => {
+        if (changed !== null && changed !== name) return;
+        // an editor's save is several events
+        clearTimeout(soon);
+        soon = setTimeout(() => {
+          for (const w of h.windows) this.deliver(h, w, "grove:chat:file", { path: file });
+        }, 80);
+      });
+      h.watching.on("error", () => this.watch(id, null));
+    } catch {
+      // the folder went away: there is nothing to watch
+    }
   }
 
   /** claude for this session, started now if it is not up. resolves once it is ready */
@@ -387,7 +419,10 @@ export class ChatHost {
 
   dispose(): void {
     clearInterval(this.reaper);
-    for (const h of this.hosted.values()) h.q?.close();
+    for (const h of this.hosted.values()) {
+      h.q?.close();
+      h.watching?.close();
+    }
   }
 
   // ---------- inside
