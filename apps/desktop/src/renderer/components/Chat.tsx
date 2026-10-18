@@ -562,11 +562,12 @@ export function ChatApp() {
     placeCaret.current = null;
   }, [draft]);
 
+  // the asks themselves, not how many: one card that takes another's place is taller or shorter
   // biome-ignore lint/correctness/useExhaustiveDependencies: these are when to scroll, not what is read
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
-  }, [talk, shown, sent, status?.asks.length, status?.queued.length]);
+  }, [talk, shown, sent, status?.asks, status?.queued.length]);
 
   if (target === undefined) return <div className="drag h-full bg-canvas" />;
   if (!target) {
