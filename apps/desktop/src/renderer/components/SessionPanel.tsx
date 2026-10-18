@@ -27,6 +27,7 @@ import {
   cx,
   EscButton,
   Icon,
+  IconButton,
   Mono,
   ProjectMark,
   RecapBlock,
@@ -204,7 +205,33 @@ export function Turn({
   return (
     <section className="mt-6 first:mt-0" data-testid="turn">
       {p?.kind === "human" ? (
-        <>
+        <div className={cx(detail && "group/prompt relative")}>
+          {/* grove chat: what can be done from this message, on hover */}
+          {detail && scope && !going && (
+            <div
+              className="absolute top-0 right-0 flex gap-0.5 opacity-0 group-hover/prompt:opacity-100 focus-within:opacity-100"
+              data-testid="prompt-actions"
+            >
+              {scope.fork && p.text && !p.text.endsWith("…") && (
+                <IconButton
+                  label="Edit and send again: a new session from just before this"
+                  data-testid="prompt-edit"
+                  onClick={() => scope.fork?.(p.parent ?? null, p.text)}
+                >
+                  <Icon name="pencil" size={12} />
+                </IconButton>
+              )}
+              {scope.rewind && p.uuid && (
+                <IconButton
+                  label="Rewind the files to before this"
+                  data-testid="prompt-rewind"
+                  onClick={() => p.uuid && scope.rewind?.(p.uuid)}
+                >
+                  <Icon name="undo" size={12} />
+                </IconButton>
+              )}
+            </div>
+          )}
           <h3 className="text-sm font-medium text-fg-4">
             {who}
             {images && (!!p.images || !!p.files?.length) && (
@@ -218,7 +245,7 @@ export function Turn({
           <p className={typed} data-testid={last ? "panel-prompt" : undefined}>
             {p.text}
           </p>
-        </>
+        </div>
       ) : (
         // a slash command, or Claude Code saying a background task finished: nobody typed a prompt
         p && <p className={`${QUIET} break-words`}>{p.text}</p>
@@ -299,6 +326,15 @@ export function Turn({
                 data-testid="answer-actions"
               >
                 <CopyButton label="Copy answer" text={() => turn.text ?? ""} />
+                {scope.fork && turn.end && (
+                  <IconButton
+                    label="Fork from here: a new session with all of this"
+                    data-testid="answer-fork"
+                    onClick={() => turn.end && scope.fork?.(turn.end, "")}
+                  >
+                    <Icon name="branch" size={12} />
+                  </IconButton>
+                )}
               </div>
             )}
           </div>

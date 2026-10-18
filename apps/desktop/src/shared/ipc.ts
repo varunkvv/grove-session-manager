@@ -575,8 +575,20 @@ export interface PushEvents {
   "chat:host": { sessionId: string; status: ChatStatus };
 }
 
-/** what a chat window opens beside its conversation when the session card sends the person there */
-export type ChatShow = { file: string } | { agents: true };
+/**
+ * what a chat window opens with when sent there: a file of the session's or its agents beside the
+ * conversation (the session card), or words in the composer (a fork's "edit and resend")
+ */
+export type ChatShow = { file: string } | { agents: true } | { draft: string };
+
+/** what a rewind would do, or did: the files it puts back and by how much */
+export interface ChatRewind {
+  canRewind: boolean;
+  error?: string;
+  files?: string[];
+  insertions?: number;
+  deletions?: number;
+}
 
 export const PUSH_CHANNELS = [
   "projects:changed",
@@ -864,6 +876,16 @@ export interface ChatApi {
   chatMcp(): Promise<Outcome<Array<{ name: string; status: string; error?: string }>>>;
   /** try a failed MCP server again */
   chatMcpReconnect(name: string): Promise<Outcome>;
+  /**
+   * the files claude changed since this message, put back as they were. `dry`: only say what would
+   * change. only turns grove ran (with checkpoints) can be rewound
+   */
+  chatRewind(uuid: string, dry: boolean): Promise<Outcome<ChatRewind>>;
+  /**
+   * a new session that is this one up to `upTo` (a line's uuid; null: from nothing), in a window of
+   * its own, with `draft` in its composer
+   */
+  chatFork(upTo: string | null, draft: string): Promise<Outcome>;
   /** fast mode on or off, this session only */
   chatSetFast(on: boolean): Promise<Outcome>;
   /** thinking on or off: only a model that can answer without it */
@@ -910,6 +932,8 @@ export const CHAT_CHANNELS = [
   "chatSetFast",
   "chatSetThinking",
   "chatSetStyle",
+  "chatRewind",
+  "chatFork",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

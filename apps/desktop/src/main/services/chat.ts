@@ -26,6 +26,7 @@ import type {
   ChatMode,
   ChatNote,
   ChatQuestion,
+  ChatRewind,
   ChatStatus,
   DialogChoice,
 } from "../../shared/ipc.ts";
@@ -742,6 +743,20 @@ export class ChatHost {
     if (q?.renameSession && h?.status.live) return q.renameSession(title, id);
     const { renameSession } = await import("@anthropic-ai/claude-agent-sdk");
     await renameSession(id, title, { dir: where.cwd });
+  }
+
+  /** the files changed since a message, put back (probe: by the uuid grove stamped on it) */
+  async rewind(id: string, where: ChatWhere, uuid: string, dry: boolean): Promise<ChatRewind> {
+    await this.warm(id, where);
+    const r = await this.hosted.get(id)?.q?.rewindFiles(uuid, { dryRun: dry });
+    if (!r) return { canRewind: false, error: "Claude is not up." };
+    return {
+      canRewind: r.canRewind,
+      ...(r.error ? { error: r.error } : {}),
+      ...(r.filesChanged ? { files: r.filesChanged } : {}),
+      ...(r.insertions !== undefined ? { insertions: r.insertions } : {}),
+      ...(r.deletions !== undefined ? { deletions: r.deletions } : {}),
+    };
   }
 
   /** fast mode, this session only (probe: the flag layer takes it, getSettings().effective says so) */

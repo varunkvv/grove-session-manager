@@ -50,6 +50,9 @@ export interface Prompt {
   plan?: boolean;
   /** a task notification's status: completed, failed, killed... */
   status?: string;
+  /** a person's prompt: its line's uuid, and the one before it (what a fork stops at) */
+  uuid?: string;
+  parent?: string;
 }
 
 export interface Question {
@@ -92,6 +95,8 @@ export interface Turn {
   apiError?: string;
   /** Claude Code's own measure of the turn, where it writes one */
   durationMs?: number;
+  /** the uuid of the last line of it: a fork from here keeps up to it */
+  end?: string;
 }
 
 /** a compaction: everything before it was summarised into what came after */
@@ -319,6 +324,11 @@ export class ConversationFold {
     else if (type === "user") this.user(entry, at, line);
     else if (type === "system") this.system(entry, at);
     else if (queued) this.queued(entry.attachment as Record<string, unknown>, at);
+    // the turn's last line so far: where a fork from it stops
+    if (uuid && (type === "assistant" || type === "user")) {
+      const open = this.current();
+      if (open) open.turn.end = uuid;
+    }
   }
 
   /** the turn at `i`, copied for this read the first time it is touched */
@@ -441,6 +451,8 @@ export class ConversationFold {
     const files = filesIn(content);
     const said = typed(content);
     if (!said && images === 0 && files.length === 0) return;
+    const uuid = str(entry.uuid);
+    const parent = str(entry.parentUuid);
     this.startTurn({
       kind: "human",
       text: said,
@@ -448,6 +460,8 @@ export class ConversationFold {
       ...(images ? { images } : {}),
       ...(files.length ? { files } : {}),
       ...(entry.permissionMode === "plan" ? { plan: true } : {}),
+      ...(uuid ? { uuid } : {}),
+      ...(parent ? { parent } : {}),
     });
   }
 
@@ -677,7 +691,17 @@ const VIEW_LAST_TEXT = 20_000;
 export interface TurnView {
   kind: "turn";
   /** what started it. absent when the work carried on after a compaction */
-  prompt?: { kind: Prompt["kind"]; text: string; images?: number; files?: string[] };
+  /** `uuid`, `parent`: a chat window's only, for rewind and fork */
+  prompt?: {
+    kind: Prompt["kind"];
+    text: string;
+    images?: number;
+    files?: string[];
+    uuid?: string;
+    parent?: string;
+  };
+  /** a chat window's only: the uuid of the turn's last line, where a fork from it stops */
+  end?: string;
   /** what the person typed while it worked */
   said?: string[];
   /** tool calls, files edited, subagents started, and how long it took */
@@ -912,6 +936,8 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
             text: cut(item.prompt.text, VIEW_PROMPT),
             ...(item.prompt.images ? { images: item.prompt.images } : {}),
             ...(opts.chat && item.prompt.files ? { files: item.prompt.files } : {}),
+            ...(opts.chat && item.prompt.uuid ? { uuid: item.prompt.uuid } : {}),
+            ...(opts.chat && item.prompt.parent ? { parent: item.prompt.parent } : {}),
           },
         }
       : {}),
@@ -927,6 +953,7 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
     ...(opts.chat && item.output ? { output: item.output } : {}),
     ...(opts.chat ? workflowsOf(item.work) : {}),
     ...(opts.chat && error ? { failed: true } : {}),
+    ...(opts.chat && item.end ? { end: item.end } : {}),
   };
 }
 

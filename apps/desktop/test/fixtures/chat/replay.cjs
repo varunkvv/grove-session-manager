@@ -93,7 +93,16 @@ const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(require("node:os").
 const transcriptOf = (id) =>
   path.join(configDir, "projects", process.cwd().replace(/[^a-zA-Z0-9]/g, "-"), `${id}.jsonl`);
 let transcript = transcriptOf(sessionId);
+/** a resumed session's chain goes on from its last line, as claude code's does */
 let parentUuid = null;
+try {
+  const had = fs.readFileSync(transcript, "utf8").trim().split("\n");
+  for (let i = had.length - 1; i >= 0 && parentUuid === null; i--) {
+    try {
+      parentUuid = JSON.parse(had[i]).uuid ?? null;
+    } catch {}
+  }
+} catch {}
 function record(type, message, extra = {}) {
   const uuid = extra.uuid ?? crypto.randomUUID();
   const line = {
@@ -238,6 +247,12 @@ function settingsControl(r) {
   if (r.subtype === "mcp_reconnect") {
     mcpRetried = true;
     return {};
+  }
+  // a rewind, as recordings/d-could answered one: what would change, then done
+  if (r.subtype === "rewind_files") {
+    return r.dry_run
+      ? { canRewind: true, filesChanged: [path.join(process.cwd(), "r.txt")], insertions: 1, deletions: 1 }
+      : { canRewind: true, skippedLinks: 0 };
   }
   // a rename from the host: claude code keeps it as a custom title (recordings/d-rename)
   if (r.subtype === "rename_session") {
@@ -391,7 +406,8 @@ async function play(turn) {
     const text = (Array.isArray(m.message.content) ? m.message.content : [{ text: m.message.content }])
       .map((c) => c.text ?? "")
       .join("");
-    record("user", m.message);
+    // the line keeps the uuid the host stamped, as claude code's does (recordings/d-atpath)
+    record("user", m.message, m.uuid ? { uuid: m.uuid } : {});
     await play(turns.find((t) => t.text === text) ?? turns[0]);
   }
   process.exit(0);

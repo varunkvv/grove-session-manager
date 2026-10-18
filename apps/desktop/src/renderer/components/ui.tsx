@@ -42,7 +42,9 @@ export type IconName =
   | "arrow"
   | "stop"
   | "more"
-  | "copy";
+  | "copy"
+  | "pencil"
+  | "undo";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -76,6 +78,8 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   arrow: <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />,
   stop: <rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1.5" fill="currentColor" />,
+  pencil: <path d="M10.75 2.75 13.25 5.25 5.5 13H3v-2.5l7.75-7.75ZM9.25 4.25l2.5 2.5" />,
+  undo: <path d="M5.5 3.5 2.75 6.25 5.5 9M2.75 6.25h6.5a3.75 3.75 0 0 1 0 7.5H7" />,
   copy: (
     <>
       <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" />

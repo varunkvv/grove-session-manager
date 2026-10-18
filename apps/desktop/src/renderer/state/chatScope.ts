@@ -16,6 +16,10 @@ export interface ChatScope {
   diff?: (call: string) => Promise<string[] | null>;
   /** say this again: a turn that ended on an api error, asked once more */
   retry?: (prompt: string) => void;
+  /** put the files back as they were before this message (its uuid) */
+  rewind?: (uuid: string) => void;
+  /** a new session that is this one up to a line (null: none of it), with words in its composer */
+  fork?: (upTo: string | null, draft: string) => void;
 }
 
 export const ChatScopeContext = createContext<ChatScope | null>(null);

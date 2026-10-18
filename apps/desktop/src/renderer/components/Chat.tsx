@@ -10,6 +10,7 @@ import type {
   ChatConversation,
   ChatMode,
   ChatNote,
+  ChatShow,
   ChatStatus,
   ChatTarget,
   Outcome,
@@ -393,6 +394,14 @@ export function ChatApp() {
     }
   }, []);
 
+  /** what the window was sent here for: a file or the agents beside it, or words to send */
+  const showIt = useCallback((show: ChatShow) => {
+    if ("draft" in show) {
+      setDraft(show.draft);
+      composer.current?.focus();
+    } else setPane("file" in show ? { kind: "files", file: show.file } : { kind: "agents" });
+  }, []);
+
   const load = useCallback(async () => {
     const t = await api()
       .chatTarget()
@@ -400,15 +409,14 @@ export function ChatApp() {
     setTarget(t);
     if (!t) return;
     setStatus(t.status);
-    // sent here from the session card while this page was still loading
-    if (t.show)
-      setPane("file" in t.show ? { kind: "files", file: t.show.file } : { kind: "agents" });
+    // sent here (the session card, a fork) while this page was still loading
+    if (t.show) showIt(t.show);
     stream.current = t.text;
     setShown(t.text);
     applyAppearance(t.appearance);
     document.title = t.session.title;
     void read();
-  }, [read]);
+  }, [read, showIt]);
 
   useEffect(() => {
     // the project marks' colours and the editor's name come from what the main window has
@@ -429,10 +437,8 @@ export function ChatApp() {
       api().on("chat:appearance", ({ appearance }) => applyAppearance(appearance)),
       // ⌘F, which the app's menu sends here when this window has the keyboard
       api().on("chat:find", () => setFinding((n) => n + 1)),
-      // the session card sent the person here for a file or the agents
-      api().on("chat:show", (show) =>
-        setPane("file" in show ? { kind: "files", file: show.file } : { kind: "agents" }),
-      ),
+      // the session card sent the person here for a file or the agents, a fork with its words
+      api().on("chat:show", (show) => showIt(show)),
       api().on("chat:text", ({ at, text }) => {
         stream.current = stream.current.slice(0, at) + text;
         // a message that just finished is drawn until the transcript that has it is read
@@ -446,7 +452,7 @@ export function ChatApp() {
       for (const off of offs) off();
       document.removeEventListener("securitypolicyviolation", onCsp);
     };
-  }, [load]);
+  }, [load, showIt]);
 
   // every action's key, from wherever the keyboard is (cmd-shift-Enter is the editor, as on a list
   // in the main window). Esc closes the pane beside the conversation, unless the composer took it
@@ -739,6 +745,11 @@ export function ChatApp() {
     agents: (call?: string) => setPane({ kind: "agents", ...(call ? { call } : {}) }),
     diff: (call: string) => api().chatStepDiff(call),
     retry: (prompt: string) => void send(prompt),
+    rewind: (uuid: string) => void rewind(uuid),
+    fork: (upTo: string | null, words: string) =>
+      void api()
+        .chatFork(upTo, words)
+        .then((o) => setError(failed(o))),
   };
   /** what runs now, as its claude says: the header counts its workflows and its other agents */
   const busy = (s.agents ?? []).filter((a) => a.state === "running");
@@ -772,6 +783,34 @@ export function ChatApp() {
     // the list picks it up from the transcript: the window says it now
     setTarget({ ...target, session: { ...session, title } });
     document.title = title;
+  };
+
+  /**
+   * the files back as they were before a message: what it would do is asked first, and said, and
+   * only then done. only turns grove ran keep checkpoints
+   */
+  const rewind = async (uuid: string) => {
+    const dry = await api().chatRewind(uuid, true);
+    if (!dry.ok) return setError(dry.error.message);
+    const r = dry.value;
+    if (!r.canRewind)
+      return setError(
+        r.error ??
+          "There is no checkpoint for that message: grove only keeps them for turns it runs.",
+      );
+    const n = r.files?.length ?? 0;
+    if (n === 0) return setNote("No file changed since that message.");
+    const sure = window.confirm(
+      `Put ${n} ${n === 1 ? "file" : "files"} back as they were before that message? (+${r.insertions ?? 0} -${r.deletions ?? 0})\n\n${(r.files ?? []).join("\n")}\n\nThe conversation stays as it is.`,
+    );
+    if (!sure) return;
+    const done = await api().chatRewind(uuid, false);
+    if (!done.ok) return setError(done.error.message);
+    setNote(
+      done.value.canRewind
+        ? `Put back ${n} ${n === 1 ? "file" : "files"}.`
+        : (done.value.error ?? "It could not be rewound."),
+    );
   };
 
   /** the MCP servers, under the … button: asked for now, as claude has them */
@@ -816,6 +855,8 @@ export function ChatApp() {
   const canThinkOff = /claude-(opus|sonnet|haiku)-4/.test(
     current?.id ?? current?.value ?? s.model ?? "",
   );
+  /** where a fork of all of it stops: the last turn's last line */
+  const lastTurnEnd = rows.findLast((r): r is TurnView => r.kind === "turn")?.end;
   /** the last thing claude said in full, for ⇧⌘C */
   const lastAnswer = rows.findLast((r): r is TurnView => r.kind === "turn" && !!r.text)?.text;
 
@@ -879,6 +920,14 @@ export function ChatApp() {
       keys: { key: "m", meta: true, alt: true },
       off: !!readOnly,
       run: () => void showMcp(),
+    },
+    {
+      id: "fork",
+      group: "Session",
+      label: "Fork the conversation",
+      keys: { key: "f", meta: true, alt: true },
+      off: !!target.fresh || running || !lastTurnEnd,
+      run: () => scope.fork(lastTurnEnd ?? null, ""),
     },
     {
       id: "rename",

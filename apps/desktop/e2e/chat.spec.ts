@@ -897,6 +897,79 @@ test("fast mode and thinking are switches on the models that have them, and the 
   );
 });
 
+test("a message's hover actions: rewind its files, edit and send it again, or fork from an answer", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike", {
+    timeout: 15_000,
+  });
+  await expect(chat.getByTestId("chat-stop")).toHaveCount(0, { timeout: 15_000 });
+  const turn = chat.getByTestId("turn").last();
+  // rewind: what it would do is asked and said first
+  let asked = "";
+  chat.once("dialog", (d) => {
+    asked = d.message();
+    void d.accept();
+  });
+  await turn.hover();
+  await turn.getByTestId("prompt-rewind").click();
+  await expect(chat.getByTestId("chat-note")).toHaveText("Put back 1 file.");
+  expect(asked).toContain("Put 1 file back as they were before that message? (+1 -1)");
+  const rewinds = sentToClaude(s.chatLog)
+    .map(
+      (l) =>
+        (l.in as { request?: { subtype?: string; dry_run?: boolean; user_message_id?: string } })
+          ?.request,
+    )
+    .filter((r) => r?.subtype === "rewind_files");
+  expect(rewinds.map((r) => r?.dry_run)).toEqual([true, false]);
+  expect(rewinds[0]?.user_message_id).toMatch(/^[0-9a-f-]{36}$/);
+  // edit and send again: a new session from before it, with the words in its composer
+  await turn.hover();
+  await turn.getByTestId("prompt-edit").click();
+  let fork: Page | undefined;
+  await waitFor(async () => {
+    for (const p of electron.windows()) {
+      if (!p.url().includes("#/chat")) continue;
+      const id = await p
+        .getByTestId("chat")
+        .getAttribute("data-id")
+        .catch(() => null);
+      if (id && id !== SID) {
+        fork = p;
+        return true;
+      }
+    }
+    return false;
+  });
+  await expect((fork as Page).getByTestId("composer")).toHaveValue(HELLO);
+  // its transcript is this one's up to before that message: the scene-setting turn only
+  await expect((fork as Page).getByTestId("turn")).toHaveCount(1, { timeout: 20_000 });
+  await expect((fork as Page).getByTestId("turn")).toContainText("set the scene");
+  // fork from the answer: a new session with all of it, in a window of its own
+  await chat.bringToFront();
+  await turn.getByTestId("panel-text").hover();
+  await turn.getByTestId("answer-fork").click();
+  await waitFor(async () => {
+    const ids = new Set<string>();
+    for (const p of electron.windows()) {
+      const id = p.url().includes("#/chat")
+        ? await p
+            .getByTestId("chat")
+            .getAttribute("data-id")
+            .catch(() => null)
+        : null;
+      if (id) ids.add(id);
+    }
+    return ids.size >= 3;
+  });
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

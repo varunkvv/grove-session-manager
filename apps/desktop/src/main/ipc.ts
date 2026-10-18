@@ -766,6 +766,8 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatSetFast",
   "chatSetThinking",
   "chatSetStyle",
+  "chatRewind",
+  "chatFork",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1196,6 +1198,33 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       folds.set(file, state);
       if (folds.size > 32) folds.delete(folds.keys().next().value as string);
       return agentView(state);
+    },
+
+    async chatRewind(id, uuid, dry) {
+      if (!isText(uuid, 100) || typeof dry !== "boolean")
+        throw new AppError("invalid", "That is not a message.");
+      return chat.rewind(id, await runWhere(id), uuid, dry);
+    },
+
+    async chatFork(id, upTo, draft) {
+      if ((upTo !== null && !isText(upTo, 100)) || !isText(draft)) {
+        throw new AppError("invalid", "That is not a place to fork from.");
+      }
+      const row = rowOf(id);
+      const at = await where(row);
+      const project = projects.hitFor(id)?.project;
+      let to: string;
+      if (upTo === null) {
+        // from before the first message: a new session in the same place
+        to = randomUUID();
+        deps.fresh.set(to, { ...(project ? { project } : {}), where: { ...at, fresh: true } });
+      } else {
+        const { forkSession } = await import("@anthropic-ai/claude-agent-sdk");
+        // its own transcript, next to this one's: it resumes like any session
+        to = (await forkSession(id, { dir: at.cwd, upToMessageId: upTo })).sessionId;
+        deps.fresh.set(to, { ...(project ? { project } : {}), where: { ...at, fresh: false } });
+      }
+      deps.chatWindows.open(to, draft ? { draft } : undefined);
     },
 
     async chatSetFast(id, on) {
