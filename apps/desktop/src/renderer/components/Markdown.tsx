@@ -1,15 +1,51 @@
 // agent output is untrusted: a result is model text, and it quotes web pages and files. so this
 // renders React elements only. react-markdown turns raw html into plain text unless rehype-raw is
-// added, and it is never added here. links go to the browser through main, http(s) only.
-import { memo } from "react";
+// added, and it is never added here. links go to the browser through main, http(s) only. in a
+// grove chat window a path is a file of the session's: an image drawn through <img> from main's
+// session scheme, which serves only the session's folders, or a link that opens the viewer.
+import { fileKind } from "@grove/core/pure";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { webLink } from "../logic/links.ts";
+import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
+import { localPath, webLink } from "../logic/links.ts";
+import { useChatScope } from "../state/chatScope.ts";
+
+/** an image the agent pointed at: one of the session's files, in a chat window. else its words */
+function Image({ src, alt }: { src?: string; alt?: string }) {
+  const scope = useChatScope();
+  const file = scope && localPath(src, scope.base);
+  if (!scope || !file || fileKind(file) !== "image") {
+    // remote images are blocked by the page's CSP anyway. a broken image says less than its words.
+    return alt ? <span className="md-alt">{alt}</span> : null;
+  }
+  return (
+    <img
+      className="md-img"
+      src={sessionUrl(FILE_SCHEME, scope.session, file)}
+      alt={alt ?? ""}
+      title={file}
+      onClick={() => scope.open?.(file)}
+    />
+  );
+}
+
+/** a link to a file: opened beside the conversation, in a chat window */
+function FileLink({ href, children }: { href?: string; children: ReactNode }) {
+  const scope = useChatScope();
+  const file = scope?.open && localPath(href, scope.base);
+  if (!file) return <span>{children}</span>;
+  return (
+    <button type="button" className="md-file" title={file} onClick={() => scope?.open?.(file)}>
+      {children}
+    </button>
+  );
+}
 
 const components: Components = {
   a: ({ href, children }) => {
     const url = webLink(href);
-    if (!url) return <span>{children}</span>;
+    if (!url) return <FileLink href={href}>{children}</FileLink>;
     return (
       <a
         href={url}
@@ -24,8 +60,7 @@ const components: Components = {
       </a>
     );
   },
-  // remote images are blocked by the page's CSP anyway. a broken image says less than its words.
-  img: ({ alt }) => (alt ? <span className="md-alt">{alt}</span> : null),
+  img: ({ src, alt }) => <Image src={typeof src === "string" ? src : undefined} alt={alt} />,
 };
 
 const plugins = [remarkGfm];

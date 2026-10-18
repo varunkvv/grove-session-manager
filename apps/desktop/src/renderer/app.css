@@ -388,12 +388,14 @@ dialog::backdrop {
 .md li::marker {
   color: var(--color-fg-4);
 }
-.md a {
+.md a,
+.md .md-file {
   color: var(--color-accent);
   text-decoration: none;
   cursor: pointer;
 }
-.md a:hover {
+.md a:hover,
+.md .md-file:hover {
   text-decoration: underline;
 }
 .md code {
@@ -456,4 +458,13 @@ dialog::backdrop {
 }
 .md .md-alt::after {
   content: "]";
+}
+/* grove chat: an image the agent pointed at, from the session's folders */
+.md .md-img {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  margin: 4px 0 8px;
+  border-radius: var(--radius-md);
+  cursor: zoom-in;
 }

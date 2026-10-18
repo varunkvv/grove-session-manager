@@ -16,14 +16,14 @@ import type { MenuCommandId } from "../shared/ipc.ts";
 import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
-import { registerIpc } from "./ipc.ts";
+import { chatRoots, registerIpc } from "./ipc.ts";
 import { keepAwake, leftRunningCount, runningCount, watchingCount } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import type { TrayView } from "./menuTemplate.ts";
 import { OpQueue } from "./opQueue.ts";
 import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
-import { registerAppScheme, serveRenderer } from "./protocol.ts";
+import { registerAppScheme, serveRenderer, serveSessionFiles } from "./protocol.ts";
 import { Pusher } from "./push.ts";
 import { BackgroundService } from "./services/background.ts";
 import { ChatHost } from "./services/chat.ts";
@@ -431,6 +431,7 @@ async function start(): Promise<void> {
   // copy of the setting, because nativeTheme does not reach the renderer's media queries.
   electron.nativeTheme.themeSource = settings.appearance;
   serveRenderer(rendererDir);
+  serveSessionFiles((id) => chatRoots({ sessions, combos, chatWindows }, id));
   denyAllPermissions();
 
   await combos.load();

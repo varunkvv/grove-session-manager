@@ -1,13 +1,20 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as electron from "electron";
+import { FILE_SCHEME, HTML_SCHEME } from "../shared/sessionUrl.ts";
 import { CSP, contentTypeFor, resolveAssetPath } from "./assets.ts";
 import { APP_HOST, APP_SCHEME } from "./origin.ts";
+import { sessionFileOf, within } from "./sessionFiles.ts";
 
-/** before `ready`. standard + secure gives the page a real origin, so 'self' in the CSP means something. */
+/**
+ * before `ready`, and only once. standard + secure gives the page a real origin, so 'self' in the
+ * CSP means something. the session schemes are grove chat's: images, and html in the sandbox
+ */
 export function registerAppScheme(): void {
   electron.protocol.registerSchemesAsPrivileged([
     { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    { scheme: FILE_SCHEME, privileges: { standard: true, secure: true } },
+    { scheme: HTML_SCHEME, privileges: { standard: true, secure: true } },
   ]);
 }
 
@@ -17,12 +24,12 @@ const NO_RENDERER =
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Grove</title></head>' +
   "<body></body></html>";
 
-function respond(status: number, body: BodyInit | null, type: string): Response {
+function respond(status: number, body: BodyInit | null, type: string, csp = CSP): Response {
   return new Response(body, {
     status,
     headers: {
       "content-type": type,
-      "content-security-policy": CSP,
+      "content-security-policy": csp,
       "x-content-type-options": "nosniff",
       "cache-control": "no-cache",
     },
@@ -54,4 +61,54 @@ export function serveRenderer(rendererDir: string): void {
       return respond(404, "not found", "text/plain");
     }
   });
+}
+
+const IMAGES = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
+
+/** an image is only ever an <img>. this is for one opened any other way */
+const IMAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
+/**
+ * a page an agent wrote, in a sandboxed iframe with an opaque origin and no preload. it may pull in
+ * what a mockup does from the web (scripts, styles, fonts, images) and its own files beside it. it
+ * talks to nothing: no fetch, no forms
+ */
+export const HTML_CSP = [
+  "default-src 'none'",
+  `script-src 'unsafe-inline' 'unsafe-eval' https: ${HTML_SCHEME}:`,
+  `style-src 'unsafe-inline' https: ${HTML_SCHEME}:`,
+  `img-src https: data: blob: ${HTML_SCHEME}:`,
+  `font-src https: data: ${HTML_SCHEME}:`,
+  `media-src https: data: ${HTML_SCHEME}:`,
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join("; ");
+
+/**
+ * after `ready`. a chat window's images and html pages: `<scheme>://<session id>/<path>`, served
+ * only from under the folders `rootsOf` gives that session, which is none unless its window is open
+ */
+export function serveSessionFiles(rootsOf: (sessionId: string) => Promise<string[] | null>): void {
+  const serve = (scheme: string, csp: string, only?: ReadonlySet<string>) =>
+    electron.protocol.handle(scheme, async (request) => {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return respond(405, "method not allowed", "text/plain", csp);
+      }
+      const at = sessionFileOf(request.url);
+      if (!at) return respond(400, "bad request", "text/plain", csp);
+      if (only && !only.has(path.extname(at.file).toLowerCase())) {
+        return respond(403, "forbidden", "text/plain", csp);
+      }
+      const roots = await rootsOf(at.sessionId);
+      const file = roots && (await within(roots, at.file));
+      if (!file) return respond(404, "not found", "text/plain", csp);
+      try {
+        return respond(200, new Uint8Array(await readFile(file)), contentTypeFor(file), csp);
+      } catch {
+        return respond(404, "not found", "text/plain", csp);
+      }
+    });
+  serve(FILE_SCHEME, IMAGE_CSP, IMAGES);
+  serve(HTML_SCHEME, HTML_CSP);
 }

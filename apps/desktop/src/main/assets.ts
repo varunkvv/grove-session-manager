@@ -4,7 +4,9 @@ export const CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  // grove chat: a session's images, and its html pages in a sandboxed frame (protocol.ts)
+  "img-src 'self' data: grove-file:",
+  "frame-src grove-html:",
   "font-src 'self'",
   "connect-src 'self'",
   "base-uri 'none'",

@@ -5,6 +5,7 @@ import { type ConversationView, modelLabel, type TurnView } from "@grove/core/pu
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatAnswer, ChatAsk, ChatStatus, ChatTarget, Outcome } from "../../shared/ipc.ts";
 import { applyAppearance } from "../state/appearance.ts";
+import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
 import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
@@ -408,6 +409,7 @@ export function ChatApp() {
 
   const toEditor = () => (running ? setMoving(!moving) : void openInEditor("now"));
   editorKey.current = toEditor;
+  const scope = { session: session.sessionId, base: target.cwd };
 
   return (
     <div
@@ -489,55 +491,57 @@ export function ChatApp() {
           atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
         }}
       >
-        <div className={cx(COLUMN, "pt-6 pb-8")}>
-          {session.description && (
-            <p className="selectable mb-6 break-words text-fg-2" data-testid="chat-description">
-              {session.description}
-            </p>
-          )}
-          {talk === null && !pending && (
-            <p className={QUIET} data-testid="chat-gone">
-              This session's transcript is not there. Claude Code deletes one after 30 days.
-            </p>
-          )}
-          {!!talk?.older && (
-            <p className={`${QUIET} mb-6`}>
-              {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {target.editor}.
-            </p>
-          )}
-          {rows.map((item, i) =>
-            item.kind === "compact" ? (
-              // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-              <p key={(talk?.older ?? 0) + i} className={`${QUIET} mt-6`}>
-                Compacted: what came before was summarised.
+        <ChatScopeContext.Provider value={scope}>
+          <div className={cx(COLUMN, "pt-6 pb-8")}>
+            {session.description && (
+              <p className="selectable mb-6 break-words text-fg-2" data-testid="chat-description">
+                {session.description}
               </p>
-            ) : (
-              <Turn
+            )}
+            {talk === null && !pending && (
+              <p className={QUIET} data-testid="chat-gone">
+                This session's transcript is not there. Claude Code deletes one after 30 days.
+              </p>
+            )}
+            {!!talk?.older && (
+              <p className={`${QUIET} mb-6`}>
+                {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {target.editor}.
+              </p>
+            )}
+            {rows.map((item, i) =>
+              item.kind === "compact" ? (
                 // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-                key={(talk?.older ?? 0) + i}
-                turn={item}
-                last={i === end}
-                working={running}
-              />
-            ),
-          )}
-          {running && s.tool && (
-            <p className={cx(QUIET, "mt-2 flex items-center gap-1.5")} data-testid="chat-tool">
-              <Spinner size={10} />
-              {s.tool}
-            </p>
-          )}
-          {s.asks.map((a) => (
-            <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
-          ))}
-          {s.queued.map((q, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: two sends can be the same words
-            <div key={i} className="mt-3" data-testid="chat-queued">
-              <h3 className="text-sm font-medium text-fg-4">You, queued</h3>
-              <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-2">{q}</p>
-            </div>
-          ))}
-        </div>
+                <p key={(talk?.older ?? 0) + i} className={`${QUIET} mt-6`}>
+                  Compacted: what came before was summarised.
+                </p>
+              ) : (
+                <Turn
+                  // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+                  key={(talk?.older ?? 0) + i}
+                  turn={item}
+                  last={i === end}
+                  working={running}
+                />
+              ),
+            )}
+            {running && s.tool && (
+              <p className={cx(QUIET, "mt-2 flex items-center gap-1.5")} data-testid="chat-tool">
+                <Spinner size={10} />
+                {s.tool}
+              </p>
+            )}
+            {s.asks.map((a) => (
+              <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
+            ))}
+            {s.queued.map((q, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: two sends can be the same words
+              <div key={i} className="mt-3" data-testid="chat-queued">
+                <h3 className="text-sm font-medium text-fg-4">You, queued</h3>
+                <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-2">{q}</p>
+              </div>
+            ))}
+          </div>
+        </ChatScopeContext.Provider>
       </div>
       <footer className="shrink-0 border-t border-line">
         <div className={cx(COLUMN, "py-3")}>

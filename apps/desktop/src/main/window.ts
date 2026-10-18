@@ -87,6 +87,11 @@ export function lockDown(contents: WebContents, isTrusted: (url: string) => bool
   contents.on("will-redirect", (event, url) => {
     if (!isTrusted(url)) event.preventDefault();
   });
+  // a frame is only ever grove chat's sandboxed html, and it stays on its own pages. will-navigate
+  // is the window's own frame only
+  contents.on("will-frame-navigate", (event) => {
+    if (!event.isMainFrame && !event.url.startsWith("grove-html:")) event.preventDefault();
+  });
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
   contents.on("will-attach-webview", (event) => event.preventDefault());
 }

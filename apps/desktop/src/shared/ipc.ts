@@ -623,6 +623,8 @@ export interface ChatStatus {
 export interface ChatTarget {
   session: SessionRef;
   project?: ProjectId;
+  /** the folder it runs in: where a relative path in what it says is from */
+  cwd: string;
   /** when it last moved */
   at: number;
   appearance: AppSettings["appearance"];

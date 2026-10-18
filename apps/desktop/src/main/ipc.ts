@@ -63,6 +63,7 @@ import type { Reveals } from "./services/reveal.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { parseStartAgent } from "./services/startAgent.ts";
 import { keptFolderToast } from "./services/views.ts";
+import { TEMP_ROOTS } from "./sessionFiles.ts";
 
 export interface Deps {
   env: AppEnv;
@@ -688,28 +689,46 @@ type ChatHandlers = {
   ) => Promise<Unwrap<Awaited<ReturnType<ChatApi[K]>>>>;
 };
 
-function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
-  const { sessions, projects, combos, chat, editor } = deps;
+/** the newest transcript of it: a session id can have more than one */
+const newestRow = (deps: Pick<Deps, "sessions">, id: string): SessionRow | undefined =>
+  deps.sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
 
-  /** the newest transcript of it: a session id can have more than one */
+/** the rule vs code and zed use: a project's own sessions run at its root, with its folders */
+async function whereOf(deps: Pick<Deps, "combos">, row: SessionRow): Promise<ChatWhere> {
+  const combo = deps.combos.list().find((c) => c.name === row.comboName);
+  const where =
+    combo && row.comboRelation === "root"
+      ? { cwd: combo.root, dirs: workspaceFolders(combo).slice(1) }
+      : { cwd: row.cwd ?? "", dirs: [] };
+  if (!(await isDirectory(where.cwd))) {
+    throw new AppError("cwd-missing", "That session's folder no longer exists.");
+  }
+  return where;
+}
+
+/**
+ * the folders a chat window may show files from: its session's, and the temp folder. none for a
+ * session with no window open, so nothing else can be reached through the session schemes
+ */
+export async function chatRoots(
+  deps: Pick<Deps, "sessions" | "combos" | "chatWindows">,
+  id: string,
+): Promise<string[] | null> {
+  if (!deps.chatWindows.has(id)) return null;
+  const row = newestRow(deps, id);
+  const where = row && (await whereOf(deps, row).catch(() => null));
+  return where ? [where.cwd, ...where.dirs, ...TEMP_ROOTS] : null;
+}
+
+function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
+  const { projects, chat, editor } = deps;
+
   const rowOf = (id: string): SessionRow => {
-    const row = sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
+    const row = newestRow(deps, id);
     if (!row) throw new AppError("no-session", "That session is no longer in the list.");
     return row;
   };
-
-  /** the rule vs code and zed use: a project's own sessions run at its root, with its folders */
-  async function whereOf(row: SessionRow): Promise<ChatWhere> {
-    const combo = combos.list().find((c) => c.name === row.comboName);
-    const where =
-      combo && row.comboRelation === "root"
-        ? { cwd: combo.root, dirs: workspaceFolders(combo).slice(1) }
-        : { cwd: row.cwd ?? "", dirs: [] };
-    if (!(await isDirectory(where.cwd))) {
-      throw new AppError("cwd-missing", "That session's folder no longer exists.");
-    }
-    return where;
-  }
+  const where = (row: SessionRow) => whereOf(deps, row);
 
   /** why it cannot be talked to from here: another app has it. one process per session */
   function readOnly(id: string, row: SessionRow): string | undefined {
@@ -729,7 +748,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     const refused = readOnly(id, row);
     if (refused) throw new AppError("live-elsewhere", refused);
     if (projects.runtimeFor(id, row) === "background") await releaseBackground(deps, row);
-    return whereOf(row);
+    return where(row);
   }
 
   return {
@@ -738,9 +757,11 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       if (!hit) return null;
       const row = rowOf(id);
       const refused = readOnly(id, row);
+      const at = await where(row).catch(() => ({ cwd: row.cwd ?? "" }));
       return {
         session: hit,
         ...(hit.project ? { project: hit.project } : {}),
+        cwd: at.cwd,
         at: hit.activityMs,
         appearance: deps.settings().appearance,
         editor: editor.current().label,
@@ -751,7 +772,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatConversation(id) {
-      const row = sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
+      const row = newestRow(deps, id);
       if (!row) return null;
       return readConversation(row.key).then(conversationView, () => null);
     },
@@ -760,15 +781,15 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const row = rowOf(id);
       // a background agent is stopped by a send, which asks first. a keystroke never stops one
       if (projects.runtimeFor(id, row) === "background" || readOnly(id, row)) return;
-      await chat.warm(id, await whereOf(row));
+      await chat.warm(id, await where(row));
     },
 
     async chatSend(id, text) {
       if (!isText(text) || !text.trim()) throw new AppError("invalid", "There is nothing to send.");
       const row = rowOf(id);
-      const where = chat.hosts(id) ? await whereOf(row) : await claim(id, row);
+      const at = chat.hosts(id) ? await where(row) : await claim(id, row);
       deps.live.markSeen([id]);
-      await chat.send(id, where, text);
+      await chat.send(id, at, text);
     },
 
     async chatInterrupt(id) {
@@ -782,7 +803,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const row = rowOf(id);
       await chat.setMode(
         id,
-        chat.hosts(id) ? await whereOf(row) : await claim(id, row),
+        chat.hosts(id) ? await where(row) : await claim(id, row),
         mode as ChatMode,
       );
     },
