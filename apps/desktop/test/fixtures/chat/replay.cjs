@@ -49,7 +49,15 @@ const asSession = (o) => {
   return text;
 };
 
-note({ argv: args, cwd: process.cwd(), env: { entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT, CLAUDECODE: process.env.CLAUDECODE } });
+note({
+  argv: args,
+  cwd: process.cwd(),
+  env: {
+    entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
+    CLAUDECODE: process.env.CLAUDECODE,
+    checkpointing: process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING,
+  },
+});
 
 const isInit = (m) => m?.type === "control_request" && m.request?.subtype === "initialize";
 const initAnswer = recordings[0].find(

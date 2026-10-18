@@ -66,6 +66,12 @@ function setup(delayMs = 2, failFirst = false): Setup {
   mkdirSync(extra);
   const logFile = path.join(dir, "fake.log");
   const claudeDir = path.join(dir, "claude");
+  mkdirSync(claudeDir);
+  // the person asked to see thinking summaries, as varun's own settings do
+  writeFileSync(
+    path.join(claudeDir, "settings.json"),
+    JSON.stringify({ showThinkingSummaries: true }),
+  );
   const now = { at: Date.now() };
   const host = new ChatHost({
     claudeBin: async () => {
@@ -86,6 +92,7 @@ function setup(delayMs = 2, failFirst = false): Setup {
       CLAUDE_CODE_ENTRYPOINT: "claude-vscode",
     }),
     now: () => now.at,
+    claudeSettings: path.join(claudeDir, "settings.json"),
   });
   hosts.push(host);
   const sent: Array<[string, unknown]> = [];
@@ -178,8 +185,13 @@ describe("grove chat's host", () => {
     expect(argv.join(" ")).toContain(s.where.dirs[0]);
     // no mode is passed: the person's own settings pick it
     expect(argv.join(" ")).not.toContain("--permission-mode");
-    // the parent's claude code session is not passed on: the sdk names itself
-    expect(env).toEqual({ entrypoint: "sdk-ts" });
+    // the parent's claude code session is not passed on: the sdk names itself. checkpoints on,
+    // as vs code has them
+    expect(env).toEqual({ entrypoint: "sdk-ts", checkpointing: "true" });
+    // vs code's thinking: a budget, and the summary text because the settings ask for it
+    expect(argv).toEqual(
+      expect.arrayContaining(["--max-thinking-tokens=31999", "--thinking-display=summarized"]),
+    );
   });
 
   it("starts claude with claude code's own system prompt, not an empty one", async () => {
@@ -192,6 +204,18 @@ describe("grove chat's host", () => {
     expect(init).toBeDefined();
     // the preset sends no prompt of its own: claude code uses its own. left out, the sdk sent [""]
     expect(init).not.toHaveProperty("systemPrompt");
+    // a stop ends the turn and leaves background agents running
+    expect(init?.perTaskStopAffordance).toBe(true);
+  });
+
+  it("asks for no thinking text when the person's settings do not", async () => {
+    const s = setup();
+    const settings = path.join(path.dirname(path.dirname(s.transcript)), "..", "settings.json");
+    writeFileSync(settings, JSON.stringify({ showThinkingSummaries: false }));
+    await s.host.warm(SESSION, s.where);
+    const { argv } = s.log()[0] as { argv: string[] };
+    expect(argv).toContain("--max-thinking-tokens=31999");
+    expect(argv.join(" ")).not.toContain("--thinking-display");
   });
 
   it("streams a turn to its window and writes it where grove reads transcripts", async () => {

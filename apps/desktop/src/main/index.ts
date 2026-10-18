@@ -319,6 +319,7 @@ async function start(): Promise<void> {
     env: () => loginEnv.get(),
     // where a session runs moved: its rows say Grove, or no longer do
     onChange: () => projects.sessionsChanged(),
+    claudeSettings: path.join(path.dirname(projectsDir), "settings.json"),
   });
   /** sessions grove chat made, until their transcript is in the list */
   const fresh: FreshChats = new Map();

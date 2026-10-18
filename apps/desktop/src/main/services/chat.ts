@@ -2,6 +2,7 @@
 // so it outlives the window it was opened from. no electron import: a window is a PushTarget.
 import { randomUUID } from "node:crypto";
 import { type FSWatcher, watch } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   CanUseTool,
@@ -98,6 +99,21 @@ export interface ChatHostOptions {
   /** a process came or went, or a turn started or ended: rows say where a session runs */
   onChange?: () => void;
   now?: () => number;
+  /** claude code's own settings.json: whether the person asked to see thinking summaries */
+  claudeSettings?: string;
+}
+
+/** vs code's thinking budget (extension.js `M61`), sent for every model as it sends it */
+const THINKING_BUDGET = 31_999;
+
+/** the person's `showThinkingSummaries`, as vs code reads it: off unless it says true */
+async function showsThinking(file: string | undefined): Promise<boolean> {
+  if (!file) return false;
+  try {
+    return JSON.parse(await readFile(file, "utf8"))?.showThinkingSummaries === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -506,7 +522,11 @@ export class ChatHost {
     try {
       // only here: with grove chat off the sdk is never even loaded
       const { query } = await import("@anthropic-ai/claude-agent-sdk");
-      const [bin, env] = await Promise.all([this.o.claudeBin(), this.o.env()]);
+      const [bin, env, summaries] = await Promise.all([
+        this.o.claudeBin(),
+        this.o.env(),
+        showsThinking(this.o.claudeSettings),
+      ]);
       q = query({
         prompt: h.prompts,
         options: {
@@ -521,6 +541,16 @@ export class ChatHost {
           // claude code's own prompt, as the vs code extension passes it. left out, the sdk sends an
           // empty one and the session runs without claude code's instructions
           systemPrompt: { type: "preset", preset: "claude_code" },
+          // what the vs code extension starts every session with. checkpoints make grove's turns
+          // rewindable later. the stop affordance keeps a stop from killing background agents:
+          // each one is stopped from its own row
+          enableFileCheckpointing: true,
+          perTaskStopAffordance: true,
+          thinking: {
+            type: "enabled",
+            budgetTokens: THINKING_BUDGET,
+            ...(summaries ? { display: "summarized" as const } : {}),
+          },
           includePartialMessages: true,
           env: hostEnv(env),
           ...(h.model ? { model: h.model } : {}),
