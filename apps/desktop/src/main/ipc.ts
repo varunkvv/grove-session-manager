@@ -25,7 +25,6 @@ import type {
   Api,
   AppSettings,
   Bootstrap,
-  ChatAnswer,
   ChatApi,
   ChatMode,
   ChatTarget,
@@ -42,7 +41,7 @@ import { log } from "./log.ts";
 import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { BackgroundService } from "./services/background.ts";
-import type { ChatHost, ChatWhere } from "./services/chat.ts";
+import { type ChatHost, type ChatWhere, isText, parseAnswer } from "./services/chat.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import { compareVersions, type EditorService } from "./services/editor.ts";
@@ -672,8 +671,6 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
   "dontAsk",
   "auto",
 ]);
-/** a prompt, a typed answer: generous, and still a bound on what a page can hand claude */
-const CHAT_TEXT_MAX = 200_000;
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatWarm",
   "chatSend",
@@ -690,35 +687,6 @@ type ChatHandlers = {
     ...args: Parameters<ChatApi[K]>
   ) => Promise<Unwrap<Awaited<ReturnType<ChatApi[K]>>>>;
 };
-
-const isText = (v: unknown, max = CHAT_TEXT_MAX): v is string =>
-  typeof v === "string" && v.length <= max;
-
-/** what the page sent as an answer, held to the shapes the host knows. anything else is refused */
-function parseAnswer(raw: unknown): ChatAnswer {
-  const a = raw as Record<string, unknown> | null;
-  const bad = () => new AppError("invalid", "That is not an answer.");
-  if (!a || typeof a !== "object") throw bad();
-  const message = a.message === undefined ? undefined : isText(a.message) ? a.message : null;
-  if (message === null) throw bad();
-  if (a.kind === "question") {
-    const answers = a.answers as Record<string, unknown> | null;
-    if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw bad();
-    const clean: Record<string, string> = {};
-    for (const [q, v] of Object.entries(answers)) {
-      if (!isText(q, 4000) || !isText(v)) throw bad();
-      clean[q] = v;
-    }
-    return { kind: "question", answers: clean };
-  }
-  if (a.kind === "plan" && typeof a.approve === "boolean") {
-    return { kind: "plan", approve: a.approve, ...(message ? { message } : {}) };
-  }
-  if (a.kind === "permission" && (a.allow === "once" || a.allow === "always" || a.allow === "no")) {
-    return { kind: "permission", allow: a.allow, ...(message ? { message } : {}) };
-  }
-  throw bad();
-}
 
 function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
   const { sessions, projects, combos, chat, editor } = deps;

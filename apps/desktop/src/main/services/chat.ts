@@ -10,6 +10,7 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion, ChatStatus } from "../../shared/ipc.ts";
+import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { PushTarget } from "../push.ts";
 
@@ -19,6 +20,38 @@ export const REAP_MS = 10 * 60_000;
 const FLUSH_MS = 50;
 /** a permission's input, as the card shows it */
 const DETAIL_MAX = 2000;
+
+/** a prompt, a typed answer: generous, and still a bound on what a page can hand claude */
+const TEXT_MAX = 200_000;
+
+export const isText = (v: unknown, max = TEXT_MAX): v is string =>
+  typeof v === "string" && v.length <= max;
+
+/** what the page sent as an answer, held to the shapes the host knows. anything else is refused */
+export function parseAnswer(raw: unknown): ChatAnswer {
+  const a = raw as Record<string, unknown> | null;
+  const bad = () => new AppError("invalid", "That is not an answer.");
+  if (!a || typeof a !== "object") throw bad();
+  const message = a.message === undefined ? undefined : isText(a.message) ? a.message : null;
+  if (message === null) throw bad();
+  if (a.kind === "question") {
+    const answers = a.answers as Record<string, unknown> | null;
+    if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw bad();
+    const clean: Record<string, string> = {};
+    for (const [q, v] of Object.entries(answers)) {
+      if (!isText(q, 4000) || !isText(v)) throw bad();
+      clean[q] = v;
+    }
+    return { kind: "question", answers: clean };
+  }
+  if (a.kind === "plan" && typeof a.approve === "boolean") {
+    return { kind: "plan", approve: a.approve, ...(message ? { message } : {}) };
+  }
+  if (a.kind === "permission" && (a.allow === "once" || a.allow === "always" || a.allow === "no")) {
+    return { kind: "permission", allow: a.allow, ...(message ? { message } : {}) };
+  }
+  throw bad();
+}
 
 /** where a session runs: its folder, and the project's other folders */
 export interface ChatWhere {
@@ -393,7 +426,11 @@ export class ChatHost {
         starting: false,
         mode,
         modes: modesFor(mode),
-        models: (init.models ?? []).map((m) => ({ value: m.value, label: m.displayName })),
+        models: (init.models ?? []).map((m) => ({
+          value: m.value,
+          label: m.displayName,
+          ...(m.resolvedModel ? { id: m.resolvedModel } : {}),
+        })),
       });
     } catch (e) {
       log.warn(`chat ${h.id.slice(0, 8)} did not start:`, e);

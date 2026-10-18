@@ -156,6 +156,30 @@ export function openWith(
   else void run();
 }
 
+/** grove chat is switched on: opening a session is its own grove window, the editor one step away */
+export const chatOn = (): boolean => state().settings?.chat === true;
+
+/** the session in its own grove chat window, or that window brought to the front */
+export function openChat(key: SessionKey | undefined, label: string): void {
+  if (!key) return;
+  void api()
+    .openChat(key)
+    .then((res) => report(`Could not open ${label}`, res));
+}
+
+/**
+ * what opening a session is: a double-click, Open on a row, the palette's Enter, cmd-Enter. grove
+ * chat when it is on, else the editor as always
+ */
+export function openSession(
+  key: SessionKey | undefined,
+  plan: OpenPlan | undefined,
+  label: string,
+): void {
+  if (chatOn()) openChat(key, label);
+  else openWith(key, plan, label);
+}
+
 /**
  * a click or Enter on a row: its session opens in the panel beside the list and is the keyboard's.
  * never a toggle, a double-click is two of these first. and never the editor: that is the
@@ -345,8 +369,12 @@ function act(s: State, list: NonNullable<ReturnType<typeof listOf>>, type: Inten
   const row = s.inbox.rows.find((r) => r.sessionId === at);
   const session = listInput(s).hits?.find((h) => h.sessionId === at) ?? row;
   if (!session) return;
-  if (type === "open") openRow(list.screen, at);
-  else if (type === "open-editor") openWith(session.key, session.open, session.title);
+  // with grove chat on, Enter on the row already open beside the list opens its chat: the second
+  // Enter is the double-click's second click
+  if (type === "open" && chatOn() && s.peek === at) openChat(session.key, session.title);
+  else if (type === "open") openRow(list.screen, at);
+  else if (type === "open-editor") openSession(session.key, session.open, session.title);
+  else if (type === "open-in-editor") openWith(session.key, session.open, session.title);
   else if (row) void review(row.project, row.reviewKeys);
 }
 
@@ -381,6 +409,10 @@ export function perform(intent: Intent): void {
     case "open-editor":
     case "review":
       if (list) act(s, list, intent.type);
+      break;
+    // only grove chat has a second way to open: with it off, this key is nothing, as before
+    case "open-in-editor":
+      if (list && chatOn()) act(s, list, intent.type);
       break;
     case "back":
       back();

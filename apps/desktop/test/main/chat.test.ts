@@ -12,7 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatHost, hostEnv, modesFor, REAP_MS } from "../../src/main/services/chat.ts";
+import { ChatHost, hostEnv, modesFor, parseAnswer, REAP_MS } from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
 
 const REPLAY = path.join(import.meta.dirname, "../fixtures/chat/replay.cjs");
@@ -358,5 +358,34 @@ describe("grove chat's host", () => {
         CLAUDE_CODE_USE_BEDROCK: "1",
       }),
     ).toEqual({ PATH: "/bin", CLAUDE_CODE_USE_BEDROCK: "1" });
+  });
+
+  it("takes from a page only the answers it knows, and nothing riding along", () => {
+    expect(parseAnswer({ kind: "question", answers: { "Which?": "Blue" }, extra: "x" })).toEqual({
+      kind: "question",
+      answers: { "Which?": "Blue" },
+    });
+    expect(parseAnswer({ kind: "plan", approve: false, message: "more" })).toEqual({
+      kind: "plan",
+      approve: false,
+      message: "more",
+    });
+    expect(parseAnswer({ kind: "permission", allow: "always" })).toEqual({
+      kind: "permission",
+      allow: "always",
+    });
+    for (const bad of [
+      null,
+      "yes",
+      { kind: "question", answers: ["Blue"] },
+      { kind: "question", answers: { q: 4 } },
+      { kind: "question", answers: { q: "x".repeat(200_001) } },
+      { kind: "plan", approve: "yes" },
+      { kind: "permission", allow: "forever" },
+      { kind: "permission", allow: "once", message: 4 },
+      { kind: "bash", command: "rm -rf /" },
+    ]) {
+      expect(() => parseAnswer(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow("not an answer");
+    }
   });
 });

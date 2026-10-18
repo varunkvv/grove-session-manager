@@ -1,5 +1,5 @@
 import type { InboxRowView } from "../../shared/ipc.ts";
-import { openWith, optionId, review } from "../state/actions.ts";
+import { openSession as open, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import {
   Button,
@@ -14,8 +14,8 @@ import {
   Time,
 } from "./ui.tsx";
 
-/** what Open in {editor} and a double-click go to */
-const openSession = (row: InboxRowView) => openWith(row.key, row.open, row.title);
+/** what Open and a double-click go to: grove chat when it is on, else the editor */
+const openSession = (row: InboxRowView) => open(row.key, row.open, row.title);
 
 /**
  * a session that needs the person, on the home screen: which session and what it is at, what it is
@@ -41,6 +41,8 @@ export function InboxRow({
   onClick: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
+  // grove chat: Open is its window, and the editor is in the window's header
+  const chat = useStore((s) => s.settings?.chat === true);
   return (
     <div
       id={optionId(row.sessionId)}
@@ -105,9 +107,7 @@ export function InboxRow({
             onClick={() => openSession(row)}
           >
             {/* one span: the button is a flex row, and two would get its gap between them */}
-            <span>
-              Open<span className="hidden @3xl:inline"> in {editor}</span>
-            </span>
+            <span>Open{!chat && <span className="hidden @3xl:inline"> in {editor}</span>}</span>
           </Button>
           <Button
             size="sm"

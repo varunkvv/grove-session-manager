@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ProjectId } from "../../shared/ipc.ts";
+import type { ChatMode, ProjectId } from "../../shared/ipc.ts";
 import type { Slice } from "../logic/usage.ts";
 import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
 import { optionId } from "../state/actions.ts";
@@ -1057,3 +1057,88 @@ export function Overlay({
 /** a row inside an Overlay. `data-active` is the keyboard's row */
 export const menuItemClass =
   "fade flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body text-fg-2 data-[active]:bg-raised data-[active]:text-fg";
+
+// ---------- grove chat
+
+/**
+ * what an agent waits on the person for, in its chat: a question, a plan, a permission. your
+ * turn's soft accent band, as the recap's needs line and the pinned group have it
+ */
+export function AskCard({
+  label,
+  testId,
+  children,
+}: {
+  label: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <section data-testid={testId} className="mt-6 rounded-lg bg-accent-soft px-4 py-3">
+      <h3 className="text-sm font-medium text-accent">{label}</h3>
+      {children}
+    </section>
+  );
+}
+
+/** one option of a question. picked: the accent's selected look */
+export function Choice({
+  picked,
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { picked: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={picked}
+      {...rest}
+      className={cx(
+        "fade w-full rounded-md border px-3 py-2 text-left",
+        picked
+          ? "border-accent-line bg-canvas text-fg"
+          : "border-line-strong bg-canvas text-fg-2 hover:text-fg",
+        className,
+      )}
+    />
+  );
+}
+
+export const MODE_WORD: Record<ChatMode, string> = {
+  default: "Default",
+  acceptEdits: "Accept edits",
+  plan: "Plan",
+  bypassPermissions: "Bypass permissions",
+  auto: "Auto",
+  dontAsk: "Don't ask",
+};
+
+/**
+ * the permission mode a chat is in. colour only where it says something: plan is the accent, a
+ * mode that runs every tool without asking is the danger red
+ */
+export function ModePill({
+  mode,
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { mode?: ChatMode }) {
+  const tone =
+    mode === "plan"
+      ? "text-accent"
+      : mode === "bypassPermissions" || mode === "dontAsk"
+        ? "text-danger"
+        : "text-fg-3";
+  return (
+    <button
+      type="button"
+      {...rest}
+      data-mode={mode}
+      className={cx(
+        "no-drag fade inline-flex h-6 shrink-0 items-center rounded-full border border-line-strong bg-raised px-2.5 text-sm font-medium enabled:hover:text-fg disabled:opacity-40",
+        tone,
+        className,
+      )}
+    >
+      {mode ? MODE_WORD[mode] : "Mode"}
+    </button>
+  );
+}

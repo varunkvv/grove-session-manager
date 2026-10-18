@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { InboxRowView, ProjectId, RecapView, SessionRef, TaskView } from "../../shared/ipc.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import { type SessionState, workLine } from "../logic/views.ts";
-import { openWith, review } from "../state/actions.ts";
+import { openChat, openWith, review } from "../state/actions.ts";
 import { type Section, useStore } from "../state/store.ts";
 import { Markdown } from "./Markdown.tsx";
 import {
@@ -130,14 +130,14 @@ function Tasks({ tasks }: { tasks: readonly TaskView[] }) {
 }
 
 /** one line of what happened, where there is nothing to read: a compaction, an interrupt */
-const QUIET = "text-sm text-fg-4";
+export const QUIET = "text-sm text-fg-4";
 
 /**
  * one turn: what the person typed, the work in one line, and the message it ended on. the steps
  * inside the work are in the editor. the message is an agent's and goes through Markdown, what
  * the person typed is plain text
  */
-function Turn({ turn, last, working }: { turn: TurnView; last: boolean; working: boolean }) {
+export function Turn({ turn, last, working }: { turn: TurnView; last: boolean; working: boolean }) {
   const p = turn.prompt;
   const typed =
     "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
@@ -213,6 +213,7 @@ export function SessionPanel({
   onClose: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
+  const chat = useStore((s) => s.settings?.chat === true);
   /** null: the transcript is gone. undefined: main has not answered */
   const [talk, setTalk] = useState<ConversationView | null>();
   const scroller = useRef<HTMLDivElement>(null);
@@ -251,17 +252,29 @@ export function SessionPanel({
           {session.title}
         </h2>
         <Button
-          variant="primary"
+          variant={chat ? "secondary" : "primary"}
           disabled={!!session.open.disabled}
           title={session.open.disabled}
           data-testid="panel-open"
           onClick={() => openWith(session.key, session.open, session.title)}
         >
-          {/* one span: the button is a flex row, and two would get its gap between them */}
+          {/* one span: the button is a flex row, and two would get its gap between them. beside
+              grove chat's Open it always says where */}
           <span>
-            Open<span className="hidden @md:inline"> in {editor}</span>
+            Open
+            <span className={chat ? undefined : "hidden @md:inline"}> in {editor}</span>
           </span>
         </Button>
+        {/* grove chat: the session's own window is the way in, the editor one step away */}
+        {chat && (
+          <Button
+            variant="primary"
+            data-testid="panel-chat"
+            onClick={() => openChat(session.key, session.title)}
+          >
+            Open
+          </Button>
+        )}
       </header>
       {/* what the person reads first stays put over what scrolls, and takes the room it needs:
           the recap matters more. in the shortest window it leaves a strip of what is under it,

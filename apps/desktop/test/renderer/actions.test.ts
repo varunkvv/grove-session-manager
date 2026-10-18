@@ -271,6 +271,47 @@ describe("keys on a list", () => {
     expect(s().active.inbox).toBe("s-asks");
   });
 
+  it("grove chat off: cmd-Enter is the editor, cmd-shift-Enter nothing, a second Enter the panel still", async () => {
+    const asked: string[] = [];
+    grove.openSession = () => {
+      asked.push("editor");
+      return Promise.resolve({ ok: true, value: {} });
+    };
+    grove.openChat = () => {
+      asked.push("chat");
+      return Promise.resolve({ ok: true, value: undefined });
+    };
+    s().set({ keys: true, peek: "s-asks", active: { ...s().active, inbox: "s-asks" } });
+    perform({ type: "open-in-editor" });
+    perform({ type: "open" });
+    perform({ type: "open-editor" });
+    await Promise.resolve();
+    expect(asked).toEqual(["editor"]);
+    expect(s().peek).toBe("s-asks");
+  });
+
+  it("grove chat on: cmd-Enter and a second Enter open its window, cmd-shift-Enter the editor", async () => {
+    const asked: string[] = [];
+    grove.openSession = () => {
+      asked.push("editor");
+      return Promise.resolve({ ok: true, value: {} });
+    };
+    grove.openChat = (key: never) => {
+      asked.push(`chat ${key}`);
+      return Promise.resolve({ ok: true, value: undefined });
+    };
+    s().set({ settings: { editor: "vscode", appearance: "system", chat: true }, keys: true });
+    s().set({ active: { ...s().active, inbox: "s-asks" } });
+    // the first Enter is still the panel
+    perform({ type: "open" });
+    expect(s().peek).toBe("s-asks");
+    perform({ type: "open" });
+    perform({ type: "open-editor" });
+    perform({ type: "open-in-editor" });
+    await Promise.resolve();
+    expect(asked).toEqual(["chat /p/s-asks.jsonl", "chat /p/s-asks.jsonl", "editor"]);
+  });
+
   it("cmd-Enter on a row grove cannot open says why, instead of nothing", () => {
     const blocked = row("s-bg", { open: { disabled: "running in the background" } });
     s().set({ inbox: { rows: [blocked] }, keys: true });

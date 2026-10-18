@@ -8,7 +8,7 @@ import {
   go,
   goUsage,
   newSession,
-  openWith,
+  openSession,
   report,
   switchProject,
 } from "../state/actions.ts";
@@ -73,7 +73,7 @@ function Open() {
         switchProject(arg);
         break;
       case "session":
-        if (item.hit) openWith(item.hit.key, item.hit.open, item.hit.title);
+        if (item.hit) openSession(item.hit.key, item.hit.open, item.hit.title);
         break;
       // a dialog takes the keyboard itself
       case "settings":

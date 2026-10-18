@@ -606,7 +606,8 @@ export interface ChatStatus {
   /** what the mode pill steps through. bypass only when the session started in it */
   modes: ChatMode[];
   model?: string;
-  models: Array<{ value: string; label: string }>;
+  /** `id`: the model a value like "opus" stands for, which is what claude reports it is on */
+  models: Array<{ value: string; label: string; id?: string }>;
   asks: ChatAsk[];
   /** the tool the turn is in, while it is in one */
   tool?: string;

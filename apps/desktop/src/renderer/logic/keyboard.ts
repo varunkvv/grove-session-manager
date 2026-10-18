@@ -5,6 +5,8 @@ export type Intent =
   | { type: "move-to"; where: "first" | "last" }
   | { type: "open" }
   | { type: "open-editor" }
+  /** grove chat on: cmd-Enter is its window, and this is the editor */
+  | { type: "open-in-editor" }
   | { type: "review" }
   | { type: "back" }
   | { type: "close-panel" }
@@ -94,9 +96,13 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (ctx.overlay) return null;
 
   if (e.meta && !e.alt && !e.ctrl) {
-    // cmd-shift-A puts the project on screen away, or brings it back. any other cmd-shift is the
-    // system's or a field's: selection, redo
-    if (e.shift) return e.key.toLowerCase() === "a" ? { type: "archive-project" } : null;
+    // cmd-shift-A puts the project on screen away, or brings it back. cmd-shift-Enter is the
+    // editor while grove chat has cmd-Enter. any other cmd-shift is the system's or a field's:
+    // selection, redo
+    if (e.shift) {
+      if (e.key.toLowerCase() === "a") return { type: "archive-project" };
+      return e.key === "Enter" ? { type: "open-in-editor" } : null;
+    }
     switch (e.key.toLowerCase()) {
       case "k":
         return { type: "palette" };

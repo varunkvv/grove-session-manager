@@ -15,7 +15,7 @@ import {
   loadSessions,
   newSession,
   openRow,
-  openWith,
+  openSession,
   optionId,
   perform,
   toggleOlder,
@@ -283,7 +283,7 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
   const ids = useMemo(() => items.map((i) => i.hit.sessionId), [items]);
   const open = items.find((i) => i.hit.sessionId === peek);
   const older = groups.find((g) => g.key === "older");
-  const pair = useRowDoubleClick((h: SessionRef) => openWith(h.key, h.open, h.title));
+  const pair = useRowDoubleClick((h: SessionRef) => openSession(h.key, h.open, h.title));
   const some = groups.length > 0;
 
   // main says when a row changed (`sessions:changed`, in the store). asked here when the list
