@@ -1230,11 +1230,10 @@ test("a turn's steps open from its work line: each tool and what it acted on", a
   await composer.fill(AGENTS);
   await composer.press("Enter");
   const turn = chat.getByTestId("turn").nth(1);
-  await expect(turn.getByTestId("panel-text")).toContainText("Launched both agents", {
-    timeout: 20_000,
-  });
   const toggle = turn.getByTestId("turn-steps-toggle");
-  await expect(toggle).toContainText("3 steps");
+  // done: its work line, not its last message. the agents' reports have no prompt of their own,
+  // so they land in this turn as later messages, sooner on a fast machine than on a slow one
+  await expect(toggle).toHaveText(/^3 steps · \d/, { timeout: 20_000 });
   await expect(turn.getByTestId("steps")).toHaveCount(0);
   await toggle.click();
   await expect(turn.getByTestId("step")).toHaveText([
