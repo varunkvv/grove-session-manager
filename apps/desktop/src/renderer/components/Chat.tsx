@@ -614,6 +614,16 @@ export function ChatApp() {
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
+  const unqueue = async (q: ChatStatus["queued"][number]) => {
+    const o = await api().chatUnqueue(q.id);
+    if (!o.ok) return setError(o.error.message);
+    if (!o.value) return setNote("Claude had already taken that one.");
+    if (!draft.trim()) {
+      setDraft(q.said);
+      composer.current?.focus();
+    }
+  };
+
   /** down to what was said last, and staying there as more comes */
   const toLatest = () => {
     const el = scroller.current;
@@ -938,11 +948,21 @@ export function ChatApp() {
                     }}
                   />
                 ))}
-                {s.queued.map((q, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: two sends can be the same words
-                  <div key={i} className="mt-3" data-testid="chat-queued">
-                    <h3 className="text-sm font-medium text-fg-4">You, queued</h3>
-                    <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-2">{q}</p>
+                {s.queued.map((q) => (
+                  <div key={q.id} className="group/queued mt-3" data-testid="chat-queued">
+                    <h3 className="flex h-6 items-center gap-1 text-sm font-medium text-fg-4">
+                      You, queued
+                      {/* taken back before claude gets to it: its words go back in the composer */}
+                      <IconButton
+                        label="Take back"
+                        data-testid="chat-unqueue"
+                        className="opacity-0 group-hover/queued:opacity-100 focus-visible:opacity-100"
+                        onClick={() => void unqueue(q)}
+                      >
+                        <Icon name="x" size={10} />
+                      </IconButton>
+                    </h3>
+                    <p className="selectable whitespace-pre-wrap break-words text-fg-2">{q.text}</p>
                   </div>
                 ))}
               </div>

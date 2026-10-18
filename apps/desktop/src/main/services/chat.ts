@@ -389,15 +389,20 @@ class Prompts implements AsyncIterable<SDKUserMessage> {
   private queue: SDKUserMessage[] = [];
   private wake: (() => void) | null = null;
 
-  push(text: string, files: ChatAttachment[] = []): void {
+  /** returns the uuid it went with: claude's command_lifecycle frames and a take-back name it */
+  push(text: string, files: ChatAttachment[] = []): string {
+    const uuid = randomUUID();
     this.queue.push({
       type: "user",
       message: { role: "user", content: blocksFor(text, files) },
       parent_tool_use_id: null,
       // typed by a person: the sdk treats a message with no origin as nobody's
       origin: { kind: "human" },
+      // not in the sdk's types, but on the wire: claude says what became of it by this
+      ...({ uuid } as object),
     });
     this.wake?.();
+    return uuid;
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
@@ -653,7 +658,7 @@ export class ChatHost {
   ): Promise<void> {
     const h = this.entry(id, where);
     const queued = h.status.running;
-    h.prompts.push(text, files);
+    const uuid = h.prompts.push(text, files);
     // what was said along the way belongs to the turn before
     if (!queued && h.status.notes?.length) this.set(h, { notes: [] });
     if (queued) {
@@ -663,10 +668,23 @@ export class ChatHost {
         ...files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
       ];
       const shown = named.length ? `${text}${text ? " " : ""}[${named.join(" · ")}]` : text;
-      this.set(h, { queued: [...h.status.queued, shown] });
+      this.set(h, { queued: [...h.status.queued, { id: uuid, text: shown, said: text }] });
     } else this.turnStarted(h);
     await this.warm(id, where);
     if (!h.status.live) throw new Error(h.status.error ?? "Claude did not start.");
+  }
+
+  /**
+   * a queued message taken back: claude drops it if it has not started on it (probe: cancelled,
+   * true). false when it already had: it was folded into the turn, or ran
+   */
+  async unqueue(id: string, uuid: string): Promise<boolean> {
+    const h = this.hosted.get(id);
+    if (!h?.status.queued.some((q) => q.id === uuid)) return false;
+    const q = h.q as (Query & { cancelAsyncMessage?: (u: string) => Promise<boolean> }) | undefined;
+    const gone = (await q?.cancelAsyncMessage?.(uuid).catch(() => false)) === true;
+    if (gone) this.set(h, { queued: h.status.queued.filter((x) => x.id !== uuid) });
+    return gone;
   }
 
   /** one running subagent stops. the turn and the other agents go on */
@@ -957,6 +975,14 @@ export class ChatHost {
 
   private take(h: Hosted, m: SDKMessage): void {
     h.lastActive = this.now();
+    // what became of a message sent while a turn ran (probe): queued, then started (folded into
+    // the turn, where the transcript shows it), completed, or cancelled. not in the sdk's types
+    const life = m as unknown as { type: string; command_uuid?: string; state?: string };
+    if (life.type === "command_lifecycle") {
+      if (life.state !== "queued" && h.status.queued.some((q) => q.id === life.command_uuid))
+        this.set(h, { queued: h.status.queued.filter((q) => q.id !== life.command_uuid) });
+      return;
+    }
     switch (m.type) {
       case "system":
         if (m.subtype === "init") {

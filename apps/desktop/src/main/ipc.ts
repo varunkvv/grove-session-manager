@@ -755,6 +755,7 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
 ]);
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatCopy",
+  "chatUnqueue",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1139,6 +1140,11 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
       if (!file) return null;
       return readAgentTimeline(file).then(agentView, () => null);
+    },
+
+    async chatUnqueue(id, uuid) {
+      if (!isText(uuid, 100)) throw new AppError("invalid", "That is not a queued message.");
+      return chat.unqueue(id, uuid);
     },
 
     async chatCopy(_id, text) {

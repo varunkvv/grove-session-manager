@@ -216,6 +216,12 @@ function settingsControl(r) {
   }
   // the agent goes on in the recording: what it says after a stop is what was recorded
   if (r.subtype === "stop_task") return {};
+  // a message sent while a turn ran, taken back before it was played (recordings/d-queue)
+  if (r.subtype === "cancel_async_message") {
+    const i = inbox.findIndex((m) => m.type === "user" && m.uuid === r.message_uuid);
+    if (i >= 0) inbox.splice(i, 1);
+    return { cancelled: i >= 0 };
+  }
   // the summary's numbers, as recordings/d-compact has them. GROVE_FAKE_CHAT_CONTEXT: tokens in use
   if (r.subtype === "get_context_usage") {
     return {

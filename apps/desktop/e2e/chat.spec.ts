@@ -264,6 +264,11 @@ test("the session card: what it waits on is answered from the main window, and a
   await card.getByTestId("card-reply").fill(HELLO);
   await card.getByTestId("card-reply").press("Enter");
   await expect(chat.getByTestId("chat-queued")).toContainText(HELLO);
+  // taken back before claude got to it: its words come back to the reply box's twin, the composer
+  await chat.getByTestId("chat-queued").hover();
+  await chat.getByTestId("chat-unqueue").click();
+  await expect(chat.getByTestId("chat-queued")).toHaveCount(0);
+  await expect(chat.getByTestId("composer")).toHaveValue(HELLO);
   // what runs for it is one line, and it opens the chat window's agents
   await expect(card.getByTestId("card-agents")).toContainText(
     "2 running · slow lister, long sleeper",

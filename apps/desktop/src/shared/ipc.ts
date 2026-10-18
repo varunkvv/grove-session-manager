@@ -706,8 +706,11 @@ export interface ChatStatus {
    * compacts itself (auto-compact's threshold, else the window)
    */
   context?: { used: number; limit: number };
-  /** sent while a turn ran, and not taken yet */
-  queued: string[];
+  /**
+   * sent while a turn ran, and not taken yet: its uuid (what takes it back), what the row shows,
+   * and the words alone, which go back in the composer when it is taken back
+   */
+  queued: Array<{ id: string; text: string; said: string }>;
   /** what went wrong last: claude did not start, a control was refused */
   error?: string;
   /** bumped whenever the transcript moved: the window reads it again */
@@ -837,6 +840,8 @@ export interface ChatApi {
   chatStepDiff(toolUseId: string): Promise<string[] | null>;
   /** words onto the clipboard: an answer, a code block, the conversation */
   chatCopy(text: string): Promise<Outcome>;
+  /** a queued message, taken back before claude got to it. false: it already had */
+  chatUnqueue(id: string): Promise<Outcome<boolean>>;
   chatAnswer(askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** Open in the editor. `after`: once the turn under way has finished */
   chatOpenInEditor(when: "now" | "after"): Promise<Outcome<{ message?: string }>>;
@@ -862,6 +867,7 @@ export const CHAT_CHANNELS = [
   "chatStopAgent",
   "chatStepDiff",
   "chatCopy",
+  "chatUnqueue",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

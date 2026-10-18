@@ -479,9 +479,31 @@ describe("grove chat's host", () => {
     await s.host.send(SESSION, s.where, COUNT);
     await until(() => s.host.text(SESSION).length > 0, "the count");
     await s.host.send(SESSION, s.where, AFTER);
-    expect(s.host.status(SESSION).queued).toEqual([AFTER]);
+    expect(s.host.status(SESSION).queued.map((q) => q.text)).toEqual([AFTER]);
     await s.host.interrupt(SESSION);
     await until(() => s.host.status(SESSION).queued.length === 0, "the queue to clear");
+  });
+
+  it("takes back a queued message by the uuid it went with, before claude gets to it", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, COUNT);
+    await until(() => s.host.text(SESSION).length > 0, "the count");
+    await s.host.send(SESSION, s.where, AFTER);
+    const [q] = s.host.status(SESSION).queued;
+    expect(q).toMatchObject({ text: AFTER, said: AFTER });
+    // it went to claude with that uuid
+    await until(
+      () => s.log().find((l) => (l.in as { uuid?: string } | undefined)?.uuid === q?.id),
+      "the message on claude's stdin with its uuid",
+    );
+    expect(await s.host.unqueue(SESSION, q?.id ?? "")).toBe(true);
+    expect(s.host.status(SESSION).queued).toEqual([]);
+    expect(await s.host.unqueue(SESSION, "not-one")).toBe(false);
+    await s.host.interrupt(SESSION);
+    await turnEnded(s);
+    // the turn ended and nothing ran after it: the taken-back message never played
+    await new Promise((r) => setTimeout(r, 300));
+    expect(s.host.running(SESSION)).toBe(false);
   });
 
   it("a move to the editor waits for the turn, and letting go stops claude", async () => {
