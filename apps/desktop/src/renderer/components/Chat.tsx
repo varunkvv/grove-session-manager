@@ -149,6 +149,9 @@ function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
   );
 }
 
+/** a second or more, as a step's time says it */
+const took = (ms: number) => (ms >= 1000 ? formatDuration(ms) : "");
+
 /** now, once a second, for as long as it is drawn: only what shows a running time redraws */
 function useTick(): number {
   const [now, setNow] = useState(Date.now);
@@ -175,12 +178,19 @@ function Clock({ since }: { since: number }) {
  */
 function LiveLine({ status: s }: { status: ChatStatus }) {
   const now = useTick();
-  if (!s.activity && !s.tool) return null;
+  if (!s.activity && !s.tool && !s.thinking) return null;
   return (
     <p className="mt-2 flex min-w-0 items-center gap-1.5 text-sm text-fg-4" data-testid="chat-live">
       <Spinner size={10} />
       {s.activity ? (
         <span className="truncate">{s.activity}…</span>
+      ) : !s.tool && s.thinking ? (
+        <span data-testid="chat-thinking">
+          Thinking
+          <span className="tabular-nums">
+            {took(now - s.thinking.since) && ` · ${took(now - s.thinking.since)}`}
+          </span>
+        </span>
       ) : (
         s.tool && (
           <>
@@ -841,7 +851,7 @@ export function ChatApp() {
                   ) : (
                     // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
                     <div key={(talk?.older ?? 0) + i} className="mt-6 first:mt-0">
-                      <Turn turn={item} last={i === end} working={running} images />
+                      <Turn turn={item} last={i === end} working={running} images detail />
                       {item.outputs && <OutputCards outputs={item.outputs} />}
                     </div>
                   ),

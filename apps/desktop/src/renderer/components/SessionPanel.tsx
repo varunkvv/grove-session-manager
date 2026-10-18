@@ -6,6 +6,7 @@ import { type SessionState, workLine } from "../logic/views.ts";
 import { openChat, openWith, review } from "../state/actions.ts";
 import { type Section, useStore } from "../state/store.ts";
 import { Markdown } from "./Markdown.tsx";
+import { StepList, Thought } from "./Steps.tsx";
 import {
   Button,
   EscButton,
@@ -142,13 +143,20 @@ export function Turn({
   last,
   working,
   images,
+  detail,
 }: {
   turn: TurnView;
   last: boolean;
   working: boolean;
   /** say what was attached to a prompt (images, files): grove chat, where they are sent from */
   images?: boolean;
+  /**
+   * grove chat: the work line opens the turn's steps, and the thinking before the answer sits
+   * folded above it. the panel has neither
+   */
+  detail?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const p = turn.prompt;
   const typed =
     "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
@@ -189,10 +197,30 @@ export function Turn({
         <>
           <h3 className="mt-3 text-sm font-medium text-fg-4" data-testid="turn-work">
             Claude
-            <span className="font-normal">
-              {work ? ` · ${work}${going ? " so far" : ""}` : going ? " · working" : ""}
-            </span>
+            {detail && turn.steps?.length ? (
+              <>
+                <span className="font-normal"> · </span>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  data-testid="turn-steps-toggle"
+                  onClick={() => setOpen(!open)}
+                  className="fade inline-flex items-center gap-1 font-normal hover:text-fg-2"
+                >
+                  {`${work || "working"}${work && going ? " so far" : ""}`}
+                  <Icon name="chevron" size={9} faint className={open ? "rotate-90" : undefined} />
+                </button>
+              </>
+            ) : (
+              <span className="font-normal">
+                {work ? ` · ${work}${going ? " so far" : ""}` : going ? " · working" : ""}
+              </span>
+            )}
           </h3>
+          {detail && open && turn.steps && (
+            <StepList steps={turn.steps} before={turn.stepsBefore} going={going} />
+          )}
+          {detail && turn.thought && <Thought text={turn.thought.text} ms={turn.thought.ms} />}
           <div className="mt-1" data-testid={last ? "panel-text" : undefined}>
             {turn.text ? (
               <Markdown
@@ -201,7 +229,8 @@ export function Turn({
                 streaming={going}
               />
             ) : (
-              last && <p className="text-fg-4">Nothing said yet.</p>
+              // grove chat says what it is doing under the turn instead
+              last && !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
             )}
           </div>
         </>

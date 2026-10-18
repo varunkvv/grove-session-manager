@@ -735,6 +735,7 @@ export class ChatHost {
       asks: [],
       tool: undefined,
       activity: undefined,
+      thinking: undefined,
       queued: [],
       rev: h.status.rev + 1,
     });
@@ -771,6 +772,9 @@ export class ChatHost {
         if (h.status.activity) this.set(h, { activity: undefined });
         const ev = m.event;
         if (ev.type === "content_block_start") {
+          if (ev.content_block.type === "thinking" && !h.status.thinking) {
+            this.set(h, { thinking: { since: this.now() } });
+          }
           if (ev.content_block.type === "text") this.setText(h, "");
           else if (ev.content_block.type === "tool_use")
             this.set(h, { tool: { name: ev.content_block.name, since: this.now() } });
@@ -793,7 +797,13 @@ export class ChatHost {
                 since: h.status.tool?.name === call.name ? h.status.tool.since : this.now(),
               }
             : h.status.tool;
-        this.set(h, { tool, rev: h.status.rev + 1 });
+        // a thinking block is whole: it is in the transcript, and the turn's thinking row has it
+        const thought = m.message.content.some((b) => b.type === "thinking");
+        this.set(h, {
+          tool,
+          ...(thought ? { thinking: undefined } : {}),
+          rev: h.status.rev + 1,
+        });
         return;
       }
       case "user":
@@ -809,6 +819,7 @@ export class ChatHost {
           since: undefined,
           tool: undefined,
           activity: undefined,
+          thinking: undefined,
           queued: [],
           rev: h.status.rev + 1,
         });

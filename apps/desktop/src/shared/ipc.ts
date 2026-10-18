@@ -649,6 +649,11 @@ export interface ChatStatus {
   tool?: { name: string; target?: string; since: number };
   /** what the turn is doing that is no tool and no words: compacting, waiting to retry */
   activity?: string;
+  /**
+   * it is thinking now, since when. no token count: with the summary on, claude's estimate frames
+   * come in one burst as the block ends (probe), so a count would read nothing until it is over
+   */
+  thinking?: { since: number };
   /** sent while a turn ran, and not taken yet */
   queued: string[];
   /** what went wrong last: claude did not start, a control was refused */

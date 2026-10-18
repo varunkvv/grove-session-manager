@@ -15,6 +15,8 @@ const HELLO = "Reply with exactly: hello from the spike";
 const QUESTION =
   "Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options: Red and Blue. Then reply with one line saying which I picked. Do not use any other tool.";
 const COUNT = "Count from 1 to 400, one number per line, nothing else.";
+/** recordings/c-start: haiku 5.5 thinks, with the summary text */
+const THINK = "Think step by step, then reply with just the number: 23*19 + 7^3 - 45?";
 /** recordings/c-agents: two background agents, then a Bash of its own */
 const AGENTS = [
   "Do exactly these three things, in this order, with no other tools:",
@@ -318,6 +320,51 @@ test("while it works, the live line says which tool, on what, and for how long",
   await expect(live).toContainText("sleep 5 && echo main-done", { timeout: 20_000 });
   await expect(live.getByTestId("chat-tool")).toHaveText("Bash");
   await expect(live).toContainText(/\d+s$/);
+});
+
+test("thinking: said while it thinks, then folded above the answer until opened", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_DELAY_MS: "500" });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(THINK);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("chat-thinking")).toContainText("Thinking");
+  await expect(chat.getByTestId("panel-text")).toHaveText("735");
+  const thought = chat.getByTestId("turn").last().getByTestId("thought");
+  await expect(thought).toHaveText(/^Thought/);
+  await expect(chat.getByTestId("thought-text")).toHaveCount(0);
+  await thought.getByRole("button").click();
+  await expect(chat.getByTestId("thought-text")).toContainText("23 times 19 is 437");
+});
+
+test("a turn's steps open from its work line: each tool and what it acted on", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(AGENTS);
+  await composer.press("Enter");
+  const turn = chat.getByTestId("turn").nth(1);
+  await expect(turn.getByTestId("panel-text")).toContainText("Launched both agents", {
+    timeout: 20_000,
+  });
+  const toggle = turn.getByTestId("turn-steps-toggle");
+  await expect(toggle).toContainText("3 steps");
+  await expect(turn.getByTestId("steps")).toHaveCount(0);
+  await toggle.click();
+  await expect(turn.getByTestId("step")).toHaveText([
+    /^Agent\s*slow lister/,
+    /^Agent\s*long sleeper/,
+    /^Bash\s*sleep 5 && echo main-done/,
+  ]);
+  // the panel in the main window draws the same turn as it always has: no steps to open
+  await page.bringToFront();
+  await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
+  await expect(page.getByTestId("session-panel").getByTestId("turn")).toHaveCount(2);
+  await expect(page.getByTestId("session-panel").getByTestId("turn-steps-toggle")).toHaveCount(0);
 });
 
 test("a notification click lands in the session's chat window", async () => {

@@ -492,6 +492,34 @@ describe("what the real stretch does not have", () => {
     expect(panel.prompt).not.toHaveProperty("files");
   });
 
+  it("lists a turn's steps for a chat window, with the thinking before the answer apart", async () => {
+    const state = await fold([
+      prompt("why does it spin?", 0),
+      says("m1", thinking("read the helper first"), 8),
+      says("m1", call("t1", "Read", { file_path: "/p/retry.ts" }), 9),
+      result("t1", "code", 10),
+      says("m2", text("The tests next."), 11),
+      says("m2", call("t2", "Bash", { command: "pnpm test" }), 12),
+      result("t2", "Exit code 1\nFAIL", 16, { isError: true }),
+      says("m3", thinking("the counter resets"), 22),
+      says("m3", text("It resets in the loop."), 23),
+    ]);
+    const view = conversationView(state, { chat: true }).items[0] as TurnView;
+    expect(view.steps).toEqual([
+      { kind: "thinking", text: "read the helper first", ms: 8000 },
+      { kind: "tool", id: "t1", name: "Read", target: "/p/retry.ts", ms: 1000 },
+      { kind: "text", text: "The tests next." },
+      { kind: "tool", id: "t2", name: "Bash", target: "pnpm test", ms: 4000, failed: "exit 1" },
+    ]);
+    // from the failed result to when the thinking was written
+    expect(view.thought).toEqual({ text: "the counter resets", ms: 6000 });
+    expect(view.text).toBe("It resets in the loop.");
+    // the panel's view is as it was
+    const panel = conversationView(state).items[0] as TurnView;
+    expect(panel).not.toHaveProperty("steps");
+    expect(panel).not.toHaveProperty("thought");
+  });
+
   it("a prompt that was nothing but editor context still starts a turn", async () => {
     const state = await fold([
       prompt("first", 0),
