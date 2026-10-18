@@ -518,6 +518,9 @@ export class ChatHost {
           // CLAUDE.md, skills, hooks and the project's settings, as everywhere else. no mode: the
           // settings' defaultMode decides, as it does in the terminal
           settingSources: ["user", "project", "local"],
+          // claude code's own prompt, as the vs code extension passes it. left out, the sdk sends an
+          // empty one and the session runs without claude code's instructions
+          systemPrompt: { type: "preset", preset: "claude_code" },
           includePartialMessages: true,
           env: hostEnv(env),
           ...(h.model ? { model: h.model } : {}),
