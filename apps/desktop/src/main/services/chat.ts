@@ -301,6 +301,15 @@ export function modelFor(status: Pick<ChatStatus, "model" | "models">, reported:
   return named && (named.id === reported || named.value === reported) ? named.value : reported;
 }
 
+/** a rate limit's window, as the chip says it */
+const LIMIT_WINDOW: Record<string, string> = {
+  five_hour: "5-hour limit",
+  seven_day: "weekly limit",
+  seven_day_opus: "weekly Opus limit",
+  seven_day_sonnet: "weekly Sonnet limit",
+  overage: "extra usage",
+};
+
 /** notes kept under a turn: past this the oldest go */
 const NOTES_MAX = 20;
 
@@ -717,6 +726,24 @@ export class ChatHost {
     await renameSession(id, title, { dir: where.cwd });
   }
 
+  /** its claude's MCP servers, as it has them now (probe: 2ms). claude is started for it */
+  async mcp(
+    id: string,
+    where: ChatWhere,
+  ): Promise<Array<{ name: string; status: string; error?: string }>> {
+    await this.warm(id, where);
+    const list = (await this.hosted.get(id)?.q?.mcpServerStatus()) ?? [];
+    return list.map((m) => ({
+      name: m.name,
+      status: m.status,
+      ...(m.error ? { error: firstSentence(m.error, 200) } : {}),
+    }));
+  }
+
+  async mcpReconnect(id: string, name: string): Promise<void> {
+    await this.hosted.get(id)?.q?.reconnectMcpServer(name);
+  }
+
   /** one running subagent stops. the turn and the other agents go on */
   async stopAgent(id: string, agentId: string): Promise<void> {
     const h = this.hosted.get(id);
@@ -1066,6 +1093,24 @@ export class ChatHost {
           this.task(h, m);
         }
         return;
+      case "rate_limit_event": {
+        // only worth a word when it is close or hit
+        const r = m.rate_limit_info;
+        const state =
+          r.status === "allowed_warning"
+            ? "warning"
+            : r.status === "rejected"
+              ? "rejected"
+              : undefined;
+        const limit: ChatStatus["limit"] = state && {
+          state,
+          window: LIMIT_WINDOW[r.rateLimitType ?? ""] ?? "usage limit",
+          ...(typeof r.utilization === "number" ? { used: r.utilization } : {}),
+          ...(typeof r.resetsAt === "number" ? { resets: r.resetsAt * 1000 } : {}),
+        };
+        if (limit || h.status.limit) this.set(h, { limit });
+        return;
+      }
       case "conversation_reset": {
         // /clear: this claude goes on as a new session. what the window shows moves with it
         if (m.new_conversation_id === h.id) return;

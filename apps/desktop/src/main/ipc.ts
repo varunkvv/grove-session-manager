@@ -761,6 +761,8 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatUnqueue",
   "chatBackground",
   "chatRename",
+  "chatMcp",
+  "chatMcpReconnect",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1191,6 +1193,15 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       folds.set(file, state);
       if (folds.size > 32) folds.delete(folds.keys().next().value as string);
       return agentView(state);
+    },
+
+    async chatMcp(id) {
+      return chat.mcp(id, await runWhere(id));
+    },
+
+    async chatMcpReconnect(id, name) {
+      if (!isText(name, 200)) throw new AppError("invalid", "That is not a server.");
+      await chat.mcpReconnect(id, name);
     },
 
     async chatRename(id, title) {

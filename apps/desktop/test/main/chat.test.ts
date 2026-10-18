@@ -800,6 +800,41 @@ describe("grove chat's host", () => {
     ).toEqual(["refusal_fallback_prompt", "auto_mode_server_fallback"]);
   });
 
+  it("says a usage limit only when it is close or hit", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean);
+    const at = lines.findIndex((l) => JSON.parse(l).msg?.type === "assistant");
+    const t = JSON.parse(lines[at] as string).t;
+    const event = (status: string, utilization: number) =>
+      JSON.stringify({
+        t,
+        dir: "out",
+        msg: {
+          type: "rate_limit_event",
+          rate_limit_info: {
+            status,
+            rateLimitType: "five_hour",
+            utilization,
+            resetsAt: 1792374000,
+          },
+        },
+      });
+    lines.splice(at, 0, event("allowed", 0.02), event("allowed_warning", 0.82));
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    await s.host.send(SESSION, s.where, HELLO);
+    await turnEnded(s);
+    expect(s.host.status(SESSION).limit).toEqual({
+      state: "warning",
+      window: "5-hour limit",
+      used: 0.82,
+      resets: 1792374000_000,
+    });
+  });
+
   it("knows a dialog by its payload, and leaves one it does not know to claude", () => {
     expect(dialogOf("1", "auto_mode_server_fallback", { paragraphs: ["a", 4, ""] })).toEqual({
       id: "1",

@@ -215,7 +215,7 @@ export function IconButton({
   className,
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; ref?: Ref<HTMLButtonElement> }) {
   return (
     <button
       type="button"
@@ -1322,6 +1322,32 @@ export function CopyButton({
     >
       <Icon name={done ? "check" : "copy"} size={12} />
     </IconButton>
+  );
+}
+
+/** an MCP server's state, as the … menu's list says it */
+export const MCP_WORD: Record<string, string> = {
+  connected: "Connected",
+  pending: "Connecting",
+  failed: "Failed",
+  "needs-auth": "Needs sign-in",
+  disabled: "Off",
+};
+
+/** an MCP server's mark: working's green when connected, danger when it failed, quiet otherwise */
+export function McpDot({ status }: { status: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        "size-1.5 shrink-0 rounded-full",
+        status === "connected"
+          ? "bg-hue-green"
+          : status === "failed"
+            ? "bg-danger"
+            : "bg-line-strong",
+      )}
+    />
   );
 }
 

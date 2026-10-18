@@ -38,6 +38,8 @@ import {
   EFFORT_WORD,
   Icon,
   IconButton,
+  MCP_WORD,
+  McpDot,
   Menu,
   MODE_HINT,
   MODE_WORD,
@@ -117,6 +119,21 @@ const pct = (c: { used: number; limit: number }) =>
 /** 620k, 1.2M */
 const tokens = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
+
+/** "82% of the 5-hour limit · resets 4:00 pm", or "5-hour limit reached · resets 4:00 pm" */
+function limitWords(l: NonNullable<ChatStatus["limit"]>): string {
+  const what =
+    l.state === "rejected"
+      ? `${l.window[0]?.toUpperCase()}${l.window.slice(1)} reached`
+      : l.used !== undefined
+        ? `${Math.round(l.used * 100)}% of the ${l.window}`
+        : `Close to the ${l.window}`;
+  const when =
+    l.resets !== undefined
+      ? new Date(l.resets).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      : "";
+  return when ? `${what} · resets ${when}` : what;
+}
 
 /** a refusal from main, as the line over the composer says it */
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
@@ -239,9 +256,12 @@ export function ChatApp() {
   const [moving, setMoving] = useState(false);
   /** the menu that is open, and the button it opens from: the toolbar's, or the header's … */
   const [menu, setMenu] = useState<{
-    kind: "mode" | "model" | "attach" | "more" | "context";
+    kind: "mode" | "model" | "attach" | "more" | "context" | "mcp";
     anchor: DOMRect;
   } | null>(null);
+  /** its claude's MCP servers, read when their menu opens */
+  const [mcp, setMcp] = useState<Array<{ name: string; status: string; error?: string }>>();
+  const moreButton = useRef<HTMLButtonElement>(null);
   /** the title being typed over: null when it is not */
   const [renaming, setRenaming] = useState<string | null>(null);
   /** ⌘F's bar: a number, so a second ⌘F puts the keyboard back in it */
@@ -652,6 +672,16 @@ export function ChatApp() {
     document.title = title;
   };
 
+  /** the MCP servers, under the … button: asked for now, as claude has them */
+  const showMcp = async () => {
+    if (!moreButton.current) return;
+    setMcp(undefined);
+    setMenu({ kind: "mcp", anchor: moreButton.current.getBoundingClientRect() });
+    const o = await api().chatMcp();
+    if (o.ok) setMcp(o.value);
+    else setError(o.error.message);
+  };
+
   const toBackground = async () => {
     const o = await api().chatBackground();
     if (!o.ok) setError(o.error.message);
@@ -727,6 +757,14 @@ export function ChatApp() {
           .then((o) =>
             o.ok ? o.value.path && setNote(`Saved to ${o.value.path}`) : setError(o.error.message),
           ),
+    },
+    {
+      id: "mcp",
+      group: "Session",
+      label: "MCP servers…",
+      keys: { key: "m", meta: true, alt: true },
+      off: !!readOnly,
+      run: () => void showMcp(),
     },
     {
       id: "rename",
@@ -961,6 +999,7 @@ export function ChatApp() {
         </IconButton>
         {/* what is about the session as a whole: open it elsewhere, rename, export, the keys */}
         <IconButton
+          ref={moreButton}
           label="More"
           aria-haspopup="menu"
           aria-expanded={menu?.kind === "more"}
@@ -1269,6 +1308,19 @@ export function ChatApp() {
                       </ToolbarButton>
                       {s.ultracode && <UltraChip />}
                       <span className="flex-1" />
+                      {/* a usage limit close or hit: the one time it is worth a word */}
+                      {s.limit && (
+                        <span
+                          className={cx(
+                            "truncate text-sm",
+                            s.limit.state === "rejected" ? "text-danger" : "text-fg-3",
+                          )}
+                          data-testid="chat-limit"
+                          title={`${s.limit.state === "rejected" ? "Hit" : "Close to"} the ${s.limit.window}`}
+                        >
+                          {limitWords(s.limit)}
+                        </span>
+                      )}
                       {/* how full the conversation is, once it matters: a click offers to compact */}
                       {s.context && s.context.used / s.context.limit >= 0.5 && (
                         <ToolbarButton
@@ -1369,6 +1421,43 @@ export function ChatApp() {
               ...(a.keys ? { keys: keysLabel(a.keys) } : {}),
             }))}
         />
+      )}
+      {menu?.kind === "mcp" && (
+        <Menu
+          anchor={menu.anchor}
+          testId="mcp-menu"
+          width={320}
+          down
+          onClose={closeMenu}
+          onPick={(name) => {
+            // a failed one is tried again; the rest have nothing to do
+            if (mcp?.find((m) => m.name === name)?.status !== "failed") return;
+            void api()
+              .chatMcpReconnect(name)
+              .then((o) => (o.ok ? showMcp() : setError(o.error.message)));
+          }}
+          footer={
+            mcp?.some((m) => m.status === "failed")
+              ? "Pick a failed one to try it again"
+              : undefined
+          }
+          items={(mcp ?? []).map((m) => ({
+            key: m.name,
+            label: m.name,
+            description: m.error
+              ? `${MCP_WORD[m.status] ?? m.status}: ${m.error}`
+              : (MCP_WORD[m.status] ?? m.status),
+            mark: <McpDot status={m.status} />,
+          }))}
+        >
+          {!mcp && (
+            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
+              <Spinner size={10} />
+              Asking Claude…
+            </p>
+          )}
+          {mcp?.length === 0 && <p className="px-2 py-1.5 text-sm text-fg-4">No MCP servers.</p>}
+        </Menu>
       )}
       {sheet === "palette" && <CommandPalette actions={actions} onClose={closeSheet} />}
       {sheet === "shortcuts" && <ShortcutSheet actions={actions} onClose={closeSheet} />}

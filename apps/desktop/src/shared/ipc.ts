@@ -711,6 +711,11 @@ export interface ChatStatus {
    */
   context?: { used: number; limit: number };
   /**
+   * a usage limit getting close (`warning`) or hit (`rejected`), as claude's rate_limit_event says:
+   * how much of which window is used, and when it resets (ms). absent while all is well
+   */
+  limit?: { state: "warning" | "rejected"; window: string; used?: number; resets?: number };
+  /**
    * sent while a turn ran, and not taken yet: its uuid (what takes it back), what the row shows,
    * and the words alone, which go back in the composer when it is taken back
    */
@@ -846,6 +851,10 @@ export interface ChatApi {
   chatStepDiff(toolUseId: string): Promise<string[] | null>;
   /** words onto the clipboard: an answer, a code block, the conversation */
   chatCopy(text: string): Promise<Outcome>;
+  /** its claude's MCP servers and how each is: connected, pending, failed, needs-auth, disabled */
+  chatMcp(): Promise<Outcome<Array<{ name: string; status: string; error?: string }>>>;
+  /** try a failed MCP server again */
+  chatMcpReconnect(name: string): Promise<Outcome>;
   /** the session's name, as /rename gives one: claude code keeps it, and grove's list follows */
   chatRename(title: string): Promise<Outcome>;
   /** the tool under way goes on in the background, and the turn goes on without it (⌃B) */
@@ -881,6 +890,8 @@ export const CHAT_CHANNELS = [
   "chatUnqueue",
   "chatBackground",
   "chatRename",
+  "chatMcp",
+  "chatMcpReconnect",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

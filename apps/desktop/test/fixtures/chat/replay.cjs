@@ -199,6 +199,8 @@ const applied = {
   ultracodeRequested: false,
   ultracodeAvailable: true,
 };
+/** the failed MCP server was tried again */
+let mcpRetried = false;
 function settingsControl(r) {
   if (r.subtype === "get_settings") return { effective: {}, sources: [], applied: { ...applied } };
   if (r.subtype === "apply_flag_settings") {
@@ -216,6 +218,19 @@ function settingsControl(r) {
   }
   // the agent goes on in the recording: what it says after a stop is what was recorded
   if (r.subtype === "stop_task") return {};
+  // its MCP servers, as recordings/d-compact's mcpServerStatus answered (one failed, to try again)
+  if (r.subtype === "mcp_status") {
+    return {
+      mcpServers: [
+        { name: "figma", status: "connected" },
+        { name: "sentry", status: mcpRetried ? "connected" : "failed", ...(mcpRetried ? {} : { error: "connect ECONNREFUSED 127.0.0.1:443. retrying gave up" }) },
+      ],
+    };
+  }
+  if (r.subtype === "mcp_reconnect") {
+    mcpRetried = true;
+    return {};
+  }
   // a rename from the host: claude code keeps it as a custom title (recordings/d-rename)
   if (r.subtype === "rename_session") {
     fs.mkdirSync(path.dirname(transcript), { recursive: true });

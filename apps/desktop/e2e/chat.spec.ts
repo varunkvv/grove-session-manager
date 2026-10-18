@@ -783,6 +783,29 @@ test("older turns show on asking, and the conversation copies or exports as mark
   expect(readFileSync(out, "utf8")).toContain(`# ${TITLE}`);
 });
 
+test("the … menu lists the MCP servers, and a failed one is tried again", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("chat-more").click();
+  await chat.getByTestId("more-menu").locator('[data-key="mcp"]').click();
+  const menu = chat.getByTestId("mcp-menu");
+  await expect(menu.getByTestId("menu-item")).toHaveText(
+    [/figma\s*Connected/, /sentry\s*Failed: connect ECONNREFUSED/],
+    { timeout: 15_000 },
+  );
+  await menu.locator('[data-key="sentry"]').click();
+  await expect(menu.locator('[data-key="sentry"]')).toContainText("Connected");
+  expect(
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { request?: { subtype?: string; serverName?: string } })?.request?.serverName ===
+        "sentry",
+    ),
+  ).toBe(true);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
