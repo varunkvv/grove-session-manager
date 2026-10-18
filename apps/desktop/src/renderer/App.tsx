@@ -13,7 +13,7 @@ import { Sessions } from "./components/Sessions.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { Usage } from "./components/Usage.tsx";
-import { type Intent, interpret } from "./logic/keyboard.ts";
+import { type Intent, interpret, moved } from "./logic/keyboard.ts";
 import { focusScreen, perform } from "./state/actions.ts";
 import { applyAppearance } from "./state/appearance.ts";
 import { connect, useStore } from "./state/store.ts";
@@ -164,8 +164,8 @@ export function App() {
       className="flex h-full min-h-0 overflow-hidden"
       data-testid="app-ready"
       // the mouse moved: no row looks like the keyboard's until a key says so again
-      onPointerMove={() => {
-        if (useStore.getState().keys) useStore.getState().set({ keys: false });
+      onPointerMove={(e) => {
+        if (moved(e) && useStore.getState().keys) useStore.getState().set({ keys: false });
       }}
     >
       <Sidebar />

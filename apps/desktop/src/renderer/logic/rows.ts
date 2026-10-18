@@ -11,6 +11,9 @@ export function nextActiveKey(
   firstMatch?: string,
 ): string | null {
   if (nextKeys.length === 0) return null;
+  // no row is the keyboard's yet: none is picked until a key asks, from the list as it is then. a
+  // list that arrives in parts (the inbox's rows after the rest) would keep the first part's top
+  if (active === null && !queryChanged) return null;
   if (queryChanged || active === null) {
     return firstMatch && nextKeys.includes(firstMatch) ? firstMatch : (nextKeys[0] ?? null);
   }

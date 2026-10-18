@@ -1,4 +1,5 @@
 import type { InboxRowView } from "../../shared/ipc.ts";
+import { moved } from "../logic/keyboard.ts";
 import { openSession as open, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import {
@@ -63,9 +64,9 @@ export function InboxRow({
       )}
       onClick={onClick}
       // the row under the mouse is the one the next key acts on
-      onMouseMove={() => {
+      onMouseMove={(e) => {
         const s = useStore.getState();
-        if (s.active.inbox !== row.sessionId) {
+        if (moved(e) && s.active.inbox !== row.sessionId) {
           s.set({ active: { ...s.active, inbox: row.sessionId } });
         }
       }}

@@ -62,6 +62,14 @@ export interface KeyInput {
   composing: boolean;
 }
 
+/**
+ * the mouse moved: a pointer event that moved by something. macOS turns a pointer that a window
+ * opens under, or that rows scroll under, into a move that moved nothing - that is not the person
+ * pointing at a row
+ */
+export const moved = (e: { movementX: number; movementY: number }): boolean =>
+  e.movementX !== 0 || e.movementY !== 0;
+
 const isList = (view: View["name"]) => view === "inbox" || view === "sessions";
 
 /** arrows, page keys, Home, End and Enter on a list */

@@ -455,6 +455,10 @@ test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, En
   // the rows came after the screen did, and the list took the keyboard then. no row shows it yet
   await expect(page.getByRole("listbox")).toBeFocused();
   await expect(active).toHaveCount(0);
+  // a window that opens under a pointer at rest gets a move that moved nothing (macOS turns the
+  // pointer entering it into one). that is not the mouse picking a row: CI's resting pointer sat
+  // over the list's last row and the first arrow showed that one
+  await page.locator('[data-testid="session-row"]').last().dispatchEvent("mousemove");
 
   const press = async (...keys: string[]) => {
     for (const k of keys) await page.keyboard.press(k);

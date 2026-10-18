@@ -2,6 +2,7 @@ import { tokenize } from "@grove/core/pure";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ProjectId, ProjectView, SessionRef } from "../../shared/ipc.ts";
+import { moved } from "../logic/keyboard.ts";
 import {
   groupSessions,
   type SessionItem,
@@ -136,9 +137,9 @@ function SessionRow({
       // the keyboard carries on from where the mouse was. a move, not an enter: a list that the
       // keys scroll under a resting pointer puts another row under it, and that row is not the
       // keyboard's
-      onMouseMove={() => {
+      onMouseMove={(e) => {
         const s = useStore.getState();
-        if (s.active[screen] !== hit.sessionId) {
+        if (moved(e) && s.active[screen] !== hit.sessionId) {
           s.set({ active: { ...s.active, [screen]: hit.sessionId } });
         }
       }}

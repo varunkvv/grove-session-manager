@@ -14,6 +14,11 @@ describe("nextActiveKey", () => {
     expect(nextActiveKey(["a", "b"], ["a"], "b", false)).toBe("a");
     expect(nextActiveKey(["a"], [], "a", false)).toBeNull();
   });
+  it("no row is picked out of nothing: a key picks one from the list as it is then", () => {
+    expect(nextActiveKey([], ["a", "b"], null, false)).toBeNull();
+    // the inbox's rows came after the rest: the top then is not the top now
+    expect(nextActiveKey(["x"], ["inbox", "x"], null, false)).toBeNull();
+  });
   it("a first match the list names wins over the top, when it is in the list", () => {
     expect(nextActiveKey([], ["a", "b"], null, true, "b")).toBe("b");
     expect(nextActiveKey([], ["a", "b"], null, true, "gone")).toBe("a");
