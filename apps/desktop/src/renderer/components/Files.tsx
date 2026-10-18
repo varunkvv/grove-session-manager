@@ -5,12 +5,12 @@
 // folders.
 import { type FileMark, fileKind } from "@grove/core/pure";
 import { useEffect, useState } from "react";
-import type { ChatFileText } from "../../shared/ipc.ts";
+import type { ChatChange, ChatFileText } from "../../shared/ipc.ts";
 import { FILE_SCHEME, HTML_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { dirOf } from "../logic/links.ts";
 import { ChatScopeContext, useChatScope } from "../state/chatScope.ts";
 import { Highlighted, Markdown } from "./Markdown.tsx";
-import { cx, Icon, IconButton, Spinner } from "./ui.tsx";
+import { cx, Diff, DiffCount, Icon, IconButton, Spinner } from "./ui.tsx";
 
 const api = () => window.grove;
 
@@ -83,12 +83,34 @@ export function OutputCards({ outputs }: { outputs: readonly FileMark[] }) {
 }
 
 /** a file the viewer has open: drawn for what it is, and again whenever it changes on disk */
+/** a changed file's diff against the last commit, read again when the file changes */
+function ChangeDiff({ file, v }: { file: string; v: number }) {
+  const [lines, setLines] = useState<string[] | string>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: v is when to read it again
+  useEffect(() => {
+    let live = true;
+    void api()
+      .chatChangeDiff(file)
+      .then((o) => live && setLines(o.ok ? o.value : o.error.message));
+    return () => {
+      live = false;
+    };
+  }, [file, v]);
+  if (lines === undefined) return <Spinner />;
+  if (typeof lines === "string") return <p className="text-fg-3">{lines}</p>;
+  if (lines.length === 0) return <p className="text-fg-3">No change from the last commit.</p>;
+  return <Diff lines={lines} className="max-h-none!" />;
+}
+
 export function Viewer({
   file,
+  diff,
   onList,
   onClose,
 }: {
   file: string;
+  /** what changed in it since the last commit, not the file itself */
+  diff?: boolean;
   onList: () => void;
   onClose: () => void;
 }) {
@@ -115,6 +137,7 @@ export function Viewer({
           <Icon name="chevron" size={12} className="rotate-180" />
         </IconButton>
         <span className="min-w-0 flex-1 truncate" title={file}>
+          {diff && <span className="text-fg-3">Changes in </span>}
           <span className="font-medium text-fg">{nameOf(file)}</span>
           {whereOf(file, scope.base) && (
             <span className="text-sm text-fg-4"> · {whereOf(file, scope.base)}</span>
@@ -124,7 +147,11 @@ export function Viewer({
           <Icon name="x" size={12} />
         </IconButton>
       </div>
-      {kind === "html" ? (
+      {diff ? (
+        <div className="min-h-0 flex-1 overflow-auto p-4" data-testid="viewer-diff">
+          <ChangeDiff file={file} v={v} />
+        </div>
+      ) : kind === "html" ? (
         // no allow-same-origin: an opaque origin, so the page reaches nothing of grove's
         <iframe
           key={v}
@@ -196,21 +223,31 @@ export function FileList({
   written,
   rev,
   onClose,
+  onChange,
 }: {
   written: readonly string[];
   /** the transcript moved: a plan or an artifact may have come */
   rev: number;
   onClose: () => void;
+  /** a changed file: its diff, in the viewer */
+  onChange: (file: string) => void;
 }) {
   const scope = useChatScope();
   const [listed, setListed] = useState<{ plans: string[]; artifacts: string[] }>();
+  const [changes, setChanges] = useState<ChatChange[]>([]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev is when to look again
   useEffect(() => {
     void api()
       .chatFiles()
       .then(setListed)
       .catch(() => setListed({ plans: [], artifacts: [] }));
+    void api()
+      .chatChanges()
+      .then(setChanges)
+      .catch(() => setChanges([]));
   }, [rev]);
+  const ins = changes.reduce((n, c) => n + (c.added ?? 0), 0);
+  const del = changes.reduce((n, c) => n + (c.removed ?? 0), 0);
   if (!scope) return null;
   const groups: Array<[string, readonly string[]]> = [
     ["Written in this session", written],
@@ -229,6 +266,36 @@ export function FileList({
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {changes.length > 0 && (
+          <div className="mb-3" data-testid="changes">
+            <h3 className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-fg-4">
+              <span className="flex-1">Not committed</span>
+              <DiffCount added={ins} removed={del} />
+            </h3>
+            {changes.map((c) => (
+              <button
+                key={c.path}
+                type="button"
+                title={c.path}
+                data-testid="change-item"
+                onClick={() => onChange(c.path)}
+                className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-fg">{nameOf(c.path)}</span>
+                  {c.fresh ? (
+                    <span className="shrink-0 text-sm text-fg-4">new</span>
+                  ) : (
+                    <DiffCount added={c.added} removed={c.removed} />
+                  )}
+                </span>
+                {whereOf(c.path, scope.base) && (
+                  <span className="truncate text-sm text-fg-4">{whereOf(c.path, scope.base)}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
         {groups.map(([title, files]) =>
           files.length === 0 ? null : (
             <div key={title} className="mb-3">
@@ -253,7 +320,7 @@ export function FileList({
             </div>
           ),
         )}
-        {listed && groups.every(([, f]) => f.length === 0) && (
+        {listed && changes.length === 0 && groups.every(([, f]) => f.length === 0) && (
           <p className="px-2 py-1 text-sm text-fg-4">Nothing written yet.</p>
         )}
       </div>

@@ -313,7 +313,9 @@ export function ChatApp() {
    * id, or by the call that started it until the list is read). closed when the window opens
    */
   const [pane, setPane] = useState<
-    { kind: "files"; file?: string } | { kind: "agents"; agent?: string; call?: string } | null
+    | { kind: "files"; file?: string; diff?: boolean }
+    | { kind: "agents"; agent?: string; call?: string }
+    | null
   >(null);
   /** every agent of the session, read when the agents pane is open */
   const [agents, setAgents] = useState<ChatAgent[]>();
@@ -1635,11 +1637,17 @@ export function ChatApp() {
             (pane.file ? (
               <Viewer
                 file={pane.file}
+                diff={pane.diff}
                 onList={() => setPane({ kind: "files" })}
                 onClose={() => setPane(null)}
               />
             ) : (
-              <FileList written={talk?.written ?? []} rev={s.rev} onClose={() => setPane(null)} />
+              <FileList
+                written={talk?.written ?? []}
+                rev={s.rev}
+                onClose={() => setPane(null)}
+                onChange={(file) => setPane({ kind: "files", file, diff: true })}
+              />
             ))}
           {pane?.kind === "agents" &&
             (shownAgent ? (

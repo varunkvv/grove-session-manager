@@ -1,5 +1,6 @@
 // grove chat (beta): a session in its own window, talked to through a fake claude that plays back
 // the spike's recordings (test/fixtures/chat). with the switch off, nothing of it is there.
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
@@ -987,6 +988,43 @@ test("/btw asks on the side: the answer shows beside the conversation and never 
     sentToClaude(s.chatLog).filter((l) => (l.in as { type?: string })?.type === "user"),
   ).toEqual([]);
   await expect(chat.getByTestId("turn")).toHaveCount(1);
+});
+
+test("the files pane lists what is not committed, each opening its diff", async () => {
+  const s = seed(true);
+  // the project is a repo with one change and one new file
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", s.root, ...args], { stdio: "pipe" });
+  git("init", "-q");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "start");
+  writeFileSync(path.join(s.root, "retry.ts"), "const a = 1;\nconst b = 2;\n");
+  git("add", "retry.ts");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "retry");
+  writeFileSync(path.join(s.root, "retry.ts"), "const a = 1;\nconst b = 3;\n");
+  writeFileSync(path.join(s.root, "notes.md"), "# notes\n");
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("chat-files").click();
+  const changes = chat.getByTestId("changes");
+  // grove's own .claude/long-work.md is new in it too
+  await expect(changes.getByTestId("change-item").filter({ hasText: "retry.ts" })).toContainText(
+    "+1 -1",
+  );
+  await expect(changes.getByTestId("change-item").filter({ hasText: "notes.md" })).toContainText(
+    "new",
+  );
+  await changes.getByTestId("change-item").filter({ hasText: "retry.ts" }).click();
+  const diff = chat.getByTestId("viewer-diff");
+  await expect(diff.getByTestId("diff")).toContainText("-const b = 2;");
+  await expect(diff.getByTestId("diff")).toContainText("+const b = 3;");
+  await chat.getByTestId("viewer-list").click();
+  await chat
+    .getByTestId("changes")
+    .getByTestId("change-item")
+    .filter({ hasText: "notes.md" })
+    .click();
+  await expect(chat.getByTestId("viewer-diff").getByTestId("diff")).toHaveText("+# notes");
 });
 
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {

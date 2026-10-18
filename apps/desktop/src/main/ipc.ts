@@ -8,6 +8,7 @@ import {
   conversationMarkdown,
   conversationView,
   type EditorTarget,
+  editDiff,
   filesWritten,
   findAgentFile,
   isValidSessionId,
@@ -37,6 +38,7 @@ import type {
   Bootstrap,
   ChatAgent,
   ChatApi,
+  ChatChange,
   ChatMode,
   ChatTarget,
   OpenReport,
@@ -756,6 +758,7 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
   "auto",
 ]);
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
+  "chatChangeDiff",
   "chatExport",
   "chatCopy",
   "chatUnqueue",
@@ -1087,6 +1090,68 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
         listFiles(path.join(combo.root, "artifacts")),
       ]);
       return { plans, artifacts };
+    },
+
+    async chatChanges(id) {
+      const row = newestRow(deps, id);
+      const at = row ? await where(row).catch(() => null) : null;
+      if (!at) return [];
+      const gitPath = deps.settings().gitPath;
+      const lists = await Promise.all(
+        [at.cwd, ...at.dirs].map(async (folder) => {
+          const [diff, fresh] = await Promise.all([
+            runGit(["diff", "HEAD", "--numstat", "-z"], { cwd: folder, gitPath }),
+            runGit(["ls-files", "--others", "--exclude-standard", "-z"], { cwd: folder, gitPath }),
+          ]);
+          // no repo here (a combo's root): nothing to say
+          if (!diff.ok) return [];
+          const changed = diff.stdout
+            .split("\0")
+            .filter(Boolean)
+            .flatMap((l): ChatChange[] => {
+              const [a, r, rel] = l.split("\t");
+              if (!rel) return [];
+              return [
+                {
+                  path: path.join(folder, rel),
+                  ...(a !== "-" ? { added: Number(a), removed: Number(r) } : {}),
+                },
+              ];
+            });
+          const added = fresh.ok
+            ? fresh.stdout
+                .split("\0")
+                .filter(Boolean)
+                .map((rel) => ({ path: path.join(folder, rel), fresh: true }))
+            : [];
+          return [...changed, ...added];
+        }),
+      );
+      return lists.flat().slice(0, 300);
+    },
+
+    async chatChangeDiff(id, file) {
+      const real = await allowed(id, file);
+      const at = await where(rowOf(id));
+      const folder = [at.cwd, ...at.dirs].find(
+        (f) => real === f || real.startsWith(`${f}${path.sep}`),
+      );
+      if (!folder) throw new AppError("not-allowed", "That file is not in this session's folders.");
+      const out = await runGit(["diff", "HEAD", "--", path.relative(folder, real)], {
+        cwd: folder,
+        gitPath: deps.settings().gitPath,
+      });
+      const lines = out.ok ? out.stdout.split("\n") : [];
+      const from = lines.findIndex((l) => l.startsWith("@@"));
+      if (from >= 0) {
+        const hunks = lines.slice(from).filter((l) => /^[@ +\-\\]/.test(l) && !l.startsWith("\\"));
+        return hunks.length > 400
+          ? [...hunks.slice(0, 400), `… ${hunks.length - 400} more lines`]
+          : hunks;
+      }
+      // a file git has never seen: all of it is new
+      const got = await readText(real);
+      return "text" in got ? (editDiff("Write", { content: got.text }) ?? []) : ["… not text"];
     },
 
     async chatReadFile(id, file) {

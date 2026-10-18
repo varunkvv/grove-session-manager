@@ -1355,6 +1355,17 @@ export function McpDot({ status }: { status: string }) {
   );
 }
 
+/** lines in and out, as git says them: +12 in green, -3 in red. nothing for a binary file */
+export function DiffCount({ added, removed }: { added?: number; removed?: number }) {
+  if (added === undefined && removed === undefined) return null;
+  return (
+    <span className="shrink-0 font-mono text-meta tabular-nums" data-testid="diff-count">
+      <span className="text-hue-green">+{added ?? 0}</span>{" "}
+      <span className="text-hue-red">-{removed ?? 0}</span>
+    </span>
+  );
+}
+
 /** ultracode is on: beside the model, in its own colour */
 export function UltraChip() {
   return (

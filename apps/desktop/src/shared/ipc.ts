@@ -581,6 +581,16 @@ export interface PushEvents {
  */
 export type ChatShow = { file: string } | { agents: true } | { draft: string };
 
+/** a file changed and not committed, in one of the session's repos */
+export interface ChatChange {
+  path: string;
+  /** lines in and out, against the last commit. absent for a binary file */
+  added?: number;
+  removed?: number;
+  /** a file git has never seen */
+  fresh?: boolean;
+}
+
 /** what a rewind would do, or did: the files it puts back and by how much */
 export interface ChatRewind {
   canRewind: boolean;
@@ -845,6 +855,10 @@ export interface ChatApi {
   chatExport(to: "clipboard" | "file"): Promise<Outcome<{ path?: string }>>;
   /** the project's plans/ and artifacts/, newest first. empty for a session in no project */
   chatFiles(): Promise<{ plans: string[]; artifacts: string[] }>;
+  /** what is changed and not committed in the session's folders that are git repos */
+  chatChanges(): Promise<ChatChange[]>;
+  /** one changed file's diff against the last commit, as `editDiff` lines. a new file is all "+" */
+  chatChangeDiff(path: string): Promise<Outcome<string[]>>;
   /** a file of the session's, for the viewer. refused outside its folders */
   chatReadFile(path: string): Promise<Outcome<ChatFileText>>;
   /** the file the viewer shows, so a change to it is pushed (`chat:file`). null: none */
@@ -913,6 +927,8 @@ export const CHAT_CHANNELS = [
   "chatConversation",
   "chatExport",
   "chatFiles",
+  "chatChanges",
+  "chatChangeDiff",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
