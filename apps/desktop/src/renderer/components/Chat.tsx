@@ -10,6 +10,7 @@ import type {
   ChatAttachment,
   ChatConversation,
   ChatMode,
+  ChatNote,
   ChatStatus,
   ChatTarget,
   Outcome,
@@ -149,6 +150,34 @@ function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
       <span className="shrink-0 text-sm text-fg-4">{bytes(file.size)}</span>
       {remove}
     </div>
+  );
+}
+
+/**
+ * what claude said along the way that no transcript keeps: a tool it turned down by itself, a
+ * command's output, a hook's reason. muted, under the turn: it is context, not the answer
+ */
+function Note({ note }: { note: ChatNote }) {
+  if (note.kind === "output") {
+    return (
+      <pre
+        className="selectable mt-2 border-l border-line pl-3 font-mono text-sm whitespace-pre-wrap break-words text-fg-3"
+        data-testid="chat-note-output"
+      >
+        {note.text}
+      </pre>
+    );
+  }
+  return (
+    <p
+      className="mt-2 flex items-start gap-1.5 text-sm text-fg-4"
+      data-testid={`chat-note-${note.kind}`}
+    >
+      <span className="flex h-[18px] items-center">
+        <Icon name={note.kind === "denied" ? "x" : "warning"} size={10} />
+      </span>
+      <span className="selectable min-w-0 break-words">{note.text}</span>
+    </p>
   );
 }
 
@@ -919,6 +948,10 @@ export function ChatApp() {
                 )}
                 {/* a card says what it waits on: the live line would only say its tool's name */}
                 {running && s.asks.length === 0 && <LiveLine status={s} />}
+                {s.notes?.map((n, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: notes only grow, until the next send
+                  <Note key={i} note={n} />
+                ))}
                 {s.asks.map((a) => (
                   <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
                 ))}

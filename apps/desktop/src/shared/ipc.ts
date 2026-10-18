@@ -652,6 +652,11 @@ export interface ChatStatus {
   tool?: { name: string; target?: string; since: number };
   /** what the turn is doing that is no tool and no words: compacting, waiting to retry */
   activity?: string;
+  /**
+   * what claude said along the way that is in no transcript: a tool it turned down by itself
+   * (don't ask, auto), a command's output, a hook's reason. until the next send
+   */
+  notes?: ChatNote[];
   /** the subagents this claude started or heard of, as its task frames say: live state */
   agents?: ChatAgent[];
   /**
@@ -665,6 +670,12 @@ export interface ChatStatus {
   error?: string;
   /** bumped whenever the transcript moved: the window reads it again */
   rev: number;
+}
+
+/** one of `ChatStatus.notes` */
+export interface ChatNote {
+  kind: "denied" | "output" | "info";
+  text: string;
 }
 
 /** a subagent of the session, as the agents list shows it */

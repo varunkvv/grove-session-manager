@@ -201,6 +201,14 @@ export function Turn({
         // a slash command, or Claude Code saying a background task finished: nobody typed a prompt
         p && <p className={`${QUIET} break-words`}>{p.text}</p>
       )}
+      {detail && turn.output && (
+        <div
+          className="selectable mt-2 border-l border-line pl-3 text-sm text-fg-3"
+          data-testid="turn-output"
+        >
+          <Markdown text={turn.output} />
+        </div>
+      )}
       {turn.said?.map((said) => (
         <div key={said} className="mt-3">
           <h3 className="text-sm font-medium text-fg-4">You, while it worked</h3>

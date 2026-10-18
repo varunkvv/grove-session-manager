@@ -110,7 +110,7 @@ export interface Deps {
 }
 
 /** a session grove made, by id, and where it runs, until its transcript is in the list */
-export type FreshChats = Map<string, { project: ProjectId; where: ChatWhere }>;
+export type FreshChats = Map<string, { project?: ProjectId; where: ChatWhere }>;
 
 /**
  * the handlers return plain values and throw on failure. the wrapper below turns a method whose
@@ -875,11 +875,14 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
             key: "",
             sessionId: id,
             title: "New session",
-            where: deps.combos.byId(fresh.project).name,
+            // /clear in a session that is in no project: its folder says where
+            where: fresh.project
+              ? deps.combos.byId(fresh.project).name
+              : path.basename(fresh.where.cwd),
             runtime: status.live ? "grove" : "closed",
             open: {},
           },
-          project: fresh.project,
+          ...(fresh.project ? { project: fresh.project } : {}),
           cwd: fresh.where.cwd,
           at: Date.now(),
           appearance: deps.settings().appearance,

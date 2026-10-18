@@ -14,7 +14,7 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { toolTarget } from "@grove/core";
+import { firstSentence, toolLabel, toolTarget } from "@grove/core";
 import type {
   ChatAgent,
   ChatAnswer,
@@ -22,6 +22,7 @@ import type {
   ChatAttachment,
   ChatCommand,
   ChatMode,
+  ChatNote,
   ChatQuestion,
   ChatStatus,
 } from "../../shared/ipc.ts";
@@ -166,6 +167,11 @@ export interface ChatHostOptions {
   now?: () => number;
   /** claude code's own settings.json: whether the person asked to see thinking summaries */
   claudeSettings?: string;
+  /**
+   * /clear: the same claude goes on as a new session under a new id. the host has moved it there,
+   * and its windows go with it
+   */
+  onReset?: (from: string, to: string, where: ChatWhere) => void;
 }
 
 /** vs code's thinking budget (extension.js `M61`), sent for every model as it sends it */
@@ -231,6 +237,9 @@ export function retryLine(m: {
   const wait = Math.max(1, Math.round(m.retry_delay_ms / 1000));
   return `Retrying in ${wait}s · ${why} (${m.attempt} of ${m.max_retries})`;
 }
+
+/** notes kept under a turn: past this the oldest go */
+const NOTES_MAX = 20;
 
 /** a task's end, as the agents list says it */
 const TASK_STATE: Record<string, ChatAgent["state"] | undefined> = {
@@ -516,6 +525,8 @@ export class ChatHost {
     const h = this.entry(id, where);
     const queued = h.status.running;
     h.prompts.push(text, files);
+    // what was said along the way belongs to the turn before
+    if (!queued && h.status.notes?.length) this.set(h, { notes: [] });
     if (queued) {
       const images = files.filter((f) => f.kind === "image").length;
       const named = [
@@ -786,6 +797,18 @@ export class ChatHost {
           else if (h.status.activity) this.set(h, { activity: undefined });
         } else if (m.subtype === "api_retry") {
           this.set(h, { activity: retryLine(m) });
+        } else if (m.subtype === "permission_denied") {
+          // turned down without asking (don't ask, auto): nothing would say so otherwise
+          const why = firstSentence(m.decision_reason || m.message, 200);
+          this.note(h, {
+            kind: "denied",
+            text: `${toolLabel(m.tool_name)} was turned down. ${why}`,
+          });
+        } else if (m.subtype === "local_command_output") {
+          this.note(h, { kind: "output", text: cut(m.content, 8000) });
+        } else if (m.subtype === "informational") {
+          // 'info' is for a transcript view, not a chat
+          if (m.level !== "info") this.note(h, { kind: "info", text: cut(m.content, 2000) });
         } else if (
           m.subtype === "task_started" ||
           m.subtype === "task_progress" ||
@@ -796,6 +819,18 @@ export class ChatHost {
           this.task(h, m);
         }
         return;
+      case "conversation_reset": {
+        // /clear: this claude goes on as a new session. what the window shows moves with it
+        if (m.new_conversation_id === h.id) return;
+        const from = h.id;
+        this.hosted.delete(from);
+        h.id = m.new_conversation_id;
+        this.hosted.set(h.id, h);
+        this.set(h, { notes: [], rev: h.status.rev + 1 });
+        this.o.onReset?.(from, h.id, { ...h.where, fresh: true });
+        this.o.onChange?.();
+        return;
+      }
       case "stream_event": {
         // a subagent's stream is its own. the turn's own answer is what the window draws
         if (m.parent_tool_use_id) return;
@@ -860,6 +895,11 @@ export class ChatHost {
         return;
       }
     }
+  }
+
+  /** a line of what claude said along the way, under the turn. the last few */
+  private note(h: Hosted, n: ChatNote): void {
+    this.set(h, { notes: [...(h.status.notes ?? []), n].slice(-NOTES_MAX) });
   }
 
   /**

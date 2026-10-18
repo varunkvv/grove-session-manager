@@ -45,7 +45,8 @@ const recordedIds = new Set();
 for (const lines of recordings) {
   for (const l of lines) if (typeof l.msg?.session_id === "string") recordedIds.add(l.msg.session_id);
 }
-const sessionId = flag("--resume") ?? flag("--session-id") ?? crypto.randomUUID();
+/** the session it is, which /clear changes (a recorded conversation_reset) */
+let sessionId = flag("--resume") ?? flag("--session-id") ?? crypto.randomUUID();
 const asSession = (o) => {
   let text = JSON.stringify(o);
   for (const id of recordedIds) text = text.split(id).join(sessionId);
@@ -80,12 +81,9 @@ for (const lines of recordings) {
 
 // ---------- the transcript, where Claude Code keeps it
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(require("node:os").homedir(), ".claude");
-const transcript = path.join(
-  configDir,
-  "projects",
-  process.cwd().replace(/[^a-zA-Z0-9]/g, "-"),
-  `${sessionId}.jsonl`,
-);
+const transcriptOf = (id) =>
+  path.join(configDir, "projects", process.cwd().replace(/[^a-zA-Z0-9]/g, "-"), `${id}.jsonl`);
+let transcript = transcriptOf(sessionId);
 let parentUuid = null;
 function record(type, message, extra = {}) {
   const uuid = extra.uuid ?? crypto.randomUUID();
@@ -273,6 +271,15 @@ async function play(turn) {
       continue;
     }
     if (m.type === "control_request") continue;
+    if (m.type === "conversation_reset") {
+      // a new session from here on: its own id, its own transcript
+      const to = crypto.randomUUID();
+      out({ ...m, new_conversation_id: to, uuid: to });
+      sessionId = to;
+      transcript = transcriptOf(to);
+      parentUuid = null;
+      continue;
+    }
     out(m);
     if (m.type === "system" && m.subtype === "task_started" && m.task_type === "local_agent") recordAgent(m);
     if (m.parent_tool_use_id && m.agent_id && (m.type === "assistant" || m.type === "user")) recordAgent(m);

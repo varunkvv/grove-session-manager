@@ -71,9 +71,12 @@ export class ChatWindows {
     this.bySession.set(sessionId, win);
     this.byContents.set(win.webContents.id, sessionId);
     this.o.attach(sessionId, win.webContents);
+    const contentsId = win.webContents.id;
     win.on("focus", () => {
       this.last = win;
-      this.o.focused?.(sessionId);
+      // the session it shows now: /clear moves a window to a new one
+      const id = this.byContents.get(contentsId);
+      if (id) this.o.focused?.(id);
     });
     this.last = win;
     // a spare's page is up and waiting: it asks which session it is for. a new one asks on load
@@ -101,6 +104,16 @@ export class ChatWindows {
 
   close(sessionId: string): void {
     this.bySession.get(sessionId)?.close();
+  }
+
+  /** /clear made the session a new one: its window shows that one now */
+  rekey(from: string, to: string): void {
+    const win = this.bySession.get(from);
+    if (!win || win.isDestroyed()) return;
+    this.bySession.delete(from);
+    this.bySession.set(to, win);
+    this.byContents.set(win.webContents.id, to);
+    win.webContents.send("grove:chat:open", {});
   }
 
   /** what the window shows moved (a new session's transcript came, the appearance changed): it reads it again */

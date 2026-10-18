@@ -65,7 +65,12 @@ afterEach(() => {
   for (const h of hosts.splice(0)) h.dispose();
 });
 
-function setup(delayMs = 2, failFirst = false, recordings?: string): Setup {
+function setup(
+  delayMs = 2,
+  failFirst = false,
+  recordings?: string,
+  onReset?: (from: string, to: string) => void,
+): Setup {
   // real: /var/folders is /private/var/folders, and claude reports its cwd resolved
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-chat-")));
   const bin = path.join(dir, "fake-claude");
@@ -106,6 +111,7 @@ function setup(delayMs = 2, failFirst = false, recordings?: string): Setup {
     }),
     now: () => now.at,
     claudeSettings: path.join(claudeDir, "settings.json"),
+    ...(onReset ? { onReset } : {}),
   });
   hosts.push(host);
   const sent: Array<[string, unknown]> = [];
@@ -508,6 +514,90 @@ describe("grove chat's host", () => {
     expect(p.agent).toBe("file writer");
     s.host.answer(SESSION, p.id, { kind: "permission", allow: "once" });
     await turnEnded(s);
+  });
+
+  it("keeps what claude says along the way that no transcript has, until the next send", async () => {
+    // the hello turn, with the frames a turn can carry before its answer
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const extra = [
+      { type: "system", subtype: "status", status: "compacting" },
+      {
+        type: "system",
+        subtype: "api_retry",
+        attempt: 1,
+        max_retries: 10,
+        retry_delay_ms: 2000,
+        error_status: 529,
+        error: "overloaded",
+      },
+      { type: "system", subtype: "local_command_output", content: "Total cost: $0.01" },
+      { type: "system", subtype: "informational", level: "info", content: "only for a transcript" },
+      { type: "system", subtype: "informational", level: "warning", content: "Stop hook said no" },
+      {
+        type: "system",
+        subtype: "permission_denied",
+        tool_name: "Write",
+        tool_use_id: "t1",
+        decision_reason_type: "mode",
+        message:
+          "Permission to use Write has been denied because Claude Code is running in don't ask mode. IMPORTANT: more words.",
+      },
+    ];
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((l) => {
+        const o = JSON.parse(l);
+        if (o.msg?.type !== "system" || o.msg.subtype !== "init") return [l];
+        return [l, ...extra.map((msg) => JSON.stringify({ t: o.t, dir: "out", msg }))];
+      });
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    writeFileSync(
+      path.join(dir, "interrupt.jsonl"),
+      readFileSync(path.join(fixtures, "interrupt.jsonl")),
+    );
+    const s = setup(2, false, dir);
+    s.host.attach(SESSION, s.window);
+    await s.host.send(SESSION, s.where, HELLO);
+    await turnEnded(s);
+    expect(s.host.status(SESSION).notes).toEqual([
+      { kind: "output", text: "Total cost: $0.01" },
+      { kind: "info", text: "Stop hook said no" },
+      {
+        kind: "denied",
+        text: "Write was turned down. Permission to use Write has been denied because Claude Code is running in don't ask mode.",
+      },
+    ]);
+    // the window heard it compacting, then retrying, then nothing once the answer came
+    const activity = s.window.sent
+      .filter(([c]) => c === "grove:chat:status")
+      .map(([, p]) => (p as ChatStatus).activity);
+    expect(activity).toContain("Compacting the conversation");
+    expect(activity).toContain("Retrying in 2s · overloaded (1 of 10)");
+    expect(s.host.status(SESSION).activity).toBeUndefined();
+    // the next turn starts clean
+    await s.host.send(SESSION, s.where, COUNT);
+    await until(() => s.host.text(SESSION).length > 0, "the count");
+    expect(s.host.status(SESSION).notes).toEqual([]);
+    await s.host.interrupt(SESSION);
+  });
+
+  it("/clear moves the same claude to a new session id, and its windows with it", async () => {
+    const moved: Array<[string, string]> = [];
+    const s = setup(2, false, undefined, (from, to) => moved.push([from, to]));
+    s.host.attach(SESSION, s.window);
+    await s.host.send(SESSION, s.where, "/clear");
+    const [from, to] = await until(() => moved[0], "the reset");
+    expect(from).toBe(SESSION);
+    expect(to).toMatch(/^[0-9a-f-]{36}$/);
+    expect(to).not.toBe(SESSION);
+    expect(s.host.hosts(SESSION)).toBe(false);
+    expect(s.host.hosts(to)).toBe(true);
+    // the window is the new one's now: it hears of it
+    const seen = s.window.sent.length;
+    await s.host.setMode(to, s.where, "plan");
+    expect(s.window.sent.length).toBeGreaterThan(seen);
   });
 
   it("puts what claude says of its agents over what their transcripts say", () => {

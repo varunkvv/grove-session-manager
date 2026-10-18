@@ -353,6 +353,17 @@ export class ConversationFold {
     const { turn, fold } = this.current() ?? this.startTurn();
     const index = this.state.items.length - 1;
     const content = Array.isArray(message.content) ? message.content : [];
+    // a command claude code answers itself (/context, /cost): its own words, as a command's output
+    const said = textOf(content).trim();
+    if (
+      str(message.model) === "<synthetic>" &&
+      entry.isApiErrorMessage !== true &&
+      !said.startsWith("API Error") &&
+      turn.output === undefined &&
+      (turn.prompt?.kind === "command" || turn.prompt?.text.startsWith("/"))
+    ) {
+      turn.output = cut(said, OUTPUT_MAX);
+    }
     const from = fold.state.steps.length;
     fold.entry(entry, line.offset, line.length);
     // something came after the error, so the retry worked and the error was noise
@@ -641,6 +652,8 @@ export interface TurnView {
   stepsBefore?: number;
   /** a chat window's only: the thinking right before its answer, and how long it took */
   thought?: { text: string; ms?: number };
+  /** a chat window's only: what a slash command answered, /context's table */
+  output?: string;
 }
 
 /** one step of a turn's work, as a chat window lists it */
@@ -831,6 +844,7 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
     ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
     ...(outputs.length ? { outputs } : {}),
     ...(opts.chat ? stepsOf(item) : {}),
+    ...(opts.chat && item.output ? { output: item.output } : {}),
   };
 }
 

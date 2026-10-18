@@ -520,6 +520,25 @@ describe("what the real stretch does not have", () => {
     expect(panel).not.toHaveProperty("thought");
   });
 
+  it("keeps what a command claude code answers itself said, for a chat window", async () => {
+    const synthetic = (t: string, sec: number) => {
+      const line = says("s1", text(t), sec) as { message: { model: string } };
+      line.message.model = "<synthetic>";
+      return line;
+    };
+    const state = await fold([
+      command("context", "", 0),
+      synthetic("## Context Usage\n\n| Category | Tokens |", 1),
+      prompt("hello", 2),
+      synthetic("API Error: overloaded", 3),
+    ]);
+    const [ctx, hello] = conversationView(state, { chat: true }).items as TurnView[];
+    expect(ctx?.output).toContain("## Context Usage");
+    // an api error is no command's output
+    expect(hello?.output).toBeUndefined();
+    expect((conversationView(state).items[0] as TurnView).output).toBeUndefined();
+  });
+
   it("a prompt that was nothing but editor context still starts a turn", async () => {
     const state = await fold([
       prompt("first", 0),

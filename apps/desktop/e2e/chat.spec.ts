@@ -17,6 +17,8 @@ const QUESTION =
 const COUNT = "Count from 1 to 400, one number per line, nothing else.";
 /** recordings/c-start: haiku 5.5 thinks, with the summary text */
 const THINK = "Think step by step, then reply with just the number: 23*19 + 7^3 - 45?";
+/** recordings/c-denied: under dontAsk a Write is turned down without asking */
+const DENIED = "Create a file named x.txt containing x, using the Write tool.";
 /** recordings/c-agents: two background agents, then a Bash of its own */
 const AGENTS = [
   "Do exactly these three things, in this order, with no other tools:",
@@ -423,6 +425,39 @@ test("agents: a count in the header, a list in the drawer with a stop each, and 
   await turn.getByTestId("turn-steps-toggle").click();
   await turn.getByTestId("step").filter({ hasText: "long sleeper" }).click();
   await expect(chat.getByTestId("agent-viewer")).toHaveAttribute("data-id", "a4937abaedd25e9dd");
+});
+
+test("what claude says along the way shows: a command's output, a tool it turned down, and /clear moves the window", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  // /context answers in its own words: the turn keeps them, muted
+  await composer.fill("/context");
+  await composer.press("Escape");
+  await composer.press("Enter");
+  await expect(chat.getByTestId("turn-output")).toContainText("Context Usage");
+  // dontAsk turned a Write down without asking: a quiet line says so
+  await composer.fill(DENIED);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("chat-note-denied")).toContainText(
+    "Write was turned down. Permission to use Write has been denied because Claude Code is running in don't ask mode.",
+  );
+  await expect(chat.getByTestId("panel-text")).toContainText("I couldn't create");
+  // /clear: the same claude goes on as a new session, and the window with it
+  await composer.fill("/clear");
+  await composer.press("Escape");
+  await composer.press("Enter");
+  await expect(chat.locator("h1")).toHaveText("New session");
+  const id = await chat.getByTestId("chat").getAttribute("data-id");
+  expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(id).not.toBe(SID);
+  await expect(chat.getByTestId("chat-note-denied")).toHaveCount(0);
+  // the old session is no longer grove's
+  await expect(
+    page.locator(`[data-testid="session-row"][data-id="${SID}"] [data-testid="runtime-chip"]`),
+  ).not.toHaveAttribute("data-runtime", "grove");
 });
 
 test("a notification click lands in the session's chat window", async () => {
