@@ -181,6 +181,8 @@ export function Turn({
   who?: string;
 }) {
   const [open, setOpen] = useState(!!stepsOpen);
+  /** the hover actions exist: the pointer or the keyboard came to this turn */
+  const [armed, setArmed] = useState(false);
   const scope = useChatScope();
   const p = turn.prompt;
   const typed =
@@ -203,11 +205,19 @@ export function Turn({
   // the last turn always says what the agent said, even when that is nothing yet
   const talks = !!turn.text || !!work || (last && p?.kind !== "command");
   return (
-    <section className="mt-6 first:mt-0" data-testid="turn">
+    <section
+      className="mt-6 first:mt-0"
+      data-testid="turn"
+      // grove chat: a turn's hover actions are only made once the pointer or the keyboard comes
+      // near it. a hundred turns each with their own buttons cost a window's open ~20ms
+      {...(detail && !armed
+        ? { onMouseEnter: () => setArmed(true), onFocus: () => setArmed(true) }
+        : {})}
+    >
       {p?.kind === "human" ? (
         <div className={cx(detail && "group/prompt relative")}>
           {/* grove chat: what can be done from this message, on hover */}
-          {detail && scope && !going && (
+          {detail && armed && scope && !going && (
             <div
               className="absolute top-0 right-0 flex gap-0.5 opacity-0 group-hover/prompt:opacity-100 focus-within:opacity-100"
               data-testid="prompt-actions"
@@ -320,7 +330,7 @@ export function Turn({
               last && !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
             )}
             {/* grove chat: what can be done with an answer, on hover, in the gap under it */}
-            {detail && scope && turn.text && !going && (
+            {detail && armed && scope && turn.text && !going && (
               <div
                 className="absolute top-full right-0 flex gap-0.5 pt-0.5 opacity-0 group-hover/answer:opacity-100 focus-within:opacity-100"
                 data-testid="answer-actions"
