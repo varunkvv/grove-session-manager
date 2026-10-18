@@ -38,6 +38,8 @@ const RELEASE_WAIT_MS = 3000;
 const FLUSH_MS = 50;
 /** a permission's input, as the card shows it */
 const DETAIL_MAX = 2000;
+/** a question option's preview: a mockup or a snippet */
+const PREVIEW_MAX = 8000;
 
 /** a prompt, a typed answer: generous, and still a bound on what a page can hand claude */
 const TEXT_MAX = 200_000;
@@ -445,16 +447,19 @@ function questionsOf(input: Record<string, unknown>): ChatQuestion[] {
         question: o.question,
         header: typeof o.header === "string" ? o.header : "",
         multiSelect: o.multiSelect === true,
-        options: options.flatMap((x) =>
-          x && typeof x === "object" && typeof (x as { label?: unknown }).label === "string"
-            ? [
-                {
-                  label: (x as { label: string }).label,
-                  description: String((x as { description?: unknown }).description ?? ""),
-                },
-              ]
-            : [],
-        ),
+        options: options.flatMap((x) => {
+          const o = x as { label?: unknown; description?: unknown; preview?: unknown } | null;
+          if (!o || typeof o !== "object" || typeof o.label !== "string") return [];
+          return [
+            {
+              label: o.label,
+              description: String(o.description ?? ""),
+              ...(typeof o.preview === "string" && o.preview
+                ? { preview: cut(o.preview, PREVIEW_MAX) }
+                : {}),
+            },
+          ];
+        }),
       },
     ];
   });
@@ -680,7 +685,21 @@ export class ChatHost {
     if (ask?.kind !== a.kind) throw new Error("That answer is for another kind of question.");
     let result: PermissionResult;
     if (a.kind === "question") {
-      result = { behavior: "allow", updatedInput: { ...w.input, answers: a.answers } };
+      // the preview of a picked option goes with it, as Claude Code sends it: claude reads which
+      // mockup was chosen, not only its label
+      const annotations: Record<string, { preview: string }> = {};
+      for (const q of questionsOf(w.input)) {
+        const preview = q.options.find((o) => o.label === a.answers[q.question])?.preview;
+        if (preview) annotations[q.question] = { preview };
+      }
+      result = {
+        behavior: "allow",
+        updatedInput: {
+          ...w.input,
+          answers: a.answers,
+          ...(Object.keys(annotations).length ? { annotations } : {}),
+        },
+      };
     } else if (a.kind === "plan") {
       result = a.approve
         ? { behavior: "allow", updatedInput: w.input }
@@ -772,6 +791,9 @@ export class ChatHost {
           // each one is stopped from its own row
           enableFileCheckpointing: true,
           perTaskStopAffordance: true,
+          // an option's preview in markdown, as the terminal shows it: the card draws it beside the
+          // list, never as html
+          toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
           thinking: {
             type: "enabled",
             budgetTokens: THINKING_BUDGET,

@@ -55,6 +55,15 @@ const WORKFLOW = (
   ) as { msg: { message: { content: Array<{ text: string }> } } }
 ).msg.message.content[0]?.text as string;
 
+/** recordings/d-questions: three questions in one AskUserQuestion, the second multi-select */
+const QUESTIONS = [
+  "Use the AskUserQuestion tool exactly once, with exactly these three questions in this order:",
+  "1. header 'Language', question 'Which language should the script use?', single select, options Python and Go, each option with a preview showing a two-line hello world in that language.",
+  "2. header 'Checks', question 'Which checks should run?', multiSelect true, options Lint, Types and Tests.",
+  "3. header 'Output', question 'Where should the results go?', single select, options Stdout and File.",
+  "Then reply with exactly three lines, one per question, each 'header: what I picked'. Do not use any other tool.",
+].join("\n");
+
 interface Setup {
   host: ChatHost;
   where: { cwd: string; dirs: string[] };
@@ -336,6 +345,41 @@ describe("grove chat's host", () => {
     expect(() => s.host.answer(SESSION, q.id, { kind: "question", answers: {} })).toThrow(
       /already been answered/,
     );
+  });
+
+  it("several questions in one ask: each answered, a pick's preview sent with it", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, QUESTIONS);
+    const card = await ask(s, "question");
+    expect(card.questions.map((q) => [q.header, q.multiSelect, q.options.length])).toEqual([
+      ["Language", false, 2],
+      ["Checks", true, 3],
+      ["Output", false, 2],
+    ]);
+    expect(card.questions[0]?.options[1]?.preview).toContain("fmt.Println");
+    s.host.answer(SESSION, card.id, {
+      kind: "question",
+      answers: {
+        "Which language should the script use?": "Go",
+        "Which checks should run?": "Lint, Tests",
+        "Where should the results go?": "a slack message",
+      },
+    });
+    await turnEnded(s);
+    const sent = answers(s).find((a) => (a.updatedInput as { answers?: unknown })?.answers);
+    expect(sent?.updatedInput).toMatchObject({
+      answers: { "Which checks should run?": "Lint, Tests" },
+      annotations: {
+        "Which language should the script use?": {
+          preview: expect.stringContaining("fmt.Println"),
+        },
+      },
+    });
+    // the preview format claude was told to write in
+    const init = s
+      .log()
+      .find((l) => (l.in as { request?: { subtype?: string } })?.request?.subtype === "initialize");
+    expect(JSON.stringify(init)).not.toContain('"html"');
   });
 
   it("a plan: keep planning with a word, then approve", async () => {

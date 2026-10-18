@@ -37,6 +37,15 @@ const WORKFLOW = (
   ) as { msg: { message: { content: Array<{ text: string }> } } }
 ).msg.message.content[0]?.text as string;
 
+/** recordings/d-questions: three questions in one AskUserQuestion, the second multi-select */
+const QUESTIONS = [
+  "Use the AskUserQuestion tool exactly once, with exactly these three questions in this order:",
+  "1. header 'Language', question 'Which language should the script use?', single select, options Python and Go, each option with a preview showing a two-line hello world in that language.",
+  "2. header 'Checks', question 'Which checks should run?', multiSelect true, options Lint, Types and Tests.",
+  "3. header 'Output', question 'Where should the results go?', single select, options Stdout and File.",
+  "Then reply with exactly three lines, one per question, each 'header: what I picked'. Do not use any other tool.",
+].join("\n");
+
 let app: LaunchedApp;
 
 test.afterEach(async () => {
@@ -167,6 +176,50 @@ test("a question comes as a card, and the pick goes back to claude", async () =>
   expect(answer).toMatchObject({
     behavior: "allow",
     updatedInput: { answers: { "Which colour do you prefer?": "Blue" } },
+  });
+});
+
+test("several questions are tabs: one at a time, multi-select picks any, and Submit sends them all", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(QUESTIONS);
+  await composer.press("Enter");
+  const card = chat.getByTestId("ask-question");
+  await expect(card.getByTestId("ask-tab")).toHaveText(["Language", "Checks", "Output"], {
+    timeout: 15_000,
+  });
+  // the card has the keys: a hover shows an option's preview, 2 picks Go and moves on
+  await card.getByTestId("ask-option").filter({ hasText: "Go" }).hover();
+  await expect(card.getByTestId("ask-preview")).toContainText("fmt.Println");
+  await card.getByTestId("ask-body").press("2");
+  await expect(card.getByTestId("ask-tab").first()).toHaveAttribute("aria-selected", "false");
+  // multi-select: two picks, then Next
+  await card.getByTestId("ask-option").filter({ hasText: "Lint" }).click();
+  await card.getByTestId("ask-option").filter({ hasText: "Tests" }).click();
+  await card.getByTestId("ask-next").click();
+  // words of your own for the last, and Enter moves to the review
+  await card.getByTestId("ask-other").fill("a slack message");
+  await card.getByTestId("ask-other").press("Enter");
+  await expect(card.getByTestId("ask-review")).toContainText("Lint, Tests");
+  await expect(card.getByTestId("ask-tab")).toHaveText([/Language/, /Checks/, /Output/]);
+  await card.getByTestId("ask-body").press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("Checks: Lint, Tests", {
+    timeout: 15_000,
+  });
+  const answered = sentToClaude(s.chatLog)
+    .map(
+      (l) =>
+        (l.in as { response?: { response?: { updatedInput?: { answers?: unknown } } } })?.response
+          ?.response?.updatedInput?.answers,
+    )
+    .find(Boolean);
+  expect(answered).toEqual({
+    "Which language should the script use?": "Go",
+    "Which checks should run?": "Lint, Tests",
+    "Where should the results go?": "a slack message",
   });
 });
 

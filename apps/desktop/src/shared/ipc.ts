@@ -586,8 +586,10 @@ export type ChatMode =
 
 export interface ChatQuestion {
   question: string;
+  /** a chip's word for it, 12 characters at most: the tab it sits on */
   header: string;
-  options: Array<{ label: string; description: string }>;
+  /** `preview`: markdown or ascii for a monospace box, shown beside the list when it is focused */
+  options: Array<{ label: string; description: string; preview?: string }>;
   multiSelect: boolean;
 }
 

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type {
   ChatAgent,
   ChatAnswer,
-  ChatAsk,
   ChatAttachment,
   ChatConversation,
   ChatMode,
@@ -20,15 +19,13 @@ import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
 import { AgentList, AgentViewer } from "./Agents.tsx";
+import { Ask } from "./Asks.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
-import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
   AgentState,
-  AskCard,
   Button,
-  Choice,
   ComposerFrame,
   cx,
   DropOverlay,
@@ -242,178 +239,6 @@ function LiveLine({ status: s }: { status: ChatStatus }) {
       )}
     </p>
   );
-}
-
-function QuestionCard({
-  ask,
-  onAnswer,
-}: {
-  ask: Extract<ChatAsk, { kind: "question" }>;
-  onAnswer: (a: ChatAnswer) => void;
-}) {
-  const [picked, setPicked] = useState<Record<string, string[]>>({});
-  const [other, setOther] = useState<Record<string, string>>({});
-  // one question that takes one pick: a click on it is the answer
-  const quick = ask.questions.length === 1 && !ask.questions[0]?.multiSelect;
-  const answerOf = (q: string) => [...(picked[q] ?? []), ...(other[q]?.trim() ? [other[q]] : [])];
-  const send = (answers: Record<string, string>) => onAnswer({ kind: "question", answers });
-  const complete = ask.questions.every((q) => answerOf(q.question).length > 0);
-  return (
-    <AskCard label="Claude asks" testId="ask-question">
-      {ask.questions.map((q) => (
-        <div key={q.question} className="mt-2">
-          <p className="selectable text-fg">{q.question}</p>
-          <div className="mt-2 space-y-1.5">
-            {q.options.map((o) => {
-              const on = picked[q.question]?.includes(o.label) ?? false;
-              return (
-                <Choice
-                  key={o.label}
-                  picked={on}
-                  data-testid="ask-option"
-                  onClick={() => {
-                    if (quick) return send({ [q.question]: o.label });
-                    const was = picked[q.question] ?? [];
-                    const next = q.multiSelect
-                      ? on
-                        ? was.filter((l) => l !== o.label)
-                        : [...was, o.label]
-                      : [o.label];
-                    setPicked({ ...picked, [q.question]: next });
-                  }}
-                >
-                  <span className="block font-medium">{o.label}</span>
-                  {o.description && (
-                    <span className="block text-sm text-fg-3">{o.description}</span>
-                  )}
-                </Choice>
-              );
-            })}
-            <input
-              className="no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-3 text-body text-fg placeholder:text-fg-4"
-              placeholder="Something else…"
-              data-testid="ask-other"
-              value={other[q.question] ?? ""}
-              onChange={(e) => setOther({ ...other, [q.question]: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && quick && e.currentTarget.value.trim()) {
-                  send({ [q.question]: e.currentTarget.value.trim() });
-                }
-              }}
-            />
-          </div>
-        </div>
-      ))}
-      {!quick && (
-        <Button
-          variant="primary"
-          className="mt-3"
-          disabled={!complete}
-          data-testid="ask-send"
-          onClick={() =>
-            send(
-              Object.fromEntries(
-                ask.questions.map((q) => [q.question, answerOf(q.question).join(", ")]),
-              ),
-            )
-          }
-        >
-          Answer
-        </Button>
-      )}
-    </AskCard>
-  );
-}
-
-function PlanCard({
-  ask,
-  onAnswer,
-}: {
-  ask: Extract<ChatAsk, { kind: "plan" }>;
-  onAnswer: (a: ChatAnswer) => void;
-}) {
-  const [note, setNote] = useState("");
-  return (
-    <AskCard label="Claude's plan" testId="ask-plan">
-      <div className="selectable mt-2">
-        <Markdown text={ask.plan} className="md-full" />
-      </div>
-      <textarea
-        className="no-drag mt-3 w-full resize-none rounded-md border border-line-strong bg-canvas px-3 py-2 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
-        placeholder="What should change? (for Keep planning)"
-        rows={1}
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-      />
-      <div className="mt-2 flex gap-2">
-        <Button
-          variant="primary"
-          data-testid="plan-approve"
-          onClick={() => onAnswer({ kind: "plan", approve: true })}
-        >
-          Approve
-        </Button>
-        <Button
-          data-testid="plan-keep"
-          onClick={() => onAnswer({ kind: "plan", approve: false, message: note })}
-        >
-          Keep planning
-        </Button>
-      </div>
-    </AskCard>
-  );
-}
-
-function PermissionCard({
-  ask,
-  onAnswer,
-}: {
-  ask: Extract<ChatAsk, { kind: "permission" }>;
-  onAnswer: (a: ChatAnswer) => void;
-}) {
-  return (
-    <AskCard
-      label={`${ask.agent ? "Its agent" : "Claude"} wants to use ${ask.tool}`}
-      testId="ask-permission"
-    >
-      {ask.agent && (
-        <p className="mt-0.5 text-sm text-fg-3" data-testid="ask-agent">
-          {ask.agent}
-        </p>
-      )}
-      {ask.title && <p className="selectable mt-1 text-fg">{ask.title}</p>}
-      <Mono className="selectable mt-2 block max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-canvas px-3 py-2 text-fg-2">
-        {ask.detail}
-      </Mono>
-      <div className="mt-3 flex gap-2">
-        <Button
-          variant="primary"
-          data-testid="permission-allow"
-          onClick={() => onAnswer({ kind: "permission", allow: "once" })}
-        >
-          Allow
-        </Button>
-        {ask.canAlways && (
-          <Button onClick={() => onAnswer({ kind: "permission", allow: "always" })}>
-            Always allow
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          data-testid="permission-deny"
-          onClick={() => onAnswer({ kind: "permission", allow: "no" })}
-        >
-          Deny
-        </Button>
-      </div>
-    </AskCard>
-  );
-}
-
-function Ask({ ask, onAnswer }: { ask: ChatAsk; onAnswer: (a: ChatAnswer) => void }) {
-  if (ask.kind === "question") return <QuestionCard ask={ask} onAnswer={onAnswer} />;
-  if (ask.kind === "plan") return <PlanCard ask={ask} onAnswer={onAnswer} />;
-  return <PermissionCard ask={ask} onAnswer={onAnswer} />;
 }
 
 /** the window of one session. its page has no list and no landing: main says which session */
@@ -964,7 +789,14 @@ export function ChatApp() {
                   <Note key={i} note={n} />
                 ))}
                 {s.asks.map((a) => (
-                  <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
+                  <Ask
+                    key={a.id}
+                    ask={a}
+                    onAnswer={(x) => void answer(a.id, x)}
+                    onLeave={() => composer.current?.focus()}
+                    // the keys go to the card, unless the person is in the middle of typing
+                    autoFocus={!draft}
+                  />
                 ))}
                 {s.queued.map((q, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: two sends can be the same words
