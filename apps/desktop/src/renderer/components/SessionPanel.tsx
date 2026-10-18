@@ -20,7 +20,6 @@ import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { StepList, Thought } from "./Steps.tsx";
 import {
-  AgentState,
   Button,
   ComposerFrame,
   CopyButton,
@@ -564,9 +563,9 @@ function SessionCard({
           type="button"
           data-testid="card-agents"
           onClick={() => openChat(key, session.title, { agents: true })}
-          className="fade mt-3 flex min-w-0 max-w-full items-center gap-1.5 text-left text-sm text-fg-3 hover:text-fg"
+          className="fade flex min-w-0 max-w-full items-center gap-1.5 self-start text-left text-sm text-fg-3 hover:text-fg"
         >
-          <AgentState state="running" word={false} />
+          <TaskMark />
           <span className="truncate">
             {agents.length} running · {agents.map((a) => a.description).join(", ")}
           </span>

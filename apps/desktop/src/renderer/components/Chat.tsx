@@ -31,7 +31,6 @@ import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
-  AgentState,
   Button,
   ComposerFrame,
   ContextRing,
@@ -53,6 +52,7 @@ import {
   Spinner,
   StateLabel,
   Switch,
+  TaskMark,
   ToolbarButton,
   UltraChip,
 } from "./ui.tsx";
@@ -1209,7 +1209,7 @@ export function ChatApp() {
             title="The session's agents"
             onClick={() => setPane(pane?.kind === "agents" ? null : { kind: "agents" })}
           >
-            <AgentState state="running" word={false} />
+            <TaskMark />
             <span className="tabular-nums">{runningWords}</span>
           </Button>
         )}

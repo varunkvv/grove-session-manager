@@ -668,7 +668,7 @@ export const stateWord = (state: SessionState): string => STATES[state].word;
 
 /**
  * something left running between turns: working's dot as a ring, and still. beside a watching
- * session's word, and beside each task in its panel
+ * session's word, each task in its panel, and grove chat's count of agents still running
  */
 export function TaskMark() {
   return (
@@ -1199,12 +1199,9 @@ const WORDS = { running: "Running", done: "Done", failed: "Failed", stopped: "St
 export function AgentState({
   state,
   took,
-  word = true,
 }: {
   state: "running" | "done" | "failed" | "stopped";
   took?: string;
-  /** false: the mark alone, where a count beside it says the rest */
-  word?: boolean;
 }) {
   return (
     <span
@@ -1216,7 +1213,7 @@ export function AgentState({
       )}
     >
       {state === "running" && <span className="live-pulse size-1.5 rounded-full bg-hue-green" />}
-      {word && WORDS[state]}
+      {WORDS[state]}
       {took && <span className="tabular-nums text-fg-4">{took}</span>}
     </span>
   );
