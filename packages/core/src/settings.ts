@@ -27,6 +27,8 @@ export interface Settings {
   keepAwake?: boolean;
   /** grove chat (beta): a session opens in its own grove window, run through the agent sdk. off unless true. */
   chat?: boolean;
+  /** with grove chat on, the key that brings grove forward from anywhere. "none" is none */
+  summonKey?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -63,6 +65,9 @@ function clean(raw: unknown): Settings {
     "chat",
   ] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
+  }
+  if (typeof raw.summonKey === "string" && raw.summonKey.trim() && raw.summonKey.length <= 64) {
+    s.summonKey = raw.summonKey.trim();
   }
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {
     s.maxParsedSessions = Math.floor(raw.maxParsedSessions);

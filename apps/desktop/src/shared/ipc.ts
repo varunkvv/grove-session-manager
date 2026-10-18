@@ -158,7 +158,15 @@ export interface AppSettings {
   keepAwake?: boolean;
   /** grove chat (beta): a session opens in its own window, talked to from grove. off unless switched on. */
   chat?: boolean;
+  /** with grove chat on, the key that brings grove forward from anywhere. "none", or absent for the default */
+  summonKey?: string;
 }
+
+/**
+ * the summon key when the person has not picked one: ctrl-opt-cmd-G. none of macOS's own, nor
+ * Spotlight's, Raycast's or Alfred's defaults, and G for grove
+ */
+export const DEFAULT_SUMMON_KEY = "Control+Alt+Command+G";
 
 export interface EnvInfo {
   appRoot: string;

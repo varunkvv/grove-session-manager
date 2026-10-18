@@ -99,6 +99,8 @@ export interface Deps {
   chatWindows: ChatWindows;
   /** sessions made in grove chat (cmd-N) whose transcript is not in the list yet */
   fresh: FreshChats;
+  /** why grove cannot hold this summon key, or null when it can */
+  summonProblem: (key: string) => string | null;
 }
 
 /** a session grove made, by id, and where it runs, until its transcript is in the list */
@@ -674,6 +676,11 @@ function buildHandlers(deps: Deps): Handlers {
     },
 
     async updateSettings(patch) {
+      const key = (patch as Partial<Settings> | undefined)?.summonKey;
+      if (typeof key === "string" && key.trim() && key !== "none") {
+        const why = deps.summonProblem(key.trim());
+        if (why) throw new AppError("summon-key", why);
+      }
       const next = await saveSettings(env.appRoot, patch as Partial<Settings>);
       deps.setSettings(next);
       editor.applySettings(next);

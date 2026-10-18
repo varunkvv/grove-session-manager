@@ -84,6 +84,8 @@ interface GroveTest {
   closeMain(): void;
   isMainVisible(): boolean;
   notifications(): Array<{ title: string; body: string; at: number }>;
+  summonKey(): string | null;
+  summon(): void;
 }
 
 type Main = { groveTest: GroveTest };
@@ -110,6 +112,10 @@ export function groveTest(app: ElectronApplication) {
     /** what would have been shown. a test root shows no notifications */
     notifications: () =>
       app.evaluate(() => (globalThis as unknown as Main).groveTest.notifications()),
+    /** the key a summon would be held on: a test root holds none */
+    summonKey: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.summonKey()),
+    /** what the summon key does */
+    summon: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.summon()),
   };
 }
 

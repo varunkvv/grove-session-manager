@@ -12,7 +12,7 @@ import {
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
-import type { MenuCommandId } from "../shared/ipc.ts";
+import { DEFAULT_SUMMON_KEY, type MenuCommandId } from "../shared/ipc.ts";
 import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
@@ -76,6 +76,46 @@ function showMain(): void {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+/** the summon key grove holds now, if any */
+let summoned: string | null = null;
+
+/** the key that brings grove forward from any app: grove chat's, unless the person switched it off */
+const summonKeyOf = (s: Settings): string | null =>
+  s.chat !== true || s.summonKey === "none" ? null : (s.summonKey ?? DEFAULT_SUMMON_KEY);
+
+/** from another app: grove is made the active app, and its window comes forward */
+function summonMain(): void {
+  electron.app.focus({ steal: true });
+  showMain();
+}
+
+/** holds the settings' summon key, and lets go of the one before. a test root takes no key from the desk */
+function summon(s: Settings): void {
+  const key = summonKeyOf(s);
+  if (key === summoned) return;
+  if (summoned) electron.globalShortcut.unregister(summoned);
+  summoned = null;
+  if (!key || appEnv.customRoot) return;
+  try {
+    if (electron.globalShortcut.register(key, summonMain)) summoned = key;
+    else log.warn(`summon key ${key}: another app has it`);
+  } catch (e) {
+    log.warn(`summon key ${key}:`, e);
+  }
+}
+
+/** why grove cannot have this key, or null when it can */
+function summonProblem(key: string): string | null {
+  if (key === summoned || appEnv.customRoot) return null;
+  try {
+    if (!electron.globalShortcut.register(key, () => {})) return "Another app has that key.";
+    electron.globalShortcut.unregister(key);
+    return null;
+  } catch {
+    return "That is not a key Grove can listen for.";
+  }
 }
 
 if (!electron.app.requestSingleInstanceLock()) {
@@ -421,6 +461,9 @@ async function start(): Promise<void> {
       notifications: () => noted,
       /** how many busy chats a quit would have asked about */
       quitAsks: () => quitAsks,
+      /** the key a summon would be held on, and the summon itself: a test root holds no key */
+      summonKey: () => summonKeyOf(settings),
+      summon: summonMain,
     };
   }
 
@@ -485,6 +528,7 @@ async function start(): Promise<void> {
       const lookMoved = s.appearance !== settings.appearance;
       settings = s;
       if (menuMoved) menu(resolveEditor(s).label);
+      summon(s);
       // the spare chat window is there only while grove chat is on, and in the page's appearance.
       // an open chat window draws in it too
       if (chatMoved) chatWindows.setSpare(s.chat === true);
@@ -517,6 +561,7 @@ async function start(): Promise<void> {
     chat,
     chatWindows,
     fresh,
+    summonProblem,
   });
 
   win = await createMainWindow({
@@ -576,6 +621,7 @@ async function start(): Promise<void> {
     win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors));
     chatWindows.repaint();
   });
+  summon(settings);
   electron.powerMonitor.on("resume", () => void sessions.refresh());
 
   electron.app.on("web-contents-created", (_event, contents) => {
@@ -597,6 +643,7 @@ async function start(): Promise<void> {
       return;
     }
     quitting = true;
+    electron.globalShortcut.unregisterAll();
     chat.dispose();
     chatWindows.dispose();
     clearInterval(trayTick);

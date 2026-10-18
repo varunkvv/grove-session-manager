@@ -25,4 +25,16 @@ describe("settings", () => {
     expect((await saveSettings(app, { chat: true })).chat).toBe(true);
     expect((await loadSettings(app)).chat).toBe(true);
   });
+
+  it("the summon key is kept as given, and cleared it is the default again", async () => {
+    const app = makeSandbox("grove-settings-");
+    expect((await loadSettings(app)).summonKey).toBeUndefined();
+    expect((await saveSettings(app, { summonKey: " Control+Alt+K " })).summonKey).toBe(
+      "Control+Alt+K",
+    );
+    expect((await saveSettings(app, { summonKey: "none" })).summonKey).toBe("none");
+    expect((await saveSettings(app, { summonKey: "" })).summonKey).toBeUndefined();
+    writeFileSync(settingsFilePath(app), JSON.stringify({ summonKey: 7 }));
+    expect((await loadSettings(app)).summonKey).toBeUndefined();
+  });
 });

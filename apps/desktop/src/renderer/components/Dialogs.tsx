@@ -1,6 +1,7 @@
 import { shortPath, type TeardownOutcome } from "@grove/core/pure";
 import { useEffect, useState } from "react";
-import type { AppSettings } from "../../shared/ipc.ts";
+import { type AppSettings, DEFAULT_SUMMON_KEY } from "../../shared/ipc.ts";
+import { acceleratorOf, keyLabel } from "../logic/keys.ts";
 import { archiveProject, startAgent } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Button, cx, Field, inputClass, Modal, Mono, Select, Switch } from "./ui.tsx";
@@ -231,6 +232,39 @@ export function StartDialog() {
   );
 }
 
+/** a key combination, set by pressing it. Delete switches it off, Esc leaves it as it was */
+function KeyRecorder({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  const [recording, setRecording] = useState(false);
+  return (
+    <Button
+      size="sm"
+      data-testid="setting-summon"
+      aria-label="Summon key"
+      title={recording ? "Press the keys. Delete switches it off, Esc keeps it" : "Click to change"}
+      onClick={() => setRecording(!recording)}
+      onBlur={() => setRecording(false)}
+      onKeyDown={(e) => {
+        if (!recording) return;
+        // every key is the recording's: Esc must not close the dialog under it
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Escape") return setRecording(false);
+        if (e.key === "Backspace" || e.key === "Delete") {
+          onChange("none");
+          return setRecording(false);
+        }
+        const key = acceleratorOf(e);
+        if (!key) return;
+        onChange(key);
+        setRecording(false);
+      }}
+      className="min-w-24 font-mono"
+    >
+      {recording ? "Press keys…" : value === "none" ? "None" : keyLabel(value)}
+    </Button>
+  );
+}
+
 export function SettingsDialog() {
   const dialog = useStore((s) => s.dialog);
   const settings = useStore((s) => s.settings);
@@ -425,6 +459,17 @@ export function SettingsDialog() {
             talk to it through your own claude and its settings. Open in{" "}
             {editor?.label ?? "the editor"} stays one click away in that window.
           </span>
+          {draft.chat === true && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-sm text-fg-2">
+                Bring Grove forward from any app
+              </span>
+              <KeyRecorder
+                value={draft.summonKey ?? DEFAULT_SUMMON_KEY}
+                onChange={(k) => setDraft({ ...draft, summonKey: k })}
+              />
+            </div>
+          )}
         </div>
         {error && <p className="text-danger">{error}</p>}
       </div>

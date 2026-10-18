@@ -398,3 +398,31 @@ test("chat windows follow the appearance, cascade from the last one, and open at
   expect(b?.x).toBe((a?.x ?? 0) + 26);
   expect(b?.y).toBe((a?.y ?? 0) + 26);
 });
+
+test("the summon key is grove chat's, can be changed in Settings, and brings the main window back", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  expect(await groveTest(electron).summonKey()).toBe("Control+Alt+Command+G");
+  await page.keyboard.press("Meta+,");
+  const key = page.getByTestId("setting-summon");
+  await expect(key).toHaveText("⌃⌥⌘G");
+  await key.click();
+  await expect(key).toHaveText("Press keys…");
+  // Esc keeps it, and the dialog stays
+  await key.press("Escape");
+  await expect(key).toHaveText("⌃⌥⌘G");
+  await key.click();
+  await key.press("Control+Alt+Meta+KeyK");
+  await expect(key).toHaveText("⌃⌥⌘K");
+  await page.getByTestId("save-settings").click();
+  await expect(page.getByTestId("settings-dialog")).toBeHidden();
+  expect(await groveTest(electron).summonKey()).toBe("Control+Alt+Command+K");
+  // hidden by its close button, and back on the key
+  await groveTest(electron).closeMain();
+  await waitFor(async () => !(await groveTest(electron).isMainVisible()));
+  await groveTest(electron).summon();
+  await waitFor(() => groveTest(electron).isMainVisible());
+  // with grove chat off there is no key at all
+  await page.evaluate(() => window.grove.updateSettings({ chat: false }));
+  expect(await groveTest(electron).summonKey()).toBeNull();
+});
