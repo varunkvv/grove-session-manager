@@ -956,8 +956,8 @@ test("a message's hover actions: rewind its files, edit and send it again, or fo
   await chat.bringToFront();
   await turn.getByTestId("panel-text").hover();
   await turn.getByTestId("answer-fork").click();
-  await waitFor(async () => {
-    const ids = new Set<string>();
+  const chatIds = async () => {
+    const ids = new Map<string, Page>();
     for (const p of electron.windows()) {
       const id = p.url().includes("#/chat")
         ? await p
@@ -965,10 +965,25 @@ test("a message's hover actions: rewind its files, edit and send it again, or fo
             .getAttribute("data-id")
             .catch(() => null)
         : null;
-      if (id) ids.add(id);
+      if (id) ids.set(id, p);
     }
-    return ids.size >= 3;
+    return ids;
+  };
+  await waitFor(async () => (await chatIds()).size >= 3);
+  // edit and send again from before the first message, into a cold window: an appearance change
+  // just dropped the spare (it comes back 500ms later), so the window loads its page from scratch
+  // and still gets the words
+  const had = new Set((await chatIds()).keys());
+  const pages = new Set(electron.windows());
+  await page.evaluate(() => window.grove.updateSettings({ appearance: "dark" }));
+  await chat.evaluate(() => window.grove.chatFork(null, "start it again"));
+  let cold: Page | undefined;
+  await waitFor(async () => {
+    for (const [id, p] of await chatIds()) if (!had.has(id)) cold = p;
+    return !!cold;
   });
+  expect(pages.has(cold as Page)).toBe(false);
+  await expect((cold as Page).getByTestId("composer")).toHaveValue("start it again");
 });
 
 test("/btw asks on the side: the answer shows beside the conversation and never goes into it", async () => {

@@ -988,6 +988,8 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     async chatTarget(id): Promise<ChatTarget | null> {
       const hit = projects.hitFor(id);
       const fresh = deps.fresh.get(id);
+      // a window that was still loading when it was given a file, the agents or a fork's words
+      const show = deps.chatWindows.takeShow(id);
       if (!hit && fresh) {
         const status = chat.status(id);
         return {
@@ -1010,12 +1012,12 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
           status,
           text: chat.text(id),
           fresh: true,
+          ...(show ? { show } : {}),
         };
       }
       if (!hit) return null;
       const row = rowOf(id);
       const refused = readOnly(id, row);
-      const show = deps.chatWindows.takeShow(id);
       const at = await where(row).catch(() => ({ cwd: row.cwd ?? "" }));
       return {
         session: hit,
