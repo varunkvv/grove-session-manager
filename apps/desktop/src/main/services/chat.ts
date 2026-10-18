@@ -759,6 +759,19 @@ export class ChatHost {
     };
   }
 
+  /**
+   * /btw: answered from what the conversation knows, beside it (probe: the answer comes in the
+   * promise, only a progress frame on the stream). runtime-only in the sdk
+   */
+  async side(id: string, where: ChatWhere, question: string): Promise<string | null> {
+    await this.warm(id, where);
+    const q = this.hosted.get(id)?.q as
+      | (Query & { askSideQuestion?: (q: string) => Promise<{ response: string } | null> })
+      | undefined;
+    if (!q?.askSideQuestion) throw new Error("This claude takes no side questions.");
+    return (await q.askSideQuestion(question))?.response ?? null;
+  }
+
   /** fast mode, this session only (probe: the flag layer takes it, getSettings().effective says so) */
   async setFast(id: string, where: ChatWhere, on: boolean): Promise<void> {
     await this.warm(id, where);

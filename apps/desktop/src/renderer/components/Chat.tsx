@@ -27,6 +27,7 @@ import { CommandPalette, ShortcutSheet } from "./ChatPalette.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -358,6 +359,8 @@ export function ChatApp() {
   /** its claude's MCP servers, read when their menu opens */
   const [mcp, setMcp] = useState<Array<{ name: string; status: string; error?: string }>>();
   const moreButton = useRef<HTMLButtonElement>(null);
+  /** /btw questions asked here, and their answers once they come: beside the conversation, not in it */
+  const [sides, setSides] = useState<Array<{ q: string; a?: string }>>([]);
   /** the title being typed over: null when it is not */
   const [renaming, setRenaming] = useState<string | null>(null);
   /** ⌘F's bar: a number, so a second ⌘F puts the keyboard back in it */
@@ -626,6 +629,20 @@ export function ChatApp() {
     if (mine) {
       setDraft("");
       mine();
+      return;
+    }
+    // /btw: on the side, not into the conversation
+    const btw = own && attached.length === 0 && /^\/btw\s+([\s\S]+)$/.exec(text)?.[1]?.trim();
+    if (btw) {
+      setDraft("");
+      const at = sides.length;
+      setSides((was) => [...was, { q: btw }]);
+      const o = await api().chatSide(btw);
+      setSides((was) =>
+        was.map((x, i) =>
+          i === at ? { q: x.q, a: o.ok ? (o.value ?? "No answer.") : o.error.message } : x,
+        ),
+      );
       return;
     }
     // a background agent mid-turn stops when this takes it over: asked first, as Open asks
@@ -936,6 +953,17 @@ export function ChatApp() {
       keys: { key: "r", meta: true, shift: true },
       off: !canRename,
       run: () => setRenaming(session.title),
+    },
+    {
+      id: "side",
+      group: "Composer",
+      label: "Ask a side question…",
+      keys: { key: "b", meta: true, alt: true },
+      off: !!readOnly,
+      run: () => {
+        setDraft((d) => (d.startsWith("/btw ") ? d : `/btw ${d}`));
+        composer.current?.focus();
+      },
     },
     {
       id: "attach",
@@ -1278,6 +1306,35 @@ export function ChatApp() {
                 {running && s.asks.length === 0 && (
                   <LiveLine status={s} onBackground={() => void toBackground()} />
                 )}
+                {sides.map((side, i) => (
+                  <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: asked in order, gone together
+                    key={i}
+                    className="group/side mt-4 border-l border-line pl-3"
+                    data-testid="chat-side"
+                  >
+                    <h3 className="flex h-6 items-center gap-1 text-sm text-fg-4">
+                      <span className="min-w-0 truncate">Asked on the side: {side.q}</span>
+                      <IconButton
+                        label="Put it away"
+                        className="opacity-0 group-hover/side:opacity-100 focus-visible:opacity-100"
+                        onClick={() => setSides(sides.filter((_, j) => j !== i))}
+                      >
+                        <Icon name="x" size={10} />
+                      </IconButton>
+                    </h3>
+                    {side.a === undefined ? (
+                      <p className="flex items-center gap-1.5 text-sm text-fg-4">
+                        <Spinner size={10} />
+                        Thinking it over
+                      </p>
+                    ) : (
+                      <div className="selectable text-sm text-fg-3">
+                        <Markdown text={side.a} />
+                      </div>
+                    )}
+                  </div>
+                ))}
                 {s.notes?.map((n, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: notes only grow, until the next send
                   <Note key={i} note={n} />

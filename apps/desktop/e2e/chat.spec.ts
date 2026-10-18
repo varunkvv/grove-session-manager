@@ -970,6 +970,25 @@ test("a message's hover actions: rewind its files, edit and send it again, or fo
   });
 });
 
+test("/btw asks on the side: the answer shows beside the conversation and never goes into it", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("composer").press("Meta+Alt+b");
+  await expect(chat.getByTestId("composer")).toHaveValue("/btw ");
+  await chat.getByTestId("composer").pressSequentially("which file was it?");
+  await chat.getByTestId("composer").press("Escape");
+  await chat.getByTestId("composer").press("Enter");
+  const side = chat.getByTestId("chat-side");
+  await expect(side).toContainText("Asked on the side: which file was it?");
+  await expect(side).toContainText("On the side: 18 characters asked.", { timeout: 15_000 });
+  expect(
+    sentToClaude(s.chatLog).filter((l) => (l.in as { type?: string })?.type === "user"),
+  ).toEqual([]);
+  await expect(chat.getByTestId("turn")).toHaveCount(1);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

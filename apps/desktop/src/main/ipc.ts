@@ -768,6 +768,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatSetStyle",
   "chatRewind",
   "chatFork",
+  "chatSide",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1225,6 +1226,12 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
         deps.fresh.set(to, { ...(project ? { project } : {}), where: { ...at, fresh: false } });
       }
       deps.chatWindows.open(to, draft ? { draft } : undefined);
+    },
+
+    async chatSide(id, question) {
+      if (!isText(question, 10_000) || !question.trim())
+        throw new AppError("invalid", "Ask it something.");
+      return chat.side(id, await runWhere(id), question.trim());
     },
 
     async chatSetFast(id, on) {

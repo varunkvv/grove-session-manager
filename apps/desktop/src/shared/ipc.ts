@@ -886,6 +886,11 @@ export interface ChatApi {
    * its own, with `draft` in its composer
    */
   chatFork(upTo: string | null, draft: string): Promise<Outcome>;
+  /**
+   * /btw: a quick question on the side, answered from the conversation without joining it (no
+   * tools, nothing in the transcript). null: no answer
+   */
+  chatSide(question: string): Promise<Outcome<string | null>>;
   /** fast mode on or off, this session only */
   chatSetFast(on: boolean): Promise<Outcome>;
   /** thinking on or off: only a model that can answer without it */
@@ -934,6 +939,7 @@ export const CHAT_CHANNELS = [
   "chatSetStyle",
   "chatRewind",
   "chatFork",
+  "chatSide",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

@@ -248,6 +248,8 @@ function settingsControl(r) {
     mcpRetried = true;
     return {};
   }
+  // a side question, answered beside the conversation (recordings/d-could)
+  if (r.subtype === "side_question") return { response: `On the side: ${r.question.length} characters asked.`, synthetic: false };
   // a rewind, as recordings/d-could answered one: what would change, then done
   if (r.subtype === "rewind_files") {
     return r.dry_run
