@@ -216,6 +216,8 @@ export function ChatApp() {
   const last = useRef("");
   const warmed = useRef(false);
   const [error, setError] = useState<string>();
+  /** what main said that is not a failure: when it will open in the editor */
+  const [note, setNote] = useState<string>();
   const [moving, setMoving] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
@@ -387,7 +389,8 @@ export function ChatApp() {
   const openInEditor = async (when: "now" | "after") => {
     setMoving(false);
     const res = await api().chatOpenInEditor(when);
-    setError(res.ok ? res.value.message : res.error.message);
+    if (res.ok) setNote(res.value.message);
+    else setError(res.error.message);
   };
 
   return (
@@ -526,6 +529,11 @@ export function ChatApp() {
       </div>
       <footer className="shrink-0 border-t border-line">
         <div className={cx(COLUMN, "py-3")}>
+          {note && !error && (
+            <p className="mb-2 text-sm text-fg-3" data-testid="chat-note">
+              {note}
+            </p>
+          )}
           {(error || s.error) && (
             <p className="mb-2 break-words text-sm text-danger" data-testid="chat-error">
               {error ?? s.error}

@@ -28,6 +28,7 @@ export class ChatWindows {
   private readonly byContents = new Map<number, string>();
   private spare: BrowserWindow | null = null;
   private spareOn = false;
+  private refilling: NodeJS.Timeout | null = null;
   private readonly ready = new WeakSet<BrowserWindow>();
 
   constructor(o: ChatWindowsOptions) {
@@ -78,11 +79,14 @@ export class ChatWindows {
   /** the spare exists only while grove chat is on: with it off, no window is added anywhere */
   setSpare(on: boolean): void {
     this.spareOn = on;
-    if (on) this.refill();
-    else {
-      this.spare?.destroy();
-      this.spare = null;
+    if (on) {
+      this.refill();
+      return;
     }
+    if (this.refilling) clearTimeout(this.refilling);
+    this.refilling = null;
+    this.spare?.destroy();
+    this.spare = null;
   }
 
   /** the appearance moved: a spare made for the old one is made again */
@@ -92,10 +96,16 @@ export class ChatWindows {
     this.refill();
   }
 
+  /** quitting: a spare made now would be a window the quit has to wait for */
+  dispose(): void {
+    this.setSpare(false);
+  }
+
   private refill(): void {
-    if (!this.spareOn || this.spare) return;
+    if (!this.spareOn || this.spare || this.refilling) return;
     // after the window that is opening has its turn
-    setTimeout(() => {
+    this.refilling = setTimeout(() => {
+      this.refilling = null;
       if (this.spareOn && !this.spare) this.spare = this.create();
     }, 500);
   }

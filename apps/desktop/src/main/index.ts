@@ -570,6 +570,7 @@ async function start(): Promise<void> {
     }
     quitting = true;
     chat.dispose();
+    chatWindows.dispose();
     clearInterval(trayTick);
     awake.set(false);
     combos.dispose();
