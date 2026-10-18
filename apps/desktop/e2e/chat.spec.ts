@@ -270,6 +270,32 @@ test("closing the window leaves the turn running under grove, and reopening it p
   await expect(chat.getByTestId("turn").last()).toContainText("Interrupted");
 });
 
+test("send turns into stop while a turn runs, and stop ends the turn", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await expect(chat.getByTestId("chat-send")).toBeVisible();
+  await composer.fill(COUNT);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("3");
+  const stop = chat.getByTestId("chat-stop");
+  await expect(stop).toBeVisible();
+  // typing gives send back: what is typed now queues
+  await composer.fill("and then?");
+  await expect(stop).toHaveCount(0);
+  await composer.fill("");
+  await stop.click();
+  await expect(chat.getByTestId("state")).toHaveCount(0);
+  await expect(chat.getByTestId("turn").last()).toContainText("Interrupted");
+  await expect(chat.getByTestId("chat-send")).toBeVisible();
+  const asked = sentToClaude(s.chatLog).map(
+    (l) => l.in as { request?: { subtype?: string } } | undefined,
+  );
+  expect(asked.filter((m) => m?.request?.subtype === "interrupt")).toHaveLength(1);
+});
+
 test("a notification click lands in the session's chat window", async () => {
   const s = seed(true);
   const { app: electron } = await launch(s);

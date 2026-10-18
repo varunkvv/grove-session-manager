@@ -955,13 +955,28 @@ export function ChatApp() {
                           Starting Claude…
                         </span>
                       )}
-                      <SendButton
-                        ready={!!draft.trim() || files.length > 0}
-                        title="Send (Enter). Shift-Enter is a new line"
-                        aria-label="Send"
-                        data-testid="chat-send"
-                        onClick={() => void send()}
-                      />
+                      {running && !draft.trim() && files.length === 0 ? (
+                        <SendButton
+                          ready={false}
+                          stop
+                          title="Stop (Esc). Background agents keep running"
+                          aria-label="Stop"
+                          data-testid="chat-stop"
+                          onClick={() => void api().chatInterrupt()}
+                        />
+                      ) : (
+                        <SendButton
+                          ready={!!draft.trim() || files.length > 0}
+                          title={
+                            running
+                              ? "Queue it (Enter): it goes once this step is done"
+                              : "Send (Enter). Shift-Enter is a new line"
+                          }
+                          aria-label="Send"
+                          data-testid="chat-send"
+                          onClick={() => void send()}
+                        />
+                      )}
                     </div>
                   </ComposerFrame>
                 )}

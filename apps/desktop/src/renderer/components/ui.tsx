@@ -38,7 +38,8 @@ export type IconName =
   | "check"
   | "chart"
   | "file"
-  | "arrow";
+  | "arrow"
+  | "stop";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -71,6 +72,7 @@ const PATHS: Record<IconName, ReactNode> = {
     <path d="M4 1.75h4.75L12 5v8.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1ZM8.75 1.75V5H12" />
   ),
   arrow: <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />,
+  stop: <rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1.5" fill="currentColor" />,
 };
 
 export function Icon({
@@ -1329,23 +1331,31 @@ export function DropOverlay() {
   );
 }
 
-/** the composer's send: the accent once there is something to send */
+/**
+ * the composer's send: the accent once there is something to send. while a turn runs and nothing
+ * is typed it is the stop, neutral: stopping is not the screen's main action
+ */
 export function SendButton({
   ready,
+  stop,
   className,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { ready: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { ready: boolean; stop?: boolean }) {
   return (
     <button
       type="button"
       {...rest}
       className={cx(
         "no-drag fade inline-flex size-7 shrink-0 items-center justify-center rounded-md",
-        ready ? "bg-accent-solid text-on-solid hover:opacity-90" : "bg-raised text-fg-4",
+        stop
+          ? "border border-line-strong bg-raised text-fg-2 hover:text-fg"
+          : ready
+            ? "bg-accent-solid text-on-solid hover:opacity-90"
+            : "bg-raised text-fg-4",
         className,
       )}
     >
-      <Icon name="arrow" size={14} />
+      <Icon name={stop ? "stop" : "arrow"} size={14} />
     </button>
   );
 }
