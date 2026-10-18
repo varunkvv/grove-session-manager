@@ -407,6 +407,8 @@ export interface Api {
   review(project: ProjectId, keys: string[], reviewed: boolean): Promise<Outcome>;
 
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
+  /** grove chat: the session in its own window. one there already comes to the front */
+  openChat(key: SessionKey): Promise<Outcome>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   /**
    * sessions found by their own fields, then by what was said in them. the palette asks with no
@@ -482,6 +484,7 @@ export const INVOKE_CHANNELS = [
   "refresh",
   "review",
   "openSession",
+  "openChat",
   "startAgent",
   "findSessions",
   "listSessions",
@@ -528,6 +531,12 @@ export interface PushEvents {
   toast: ToastMessage;
   /** somewhere to land: `takeLanding` says where */
   "app:land": Record<string, never>;
+  /** a chat window only: it was given a session, or its session moved. `chatTarget` says which */
+  "chat:open": Record<string, never>;
+  /** a chat window only: its session's host side, whole */
+  "chat:status": ChatStatus;
+  /** a chat window only: the answer being streamed, from `at` on */
+  "chat:text": { at: number; text: string };
 }
 
 export const PUSH_CHANNELS = [
@@ -539,15 +548,137 @@ export const PUSH_CHANNELS = [
   "menu:command",
   "toast",
   "app:land",
+  "chat:open",
+  "chat:status",
+  "chat:text",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
+
+// ---------- grove chat: a session grove runs itself, through the agent sdk, in a window of its own
+
+/** Claude Code's permission modes, as the sdk names them */
+export type ChatMode =
+  | "default"
+  | "acceptEdits"
+  | "plan"
+  | "bypassPermissions"
+  | "dontAsk"
+  | "auto";
+
+export interface ChatQuestion {
+  question: string;
+  header: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect: boolean;
+}
+
+/** what a session grove runs waits on the person for. all of it is the agent's words: untrusted */
+export type ChatAsk =
+  | { id: string; kind: "question"; questions: ChatQuestion[] }
+  /** ExitPlanMode. the plan is markdown */
+  | { id: string; kind: "plan"; plan: string }
+  | {
+      id: string;
+      kind: "permission";
+      tool: string;
+      /** Claude Code's own sentence for it, when it gave one */
+      title?: string;
+      /** the input, cut */
+      detail: string;
+      /** Claude Code suggested a rule, so "always" means something */
+      canAlways: boolean;
+    };
+
+export type ChatAnswer =
+  /** question text -> the label picked, or what was typed. several picks are comma-separated */
+  | { kind: "question"; answers: Record<string, string> }
+  | { kind: "plan"; approve: boolean; message?: string }
+  | { kind: "permission"; allow: "once" | "always" | "no"; message?: string };
+
+/** the host's side of a session, sent whole every time it moves. the streamed answer goes apart */
+export interface ChatStatus {
+  /** a claude process is up for it */
+  live: boolean;
+  /** one is being started */
+  starting: boolean;
+  /** a turn is under way */
+  running: boolean;
+  mode?: ChatMode;
+  /** what the mode pill steps through. bypass only when the session started in it */
+  modes: ChatMode[];
+  model?: string;
+  models: Array<{ value: string; label: string }>;
+  asks: ChatAsk[];
+  /** the tool the turn is in, while it is in one */
+  tool?: string;
+  /** sent while a turn ran, and not taken yet */
+  queued: string[];
+  /** what went wrong last: claude did not start, a control was refused */
+  error?: string;
+  /** bumped whenever the transcript moved: the window reads it again */
+  rev: number;
+}
+
+/** the session a chat window is for */
+export interface ChatTarget {
+  session: SessionRef;
+  project?: ProjectId;
+  /** when it last moved */
+  at: number;
+  appearance: AppSettings["appearance"];
+  /** the editor's name, for Open in */
+  editor: string;
+  status: ChatStatus;
+  /** the answer streamed so far */
+  text: string;
+  /** why it cannot be talked to from here: it is live in another app */
+  readOnly?: string;
+}
+
+/**
+ * a chat window's calls. each acts on the window's own session, which main knows by the window:
+ * no call names one, so no page can reach a session it was not opened on
+ */
+export interface ChatApi {
+  /** null for a window that has no session yet: the spare */
+  chatTarget(): Promise<ChatTarget | null>;
+  /** its transcript's turns, as the panel gets them */
+  chatConversation(): Promise<ConversationView | null>;
+  /** the first keystroke: claude starts now, so the first send does not wait for it */
+  chatWarm(): Promise<Outcome>;
+  chatSend(text: string): Promise<Outcome>;
+  chatInterrupt(): Promise<Outcome>;
+  chatSetMode(mode: ChatMode): Promise<Outcome>;
+  chatSetModel(model: string): Promise<Outcome>;
+  chatAnswer(askId: string, answer: ChatAnswer): Promise<Outcome>;
+  /** Open in the editor. `after`: once the turn under way has finished */
+  chatOpenInEditor(when: "now" | "after"): Promise<Outcome<{ message?: string }>>;
+}
+
+export const CHAT_CHANNELS = [
+  "chatTarget",
+  "chatConversation",
+  "chatWarm",
+  "chatSend",
+  "chatInterrupt",
+  "chatSetMode",
+  "chatSetModel",
+  "chatAnswer",
+  "chatOpenInEditor",
+] as const satisfies ReadonlyArray<keyof ChatApi>;
 
 // a method or an event left out of its list typechecks on both sides and is undefined in the page
 type MissingInvoke = Exclude<keyof Api, (typeof INVOKE_CHANNELS)[number]>;
 type MissingPush = Exclude<keyof PushEvents, (typeof PUSH_CHANNELS)[number]>;
-export const CHANNELS_COMPLETE: [MissingInvoke, MissingPush] extends [never, never] ? true : never =
-  true;
+type MissingChat = Exclude<keyof ChatApi, (typeof CHAT_CHANNELS)[number]>;
+export const CHANNELS_COMPLETE: [MissingInvoke, MissingPush, MissingChat] extends [
+  never,
+  never,
+  never,
+]
+  ? true
+  : never = true;
 
-export interface Bridge extends Api {
+export interface Bridge extends Api, ChatApi {
   on<K extends keyof PushEvents>(
     channel: K,
     listener: (payload: PushEvents[K]) => void,

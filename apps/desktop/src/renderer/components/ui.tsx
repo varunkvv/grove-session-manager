@@ -992,6 +992,8 @@ const RUNTIME_WORD: Record<Exclude<Runtime, "vscode">, string> = {
   // claude -p runs and SDK apps: no window to land in
   elsewhere: "Headless",
   closed: "Closed",
+  // grove chat runs it
+  grove: "Grove",
 };
 
 export function RuntimeChip({ runtime }: { runtime: Runtime }) {

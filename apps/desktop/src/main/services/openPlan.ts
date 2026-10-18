@@ -10,11 +10,12 @@ const STOP_CONFIRM = {
 };
 
 /**
- * only a background agent needs anything before the click: a confirm when stopping it would cut a
- * turn short, or no button while Claude Code has not said which background session it is. every
- * other runtime opens, or says why it did not, after the click.
+ * only a background agent and one grove chat runs need anything before the click: a confirm when
+ * stopping it would cut a turn short, or no button while Claude Code has not said which background
+ * session it is. every other runtime opens, or says why it did not, after the click.
  */
-export function openPlanOf(runtime: Runtime, row?: SessionRow): OpenPlan {
+export function openPlanOf(runtime: Runtime, row?: SessionRow, running?: boolean): OpenPlan {
+  if (runtime === "grove") return running ? { confirm: STOP_CONFIRM } : {};
   if (runtime !== "background") return {};
   if (!row?.background?.id) return { disabled: "running in the background" };
   return row.background.state === "working" ? { confirm: STOP_CONFIRM } : {};

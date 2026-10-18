@@ -19,6 +19,12 @@ describe("what Open in {editor} needs before it is pressed", () => {
     }
   });
 
+  it("grove chat runs it: asks only while a turn is under way", () => {
+    expect(openPlanOf("grove", row())).toEqual({});
+    expect(openPlanOf("grove", row(), false)).toEqual({});
+    expect(openPlanOf("grove", row(), true).confirm?.label).toBe("Stop and open");
+  });
+
   it("background with its short id, working: asks before it stops the turn", () => {
     expect(openPlanOf("background", row({ id: "b4f2", state: "working", held: true }))).toEqual({
       confirm: {

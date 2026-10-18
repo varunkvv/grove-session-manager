@@ -19,24 +19,30 @@ import {
   ZED_AGENT_LINK,
   ZED_AGENT_LINK_DELAY_MS,
 } from "@grove/core";
-import type { BrowserWindow, OpenDialogOptions } from "electron";
+import type { BrowserWindow, IpcMainInvokeEvent, OpenDialogOptions } from "electron";
 import * as electron from "electron";
 import type {
   Api,
   AppSettings,
   Bootstrap,
+  ChatAnswer,
+  ChatApi,
+  ChatMode,
+  ChatTarget,
   OpenReport,
   Outcome,
   PathInfoView,
   SessionKey,
   SessionRow,
 } from "../shared/ipc.ts";
+import type { ChatWindows } from "./chatWindows.ts";
 import type { AppEnv } from "./env.ts";
 import { AppError, toOutcomeError } from "./errors.ts";
 import { log } from "./log.ts";
 import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { BackgroundService } from "./services/background.ts";
+import type { ChatHost, ChatWhere } from "./services/chat.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import { compareVersions, type EditorService } from "./services/editor.ts";
@@ -79,6 +85,9 @@ export interface Deps {
   shellEnv: () => Promise<NodeJS.ProcessEnv>;
   pusher: Pusher;
   window: () => BrowserWindow | null;
+  /** grove chat: the sessions grove runs itself, and their windows */
+  chat: ChatHost;
+  chatWindows: ChatWindows;
 }
 
 /**
@@ -94,6 +103,7 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "refresh",
   "review",
   "openSession",
+  "openChat",
   "startAgent",
   "createProject",
   "updateProject",
@@ -197,6 +207,22 @@ function liveElsewhere(runtime: Runtime, editor: Pick<EditorTarget, "id" | "labe
     return "This agent is open in another editor window. Close it there, then open it in Zed.";
   }
   return null;
+}
+
+/**
+ * the supervisor holds it: a resume anywhere else would be refused. `claude stop`, never
+ * `claude rm` - rm reasons about worktrees, and a project's working copies are ones
+ */
+async function releaseBackground(deps: Deps, row: SessionRow): Promise<void> {
+  const id = shortIdOf(deps, row);
+  const out = await deps.background.stop(id);
+  if (out.code !== 0) throw claudeFailure(`claude stop ${id} failed`, out);
+  if (!(await deps.background.waitReleased(row.sessionId))) {
+    throw new AppError(
+      "still-held",
+      `Stopped ${id}, but Claude Code still holds it. Try again in a moment.`,
+    );
+  }
 }
 
 /** a claude command that failed, as something a person can read */
@@ -318,7 +344,13 @@ function buildHandlers(deps: Deps): Handlers {
       }
       const label = editor.current().label;
       // again at call time: the plan the page showed may have moved since
-      const runtime = projects.runtimeFor(row.sessionId, row);
+      let runtime = projects.runtimeFor(row.sessionId, row);
+      if (runtime === "grove") {
+        // one host per session: grove lets go of it before the editor resumes it. the registry
+        // can still list the process a moment after, so it is closed from here on
+        await deps.chat.release(row.sessionId);
+        runtime = "closed";
+      }
       const combo = combos.list().find((c) => c.name === row.comboName);
       const elsewhere = liveElsewhere(runtime, editor.current());
       if (elsewhere) {
@@ -326,21 +358,10 @@ function buildHandlers(deps: Deps): Handlers {
         if (combo) await openWindow(combo);
         return { message: elsewhere };
       }
-      if (runtime === "background") {
-        // the supervisor holds it: the editor's resume would be refused. `claude stop`, never
-        // `claude rm` - rm reasons about worktrees, and a project's working copies are ones
-        const id = shortIdOf(deps, row);
-        const out = await deps.background.stop(id);
-        if (out.code !== 0) throw claudeFailure(`claude stop ${id} failed`, out);
-        if (!(await deps.background.waitReleased(row.sessionId))) {
-          throw new AppError(
-            "still-held",
-            `Stopped ${id}, but Claude Code still holds it. Try again in a moment.`,
-          );
-        }
-      }
-      // landing on a session is looking at it
+      if (runtime === "background") await releaseBackground(deps, row);
+      // landing on a session is looking at it. its chat window, if it had one, is not where it is
       deps.live.markSeen([row.sessionId]);
+      deps.chatWindows.close(row.sessionId);
       const missing = {
         message: `${label} opened without landing: Grove is not set up there.`,
       };
@@ -363,6 +384,18 @@ function buildHandlers(deps: Deps): Handlers {
       if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
       openZedAgentPanelSoon();
       return (await editor.companionInstalled()) ? {} : missing;
+    },
+
+    async openChat(key) {
+      if (deps.settings().chat !== true) {
+        throw new AppError("chat-off", "Grove chat is switched off in Settings.");
+      }
+      const row = requireSession(deps, key);
+      if (!isValidSessionId(row.sessionId)) {
+        throw new AppError("bad-session-id", "That session has no usable ID.");
+      }
+      deps.chatWindows.open(row.sessionId);
+      deps.live.markSeen([row.sessionId]);
     },
 
     async startAgent(raw) {
@@ -629,8 +662,235 @@ function buildHandlers(deps: Deps): Handlers {
   return api;
 }
 
+// ---------- grove chat: calls from a chat window, about its own session only
+
+const CHAT_MODES: ReadonlySet<string> = new Set([
+  "default",
+  "acceptEdits",
+  "plan",
+  "bypassPermissions",
+  "dontAsk",
+  "auto",
+]);
+/** a prompt, a typed answer: generous, and still a bound on what a page can hand claude */
+const CHAT_TEXT_MAX = 200_000;
+const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
+  "chatWarm",
+  "chatSend",
+  "chatInterrupt",
+  "chatSetMode",
+  "chatSetModel",
+  "chatAnswer",
+  "chatOpenInEditor",
+]);
+
+type ChatHandlers = {
+  [K in keyof ChatApi]: (
+    sessionId: string,
+    ...args: Parameters<ChatApi[K]>
+  ) => Promise<Unwrap<Awaited<ReturnType<ChatApi[K]>>>>;
+};
+
+const isText = (v: unknown, max = CHAT_TEXT_MAX): v is string =>
+  typeof v === "string" && v.length <= max;
+
+/** what the page sent as an answer, held to the shapes the host knows. anything else is refused */
+function parseAnswer(raw: unknown): ChatAnswer {
+  const a = raw as Record<string, unknown> | null;
+  const bad = () => new AppError("invalid", "That is not an answer.");
+  if (!a || typeof a !== "object") throw bad();
+  const message = a.message === undefined ? undefined : isText(a.message) ? a.message : null;
+  if (message === null) throw bad();
+  if (a.kind === "question") {
+    const answers = a.answers as Record<string, unknown> | null;
+    if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw bad();
+    const clean: Record<string, string> = {};
+    for (const [q, v] of Object.entries(answers)) {
+      if (!isText(q, 4000) || !isText(v)) throw bad();
+      clean[q] = v;
+    }
+    return { kind: "question", answers: clean };
+  }
+  if (a.kind === "plan" && typeof a.approve === "boolean") {
+    return { kind: "plan", approve: a.approve, ...(message ? { message } : {}) };
+  }
+  if (a.kind === "permission" && (a.allow === "once" || a.allow === "always" || a.allow === "no")) {
+    return { kind: "permission", allow: a.allow, ...(message ? { message } : {}) };
+  }
+  throw bad();
+}
+
+function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
+  const { sessions, projects, combos, chat, editor } = deps;
+
+  /** the newest transcript of it: a session id can have more than one */
+  const rowOf = (id: string): SessionRow => {
+    const row = sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
+    if (!row) throw new AppError("no-session", "That session is no longer in the list.");
+    return row;
+  };
+
+  /** the rule vs code and zed use: a project's own sessions run at its root, with its folders */
+  async function whereOf(row: SessionRow): Promise<ChatWhere> {
+    const combo = combos.list().find((c) => c.name === row.comboName);
+    const where =
+      combo && row.comboRelation === "root"
+        ? { cwd: combo.root, dirs: workspaceFolders(combo).slice(1) }
+        : { cwd: row.cwd ?? "", dirs: [] };
+    if (!(await isDirectory(where.cwd))) {
+      throw new AppError("cwd-missing", "That session's folder no longer exists.");
+    }
+    return where;
+  }
+
+  /** why it cannot be talked to from here: another app has it. one process per session */
+  function readOnly(id: string, row: SessionRow): string | undefined {
+    const runtime = projects.runtimeFor(id, row);
+    const label = editor.current().label;
+    if (runtime === "vscode") return `It is open in ${label}. Close it there to talk to it here.`;
+    if (runtime === "terminal")
+      return "It is running in a terminal. Quit it there to talk to it here.";
+    if (runtime === "elsewhere") {
+      return "It is running somewhere else: Zed, claude -p or another app. Talk to it here once it has finished.";
+    }
+    return undefined;
+  }
+
+  /** before claude starts on it here: nothing else may have it */
+  async function claim(id: string, row: SessionRow): Promise<ChatWhere> {
+    const refused = readOnly(id, row);
+    if (refused) throw new AppError("live-elsewhere", refused);
+    if (projects.runtimeFor(id, row) === "background") await releaseBackground(deps, row);
+    return whereOf(row);
+  }
+
+  return {
+    async chatTarget(id): Promise<ChatTarget | null> {
+      const hit = projects.hitFor(id);
+      if (!hit) return null;
+      const row = rowOf(id);
+      const refused = readOnly(id, row);
+      return {
+        session: hit,
+        ...(hit.project ? { project: hit.project } : {}),
+        at: hit.activityMs,
+        appearance: deps.settings().appearance,
+        editor: editor.current().label,
+        status: chat.status(id),
+        text: chat.text(id),
+        ...(refused ? { readOnly: refused } : {}),
+      };
+    },
+
+    async chatConversation(id) {
+      const row = sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
+      if (!row) return null;
+      return readConversation(row.key).then(conversationView, () => null);
+    },
+
+    async chatWarm(id) {
+      const row = rowOf(id);
+      // a background agent is stopped by a send, which asks first. a keystroke never stops one
+      if (projects.runtimeFor(id, row) === "background" || readOnly(id, row)) return;
+      await chat.warm(id, await whereOf(row));
+    },
+
+    async chatSend(id, text) {
+      if (!isText(text) || !text.trim()) throw new AppError("invalid", "There is nothing to send.");
+      const row = rowOf(id);
+      const where = chat.hosts(id) ? await whereOf(row) : await claim(id, row);
+      deps.live.markSeen([id]);
+      await chat.send(id, where, text);
+    },
+
+    async chatInterrupt(id) {
+      await chat.interrupt(id);
+    },
+
+    async chatSetMode(id, mode) {
+      if (typeof mode !== "string" || !CHAT_MODES.has(mode)) {
+        throw new AppError("invalid", "That is not a permission mode.");
+      }
+      const row = rowOf(id);
+      await chat.setMode(
+        id,
+        chat.hosts(id) ? await whereOf(row) : await claim(id, row),
+        mode as ChatMode,
+      );
+    },
+
+    async chatSetModel(id, model) {
+      if (!isText(model, 200) || !model.trim())
+        throw new AppError("invalid", "That is not a model.");
+      await chat.setModel(id, model);
+    },
+
+    async chatAnswer(id, askId, raw) {
+      if (!isText(askId, 100)) throw new AppError("invalid", "That is not a question.");
+      deps.live.markSeen([id]);
+      try {
+        chat.answer(id, askId, parseAnswer(raw));
+      } catch (e) {
+        throw e instanceof AppError
+          ? e
+          : new AppError("stale", e instanceof Error ? e.message : String(e));
+      }
+    },
+
+    async chatOpenInEditor(id, when) {
+      const row = rowOf(id);
+      const label = editor.current().label;
+      if (when === "after" && chat.running(id)) {
+        chat.afterTurn(id, () => {
+          handlers
+            .openSession(row.key)
+            .catch((e) => pusher(deps, `Could not open it in ${label}`, e));
+        });
+        return { message: `Opens in ${label} once this turn has finished` };
+      }
+      return handlers.openSession(row.key);
+    },
+  };
+}
+
+/** what went wrong after the page stopped waiting, as a toast in the main window */
+function pusher(deps: Deps, title: string, e: unknown): void {
+  log.warn(`${title}:`, e);
+  deps.pusher.send("toast", { level: "error", title, body: toOutcomeError(e).message });
+}
+
+function registerChatIpc(deps: Deps, handlers: Handlers): void {
+  const chat = buildChatHandlers(deps, handlers);
+  const api = chat as unknown as Record<
+    string,
+    (id: string, ...args: unknown[]) => Promise<unknown>
+  >;
+  for (const name of Object.keys(api) as Array<keyof ChatApi>) {
+    electron.ipcMain.handle(`grove:${name}`, async (event: IpcMainInvokeEvent, ...args) => {
+      if (!isTrustedUrl(event.senderFrame?.url, deps.env.devServerUrl)) throw new Error("blocked");
+      const outcome = CHAT_OUTCOMES.has(name);
+      try {
+        // the window's own session, from main's map: never one the page names
+        const id = deps.chatWindows.sessionOf(event.sender);
+        if (!id) {
+          if (name === "chatTarget" || name === "chatConversation") return null;
+          throw new AppError("no-chat", "This window has no session.");
+        }
+        const value = await api[name]?.(id, ...args);
+        return outcome ? { ok: true, value } : value;
+      } catch (e) {
+        const error = toOutcomeError(e);
+        if (error.code === "internal") log.error(`ipc ${name}:`, e);
+        if (!outcome) throw new Error(error.message);
+        return { ok: false, error };
+      }
+    });
+  }
+}
+
 export function registerIpc(deps: Deps): Handlers {
   const handlers = buildHandlers(deps);
+  registerChatIpc(deps, handlers);
   const api = handlers as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
   for (const name of Object.keys(api) as Array<keyof Api>) {
     electron.ipcMain.handle(`grove:${name}`, async (event, ...args) => {

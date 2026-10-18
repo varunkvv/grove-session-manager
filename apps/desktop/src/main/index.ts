@@ -13,6 +13,7 @@ import {
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
 import type { MenuCommandId } from "../shared/ipc.ts";
+import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { registerIpc } from "./ipc.ts";
@@ -25,6 +26,7 @@ import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer } from "./protocol.ts";
 import { Pusher } from "./push.ts";
 import { BackgroundService } from "./services/background.ts";
+import { ChatHost } from "./services/chat.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
@@ -63,6 +65,10 @@ let win: BrowserWindow | null = null;
 // a tray with no reference is collected and disappears
 let tray: Tray | null = null;
 let quitting = false;
+/** the person said yes to quitting with chats mid-turn */
+let quitConfirmed = false;
+/** under a test root, the quits that would have asked */
+let quitAsks = 0;
 
 /** the window, wherever it was: hidden by its close button, minimised, or behind something */
 function showMain(): void {
@@ -145,6 +151,7 @@ async function start(): Promise<void> {
       settings.notifications !== false &&
       (!!appEnv.customRoot || electron.Notification.isSupported()),
     focused: () => !!win?.isFocused(),
+    watching: (sessionId) => chatWindows.focusedSession() === sessionId,
     create: (n) => {
       // grove's own chime in place of the macOS default. macOS still decides whether it sounds
       if (!appEnv.customRoot) {
@@ -160,6 +167,8 @@ async function start(): Promise<void> {
    * project has no screen in grove, so it opens in the editor
    */
   const landOn = (sessionId: string) => {
+    // grove chat: the session's own window, which is where it is talked to
+    if (settings.chat === true && sessions.byId(sessionId)[0]) return chatWindows.open(sessionId);
     const target = projects.landing(sessionId);
     if (target) return void reveals.land(target);
     const session = sessions.byId(sessionId)[0];
@@ -258,6 +267,29 @@ async function start(): Promise<void> {
     slots,
   });
 
+  // grove chat. nothing of it runs, and the sdk is not even loaded, until a chat window sends
+  const chat = new ChatHost({
+    claudeBin: async () => {
+      // a test root never runs the real claude, only a stub it names
+      if (appEnv.customRoot && appEnv.claudeBinOverride === undefined) {
+        throw new Error("A test root runs no claude but the one GROVE_CLAUDE_BIN names.");
+      }
+      return resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath);
+    },
+    env: () => loginEnv.get(),
+    // where a session runs moved: its rows say Grove, or no longer do
+    onChange: () => projects.sessionsChanged(),
+  });
+  const chatWindows = new ChatWindows({
+    preload: preloadFile,
+    url: () => entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance),
+    attach: (id, contents) => chat.attach(id, contents),
+    detach: (id, contents) => chat.detach(id, contents),
+    // looking at it in its own window is landing on it
+    focused: (id) => live.markSeen([id]),
+    fixedSize: !!appEnv.customRoot,
+  });
+
   // packaged, or under GROVE_ROOT. a dev build next to the installed app leaves its projects, and
   // what 0.10 installed in them, alone
   const cleanRecord = electron.app.isPackaged || appEnv.customRoot;
@@ -354,6 +386,7 @@ async function start(): Promise<void> {
     reviewed,
     recaps,
     titles,
+    chat,
     onInbox: (inbox) => {
       pusher.send("inbox:changed", { ...inbox, rev: pusher.nextRev("inbox") });
       showTray();
@@ -377,6 +410,8 @@ async function start(): Promise<void> {
       closeMain: () => win?.close(),
       isMainVisible: () => !!win?.isVisible(),
       notifications: () => noted,
+      /** how many busy chats a quit would have asked about */
+      quitAsks: () => quitAsks,
     };
   }
 
@@ -422,7 +457,12 @@ async function start(): Promise<void> {
       if (s.editor !== settings.editor) menu(resolveEditor(s).label);
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
+      const chatMoved = (s.chat === true) !== (settings.chat === true);
+      const lookMoved = s.appearance !== settings.appearance;
       settings = s;
+      // the spare chat window is there only while grove chat is on, and in the page's appearance
+      if (chatMoved) chatWindows.setSpare(s.chat === true);
+      else if (lookMoved && s.chat === true) chatWindows.remakeSpare();
       if (recapsMoved) projects.recapsSwitched();
       if (recapsMoved || renamesMoved) {
         sessions.retitle();
@@ -448,6 +488,8 @@ async function start(): Promise<void> {
     shellEnv: () => loginEnv.fresh(),
     pusher,
     window: () => win,
+    chat,
+    chatWindows,
   });
 
   win = await createMainWindow({
@@ -474,6 +516,8 @@ async function start(): Promise<void> {
   });
   // work that would only slow down the first paint. it fires for a hidden window too
   win.webContents.once("did-finish-load", () => {
+    // after the main window, which has to be the first window there is
+    chatWindows.setSpare(settings.chat === true);
     void sessions.refresh();
     sessions.start();
     combos.watchFile();
@@ -512,8 +556,20 @@ async function start(): Promise<void> {
   electron.app.on("activate", showMain);
   // only while quitting now: the close button hides the window
   electron.app.on("window-all-closed", () => electron.app.quit());
-  electron.app.on("before-quit", () => {
+  electron.app.on("before-quit", (e) => {
+    // a chat mid-turn is cut short by a quit, an update's included: asked first, once
+    const busy = chat.busy().length;
+    if (busy > 0 && !quitConfirmed) {
+      e.preventDefault();
+      void confirmQuit(busy).then((yes) => {
+        if (!yes) return;
+        quitConfirmed = true;
+        electron.app.quit();
+      });
+      return;
+    }
     quitting = true;
+    chat.dispose();
     clearInterval(trayTick);
     awake.set(false);
     combos.dispose();
@@ -521,6 +577,27 @@ async function start(): Promise<void> {
     projects.dispose();
     void sessions.dispose();
   });
+}
+
+/** quit with chats mid-turn? a test root asks nobody and counts it */
+async function confirmQuit(busy: number): Promise<boolean> {
+  if (appEnv.customRoot) {
+    quitAsks += 1;
+    return true;
+  }
+  const { response } = await electron.dialog.showMessageBox({
+    type: "warning",
+    message:
+      busy === 1
+        ? "Claude is still working in a chat."
+        : `Claude is still working in ${busy} chats.`,
+    detail:
+      "Quitting stops it mid-turn. The conversation is kept, and your next message there carries on from it.",
+    buttons: ["Quit", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
 }
 
 process.on("unhandledRejection", (reason) => log.error("unhandled rejection:", reason));

@@ -29,6 +29,7 @@ import type {
   TaskView,
 } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
+import type { ChatHost } from "./chat.ts";
 import type { ComboService } from "./combos.ts";
 import type { Interruption } from "./interrupted.ts";
 import type { LiveService } from "./live.ts";
@@ -53,6 +54,8 @@ export interface ProjectsOptions {
   recaps?: Pick<RecapService, "view" | "want">;
   /** where to ask for a session's title and description. they come back on its row */
   titles?: Pick<TitleService, "want">;
+  /** grove chat's host: the sessions grove runs itself, known by id before any registry is read */
+  chat?: Pick<ChatHost, "hosts" | "running">;
   /** a row came, went or changed */
   onInbox?: (inbox: InboxView) => void;
   /** what a project's sessions list shows may have changed: the page asks again */
@@ -145,6 +148,13 @@ export class ProjectsService {
       const project = row && projectOf(row, index);
       if (project) this.o.onStopped?.({ sessionId, title: row.title, project });
     }
+  }
+
+  /** one session as the lists have it, whether a list shows it or not: what a chat window names */
+  hitFor(sessionId: string): SessionHit | undefined {
+    const index = this.index(this.list().projects);
+    const row = index.rows.get(sessionId);
+    return row && this.hit(row, index);
   }
 
   /** the project a session's folder is in */
@@ -460,7 +470,7 @@ export class ProjectsService {
       where: (projectOf(row, index) && row.comboName) || row.projectLabel,
       runtime,
       branch: row.gitBranch,
-      open: openPlanOf(runtime, row),
+      open: openPlanOf(runtime, row, this.o.chat?.running(row.sessionId)),
       recap: this.o.recaps?.view(row.key),
       ...(row.description ? { description: row.description } : {}),
     };
@@ -488,8 +498,12 @@ export class ProjectsService {
     };
   }
 
-  /** where a session's process is right now. openSession asks again at call time */
+  /**
+   * where a session's process is right now. openSession asks again at call time. grove's own come
+   * first: claude's registry calls them sdk apps, which is everyone's
+   */
   runtimeFor(id: string, row?: SessionRow): Runtime {
+    if (this.o.chat?.hosts(id)) return "grove";
     return runtimeOf({
       held: row?.background?.held,
       holder: this.o.live.holder(id),

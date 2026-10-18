@@ -14,6 +14,8 @@ export interface NotifyOptions {
   enabled: () => boolean;
   /** the main window has focus */
   focused: () => boolean;
+  /** this session's own chat window has the keyboard: the person is looking right at it */
+  watching?: (sessionId: string) => boolean;
   create: (n: { title: string; body: string }) => Note;
   /** where a folded stopped notification lands */
   land: (target: LandingTarget) => void;
@@ -78,7 +80,7 @@ export class Notifier {
   /** permission, failed, and a turn over a minute finished */
   live(status: LiveStatus, s: SessionNote): void {
     const body = liveBody(status, s.needs);
-    if (!body) return;
+    if (!body || this.o.watching?.(s.sessionId)) return;
     const show = () => this.post(s.project, s.title ?? "Claude session", body, s.click);
     if (status.state === "waiting") this.once(s.sessionId, show);
     else show();

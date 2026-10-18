@@ -1,12 +1,12 @@
 // the whole bridge. sandboxed, so this must stay one bundled file that only requires electron.
 // ipcRenderer itself never crosses into the page: the page gets named methods and nothing else.
 import { contextBridge, ipcRenderer } from "electron";
-import { INVOKE_CHANNELS, PUSH_CHANNELS } from "../shared/ipc.ts";
+import { CHAT_CHANNELS, INVOKE_CHANNELS, PUSH_CHANNELS } from "../shared/ipc.ts";
 
 const pushChannels: ReadonlySet<string> = new Set(PUSH_CHANNELS);
 
 const bridge: Record<string, unknown> = {};
-for (const name of INVOKE_CHANNELS) {
+for (const name of [...INVOKE_CHANNELS, ...CHAT_CHANNELS]) {
   bridge[name] = (...args: unknown[]) => ipcRenderer.invoke(`grove:${name}`, ...args);
 }
 

@@ -2,8 +2,11 @@
 // pure: the renderer imports this through @grove/core/pure.
 import type { LiveStatus } from "../types.ts";
 
-/** where a session's process is right now */
-export type Runtime = "vscode" | "terminal" | "background" | "elsewhere" | "closed";
+/**
+ * where a session's process is right now. `grove`: grove chat runs it, which only grove itself
+ * knows. runtimeOf never says it
+ */
+export type Runtime = "vscode" | "terminal" | "background" | "elsewhere" | "closed" | "grove";
 
 /** what the inbox needs about one session. a SessionRow in main is one */
 export interface SessionFacts {
