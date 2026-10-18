@@ -4,7 +4,7 @@
 // grove chat window a path is a file of the session's: an image drawn through <img> from main's
 // session scheme, which serves only the session's folders, or a link that opens the viewer.
 import { fileKind } from "@grove/core/pure";
-import { Fragment, memo, type ReactNode, useEffect, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
@@ -13,6 +13,7 @@ import { highlight, highlighted, type Run } from "../logic/highlight.ts";
 import { localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { MermaidDiagram } from "./Mermaid.tsx";
+import { CopyButton } from "./ui.tsx";
 
 /** an image the agent pointed at: one of the session's files, in a chat window. else its words */
 function Image({ src, alt }: { src?: string; alt?: string }) {
@@ -99,7 +100,29 @@ function Code({ className, children }: { className?: string; children?: ReactNod
   return <Highlighted lang={lang} code={code} />;
 }
 
+/**
+ * a fenced block, in a chat window, with a copy button that shows on hover. the words copied are
+ * the block's own, read from what is drawn when it is clicked
+ */
+function Pre({ children }: { children?: ReactNode }) {
+  const scope = useChatScope();
+  const box = useRef<HTMLPreElement>(null);
+  if (!scope) return <pre>{children}</pre>;
+  return (
+    <div className="group/code relative">
+      <pre ref={box}>{children}</pre>
+      <CopyButton
+        label="Copy code"
+        text={() => box.current?.innerText ?? ""}
+        // a diagram is drawn, not words: nothing to copy
+        className="absolute top-1.5 right-1.5 bg-raised opacity-0 group-hover/code:opacity-100 group-has-[.md-diagram]/code:hidden focus-visible:opacity-100"
+      />
+    </div>
+  );
+}
+
 const components: Components = {
+  pre: ({ children }) => <Pre>{children}</Pre>,
   a: ({ href, children }) => {
     const url = webLink(href);
     if (!url) return <FileLink href={href}>{children}</FileLink>;

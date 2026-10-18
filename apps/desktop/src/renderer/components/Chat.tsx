@@ -601,6 +601,9 @@ export function ChatApp() {
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
+  /** the last thing claude said in full, for ⇧⌘C */
+  const lastAnswer = rows.findLast((r): r is TurnView => r.kind === "turn" && !!r.text)?.text;
+
   /** everything the window does: the palette lists it, the sheet shows its keys, the keys run it */
   const actions: ChatAction[] = [
     {
@@ -611,6 +614,14 @@ export function ChatApp() {
       // a new session has nothing to open in the editor until it has said something
       off: !!target.fresh,
       run: toEditor,
+    },
+    {
+      id: "copy-answer",
+      group: "Message",
+      label: "Copy the last answer",
+      keys: { key: "c", meta: true, shift: true },
+      off: !lastAnswer,
+      run: () => void api().chatCopy(lastAnswer ?? ""),
     },
     {
       id: "attach",

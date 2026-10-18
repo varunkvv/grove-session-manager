@@ -754,6 +754,7 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
   "auto",
 ]);
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
+  "chatCopy",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1136,6 +1137,11 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
       if (!file) return null;
       return readAgentTimeline(file).then(agentView, () => null);
+    },
+
+    async chatCopy(_id, text) {
+      if (!isText(text, 5_000_000)) throw new AppError("invalid", "That is too much to copy.");
+      electron.clipboard.writeText(text);
     },
 
     async chatStepDiff(id, toolUseId) {

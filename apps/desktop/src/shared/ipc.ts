@@ -822,6 +822,8 @@ export interface ChatApi {
   chatStopAgent(id: string): Promise<Outcome>;
   /** what one of the session's edits changed, by its call's id. null: not an edit of its */
   chatStepDiff(toolUseId: string): Promise<string[] | null>;
+  /** words onto the clipboard: an answer, a code block, the conversation */
+  chatCopy(text: string): Promise<Outcome>;
   chatAnswer(askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** Open in the editor. `after`: once the turn under way has finished */
   chatOpenInEditor(when: "now" | "after"): Promise<Outcome<{ message?: string }>>;
@@ -846,6 +848,7 @@ export const CHAT_CHANNELS = [
   "chatAgent",
   "chatStopAgent",
   "chatStepDiff",
+  "chatCopy",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

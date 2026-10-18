@@ -41,7 +41,8 @@ export type IconName =
   | "file"
   | "arrow"
   | "stop"
-  | "more";
+  | "more"
+  | "copy";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -75,6 +76,12 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   arrow: <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />,
   stop: <rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1.5" fill="currentColor" />,
+  copy: (
+    <>
+      <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" />
+      <path d="M10.75 5.25V3.75a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.5" />
+    </>
+  ),
   more: (
     <>
       <circle cx="3.5" cy="8" r="0.9" fill="currentColor" />
@@ -1282,6 +1289,39 @@ export function Diff({ lines, className }: { lines: readonly string[]; className
         </span>
       ))}
     </pre>
+  );
+}
+
+/** puts words on the clipboard, and says so with a check for a moment */
+export function CopyButton({
+  text,
+  label = "Copy",
+  className,
+}: {
+  /** what to copy, asked for at the click: a code block reads its own words then */
+  text: () => string;
+  label?: string;
+  className?: string;
+}) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(t);
+  }, [done]);
+  return (
+    <IconButton
+      label={done ? "Copied" : label}
+      data-testid="copy"
+      className={className}
+      onClick={() =>
+        void window.grove.chatCopy(text()).then((o) => {
+          if (o.ok) setDone(true);
+        })
+      }
+    >
+      <Icon name={done ? "check" : "copy"} size={12} />
+    </IconButton>
   );
 }
 

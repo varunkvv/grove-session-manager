@@ -404,6 +404,33 @@ test("⌘K runs any action by name, ⌘/ lists every key, and the header's … h
   ]);
 });
 
+test("an answer and a code block copy from a button on hover, and ⇧⌘C copies the last answer", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  const { id, root } = writeProject(fx, { name: "chat-trial" });
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+    reply: "Run this:\n\n```sh\npnpm test retry\n```\n\nIt passes now.",
+  });
+  app = await launchApp(fx, { GROVE_CLAUDE_BIN: writeFakeClaude(fx.dir).bin });
+  await openRow(app.page, id);
+  const chat = await chatWindow(app.app, SID);
+  const clipboard = () => app.app.evaluate(({ clipboard }) => clipboard.readText());
+  const answer = chat.getByTestId("panel-text");
+  await answer.hover();
+  await answer.getByTestId("answer-actions").getByTestId("copy").click();
+  await expect.poll(clipboard).toContain("It passes now.");
+  await answer.locator("pre").hover();
+  await answer.locator("pre").locator("..").getByTestId("copy").click();
+  await expect.poll(clipboard).toBe("pnpm test retry");
+  await app.app.evaluate(({ clipboard }) => clipboard.writeText(""));
+  await chat.getByTestId("composer").press("Meta+Shift+c");
+  await expect.poll(clipboard).toContain("```sh");
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

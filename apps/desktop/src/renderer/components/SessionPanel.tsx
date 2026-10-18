@@ -23,6 +23,8 @@ import {
   AgentState,
   Button,
   ComposerFrame,
+  CopyButton,
+  cx,
   EscButton,
   Icon,
   Mono,
@@ -276,7 +278,10 @@ export function Turn({
             <StepList steps={turn.steps} before={turn.stepsBefore} going={going} />
           )}
           {detail && turn.thought && <Thought text={turn.thought.text} ms={turn.thought.ms} />}
-          <div className="mt-1" data-testid={last ? "panel-text" : undefined}>
+          <div
+            className={cx("mt-1", detail && "group/answer relative")}
+            data-testid={last ? "panel-text" : undefined}
+          >
             {turn.text ? (
               <Markdown
                 text={turn.text}
@@ -286,6 +291,15 @@ export function Turn({
             ) : (
               // grove chat says what it is doing under the turn instead
               last && !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
+            )}
+            {/* grove chat: what can be done with an answer, on hover, in the gap under it */}
+            {detail && scope && turn.text && !going && (
+              <div
+                className="absolute top-full right-0 flex gap-0.5 pt-0.5 opacity-0 group-hover/answer:opacity-100 focus-within:opacity-100"
+                data-testid="answer-actions"
+              >
+                <CopyButton label="Copy answer" text={() => turn.text ?? ""} />
+              </div>
             )}
           </div>
         </>
