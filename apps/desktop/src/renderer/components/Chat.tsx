@@ -614,6 +614,11 @@ export function ChatApp() {
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
+  const toBackground = async () => {
+    const o = await api().chatBackground();
+    if (!o.ok) setError(o.error.message);
+  };
+
   const unqueue = async (q: ChatStatus["queued"][number]) => {
     const o = await api().chatUnqueue(q.id);
     if (!o.ok) return setError(o.error.message);
@@ -698,6 +703,14 @@ export function ChatApp() {
       keys: { key: "e", meta: true, shift: true },
       off: !!readOnly,
       run: () => modelButton.current && openMenu("model", modelButton.current),
+    },
+    {
+      id: "background",
+      group: "Composer",
+      label: "Run the tool in the background",
+      keys: { key: "b", ctrl: true },
+      off: !s.tool?.bg,
+      run: () => void toBackground(),
     },
     {
       id: "stop",
@@ -927,7 +940,9 @@ export function ChatApp() {
                   ),
                 )}
                 {/* a card says what it waits on: the live line would only say its tool's name */}
-                {running && s.asks.length === 0 && <LiveLine status={s} />}
+                {running && s.asks.length === 0 && (
+                  <LiveLine status={s} onBackground={() => void toBackground()} />
+                )}
                 {s.notes?.map((n, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: notes only grow, until the next send
                   <Note key={i} note={n} />

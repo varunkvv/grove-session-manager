@@ -3,7 +3,7 @@
 import { formatDuration, toolLabel } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { ChatStatus } from "../../shared/ipc.ts";
-import { Mono, Spinner } from "./ui.tsx";
+import { Button, Mono, Spinner } from "./ui.tsx";
 
 /** a second or more, as a step's time says it */
 const took = (ms: number) => (ms >= 1000 ? formatDuration(ms) : "");
@@ -35,8 +35,11 @@ export function Clock({ since }: { since: number }) {
 export function LiveLine({
   status: s,
   className = "mt-2",
+  onBackground,
 }: {
   status: ChatStatus;
+  /** the tool can go on in the background (⌃B): a quiet link says so */
+  onBackground?: () => void;
   className?: string;
 }) {
   const now = useTick();
@@ -70,6 +73,17 @@ export function LiveLine({
             <span className="shrink-0 tabular-nums">
               {formatDuration(Math.max(0, now - s.tool.since))}
             </span>
+            {s.tool.bg && onBackground && (
+              <Button
+                variant="link"
+                className="ml-1 shrink-0 font-normal text-fg-3"
+                data-testid="chat-background"
+                title="⌃B"
+                onClick={onBackground}
+              >
+                Run in background
+              </Button>
+            )}
           </>
         )
       )}

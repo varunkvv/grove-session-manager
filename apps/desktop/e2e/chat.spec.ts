@@ -18,6 +18,9 @@ const COUNT = "Count from 1 to 400, one number per line, nothing else.";
 const PLAN =
   "Plan how to create notes.txt containing the word hi in the current folder. Keep the plan to three short steps, then present it with ExitPlanMode. Do not read or write any files.";
 const WRITE = "Create a file named perm.txt containing the letter x, using the Write tool.";
+/** recordings/d-background: a foreground Bash, sent to the background once claude makes it a task */
+const BACKGROUND =
+  "Run the Bash command `sleep 10 && echo bg-done` in the foreground (do not set run_in_background), then reply with one short line.";
 /** recordings/c-start: haiku 5.5 thinks, with the summary text */
 const THINK = "Think step by step, then reply with just the number: 23*19 + 7^3 - 45?";
 /** recordings/c-denied: under dontAsk a Write is turned down without asking */
@@ -618,6 +621,24 @@ test("a refusal is a card that switches models or gives the prompt back, and a f
         "edit_prompt",
     ),
   );
+});
+
+test("a long tool offers to run in the background, and goes there", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("composer").fill(BACKGROUND);
+  await chat.getByTestId("composer").press("Enter");
+  const link = chat.getByTestId("chat-background");
+  await expect(link).toBeVisible({ timeout: 15_000 });
+  await link.click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) => (l.in as { request?: { subtype?: string } })?.request?.subtype === "background_tasks",
+    ),
+  );
+  await expect(chat.getByTestId("chat-stop")).toHaveCount(0, { timeout: 20_000 });
 });
 
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {

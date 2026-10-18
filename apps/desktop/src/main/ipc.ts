@@ -756,6 +756,7 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatCopy",
   "chatUnqueue",
+  "chatBackground",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1140,6 +1141,10 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
       if (!file) return null;
       return readAgentTimeline(file).then(agentView, () => null);
+    },
+
+    async chatBackground(id) {
+      return chat.background(id);
     },
 
     async chatUnqueue(id, uuid) {

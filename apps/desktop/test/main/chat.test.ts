@@ -65,6 +65,10 @@ const QUESTIONS = [
   "Then reply with exactly three lines, one per question, each 'header: what I picked'. Do not use any other tool.",
 ].join("\n");
 
+/** recordings/d-background: a foreground Bash claude makes a task of, then sent to the background */
+const BACKGROUND =
+  "Run the Bash command `sleep 10 && echo bg-done` in the foreground (do not set run_in_background), then reply with one short line.";
+
 interface Setup {
   host: ChatHost;
   where: { cwd: string; dirs: string[] };
@@ -482,6 +486,30 @@ describe("grove chat's host", () => {
     expect(s.host.status(SESSION).queued.map((q) => q.text)).toEqual([AFTER]);
     await s.host.interrupt(SESSION);
     await until(() => s.host.status(SESSION).queued.length === 0, "the queue to clear");
+  });
+
+  it("offers the background for a tool only once claude has it as a task, and sends it there", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, BACKGROUND);
+    await until(() => s.host.status(SESSION).tool?.name === "Bash", "the Bash");
+    // not a task yet: nothing to move
+    expect(await s.host.background(SESSION)).toBe(false);
+    await until(() => s.host.status(SESSION).tool?.bg, "the Bash as a task");
+    expect(await s.host.background(SESSION)).toBe(true);
+    const asked = await until(
+      () =>
+        s
+          .log()
+          .find(
+            (l) =>
+              (l.in as { request?: { subtype?: string } })?.request?.subtype === "background_tasks",
+          ),
+      "the background request",
+    );
+    expect((asked.in as { request: { tool_use_id?: string } }).request.tool_use_id).toMatch(
+      /^toolu_/,
+    );
+    await turnEnded(s);
   });
 
   it("takes back a queued message by the uuid it went with, before claude gets to it", async () => {

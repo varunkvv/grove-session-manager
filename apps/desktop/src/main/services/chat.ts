@@ -464,6 +464,8 @@ interface Hosted {
   watching?: FSWatcher;
   /** its subagents, by task id, as the task frames say */
   agents: Map<string, ChatAgent>;
+  /** the task the tool under way runs as, once claude has made it one */
+  toolTask?: string;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -685,6 +687,17 @@ export class ChatHost {
     const gone = (await q?.cancelAsyncMessage?.(uuid).catch(() => false)) === true;
     if (gone) this.set(h, { queued: h.status.queued.filter((x) => x.id !== uuid) });
     return gone;
+  }
+
+  /**
+   * ⌃B: the tool under way goes on in the background and the turn goes on without it. only once
+   * claude has it as a task: a call before that answers ok and moves nothing (probe)
+   */
+  async background(id: string): Promise<boolean> {
+    const h = this.hosted.get(id);
+    const tool = h?.status.tool;
+    if (!tool?.bg || !tool.id) return false;
+    return (await h?.q?.backgroundTasks(tool.id)) === true;
   }
 
   /** one running subagent stops. the turn and the other agents go on */
@@ -1077,6 +1090,7 @@ export class ChatHost {
                 name: call.name,
                 target: toolTarget(call.name, call.input, h.where.cwd, os.homedir()),
                 since: h.status.tool?.name === call.name ? h.status.tool.since : this.now(),
+                id: call.id,
               }
             : h.status.tool;
         // a thinking block is whole: it is in the transcript, and the turn's thinking row has it
@@ -1150,6 +1164,25 @@ export class ChatHost {
     >,
   ): void {
     const now = this.now();
+    // the tool under way became a foreground task (~3s in, probe): it can go to the background now.
+    // sent there (by anyone), it no longer can
+    const tool = h.status.tool;
+    if (
+      m.subtype === "task_started" &&
+      m.is_backgrounded === false &&
+      tool?.id &&
+      tool.id === m.tool_use_id
+    ) {
+      h.toolTask = m.task_id;
+      this.set(h, { tool: { ...tool, bg: true } });
+    } else if (
+      m.subtype === "task_updated" &&
+      m.patch.is_backgrounded === true &&
+      tool?.bg &&
+      m.task_id === h.toolTask
+    ) {
+      this.set(h, { tool: { ...tool, bg: false } });
+    }
     const put = (a: ChatAgent) => h.agents.set(a.id, a);
     /** a workflow's end is its running agents' too: no progress snapshot comes after a stop (probe) */
     const end = (a: ChatAgent, state: ChatAgent["state"]) => {

@@ -686,7 +686,11 @@ export interface ChatStatus {
   /** when the turn under way started: the header's clock */
   since?: number;
   /** the tool the turn is in, while it is in one: what it acts on, and since when */
-  tool?: { name: string; target?: string; since: number };
+  /**
+   * `id`: its call. `bg`: claude has it as a foreground task (a Bash, an agent) that can be sent
+   * to the background, ⌃B
+   */
+  tool?: { name: string; target?: string; since: number; id?: string; bg?: boolean };
   /** what the turn is doing that is no tool and no words: compacting, waiting to retry */
   activity?: string;
   /**
@@ -840,6 +844,8 @@ export interface ChatApi {
   chatStepDiff(toolUseId: string): Promise<string[] | null>;
   /** words onto the clipboard: an answer, a code block, the conversation */
   chatCopy(text: string): Promise<Outcome>;
+  /** the tool under way goes on in the background, and the turn goes on without it (⌃B) */
+  chatBackground(): Promise<Outcome<boolean>>;
   /** a queued message, taken back before claude got to it. false: it already had */
   chatUnqueue(id: string): Promise<Outcome<boolean>>;
   chatAnswer(askId: string, answer: ChatAnswer): Promise<Outcome>;
@@ -868,6 +874,7 @@ export const CHAT_CHANNELS = [
   "chatStepDiff",
   "chatCopy",
   "chatUnqueue",
+  "chatBackground",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;
