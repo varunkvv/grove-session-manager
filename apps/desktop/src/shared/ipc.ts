@@ -625,8 +625,23 @@ export interface ChatStatus {
   /** what the mode pill steps through. bypass only when the session started in it */
   modes: ChatMode[];
   model?: string;
-  /** `id`: the model a value like "opus" stands for, which is what claude reports it is on */
-  models: Array<{ value: string; label: string; id?: string }>;
+  /**
+   * `id`: the model a value like "opus" stands for, which is what claude reports it is on.
+   * `efforts`: the effort levels it takes, none for a model with no effort setting
+   */
+  models: Array<{
+    value: string;
+    label: string;
+    id?: string;
+    description?: string;
+    efforts?: string[];
+  }>;
+  /** the effort the next turn runs at, as claude applies it: "low" ... "max" */
+  effort?: string;
+  /** ultracode is on: a workflow of agents on every task, this session only */
+  ultracode?: boolean;
+  /** the model takes ultracode */
+  ultracodeAvailable?: boolean;
   asks: ChatAsk[];
   /** the tool the turn is in, while it is in one */
   tool?: string;
@@ -711,6 +726,9 @@ export interface ChatApi {
   chatInterrupt(): Promise<Outcome>;
   chatSetMode(mode: ChatMode): Promise<Outcome>;
   chatSetModel(model: string): Promise<Outcome>;
+  /** one of the current model's effort levels, from the next turn on */
+  chatSetEffort(level: string): Promise<Outcome>;
+  chatSetUltracode(on: boolean): Promise<Outcome>;
   chatAnswer(askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** Open in the editor. `after`: once the turn under way has finished */
   chatOpenInEditor(when: "now" | "after"): Promise<Outcome<{ message?: string }>>;
@@ -729,6 +747,8 @@ export const CHAT_CHANNELS = [
   "chatInterrupt",
   "chatSetMode",
   "chatSetModel",
+  "chatSetEffort",
+  "chatSetUltracode",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

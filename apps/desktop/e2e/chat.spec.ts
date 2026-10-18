@@ -166,7 +166,7 @@ test("the mode is a menu: every mode the session can take, said in a line, and t
     /^Plan.*changes nothing until you approve/,
     /^Bypass permissions.*Runs every tool without asking/,
   ]);
-  await expect(menu.locator('[aria-checked="true"]')).toHaveAttribute(
+  await expect(menu.locator('[role="menuitemradio"][aria-checked="true"]')).toHaveAttribute(
     "data-key",
     "bypassPermissions",
   );
@@ -188,6 +188,53 @@ test("the mode is a menu: every mode the session can take, said in a line, and t
   await menu.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(button).toHaveText("Plan");
+});
+
+test("the model is a menu with the model's own effort levels and ultracode, read back from claude", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const button = chat.getByTestId("chat-model");
+  await button.click();
+  const menu = chat.getByTestId("model-menu");
+  await expect(menu.getByTestId("menu-item")).toHaveCount(5);
+  // claude says it is on haiku at medium
+  await expect(menu.locator('[role="menuitemradio"][aria-checked="true"]')).toContainText("Haiku");
+  await expect(button).toHaveText(/Haiku.*· Medium/);
+  await expect(menu.getByTestId("effort").getByRole("radio")).toHaveText([
+    "Low",
+    "Medium",
+    "High",
+    "Extra high",
+    "Max",
+  ]);
+  await menu.getByTestId("effort-max").click();
+  await expect(button).toHaveText(/· Max/);
+  await expect(menu).toContainText("Max is for this session only");
+  await menu.getByTestId("ultracode").click();
+  await expect(chat.getByTestId("ultra-chip")).toBeVisible();
+  await menu.getByTestId("effort-high").click();
+  await expect(button).toHaveText(/· High/);
+  // ultracode stayed on: the level went with it
+  await expect(chat.getByTestId("ultra-chip")).toBeVisible();
+  const applies = sentToClaude(s.chatLog)
+    .map((l) => (l.in as { request?: { subtype?: string; settings?: unknown } })?.request)
+    .filter((r) => r?.subtype === "apply_flag_settings")
+    .map((r) => r?.settings);
+  expect(applies).toEqual([
+    { effortLevel: "max" },
+    { ultracode: true },
+    { effortLevel: "high", ultracode: true },
+  ]);
+  // a model with no effort and no ultracode: both leave the toolbar
+  await menu.getByTestId("menu-item").filter({ hasText: "Haiku 4.5" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(button).toHaveText("Haiku 4.5");
+  await expect(chat.getByTestId("ultra-chip")).toHaveCount(0);
+  await button.click();
+  await expect(menu.getByTestId("effort")).toHaveCount(0);
+  await expect(menu.getByTestId("ultracode")).toHaveCount(0);
 });
 
 test("closing the window leaves the turn running under grove, and reopening it picks it up", async () => {

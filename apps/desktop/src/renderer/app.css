@@ -48,6 +48,11 @@
   --color-waiting: light-dark(#b8490f, #f0854d);
   --color-working: light-dark(#17794e, #3fb984);
 
+  /* grove chat's ultracode: the costly setting, so it is easy to spot. a fuchsia nothing else uses.
+     drawn only by ui.tsx (UltraChip, the ultracode switch) */
+  --color-ultra: light-dark(#a3179f, #e879f9);
+  --color-ultra-soft: light-dark(rgb(163 23 159 / 0.1), rgb(232 121 249 / 0.16));
+
   /* the same states as marks, where 3:1 is enough. drawn only by ui.tsx (StateLabel) */
   --color-hue-orange: light-dark(#dd5f1f, #f0854d);
   --color-hue-green: light-dark(#1f8a5b, #35a873);

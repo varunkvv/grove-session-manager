@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   CanUseTool,
+  EffortLevel,
   PermissionResult,
   PermissionUpdate,
   Query,
@@ -193,6 +194,15 @@ class Prompts implements AsyncIterable<SDKUserMessage> {
       this.wake = null;
     }
   }
+}
+
+/** what `getSettings().applied` says, as claude 2.1.296 answers it (recordings/c-start.jsonl) */
+interface Applied {
+  model?: string;
+  effort?: string | null;
+  ultracode?: boolean;
+  ultracodeRequested?: boolean;
+  ultracodeAvailable?: boolean;
 }
 
 interface Waiting {
@@ -444,6 +454,34 @@ export class ChatHost {
     }
     await h.q.setModel(model);
     this.set(h, { model });
+    // the model moves effort to its own default, and ultracode off where it has none
+    await this.settings(h);
+  }
+
+  /** from the next turn. ultracode stays on: an effort sent alone would turn it off */
+  async setEffort(id: string, where: ChatWhere, level: string): Promise<void> {
+    await this.warm(id, where);
+    const h = this.entry(id);
+    const model = h.status.models.find(
+      (m) => m.value === h.status.model || m.id === h.status.model,
+    );
+    // a level the model does not list is answered ok and changes nothing: refused here instead
+    if (!model?.efforts?.includes(level))
+      throw new Error(`${level} is not an effort this model takes.`);
+    await h.q?.applyFlagSettings({
+      effortLevel: level as EffortLevel,
+      ...(h.status.ultracode ? { ultracode: true } : {}),
+    });
+    await this.settings(h);
+  }
+
+  async setUltracode(id: string, where: ChatWhere, on: boolean): Promise<void> {
+    await this.warm(id, where);
+    const h = this.entry(id);
+    await h.q?.applyFlagSettings({ ultracode: on ? true : null });
+    await this.settings(h);
+    // the ack says ok on a model without it, and leaves it off: say so
+    if (on && !h.status.ultracode) throw new Error("This model does not take ultracode.");
   }
 
   answer(id: string, askId: string, a: ChatAnswer): void {
@@ -572,8 +610,11 @@ export class ChatHost {
           value: m.value,
           label: m.displayName,
           ...(m.resolvedModel ? { id: m.resolvedModel } : {}),
+          ...(m.description ? { description: m.description } : {}),
+          ...(m.supportedEffortLevels?.length ? { efforts: [...m.supportedEffortLevels] } : {}),
         })),
       });
+      await this.settings(h);
     } catch (e) {
       log.warn(`chat ${h.id.slice(0, 8)} did not start:`, e);
       // what was sent goes back to the window, which puts it in the composer again. kept here too
@@ -665,6 +706,24 @@ export class ChatHost {
         return;
       }
     }
+  }
+
+  /**
+   * effort and ultracode as claude applies them. no frame announces a change and an apply's ack
+   * can't be trusted, so this is read again after every apply and every model change. getSettings
+   * is in the sdk at runtime but not in its types
+   */
+  private async settings(h: Hosted): Promise<void> {
+    const q = h.q as (Query & { getSettings?: () => Promise<{ applied?: Applied }> }) | undefined;
+    const a = (await q?.getSettings?.().catch(() => undefined))?.applied;
+    if (!a) return;
+    this.set(h, {
+      // the model it is on before a turn has said so
+      ...(typeof a.model === "string" && a.model ? { model: a.model } : {}),
+      effort: typeof a.effort === "string" ? a.effort : undefined,
+      ultracode: a.ultracode === true,
+      ultracodeAvailable: a.ultracodeAvailable === true,
+    });
   }
 
   private turnStarted(h: Hosted): void {

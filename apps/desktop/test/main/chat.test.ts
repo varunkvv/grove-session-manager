@@ -208,6 +208,39 @@ describe("grove chat's host", () => {
     expect(init?.perTaskStopAffordance).toBe(true);
   });
 
+  it("effort and ultracode: the model's own levels, sent together, and read back after each", async () => {
+    const s = setup();
+    await s.host.warm(SESSION, s.where);
+    // what claude applies, read once it is up
+    expect(s.host.status(SESSION)).toMatchObject({ effort: "medium", ultracodeAvailable: true });
+    const haiku = s.host.status(SESSION).models.find((m) => m.value === "haiku");
+    expect(haiku?.efforts).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    await s.host.setModel(SESSION, "haiku");
+    await s.host.setEffort(SESSION, s.where, "high");
+    expect(s.host.status(SESSION).effort).toBe("high");
+    await s.host.setUltracode(SESSION, s.where, true);
+    expect(s.host.status(SESSION).ultracode).toBe(true);
+    // an effort change keeps ultracode on: both keys go together
+    await s.host.setEffort(SESSION, s.where, "low");
+    expect(s.host.status(SESSION)).toMatchObject({ effort: "low", ultracode: true });
+    const applies = s
+      .log()
+      .map((l) => (l.in as { request?: { subtype?: string; settings?: unknown } })?.request)
+      .filter((r) => r?.subtype === "apply_flag_settings")
+      .map((r) => r?.settings);
+    expect(applies).toEqual([
+      { effortLevel: "high" },
+      { ultracode: true },
+      { effortLevel: "low", ultracode: true },
+    ]);
+    // a level the model does not list never goes to claude
+    await expect(s.host.setEffort(SESSION, s.where, "ludicrous")).rejects.toThrow("not an effort");
+    // a model with no effort setting and no ultracode: both go, and a switch on is refused
+    await s.host.setModel(SESSION, "claude-haiku-4-5-20251001");
+    expect(s.host.status(SESSION)).toMatchObject({ ultracode: false, ultracodeAvailable: false });
+    await expect(s.host.setUltracode(SESSION, s.where, true)).rejects.toThrow("does not take");
+  });
+
   it("asks for no thinking text when the person's settings do not", async () => {
     const s = setup();
     const settings = path.join(path.dirname(path.dirname(s.transcript)), "..", "settings.json");

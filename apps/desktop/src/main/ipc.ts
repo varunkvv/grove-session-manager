@@ -720,6 +720,8 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatInterrupt",
   "chatSetMode",
   "chatSetModel",
+  "chatSetEffort",
+  "chatSetUltracode",
   "chatAnswer",
   "chatOpenInEditor",
 ]);
@@ -961,6 +963,16 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       if (!isText(model, 200) || !model.trim())
         throw new AppError("invalid", "That is not a model.");
       await chat.setModel(id, model);
+    },
+
+    async chatSetEffort(id, level) {
+      if (!isText(level, 20)) throw new AppError("invalid", "That is not an effort level.");
+      await chat.setEffort(id, await runWhere(id), level);
+    },
+
+    async chatSetUltracode(id, on) {
+      if (typeof on !== "boolean") throw new AppError("invalid", "That is not on or off.");
+      await chat.setUltracode(id, await runWhere(id), on);
     },
 
     async chatAnswer(id, askId, raw) {

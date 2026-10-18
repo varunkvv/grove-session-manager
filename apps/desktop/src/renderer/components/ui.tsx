@@ -407,13 +407,17 @@ export function Segmented<T extends string>({
   );
 }
 
-/** neutral on purpose: the accent is for state that needs attention, and a preference is not that */
+/**
+ * neutral on purpose: the accent is for state that needs attention, and a preference is not that.
+ * ultracode is the one switch with a colour: it is what costs
+ */
 export function Switch({
   checked,
   onChange,
   label,
   testId,
   disabled,
+  ultra,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -421,6 +425,7 @@ export function Switch({
   testId?: string;
   /** it means nothing while another switch is off */
   disabled?: boolean;
+  ultra?: boolean;
 }) {
   return (
     <button
@@ -433,7 +438,7 @@ export function Switch({
       onClick={() => onChange(!checked)}
       className={cx(
         "no-drag fade relative h-4 w-7 shrink-0 rounded-full disabled:opacity-40",
-        checked ? "bg-fg-2" : "bg-line-strong",
+        checked ? (ultra ? "bg-ultra" : "bg-fg-2") : "bg-line-strong",
       )}
     >
       <span
@@ -1146,6 +1151,26 @@ export function ModeDot({ mode }: { mode?: ChatMode }) {
     />
   );
 }
+
+/** ultracode is on: beside the model, in its own colour */
+export function UltraChip() {
+  return (
+    <span
+      data-testid="ultra-chip"
+      className="inline-flex h-[18px] shrink-0 items-center rounded-full bg-ultra-soft px-1.5 text-meta font-medium text-ultra"
+    >
+      Ultracode
+    </span>
+  );
+}
+
+export const EFFORT_WORD: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
 
 /** a quiet button in grove chat's composer toolbar: the mode, the model */
 export function ToolbarButton({

@@ -26,6 +26,7 @@ import {
   Choice,
   ComposerFrame,
   cx,
+  EFFORT_WORD,
   Icon,
   IconButton,
   Menu,
@@ -34,11 +35,13 @@ import {
   ModeDot,
   Mono,
   ProjectMark,
-  Select,
+  Segmented,
   SendButton,
   Spinner,
   StateLabel,
+  Switch,
   ToolbarButton,
+  UltraChip,
 } from "./ui.tsx";
 
 const api = () => window.grove;
@@ -280,7 +283,7 @@ export function ChatApp() {
   const [note, setNote] = useState<string>();
   const [moving, setMoving] = useState(false);
   /** the toolbar menu that is open, and the button it opens from */
-  const [menu, setMenu] = useState<{ kind: "mode"; anchor: DOMRect } | null>(null);
+  const [menu, setMenu] = useState<{ kind: "mode" | "model"; anchor: DOMRect } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -454,6 +457,9 @@ export function ChatApp() {
   const tail = rows[end];
   if (running && shown && tail?.kind === "turn") rows[end] = { ...tail, text: shown };
 
+  /** the model it is on, as the menu lists it: claude reports the id a value like "opus" stands for */
+  const current = s.models.find((m) => m.value === s.model || m.id === s.model);
+
   const warm = () => {
     if (warmed.current || readOnly || s.live || s.starting) return;
     warmed.current = true;
@@ -506,7 +512,7 @@ export function ChatApp() {
     composer.current?.focus();
   };
 
-  const openMenu = (kind: "mode", el: HTMLElement) => {
+  const openMenu = (kind: "mode" | "model", el: HTMLElement) => {
     if (menu?.kind === kind) return setMenu(null);
     setMenu({ kind, anchor: el.getBoundingClientRect() });
     // the rows are claude's: opening the menu starts it, as shift-tab does
@@ -521,6 +527,11 @@ export function ChatApp() {
   const pickMode = async (mode: ChatMode) => {
     closeMenu();
     if (mode !== s.mode) setError(failed(await api().chatSetMode(mode)));
+  };
+
+  const pickModel = async (model: string) => {
+    closeMenu();
+    if (model !== current?.value) setError(failed(await api().chatSetModel(model)));
   };
 
   const stepMode = async () => {
@@ -792,31 +803,25 @@ export function ChatApp() {
                         {s.mode ? MODE_WORD[s.mode] : "Mode"}
                         <Icon name="chevron" size={9} className="rotate-90" faint />
                       </ToolbarButton>
-                      {s.models.length > 0 && (
-                        <Select
-                          wrapClassName="w-36 shrink-0"
-                          className="h-6 text-sm"
-                          value={
-                            s.models.find((m) => m.value === s.model || m.id === s.model)?.value ??
-                            ""
-                          }
-                          data-testid="chat-model"
-                          onChange={(e) =>
-                            void api()
-                              .chatSetModel(e.target.value)
-                              .then((o) => setError(failed(o)))
-                          }
-                        >
-                          {!s.models.some((m) => m.value === s.model || m.id === s.model) && (
-                            <option value="">{s.model ? modelLabel(s.model) : "Model"}</option>
+                      <ToolbarButton
+                        title="Model and effort"
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.kind === "model"}
+                        data-testid="chat-model"
+                        onClick={(e) => openMenu("model", e.currentTarget)}
+                      >
+                        <span className="truncate">
+                          {current?.label ?? (s.model ? modelLabel(s.model) : "Model")}
+                          {s.effort && current?.efforts && (
+                            <span className="text-fg-4">
+                              {" "}
+                              · {EFFORT_WORD[s.effort] ?? s.effort}
+                            </span>
                           )}
-                          {s.models.map((m) => (
-                            <option key={m.value} value={m.value}>
-                              {m.label}
-                            </option>
-                          ))}
-                        </Select>
-                      )}
+                        </span>
+                        <Icon name="chevron" size={9} className="rotate-90" faint />
+                      </ToolbarButton>
+                      {s.ultracode && <UltraChip />}
                       <span className="flex-1" />
                       {s.starting && (
                         <span
@@ -849,6 +854,80 @@ export function ChatApp() {
           )}
         </div>
       </ChatScopeContext.Provider>
+      {menu?.kind === "model" && (
+        <Menu
+          anchor={menu.anchor}
+          testId="model-menu"
+          width={340}
+          onClose={closeMenu}
+          onPick={(m) => void pickModel(m)}
+          items={s.models.map((m) => ({
+            key: m.value,
+            label: m.label,
+            ...(m.description ? { description: m.description } : {}),
+            checked: m === current,
+          }))}
+        >
+          {!s.live && (
+            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
+              {s.error ?? (
+                <>
+                  <Spinner size={10} />
+                  Starting Claude…
+                </>
+              )}
+            </p>
+          )}
+          {s.live && !!current?.efforts?.length && (
+            <div className="mt-1 border-t border-line px-2 pt-2.5 pb-1" data-testid="effort">
+              <p className="mb-1.5 text-sm font-medium text-fg-3">Effort</p>
+              <Segmented
+                label="Effort"
+                size="sm"
+                value={s.effort ?? ""}
+                options={current.efforts.map((e) => ({
+                  value: e,
+                  label: EFFORT_WORD[e] ?? e,
+                  testId: `effort-${e}`,
+                }))}
+                onChange={(e) =>
+                  void api()
+                    .chatSetEffort(e)
+                    .then((o) => setError(failed(o)))
+                }
+              />
+              {s.effort === "max" && (
+                <p className="mt-1.5 text-sm text-fg-4">
+                  Max is for this session only and can run long.
+                </p>
+              )}
+            </div>
+          )}
+          {s.live && s.ultracodeAvailable && (
+            <div className="mt-1 flex items-start gap-3 border-t border-line px-2 pt-2.5 pb-1.5">
+              <span className="min-w-0 flex-1">
+                <span className="block text-body text-fg">Ultracode</span>
+                <span className="block text-sm text-fg-4">
+                  Runs a workflow of agents on every task. This session only.
+                </span>
+              </span>
+              <span className="pt-0.5">
+                <Switch
+                  ultra
+                  label="Ultracode"
+                  testId="ultracode"
+                  checked={!!s.ultracode}
+                  onChange={(on) =>
+                    void api()
+                      .chatSetUltracode(on)
+                      .then((o) => setError(failed(o)))
+                  }
+                />
+              </span>
+            </div>
+          )}
+        </Menu>
+      )}
       {menu?.kind === "mode" && (
         <Menu
           anchor={menu.anchor}

@@ -109,6 +109,44 @@ function record(type, message, extra = {}) {
 const out = (msg) => process.stdout.write(`${asSession(msg)}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ---------- the host's settings controls, answered as claude 2.1.296 does (recordings/c-start.jsonl):
+// effort and ultracode live in the flag layer, setModel moves effort to the model's default
+const MODELS = initAnswer.response.response.models;
+const modelOf = (v) => MODELS.find((m) => m.value === v || m.resolvedModel === v);
+const applied = {
+  model: modelOf("haiku")?.resolvedModel ?? "claude-haiku-5-5",
+  effort: "medium",
+  ultracode: false,
+  ultracodeRequested: false,
+  ultracodeAvailable: true,
+};
+function settingsControl(r) {
+  if (r.subtype === "get_settings") return { effective: {}, sources: [], applied: { ...applied } };
+  if (r.subtype === "apply_flag_settings") {
+    const s = r.settings ?? {};
+    if ("effortLevel" in s) {
+      applied.effort = s.effortLevel ?? "medium";
+      // a level sent without the ultracode key turns ultracode off
+      if (!("ultracode" in s)) applied.ultracode = applied.ultracodeRequested = false;
+    }
+    if ("ultracode" in s) {
+      applied.ultracodeRequested = s.ultracode === true;
+      applied.ultracode = applied.ultracodeRequested && applied.ultracodeAvailable;
+    }
+    return {};
+  }
+  if (r.subtype === "set_model") {
+    const m = modelOf(r.model);
+    const levels = m?.supportedEffortLevels ?? [];
+    applied.model = m?.resolvedModel ?? r.model;
+    applied.effort = levels.length ? "medium" : null;
+    applied.ultracodeAvailable = levels.length > 0;
+    applied.ultracode = applied.ultracodeRequested = false;
+    return {};
+  }
+  return undefined;
+}
+
 // ---------- stdin: what arrives, and who is waiting for which kind of it
 const inbox = [];
 let wake = null;
@@ -126,6 +164,11 @@ process.stdin.on("data", (chunk) => {
     note({ in: m });
     if (isInit(m)) {
       out({ ...initAnswer, response: { ...initAnswer.response, request_id: m.request_id } });
+      continue;
+    }
+    const answer = m.type === "control_request" ? settingsControl(m.request) : undefined;
+    if (answer !== undefined) {
+      out({ type: "control_response", response: { subtype: "success", request_id: m.request_id, response: answer } });
       continue;
     }
     inbox.push(m);
