@@ -760,6 +760,8 @@ export interface ChatTarget {
   readOnly?: string;
   /** made here a moment ago (cmd-N): no transcript yet */
   fresh?: boolean;
+  /** opened from the session card for a file or the agents, before the page was up */
+  show?: ChatShow;
 }
 
 /** what `/` offers: one of Claude Code's commands, or a skill */

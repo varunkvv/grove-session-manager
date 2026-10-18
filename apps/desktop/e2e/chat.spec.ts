@@ -265,7 +265,9 @@ test("the session card: what it waits on is answered from the main window, and a
   await card.getByTestId("card-reply").press("Enter");
   await expect(chat.getByTestId("chat-queued")).toContainText(HELLO);
   // what runs for it is one line, and it opens the chat window's agents
-  await expect(card.getByTestId("card-agents")).toContainText("2 agents running");
+  await expect(card.getByTestId("card-agents")).toContainText(
+    "2 running · slow lister, long sleeper",
+  );
   await card.getByTestId("card-agents").click();
   await expect(chat.getByTestId("agents")).toBeVisible();
 });

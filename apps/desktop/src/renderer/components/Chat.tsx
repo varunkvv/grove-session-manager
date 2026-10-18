@@ -281,6 +281,9 @@ export function ChatApp() {
     setTarget(t);
     if (!t) return;
     setStatus(t.status);
+    // sent here from the session card while this page was still loading
+    if (t.show)
+      setPane("file" in t.show ? { kind: "files", file: t.show.file } : { kind: "agents" });
     stream.current = t.text;
     setShown(t.text);
     applyAppearance(t.appearance);

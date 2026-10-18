@@ -399,7 +399,11 @@ function SessionCard({
   const running = !!host?.running;
   const last = talk?.items.findLast((i): i is TurnView => i.kind === "turn");
   const made = madeOf(talk);
+  // what runs for it: agents and workflows, not a workflow's own agents
   const agents = (host?.agents ?? []).filter((a) => a.state === "running" && !a.workflow);
+  const lastPrompt = talk?.items.findLast(
+    (i): i is TurnView => i.kind === "turn" && i.prompt?.kind === "human",
+  )?.prompt?.text;
 
   const send = async () => {
     const text = reply.trim();
@@ -427,6 +431,8 @@ function SessionCard({
           ask={a}
           modes={host?.modes ?? []}
           onAnswer={(x) => void window.grove.sessionAnswer(key, a.id, x).then(failed)}
+          // a refusal's "Edit what you asked": it goes back in the reply box
+          onEditPrompt={() => lastPrompt && setReply(lastPrompt)}
         />
       ))}
       {!elsewhere && running && asks.length === 0 && (
@@ -513,8 +519,7 @@ function SessionCard({
         >
           <AgentState state="running" word={false} />
           <span className="truncate">
-            {agents.length} {agents.length === 1 ? "agent" : "agents"} running ·{" "}
-            {agents.map((a) => a.description).join(", ")}
+            {agents.length} running · {agents.map((a) => a.description).join(", ")}
           </span>
         </button>
       )}

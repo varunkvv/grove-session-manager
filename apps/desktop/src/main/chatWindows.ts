@@ -41,6 +41,8 @@ export class ChatWindows {
   /** the chat window opened or looked at last: the next one cascades from it */
   private last: BrowserWindow | null = null;
   private saving: NodeJS.Timeout | null = null;
+  /** a file or the agents a loading window opens with: see `takeShow` */
+  private readonly shows = new Map<string, ChatShow>();
 
   constructor(o: ChatWindowsOptions) {
     this.o = o;
@@ -85,7 +87,9 @@ export class ChatWindows {
     this.last = win;
     // a spare's page is up and waiting: it asks which session it is for. a new one asks on load
     win.webContents.send("grove:chat:open", {});
-    if (show) win.webContents.send("grove:chat:show", show);
+    // a page still loading would miss it: it gets it with its session instead (`takeShow`)
+    if (show && this.ready.has(win)) win.webContents.send("grove:chat:show", show);
+    else if (show) this.shows.set(sessionId, show);
     if (this.ready.has(win)) win.show();
     else win.once("ready-to-show", () => win.show());
     this.refill();
@@ -94,6 +98,13 @@ export class ChatWindows {
   /** the session a page's calls are about. undefined for the main window and the spare */
   sessionOf(contents: WebContents): string | undefined {
     return this.byContents.get(contents.id);
+  }
+
+  /** what a window that was still loading is to open beside its conversation, once */
+  takeShow(sessionId: string): ChatShow | undefined {
+    const show = this.shows.get(sessionId);
+    this.shows.delete(sessionId);
+    return show;
   }
 
   /** ⌘F in a chat window: it finds in its own conversation, the main window stays put */

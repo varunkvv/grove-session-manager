@@ -996,6 +996,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       if (!hit) return null;
       const row = rowOf(id);
       const refused = readOnly(id, row);
+      const show = deps.chatWindows.takeShow(id);
       const at = await where(row).catch(() => ({ cwd: row.cwd ?? "" }));
       return {
         session: hit,
@@ -1007,6 +1008,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
         status: chat.status(id),
         text: chat.text(id),
         ...(refused ? { readOnly: refused } : {}),
+        ...(show ? { show } : {}),
       };
     },
 
