@@ -23,6 +23,7 @@ import {
   type SessionAgent,
   type Settings,
   saveSettings,
+  type TimelineState,
   workspaceFolders,
   ZED_AGENT_LINK,
   ZED_AGENT_LINK_DELAY_MS,
@@ -929,6 +930,8 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
   const where = (row: SessionRow) => whereOf(deps, row);
   /** `@`'s lists, by folder: read again when a window asks for fresh ones */
   const paths = new Map<string, Promise<string[]>>();
+  /** an agent's transcript as last read, by file: the next read starts where it stopped */
+  const folds = new Map<string, TimelineState>();
 
   /** where claude runs it, once nothing else holds it: made here, or claimed from where it was */
   async function runWhere(id: string): Promise<ChatWhere> {
@@ -1141,7 +1144,14 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const row = newestRow(deps, id);
       const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
       if (!file) return null;
-      return readAgentTimeline(file).then(agentView, () => null);
+      // a running agent's viewer asks every couple of seconds: each read takes up where the last
+      // stopped. the oldest go once there are more than a few dozen
+      const state = await readAgentTimeline(file, {}, folds.get(file)).catch(() => null);
+      if (!state) return null;
+      folds.delete(file);
+      folds.set(file, state);
+      if (folds.size > 32) folds.delete(folds.keys().next().value as string);
+      return agentView(state);
     },
 
     async chatRename(id, title) {

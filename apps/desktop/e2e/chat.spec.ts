@@ -696,6 +696,30 @@ test("a click on the title renames the session, through its claude, and the list
   );
 });
 
+test("the keyboard reaches the model menu's effort and ultracode, not only its rows", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("composer").press("Meta+Shift+e");
+  const menu = chat.getByTestId("model-menu");
+  await expect(menu.getByTestId("effort")).toBeVisible({ timeout: 15_000 });
+  // Tab walks past the rows into the effort levels, Enter picks one
+  const rows = await menu.getByTestId("menu-item").count();
+  for (let i = 0; i <= rows; i++) await chat.keyboard.press("Tab");
+  await expect(menu.getByTestId("effort-low")).toBeFocused();
+  await chat.keyboard.press("Enter");
+  await expect(menu.getByTestId("effort-low")).toHaveAttribute("aria-checked", "true");
+  // on to the switch, and Space turns ultracode on
+  for (let i = 0; i < 5; i++) await chat.keyboard.press("Tab");
+  await expect(menu.getByTestId("ultracode")).toBeFocused();
+  await chat.keyboard.press("Space");
+  await expect(chat.getByTestId("ultra-chip")).toBeVisible();
+  // the menu stayed open for all of it; Esc closes it
+  await chat.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
@@ -1014,6 +1038,8 @@ test("what claude says along the way shows: a command's output, a tool it turned
   expect(id).toMatch(/^[0-9a-f-]{36}$/);
   expect(id).not.toBe(SID);
   await expect(chat.getByTestId("chat-note-denied")).toHaveCount(0);
+  // claude is already up: the window does not say it starts as you type
+  await expect(chat.getByTestId("chat-fresh")).toHaveText("A new session in chat-trial.");
   // the old session is no longer grove's
   await expect(
     page.locator(`[data-testid="session-row"][data-id="${SID}"] [data-testid="runtime-chip"]`),

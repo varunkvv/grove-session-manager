@@ -1440,11 +1440,22 @@ export function Menu({
         tabIndex={-1}
         data-list
         className="p-1"
+        // Tab walks on into what the menu holds under its rows (effort, a switch); out of the menu
+        // is closed
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onClose();
+        }}
         onKeyDown={(e) => {
           const n = items.length;
-          if (e.key === "Escape" || e.key === "Tab") {
+          // a row's keys are the menu's. on a control under the rows, its own keys are its own
+          const own =
+            e.target === e.currentTarget ||
+            (e.target as HTMLElement).getAttribute("role") === "menuitemradio";
+          if (e.key === "Escape") {
             e.preventDefault();
             onClose();
+          } else if (!own) {
+            return;
           } else if (n && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
             e.preventDefault();
             setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
@@ -1465,6 +1476,7 @@ export function Menu({
             data-key={it.key}
             data-active={i === active || undefined}
             onMouseEnter={() => setActive(i)}
+            onFocus={() => setActive(i)}
             onClick={() => onPick(it.key)}
             className="fade flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left data-[active]:bg-raised"
           >

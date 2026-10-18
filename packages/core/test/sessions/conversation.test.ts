@@ -14,7 +14,11 @@ import {
   type TurnView,
   turnNumbers,
 } from "../../src/sessions/conversation.ts";
-import { readConversation, readEditDiff } from "../../src/sessions/conversationFile.ts";
+import {
+  readAgentTimeline,
+  readConversation,
+  readEditDiff,
+} from "../../src/sessions/conversationFile.ts";
 import {
   apiError,
   apiErrorMessage,
@@ -877,5 +881,22 @@ describe("a chat window's turn that died on an api error", () => {
     expect(chat.failed).toBe(true);
     expect(chat.note).toMatch(/^API Error/);
     expect((conversationView(state).items[0] as TurnView).failed).toBeUndefined();
+  });
+});
+
+describe("a running agent's transcript, followed", () => {
+  it("reads only what was written since the last read, and comes to the same", async () => {
+    const first = [prompt("list it", 0), says("m1", call("t1", "Bash", { command: "ls" }), 1)];
+    const rest = [result("t1", "a.txt", 2), says("m2", text("Found a.txt."), 3)];
+    const file = sandboxFile(jsonl(first));
+    const before = await readAgentTimeline(file);
+    expect(before.steps.find((s) => s.kind === "tool")).toMatchObject({ name: "Bash" });
+    appendFileSync(file, jsonl(rest));
+    const after = await readAgentTimeline(file, {}, before);
+    const whole = await readAgentTimeline(file);
+    expect(shape(after.steps as never)).toEqual(shape(whole.steps as never));
+    expect(after.offset).toBe(whole.offset);
+    // nothing new: the same read back
+    expect(await readAgentTimeline(file, {}, after)).toBe(after);
   });
 });

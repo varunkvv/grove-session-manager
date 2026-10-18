@@ -988,8 +988,8 @@ export function ChatApp() {
                 )}
                 {target.fresh && pending === null && (
                   <p className={QUIET} data-testid="chat-fresh">
-                    A new session in {session.where}. Claude starts as you type, with the project's
-                    settings.
+                    A new session in {session.where}.{/* after /clear it is already up */}
+                    {!s.live && " Claude starts as you type, with the project's settings."}
                   </p>
                 )}
                 {talk === null && pending === null && !target.fresh && (

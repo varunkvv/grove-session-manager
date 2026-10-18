@@ -108,22 +108,26 @@ export async function readEditDiff(
 
 /**
  * a subagent's transcript folded whole, the way a turn's work is: its prompt, its steps, its
- * messages uncut. read again on every look, as a session's conversation is
+ * messages uncut. with `prev`, from where that read stopped: a running agent is followed by its tail
  */
 export async function readAgentTimeline(
   file: string,
   opts: { home?: string } = {},
+  /** the last read of it: only what was written since is read. a shorter file is read whole */
+  prev?: TimelineState,
 ): Promise<TimelineState> {
   const fh = await open(file, constants.O_RDONLY);
   try {
     const size = (await fh.stat()).size;
-    const fold = new TimelineFold(undefined, {
+    const from = prev && prev.offset <= size ? prev : undefined;
+    if (from?.offset === size) return from;
+    const fold = new TimelineFold(from, {
       home: opts.home ?? os.homedir(),
       inputPreview: 0,
       resultPreview: 0,
       textMax: MESSAGE_MAX,
     });
-    fold.state.offset = await readWholeLines(fh, 0, size, (text, at, length) =>
+    fold.state.offset = await readWholeLines(fh, from?.offset ?? 0, size, (text, at, length) =>
       fold.line(text, at, length),
     );
     return fold.state;
