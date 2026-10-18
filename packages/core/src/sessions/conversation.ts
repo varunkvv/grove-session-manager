@@ -16,8 +16,15 @@ import {
   type TimelineState,
 } from "./timeline.ts";
 
+/** a message, whole: a 2,000-line report is ~150KB. the panel's view cuts it far shorter */
+export const MESSAGE_MAX = 200_000;
 /** what a conversation's steps keep. the view never shows a step's input or result preview. */
-const TURN_FOLD: FoldOptions = { inputPreview: 0, resultPreview: 0, promptless: true };
+const TURN_FOLD: FoldOptions = {
+  inputPreview: 0,
+  resultPreview: 0,
+  promptless: true,
+  textMax: MESSAGE_MAX,
+};
 /** a prompt is what a person typed. past this it is a pasted file, and the rest is on disk. */
 const PROMPT_MAX = 50_000;
 /** a plan is read, so it is kept whole - up to this */
@@ -672,7 +679,11 @@ export interface ConversationView {
 }
 
 /** the last VIEW_TURNS turns, each text cut. compactions between them stay where they happened */
-export function conversationView(state: ConversationState): ConversationView {
+export function conversationView(
+  state: ConversationState,
+  /** `textMax`: what a message keeps, every turn's. a chat window reads them whole */
+  opts: { textMax?: number } = {},
+): ConversationView {
   const turns = state.items.filter((i) => i.kind === "turn").length;
   const older = Math.max(0, turns - VIEW_TURNS);
   let skip = older;
@@ -690,7 +701,7 @@ export function conversationView(state: ConversationState): ConversationView {
       const words =
         last && !answer ? item.work.steps.findLast((s) => s.kind === "text") : undefined;
       const text = answer || (words?.kind === "text" ? words.text : "");
-      const max = last ? VIEW_LAST_TEXT : VIEW_TEXT;
+      const max = opts.textMax ?? (last ? VIEW_LAST_TEXT : VIEW_TEXT);
       const error = item.work.last?.error ?? (answer ? undefined : item.apiError);
       const outputs = fileMarks(item.work);
       return {

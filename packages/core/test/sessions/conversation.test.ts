@@ -8,6 +8,7 @@ import {
   type ConversationState,
   conversationView,
   filesWritten,
+  MESSAGE_MAX,
   type Turn,
   type TurnView,
   turnNumbers,
@@ -709,5 +710,18 @@ describe("the files a turn showed", () => {
       ),
     );
     expect(filesWritten(state)).toEqual(["/w/a.ts", "/w/b.ts"]);
+  });
+});
+
+describe("a long message", () => {
+  it("is cut for the panel and whole for a chat window", async () => {
+    const long = `${"a line of a long report\n".repeat(2000)}the end`;
+    const state = await readConversation(
+      sandboxFile(jsonl([prompt("write it all", 0), says("m1", text(long), 1)])),
+    );
+    const panel = conversationView(state).items[0] as TurnView;
+    expect(panel.text?.length).toBeLessThan(long.length);
+    const chat = conversationView(state, { textMax: MESSAGE_MAX }).items[0] as TurnView;
+    expect(chat.text).toBe(long);
   });
 });

@@ -8,6 +8,7 @@ import {
   type EditorTarget,
   filesWritten,
   isValidSessionId,
+  MESSAGE_MAX,
   openInEditor,
   prepareFolderOpen,
   projectIdOf,
@@ -868,7 +869,11 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const row = newestRow(deps, id);
       if (!row) return null;
       return readConversation(row.key).then(
-        (state) => ({ ...conversationView(state), written: filesWritten(state) }),
+        // whole messages: the panel's view is a preview, this is where they are read
+        (state) => ({
+          ...conversationView(state, { textMax: MESSAGE_MAX }),
+          written: filesWritten(state),
+        }),
         () => null,
       );
     },

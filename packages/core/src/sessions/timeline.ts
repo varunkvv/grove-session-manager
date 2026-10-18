@@ -282,6 +282,8 @@ export interface FoldOptions {
   inputPreview?: number;
   /** what a tool step keeps of its result. 0 keeps none. */
   resultPreview?: number;
+  /** what a text step keeps: a session's own messages are read whole in a chat window */
+  textMax?: number;
   /**
    * the prompt is someone else's business: every user text is something said part way through.
    * a session's turn is folded this way - its prompt was read before the work started.
@@ -298,6 +300,7 @@ export class TimelineFold {
   readonly state: TimelineState;
   private readonly home: string | undefined;
   private readonly inputPreview: number;
+  private readonly textMax: number;
   private readonly resultPreview: number;
   private readonly promptless: boolean;
   /** tool_use id -> index of the step still waiting for its result */
@@ -312,6 +315,7 @@ export class TimelineFold {
     };
     this.home = opts.home;
     this.inputPreview = opts.inputPreview ?? INPUT_PREVIEW;
+    this.textMax = opts.textMax ?? TEXT_MAX;
     this.resultPreview = opts.resultPreview ?? RESULT_PREVIEW;
     this.promptless = opts.promptless ?? false;
     this.state.steps.forEach((s, i) => {
@@ -380,7 +384,7 @@ export class TimelineFold {
     for (const block of content) {
       if (!isObject(block)) continue;
       if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-        last.texts.push(this.push({ kind: "text", text: cut(block.text, TEXT_MAX), at }));
+        last.texts.push(this.push({ kind: "text", text: cut(block.text, this.textMax), at }));
       } else if (block.type === "thinking" && typeof block.thinking === "string") {
         // a redacted block is only a signature: nothing to show
         if (block.thinking.trim()) {
