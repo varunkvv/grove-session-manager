@@ -194,7 +194,11 @@ export function Turn({
           </h3>
           <div className="mt-1" data-testid={last ? "panel-text" : undefined}>
             {turn.text ? (
-              <Markdown text={turn.text} className={last ? "md-full" : undefined} />
+              <Markdown
+                text={turn.text}
+                className={last ? "md-full" : undefined}
+                streaming={going}
+              />
             ) : (
               last && <p className="text-fg-4">Nothing said yet.</p>
             )}

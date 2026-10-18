@@ -8,6 +8,7 @@ import { Fragment, memo, type ReactNode, useEffect, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
+import { blocks } from "../logic/blocks.ts";
 import { highlight, highlighted, type Run } from "../logic/highlight.ts";
 import { localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
@@ -122,19 +123,43 @@ const components: Components = {
 
 const plugins = [remarkGfm];
 
-/** markdown from an agent, as quiet as the rest of the page */
+/** one part of a message: parsed once, and again only when its own text moves */
+const Part = memo(function Part({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={plugins} components={components}>
+      {text}
+    </ReactMarkdown>
+  );
+});
+
+/**
+ * past this a message is parsed in parts in a chat window, done or not: when a long answer stops
+ * streaming its parts are the same, and nothing is parsed again
+ */
+const PARTS_FROM = 20_000;
+
+/**
+ * markdown from an agent, as quiet as the rest of the page. `streaming`: an answer still coming
+ * in, in a chat window. it is parsed in parts, so only its last part is parsed again as it grows
+ */
 export const Markdown = memo(function Markdown({
   text,
   className,
+  streaming,
 }: {
   text: string;
   className?: string;
+  streaming?: boolean;
 }) {
+  const scope = useChatScope();
   return (
     <div className={className ? `md ${className}` : "md"}>
-      <ReactMarkdown remarkPlugins={plugins} components={components}>
-        {text}
-      </ReactMarkdown>
+      {scope && (streaming || text.length > PARTS_FROM) ? (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a part's place in a message is what it is
+        blocks(text).map((part, i) => <Part key={i} text={part} />)
+      ) : (
+        <Part text={text} />
+      )}
     </div>
   );
 });
