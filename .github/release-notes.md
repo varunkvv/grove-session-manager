@@ -48,6 +48,32 @@ Fixed since 0.19.32:
 
 - chat sessions run with Claude Code's own system prompt. 0.19.32 started them with an empty one
 
+New since 0.19.33:
+
+- with Grove chat on, the main window's side panel is a **session card**: the recap, what the session waits on
+  (answer it right there), the end of its last answer, a reply box (R goes to it), what it made and what runs for it
+- several questions from Claude come as tabs, one at a time, with multi-select, previews beside the options and a
+  last tab to look over your answers. 1-9 picks, the arrows move, Enter sends
+- approve a plan into a mode ("Approve, accept edits"), turn a permission down with what to do instead, and see what
+  an edit changes, on its card and on each finished step
+- workflows show in the agents panel as one row with their agents under it, and stop as one
+- **Cmd-K** runs any chat action by name and **Cmd-/** lists every key. the header's **…** menu holds the session's
+  own: rename (or click the title), fork, copy or export the conversation as Markdown, output style, MCP servers,
+  Open in VS Code
+- hover a message to copy it, edit and send it again in a new session, fork from it, or rewind the files Claude
+  changed since it. code blocks copy on hover too
+- a ring by the send button shows how full the conversation is once it is half full, and compacts it on a click
+- Up and Down walk what you said. Cmd-F finds in the conversation, Cmd-Down jumps back to the latest
+- take back a queued message before Claude gets to it, send a long command to the background (Ctrl-B), and ask a
+  side question with `/btw`
+- a long paste becomes a chip, an attached image opens full size, and a file from the project goes in as an
+  `@` mention instead of an attachment
+- the files panel lists what is not committed, each with its diff
+- fast mode on models that have it, thinking off on the 4.x models, and older turns on asking
+- a refusal and an MCP server's form come as cards to act on, a turn that died on an API error can be tried again,
+  and a usage limit close to its end shows by the send button
+- `/model`, `/effort` and `/plan` open Grove's own menus, and commands meant for a terminal are left out of `/`
+
 ## 0.18
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.18 works with Zed.
