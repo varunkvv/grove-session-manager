@@ -6,6 +6,7 @@ import {
   ConversationFold,
   type ConversationItem,
   type ConversationState,
+  conversationMarkdown,
   conversationView,
   editDiff,
   filesWritten,
@@ -898,5 +899,28 @@ describe("a running agent's transcript, followed", () => {
     expect(after.offset).toBe(whole.offset);
     // nothing new: the same read back
     expect(await readAgentTimeline(file, {}, after)).toBe(after);
+  });
+});
+
+describe("the conversation as markdown, and more of it", () => {
+  it("is each prompt and its answer whole, in order, with a compaction where it was", async () => {
+    const state = await readConversation(
+      sandboxFile(
+        jsonl([
+          prompt("why does it spin?", 0),
+          says("m1", call("t1", "Bash", { command: "ls" }), 1),
+          result("t1", "a.txt", 2),
+          says("m2", text("Because the delay resets."), 3),
+          prompt("fix it", 4),
+          says("m3", text("Fixed."), 5),
+        ]),
+      ),
+    );
+    expect(conversationMarkdown(state, "the loop")).toBe(
+      "# the loop\n\n## You\n\nwhy does it spin?\n\n## Claude\n\nBecause the delay resets.\n\n## You\n\nfix it\n\n## Claude\n\nFixed.\n",
+    );
+    // a chat window asks for more of the last turns than the usual
+    expect(conversationView(state, { turns: 1 }).older).toBe(1);
+    expect(conversationView(state, { turns: 5 }).older).toBe(0);
   });
 });

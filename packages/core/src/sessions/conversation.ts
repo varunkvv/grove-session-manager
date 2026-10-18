@@ -841,17 +841,43 @@ export interface ConversationView {
   older: number;
 }
 
-/** the last VIEW_TURNS turns, each text cut. compactions between them stay where they happened */
+/**
+ * the conversation as markdown, to copy or keep: each prompt and the answer it got, whole, in
+ * order, with where it was compacted. the work in between is left out, as a chat reads
+ */
+export function conversationMarkdown(state: ConversationState, title: string): string {
+  const out = [`# ${title}`];
+  for (const item of state.items) {
+    if (item.kind === "compact") {
+      out.push("_Compacted: what came before was summarised._");
+      continue;
+    }
+    const p = item.prompt;
+    if (p)
+      out.push(
+        p.kind === "human"
+          ? `## You\n\n${p.text}`
+          : `## ${p.kind === "command" ? "Command" : "Task"}\n\n${p.text}`,
+      );
+    const answer = answerOf(item.work);
+    if (answer) out.push(`## Claude\n\n${answer}`);
+    else if (item.apiError) out.push(`_${item.apiError}_`);
+  }
+  return `${out.join("\n\n")}\n`;
+}
+
+/** the last turns (VIEW_TURNS, or `turns`), each text cut. compactions stay where they happened */
 export function conversationView(
   state: ConversationState,
   /**
    * `textMax`: what a message keeps, every turn's. a chat window reads them whole. `chat`: what
-   * only a chat window draws - the files a prompt came with, the steps, the thinking
+   * only a chat window draws - the files a prompt came with, the steps, the thinking. `turns`: how
+   * many of the last turns, when not VIEW_TURNS (a chat window's "Show older")
    */
-  opts: { textMax?: number; chat?: boolean } = {},
+  opts: { textMax?: number; chat?: boolean; turns?: number } = {},
 ): ConversationView {
   const turns = state.items.filter((i) => i.kind === "turn").length;
-  const older = Math.max(0, turns - VIEW_TURNS);
+  const older = Math.max(0, turns - (opts.turns ?? VIEW_TURNS));
   let skip = older;
   const from = state.items.findIndex((i) => i.kind === "turn" && skip-- === 0);
   const items = from < 0 ? [] : state.items.slice(from);

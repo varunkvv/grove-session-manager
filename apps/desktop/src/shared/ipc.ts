@@ -813,8 +813,10 @@ export type ChatFileText = { text: string } | { binary: true; size: number } | {
 export interface ChatApi {
   /** null for a window that has no session yet: the spare */
   chatTarget(): Promise<ChatTarget | null>;
-  /** its transcript's turns, as the panel gets them */
-  chatConversation(): Promise<ChatConversation | null>;
+  /** its transcript's turns, as the panel gets them. `turns`: how many of the last, past 100 */
+  chatConversation(turns?: number): Promise<ChatConversation | null>;
+  /** the whole conversation as markdown: onto the clipboard, or into a file the person picks */
+  chatExport(to: "clipboard" | "file"): Promise<Outcome<{ path?: string }>>;
   /** the project's plans/ and artifacts/, newest first. empty for a session in no project */
   chatFiles(): Promise<{ plans: string[]; artifacts: string[] }>;
   /** a file of the session's, for the viewer. refused outside its folders */
@@ -858,6 +860,7 @@ export interface ChatApi {
 export const CHAT_CHANNELS = [
   "chatTarget",
   "chatConversation",
+  "chatExport",
   "chatFiles",
   "chatReadFile",
   "chatWatch",

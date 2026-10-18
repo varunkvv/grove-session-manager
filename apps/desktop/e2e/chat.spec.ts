@@ -720,6 +720,69 @@ test("the keyboard reaches the model menu's effort and ultracode, not only its r
   await expect(menu).toHaveCount(0);
 });
 
+test("older turns show on asking, and the conversation copies or exports as markdown", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  const { id, root } = writeProject(fx, { name: "chat-trial" });
+  const file = writeSession(fx, {
+    cwd: root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+  });
+  // 120 more turns: the window opens on the last 100
+  const env = {
+    isSidechain: false,
+    userType: "external",
+    cwd: root,
+    sessionId: SID,
+    version: "2.1.296",
+  };
+  const at = (n: number) => new Date(Date.now() - 50_000 + n * 100).toISOString();
+  const more = Array.from({ length: 120 }, (_, n) => [
+    {
+      type: "user",
+      ...env,
+      uuid: `e0000000-0000-4000-8000-${String(2 * n).padStart(12, "0")}`,
+      timestamp: at(2 * n),
+      message: { role: "user", content: [{ type: "text", text: `question ${n}` }] },
+    },
+    {
+      type: "assistant",
+      ...env,
+      uuid: `e0000000-0000-4000-8000-${String(2 * n + 1).padStart(12, "0")}`,
+      timestamp: at(2 * n + 1),
+      message: {
+        role: "assistant",
+        id: `m${n}`,
+        model: "claude-opus-5",
+        content: [{ type: "text", text: `answer ${n}` }],
+      },
+    },
+  ]).flat();
+  writeFileSync(file, `${more.map((l) => JSON.stringify(l)).join("\n")}\n`, { flag: "a" });
+  app = await launchApp(fx, { GROVE_CLAUDE_BIN: writeFakeClaude(fx.dir).bin });
+  await openRow(app.page, id);
+  const chat = await chatWindow(app.app, SID);
+  await expect(chat.getByTestId("turn")).toHaveCount(100);
+  await chat.getByTestId("chat-older").click();
+  await expect(chat.getByTestId("turn")).toHaveCount(121);
+  await expect(chat.getByTestId("chat-older")).toHaveCount(0);
+  // all of it, as markdown, on the clipboard
+  await chat.getByTestId("composer").press("Meta+Alt+Shift+c");
+  const clipboard = () => app.app.evaluate(({ clipboard }) => clipboard.readText());
+  await expect.poll(clipboard).toContain("## You\n\nquestion 119\n\n## Claude\n\nanswer 119");
+  expect(await clipboard()).toContain("## You\n\nset the scene");
+  // and into a file the person picks
+  const out = path.join(fx.dir, "exported.md");
+  await app.app.evaluate(({ dialog }, to) => {
+    dialog.showSaveDialog = (async () => ({ canceled: false, filePath: to })) as never;
+  }, out);
+  await chat.getByTestId("composer").press("Meta+Shift+s");
+  await expect(chat.getByTestId("chat-note")).toContainText("Saved to");
+  expect(readFileSync(out, "utf8")).toContain(`# ${TITLE}`);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

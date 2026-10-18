@@ -5,6 +5,7 @@ import {
   agentView,
   type Combo,
   classifyPath,
+  conversationMarkdown,
   conversationView,
   type EditorTarget,
   filesWritten,
@@ -755,6 +756,7 @@ const CHAT_MODES: ReadonlySet<string> = new Set([
   "auto",
 ]);
 const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
+  "chatExport",
   "chatCopy",
   "chatUnqueue",
   "chatBackground",
@@ -1018,17 +1020,54 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       };
     },
 
-    async chatConversation(id) {
+    async chatConversation(id, turns) {
       const row = newestRow(deps, id);
       if (!row) return null;
+      const n =
+        typeof turns === "number" && turns > 0 && turns <= 100_000 ? Math.floor(turns) : undefined;
       return readConversation(row.key).then(
         // whole messages: the panel's view is a preview, this is where they are read
         (state) => ({
-          ...conversationView(state, { textMax: MESSAGE_MAX, chat: true }),
+          ...conversationView(state, {
+            textMax: MESSAGE_MAX,
+            chat: true,
+            ...(n ? { turns: n } : {}),
+          }),
           written: filesWritten(state),
         }),
         () => null,
       );
+    },
+
+    async chatExport(id, to) {
+      const row = rowOf(id);
+      const title = projects.hitFor(id)?.title ?? "Session";
+      const md = conversationMarkdown(await readConversation(row.key), title);
+      if (to === "clipboard") {
+        electron.clipboard.writeText(md);
+        return {};
+      }
+      if (to !== "file") throw new AppError("invalid", "Copy it or save it.");
+      const win = electron.BrowserWindow.getFocusedWindow();
+      const options = {
+        title: "Export the conversation",
+        defaultPath: path.join(
+          electron.app.getPath("downloads"),
+          `${
+            title
+              .replace(/[/\\:*?"<>|]+/g, " ")
+              .trim()
+              .slice(0, 80) || "session"
+          }.md`,
+        ),
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      };
+      const picked = win
+        ? await electron.dialog.showSaveDialog(win, options)
+        : await electron.dialog.showSaveDialog(options);
+      if (picked.canceled || !picked.filePath) return {};
+      await writeFile(picked.filePath, md);
+      return { path: picked.filePath };
     },
 
     async chatFiles(id) {

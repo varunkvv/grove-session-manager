@@ -210,6 +210,8 @@ export function ChatApp() {
   /** the answer as main streams it, and as it is drawn: see `reading` */
   const stream = useRef("");
   const [shown, setShown] = useState("");
+  /** how many of the last turns to read: more after each "Show older". undefined: the usual 100 */
+  const turnsWanted = useRef<number | undefined>(undefined);
   /** a read of the transcript is under way: a finished message waits for it, so it never blinks */
   const reading = useRef(false);
   const again = useRef(false);
@@ -262,7 +264,7 @@ export function ChatApp() {
     reading.current = true;
     try {
       const t = await api()
-        .chatConversation()
+        .chatConversation(turnsWanted.current)
         .catch(() => null);
       setTalk(t);
     } finally {
@@ -701,6 +703,32 @@ export function ChatApp() {
       run: () => void api().chatCopy(lastAnswer ?? ""),
     },
     {
+      id: "copy-conversation",
+      group: "Session",
+      label: "Copy the conversation as Markdown",
+      keys: { key: "c", meta: true, shift: true, alt: true },
+      off: !!target.fresh,
+      run: () =>
+        void api()
+          .chatExport("clipboard")
+          .then((o) =>
+            o.ok ? setNote("The conversation is on the clipboard.") : setError(o.error.message),
+          ),
+    },
+    {
+      id: "export",
+      group: "Session",
+      label: "Export the conversation…",
+      keys: { key: "s", meta: true, shift: true },
+      off: !!target.fresh,
+      run: () =>
+        void api()
+          .chatExport("file")
+          .then((o) =>
+            o.ok ? o.value.path && setNote(`Saved to ${o.value.path}`) : setError(o.error.message),
+          ),
+    },
+    {
       id: "rename",
       group: "Session",
       label: "Rename…",
@@ -999,8 +1027,20 @@ export function ChatApp() {
                 )}
                 {!!talk?.older && (
                   <p className={`${QUIET} mb-6`}>
-                    {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in{" "}
-                    {target.editor}.
+                    {talk.older} older {talk.older === 1 ? "turn" : "turns"}.{" "}
+                    <Button
+                      variant="link"
+                      data-testid="chat-older"
+                      onClick={() => {
+                        const shown = talk.items.filter((i) => i.kind === "turn").length;
+                        turnsWanted.current = shown + 100;
+                        // the reading place stays where it is as turns come in above it
+                        atEnd.current = false;
+                        void read();
+                      }}
+                    >
+                      Show {Math.min(100, talk.older)} more
+                    </Button>
                   </p>
                 )}
                 {rows.map((item, i) =>
