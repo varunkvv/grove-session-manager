@@ -2,7 +2,7 @@
 // opening a session only hands the spare its id. the same renderer bundle on `#/chat`.
 import type { BrowserWindow, WebContents } from "electron";
 import * as electron from "electron";
-import type { AppSettings } from "../shared/ipc.ts";
+import type { AppSettings, ChatShow } from "../shared/ipc.ts";
 import { canvasColor } from "./window.ts";
 import { loadWindowState, saveWindowState } from "./windowState.ts";
 
@@ -57,13 +57,17 @@ export class ChatWindows {
     }
   }
 
-  /** the session's window, at the front. made from the spare when there is one */
-  open(sessionId: string): void {
+  /**
+   * the session's window, at the front. made from the spare when there is one. `show`: a file or
+   * the agents, opened beside the conversation
+   */
+  open(sessionId: string, show?: ChatShow): void {
     const had = this.bySession.get(sessionId);
     if (had && !had.isDestroyed()) {
       if (had.isMinimized()) had.restore();
       had.show();
       had.focus();
+      if (show) had.webContents.send("grove:chat:show", show);
       return;
     }
     const win = this.takeSpare() ?? this.create();
@@ -81,6 +85,7 @@ export class ChatWindows {
     this.last = win;
     // a spare's page is up and waiting: it asks which session it is for. a new one asks on load
     win.webContents.send("grove:chat:open", {});
+    if (show) win.webContents.send("grove:chat:show", show);
     if (this.ready.has(win)) win.show();
     else win.once("ready-to-show", () => win.show());
     this.refill();

@@ -1,21 +1,35 @@
-import type { ConversationView, TurnView } from "@grove/core/pure";
+import { type ConversationView, type FileMark, fileKind, type TurnView } from "@grove/core/pure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { InboxRowView, ProjectId, RecapView, SessionRef, TaskView } from "../../shared/ipc.ts";
+import type {
+  ChatStatus,
+  InboxRowView,
+  Outcome,
+  ProjectId,
+  RecapView,
+  SessionRef,
+  TaskView,
+} from "../../shared/ipc.ts";
+import { blocks } from "../logic/blocks.ts";
 import { nextActiveKey } from "../logic/rows.ts";
 import { type SessionState, workLine } from "../logic/views.ts";
 import { openChat, openWith, review } from "../state/actions.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { type Section, useStore } from "../state/store.ts";
+import { Ask } from "./Asks.tsx";
+import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { StepList, Thought } from "./Steps.tsx";
 import {
+  AgentState,
   Button,
+  ComposerFrame,
   EscButton,
   Icon,
   Mono,
   ProjectMark,
   RecapBlock,
   RuntimeChip,
+  SendButton,
   Spinner,
   StateLabel,
   TaskMark,
@@ -281,9 +295,198 @@ export function Turn({
   );
 }
 
+/** the end of an answer: its last paragraph or two, with … when there was more */
+function tailOf(text: string): string {
+  const parts = blocks(text).filter((p) => p.trim());
+  const kept = parts.slice(-2).join("\n\n");
+  return parts.length > 2 ? `…\n\n${kept}` : kept;
+}
+
+/** the files a session wrote that can be looked at, the latest first */
+function madeOf(talk: ConversationView | null | undefined): FileMark[] {
+  const seen = new Map<string, FileMark>();
+  for (const item of [...(talk?.items ?? [])].reverse()) {
+    if (item.kind !== "turn") continue;
+    for (const o of [...(item.outputs ?? [])].reverse()) {
+      if (!o.read && !seen.has(o.path)) seen.set(o.path, o);
+    }
+  }
+  return [...seen.values()].slice(0, 6);
+}
+
+const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+
+/**
+ * grove chat on: the panel is the session's card, not its transcript. what it waits on, answerable
+ * here with the chat window's own cards, or the end of what it last said. a reply that goes
+ * through the same claude the chat window talks to. what it made, and what runs for it. a session
+ * live in another app is only pointed at
+ */
+function SessionCard({
+  session,
+  talk,
+  editor,
+}: {
+  session: SessionRef;
+  talk: ConversationView | null | undefined;
+  editor: string;
+}) {
+  const [host, setHost] = useState<ChatStatus | null>(null);
+  const [reply, setReply] = useState("");
+  const [error, setError] = useState<string>();
+  const key = session.key;
+  const id = session.sessionId;
+  useEffect(() => {
+    let live = true;
+    void window.grove.sessionHost(key).then((h) => live && setHost(h));
+    const off = window.grove.on("chat:host", (p) => {
+      if (p.sessionId === id) setHost(p.status);
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, [key, id]);
+
+  const elsewhere =
+    session.runtime === "vscode"
+      ? editor
+      : session.runtime === "terminal"
+        ? "a terminal"
+        : session.runtime === "elsewhere"
+          ? "another app"
+          : undefined;
+  const failed = (o: Outcome<unknown>) => setError(o.ok ? undefined : o.error.message);
+  const asks = elsewhere ? [] : (host?.asks ?? []);
+  const running = !!host?.running;
+  const last = talk?.items.findLast((i): i is TurnView => i.kind === "turn");
+  const made = madeOf(talk);
+  const agents = (host?.agents ?? []).filter((a) => a.state === "running" && !a.workflow);
+
+  const send = async () => {
+    const text = reply.trim();
+    if (!text) return;
+    // a background agent mid-turn stops when this takes it over: asked first, as Open asks
+    const stop = session.runtime === "background" ? session.open.confirm : undefined;
+    if (stop && !window.confirm(`${stop.title}\n\n${stop.body}`)) return;
+    setReply("");
+    const o = await window.grove.sessionReply(key, text);
+    failed(o);
+    if (!o.ok) setReply(text);
+  };
+
+  return (
+    // the first thing in it sits at its top: an ask card's own gap is for under a turn
+    <div data-testid="session-card" className="[&>section:first-child]:mt-0">
+      {elsewhere && (
+        <p className={QUIET} data-testid="card-elsewhere">
+          Live in {elsewhere}. Answer it there.
+        </p>
+      )}
+      {asks.map((a) => (
+        <Ask
+          key={a.id}
+          ask={a}
+          onAnswer={(x) => void window.grove.sessionAnswer(key, a.id, x).then(failed)}
+        />
+      ))}
+      {!elsewhere && running && asks.length === 0 && (
+        <div className="flex items-center gap-2" data-testid="card-live">
+          <span className="text-sm text-working">Working</span>
+          {host?.since !== undefined && <Clock since={host.since} />}
+          {host && <LiveLine status={host} className="min-w-0" />}
+        </div>
+      )}
+      {!running && asks.length === 0 && last?.text && (
+        <div data-testid="card-tail">
+          <h3 className="text-sm font-medium text-fg-4">Claude</h3>
+          <div className="selectable mt-1">
+            <Markdown text={tailOf(last.text)} />
+          </div>
+        </div>
+      )}
+      {!elsewhere && (
+        <div className="mt-4">
+          <ComposerFrame>
+            <div className="flex items-end gap-2 py-1 pr-1.5">
+              <textarea
+                rows={1}
+                value={reply}
+                data-reply
+                data-composer
+                data-testid="card-reply"
+                placeholder={running ? "Queue a reply…" : "Reply…"}
+                className="no-drag block max-h-32 min-h-8 min-w-0 flex-1 resize-none border-0 bg-transparent px-3 py-1.5 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
+                onChange={(e) => setReply(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  } else if (e.key === "Escape") {
+                    // out of the box, and the panel stays: the next Esc closes it
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.blur();
+                  }
+                }}
+              />
+              <SendButton
+                ready={!!reply.trim()}
+                title={running ? "Queue it (Enter)" : "Send (Enter)"}
+                aria-label="Send"
+                data-testid="card-send"
+                onClick={() => void send()}
+              />
+            </div>
+          </ComposerFrame>
+        </div>
+      )}
+      {error && (
+        <p className="mt-2 break-words text-sm text-danger" data-testid="card-error">
+          {error}
+        </p>
+      )}
+      {made.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5" data-testid="card-made">
+          {made.map((o) => (
+            <button
+              key={o.path}
+              type="button"
+              title={o.path}
+              data-testid="card-file"
+              onClick={() => openChat(key, session.title, { file: o.path })}
+              className="fade flex h-7 max-w-56 items-center gap-1.5 rounded-md border border-line px-2 text-sm text-fg-2 hover:border-line-strong hover:bg-raised"
+            >
+              <Icon name="file" size={12} faint />
+              <span className="truncate">{nameOf(o.path)}</span>
+              {fileKind(o.path) === "image" && <span className="text-fg-4">image</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {agents.length > 0 && (
+        <button
+          type="button"
+          data-testid="card-agents"
+          onClick={() => openChat(key, session.title, { agents: true })}
+          className="fade mt-3 flex min-w-0 max-w-full items-center gap-1.5 text-left text-sm text-fg-3 hover:text-fg"
+        >
+          <AgentState state="running" word={false} />
+          <span className="truncate">
+            {agents.length} {agents.length === 1 ? "agent" : "agents"} running ·{" "}
+            {agents.map((a) => a.description).join(", ")}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 /**
  * a session, beside the list its row is in: a recap of what it was for and what it needs, and
- * under it the conversation, opened at its end. both lists open this one panel
+ * under it the conversation, opened at its end. both lists open this one panel. with grove chat on
+ * the conversation's place is the session card's
  */
 export function SessionPanel({
   session,
@@ -412,32 +615,34 @@ export function SessionPanel({
           atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
         }}
       >
-        {talk === null && (
+        {chat && <SessionCard session={session} talk={talk} editor={editor} />}
+        {!chat && talk === null && (
           <p className={QUIET} data-testid="panel-gone">
             This session's transcript is gone. Claude Code deletes one after 30 days.
           </p>
         )}
-        {!!talk?.older && (
+        {!chat && !!talk?.older && (
           <p className={`${QUIET} mb-6`} data-testid="turns-older">
             {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {editor}.
           </p>
         )}
-        {talk?.items.map((item, i) =>
-          item.kind === "compact" ? (
-            // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-            <p key={talk.older + i} className={`${QUIET} mt-6`} data-testid="turn-compact">
-              Compacted: what came before was summarised.
-            </p>
-          ) : (
-            <Turn
+        {!chat &&
+          talk?.items.map((item, i) =>
+            item.kind === "compact" ? (
               // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-              key={talk.older + i}
-              turn={item}
-              last={i === talk.items.length - 1}
-              working={state === "working"}
-            />
-          ),
-        )}
+              <p key={talk.older + i} className={`${QUIET} mt-6`} data-testid="turn-compact">
+                Compacted: what came before was summarised.
+              </p>
+            ) : (
+              <Turn
+                // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+                key={talk.older + i}
+                turn={item}
+                last={i === talk.items.length - 1}
+                working={state === "working"}
+              />
+            ),
+          )}
         {row && (
           <Button
             size="sm"

@@ -126,6 +126,8 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "review",
   "openSession",
   "openChat",
+  "sessionAnswer",
+  "sessionReply",
   "startAgent",
   "createProject",
   "updateProject",
@@ -320,6 +322,18 @@ function buildHandlers(deps: Deps): Handlers {
     return draft;
   }
 
+  /** the chat window's own handlers, for the session card's answer and reply: one set of rules */
+  let chat: ChatHandlers | undefined;
+  const chatOf = () => {
+    chat ??= buildChatHandlers(deps, api);
+    return chat;
+  };
+  const chatOn = () => {
+    if (deps.settings().chat !== true) {
+      throw new AppError("chat-off", "Grove chat is switched off in Settings.");
+    }
+  };
+
   const api: Handlers = {
     async bootstrap(): Promise<Bootstrap> {
       const editorStatus = await editor.status();
@@ -408,16 +422,37 @@ function buildHandlers(deps: Deps): Handlers {
       return (await editor.companionInstalled()) ? {} : missing;
     },
 
-    async openChat(key) {
-      if (deps.settings().chat !== true) {
-        throw new AppError("chat-off", "Grove chat is switched off in Settings.");
-      }
+    async openChat(key, show) {
+      chatOn();
       const row = requireSession(deps, key);
       if (!isValidSessionId(row.sessionId)) {
         throw new AppError("bad-session-id", "That session has no usable ID.");
       }
-      deps.chatWindows.open(row.sessionId);
+      // a path is checked again when the viewer reads it: only the session's files are shown
+      const s = show as Record<string, unknown> | undefined;
+      const pane =
+        s && isText(s.file, 4096) && s.file
+          ? { file: s.file }
+          : s?.agents === true
+            ? { agents: true as const }
+            : undefined;
+      deps.chatWindows.open(row.sessionId, pane);
       deps.live.markSeen([row.sessionId]);
+    },
+
+    async sessionHost(key) {
+      if (deps.settings().chat !== true) return null;
+      return deps.chat.status(requireSession(deps, key).sessionId);
+    },
+
+    async sessionAnswer(key, askId, answer) {
+      chatOn();
+      await chatOf().chatAnswer(requireSession(deps, key).sessionId, askId, answer);
+    },
+
+    async sessionReply(key, text) {
+      chatOn();
+      await chatOf().chatSend(requireSession(deps, key).sessionId, text);
     },
 
     async newChat(project) {

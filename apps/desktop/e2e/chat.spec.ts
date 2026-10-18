@@ -6,7 +6,7 @@ import { type ElectronApplication, expect, type Page, test } from "@playwright/t
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
 import { makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
 import { groveTest, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
-import { writeProject } from "./helpers/project.ts";
+import { liveSession, writeProject } from "./helpers/project.ts";
 
 const SID = "cccccccc-0000-4000-8000-000000000001";
 const TITLE = "talk to it here";
@@ -112,6 +112,9 @@ test("switched off, grove is as it was: one window, and a double-click opens the
   await page.waitForTimeout(1500);
   expect(electron.windows()).toHaveLength(1);
   await expect(page.getByTestId("panel-chat")).toHaveCount(0);
+  // the panel is the transcript, as it was: no session card
+  await expect(page.getByTestId("session-panel").getByTestId("turn")).toHaveCount(1);
+  await expect(page.getByTestId("session-card")).toHaveCount(0);
   // the switch is in Settings, off
   await page.keyboard.press("Meta+,");
   await expect(page.getByTestId("setting-chat")).toHaveAttribute("aria-checked", "false");
@@ -221,6 +224,58 @@ test("several questions are tabs: one at a time, multi-select picks any, and Sub
     "Which checks should run?": "Lint, Tests",
     "Where should the results go?": "a slack message",
   });
+});
+
+test("the session card: what it waits on is answered from the main window, and a reply goes to the same claude", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_TOOL_MS: "4000" });
+  // no transcript in the panel: the card, with a reply box R goes to
+  await page.locator(`[data-testid="project-item"][data-id="${s.id}"]`).click();
+  await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
+  const card = page.getByTestId("session-card");
+  await expect(card).toBeVisible();
+  await expect(page.getByTestId("session-panel").getByTestId("turn")).toHaveCount(0);
+  await expect(card.getByTestId("card-tail")).toBeVisible();
+  // the row has the keyboard: R moves it to the reply
+  await page.keyboard.press("r");
+  await expect(card.getByTestId("card-reply")).toBeFocused();
+  // a reply starts grove's own claude on it, and a question comes back to the card
+  await card.getByTestId("card-reply").fill(QUESTION);
+  await card.getByTestId("card-reply").press("Enter");
+  const asked = card.getByTestId("ask-question");
+  await expect(asked).toBeVisible({ timeout: 15_000 });
+  // the chat window, opened now, shows the same ask, and the card's answer settles both
+  await page.getByTestId("panel-chat").click();
+  const chat = await chatWindow(electron, SID);
+  await expect(chat.getByTestId("ask-question")).toBeVisible();
+  await page.bringToFront();
+  await asked.getByTestId("ask-option").filter({ hasText: "Blue" }).click();
+  await expect(chat.getByTestId("ask-question")).toHaveCount(0);
+  await expect(chat.getByTestId("panel-text")).toContainText("Blue", { timeout: 15_000 });
+  await expect(card.getByTestId("card-tail")).toContainText("Blue", { timeout: 15_000 });
+  // while a turn runs the card says what it is doing, and a reply queues
+  await card.getByTestId("card-reply").fill(AGENTS);
+  await card.getByTestId("card-reply").press("Enter");
+  await expect(card.getByTestId("card-live")).toBeVisible({ timeout: 15_000 });
+  await expect(card.getByTestId("card-reply")).toHaveAttribute("placeholder", "Queue a reply…");
+  await card.getByTestId("card-reply").fill(HELLO);
+  await card.getByTestId("card-reply").press("Enter");
+  await expect(chat.getByTestId("chat-queued")).toContainText(HELLO);
+  // what runs for it is one line, and it opens the chat window's agents
+  await expect(card.getByTestId("card-agents")).toContainText("2 agents running");
+  await card.getByTestId("card-agents").click();
+  await expect(chat.getByTestId("agents")).toBeVisible();
+});
+
+test("the session card of a session live in VS Code only points there", async () => {
+  const s = seed(true);
+  liveSession(s.fx, { sessionId: SID, kind: "interactive", entrypoint: "claude-vscode" });
+  const { page } = await launch(s);
+  await page.locator(`[data-testid="project-item"][data-id="${s.id}"]`).click();
+  await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
+  const card = page.getByTestId("session-card");
+  await expect(card.getByTestId("card-elsewhere")).toHaveText("Live in VS Code. Answer it there.");
+  await expect(card.getByTestId("card-reply")).toHaveCount(0);
 });
 
 test("the mode is a menu: every mode the session can take, said in a line, and the pick goes to claude", async () => {

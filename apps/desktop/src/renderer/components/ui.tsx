@@ -1116,6 +1116,21 @@ export function Choice({
   );
 }
 
+/** a multi-select option's box: ticked in the accent's selected look, as a picked Choice is */
+export function CheckBox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        "mt-[3px] flex size-3.5 shrink-0 items-center justify-center rounded-sm border",
+        checked ? "border-accent-line bg-accent-soft text-accent" : "border-line-strong",
+      )}
+    >
+      {checked && <Icon name="check" size={10} />}
+    </span>
+  );
+}
+
 export const MODE_WORD: Record<ChatMode, string> = {
   default: "Manual",
   acceptEdits: "Accept edits",

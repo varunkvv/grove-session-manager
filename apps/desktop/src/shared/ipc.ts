@@ -418,8 +418,17 @@ export interface Api {
   review(project: ProjectId, keys: string[], reviewed: boolean): Promise<Outcome>;
 
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
-  /** grove chat: the session in its own window. one there already comes to the front */
-  openChat(key: SessionKey): Promise<Outcome>;
+  /**
+   * grove chat: the session in its own window. one there already comes to the front. `show`: what
+   * it opens beside the conversation, a file of the session's or its agents
+   */
+  openChat(key: SessionKey, show?: ChatShow): Promise<Outcome>;
+  /** grove chat: what grove's own claude for this session is doing and waiting on. idle when none */
+  sessionHost(key: SessionKey): Promise<ChatStatus | null>;
+  /** grove chat: answer what it waits on from the main window's session card */
+  sessionAnswer(key: SessionKey, askId: string, answer: ChatAnswer): Promise<Outcome>;
+  /** grove chat: a reply from the session card, through the same claude the chat window talks to */
+  sessionReply(key: SessionKey, text: string): Promise<Outcome>;
   /** grove chat: a new session in the project, in a window of its own. claude starts on the first key */
   newChat(project: ProjectId): Promise<Outcome>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
@@ -498,6 +507,9 @@ export const INVOKE_CHANNELS = [
   "review",
   "openSession",
   "openChat",
+  "sessionHost",
+  "sessionAnswer",
+  "sessionReply",
   "newChat",
   "startAgent",
   "findSessions",
@@ -555,7 +567,14 @@ export interface PushEvents {
   "chat:file": { path: string };
   /** a chat window only: the Appearance setting moved */
   "chat:appearance": { appearance: AppSettings["appearance"] };
+  /** a chat window only: open this beside the conversation, as the session card asked */
+  "chat:show": ChatShow;
+  /** the main window: a session grove runs moved (a state, an ask, a tool). never its tokens */
+  "chat:host": { sessionId: string; status: ChatStatus };
 }
+
+/** what a chat window opens beside its conversation when the session card sends the person there */
+export type ChatShow = { file: string } | { agents: true };
 
 export const PUSH_CHANNELS = [
   "projects:changed",
@@ -571,6 +590,8 @@ export const PUSH_CHANNELS = [
   "chat:text",
   "chat:file",
   "chat:appearance",
+  "chat:show",
+  "chat:host",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 // ---------- grove chat: a session grove runs itself, through the agent sdk, in a window of its own

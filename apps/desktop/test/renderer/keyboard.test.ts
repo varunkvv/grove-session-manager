@@ -33,6 +33,15 @@ describe("what a key means", () => {
     expect(interpret(ctx({ overlay: true }), key("Escape", { composing: true }))).toBeNull();
   });
 
+  it("R goes to a session card's reply box, and only there", () => {
+    expect(interpret(ctx({ panel: true, reply: true }), key("r"))).toEqual({ type: "focus-reply" });
+    expect(interpret(ctx({ panel: true, reply: true }), key("R", { shift: true }))).toBeNull();
+    expect(interpret(ctx({ panel: true }), key("r"))).toBeNull();
+    // a field has it: the letter types
+    expect(interpret(ctx({ ...search, panel: true, reply: true }), key("r"))).toBeNull();
+    expect(interpret(ctx({ panel: true, reply: true, inText: true }), key("r"))).toBeNull();
+  });
+
   it("Escape: one step at a time, by screen", () => {
     expect(interpret(ctx({ overlay: true, panel: true }), key("Escape"))).toEqual({
       type: "close-overlay",

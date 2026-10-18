@@ -3,7 +3,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatAnswer, ChatAsk, ChatQuestion } from "../../shared/ipc.ts";
 import { Markdown } from "./Markdown.tsx";
-import { AskCard, Button, Choice, cx, Icon, Mono } from "./ui.tsx";
+import { AskCard, Button, CheckBox, Choice, cx, Icon, Mono } from "./ui.tsx";
 
 /** a header chip holds this much, as Claude Code's does */
 const HEADER_MAX = 12;
@@ -185,17 +185,7 @@ export function QuestionCard({
                       className="flex items-start gap-2.5"
                     >
                       {q.multiSelect ? (
-                        <span
-                          aria-hidden="true"
-                          className={cx(
-                            "mt-[3px] flex size-3.5 shrink-0 items-center justify-center rounded-sm border",
-                            on
-                              ? "border-accent-line bg-accent-soft text-accent"
-                              : "border-line-strong",
-                          )}
-                        >
-                          {on && <Icon name="check" size={10} />}
-                        </span>
+                        <CheckBox checked={on} />
                       ) : (
                         <span className="w-3 shrink-0 pt-px text-sm tabular-nums text-fg-4">
                           {i + 1}

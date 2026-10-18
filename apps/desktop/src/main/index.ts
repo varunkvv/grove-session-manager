@@ -327,6 +327,8 @@ async function start(): Promise<void> {
       fresh.set(to, { ...(project ? { project } : {}), where });
       chatWindows.rekey(from, to);
     },
+    // the main window's session card: what it waits on and what it is doing, never its tokens
+    onStatus: (sessionId, status) => pusher.send("chat:host", { sessionId, status }),
   });
   /** sessions grove chat made, until their transcript is in the list */
   const fresh: FreshChats = new Map();

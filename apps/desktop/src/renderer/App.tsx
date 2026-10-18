@@ -100,6 +100,7 @@ export function App() {
             'button, a[href], [role="button"], [role="menuitem"], [role="radio"]',
           ),
           query: s.filter,
+          reply: !!document.querySelector("[data-reply]"),
           panel: s.peek !== null,
           canGoBack: s.back.length > 0,
           // the form says so itself, on any element: its fields are its own state

@@ -1,7 +1,7 @@
 // grove chat's window: one session, its conversation in a reading column, the composer under it.
 // the transcript is what is drawn, as in the panel. the host adds what is not in it yet: the
 // answer being streamed, and what the agent is waiting on the person for.
-import { formatDuration, modelLabel, type TurnView, toolLabel } from "@grove/core/pure";
+import { modelLabel, type TurnView } from "@grove/core/pure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   ChatAgent,
@@ -21,6 +21,7 @@ import { useStore } from "../state/store.ts";
 import { AgentList, AgentViewer } from "./Agents.tsx";
 import { Ask } from "./Asks.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
+import { Clock, LiveLine } from "./Live.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -36,7 +37,6 @@ import {
   MODE_HINT,
   MODE_WORD,
   ModeDot,
-  Mono,
   ProjectMark,
   Segmented,
   SendButton,
@@ -178,69 +178,6 @@ function Note({ note }: { note: ChatNote }) {
   );
 }
 
-/** a second or more, as a step's time says it */
-const took = (ms: number) => (ms >= 1000 ? formatDuration(ms) : "");
-
-/** now, once a second, for as long as it is drawn: only what shows a running time redraws */
-function useTick(): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
-}
-
-/** how long the turn has run, as a clock: 0:42, 12:05 */
-function Clock({ since }: { since: number }) {
-  const s = Math.max(0, Math.floor((useTick() - since) / 1000));
-  return (
-    <span className="text-sm tabular-nums text-fg-4" data-testid="chat-elapsed">
-      {Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}
-    </span>
-  );
-}
-
-/**
- * what the turn is doing right now, under what it has said: waiting to retry, compacting, or the
- * tool it is in with what it acts on and for how long. quiet: the answer is what is read
- */
-function LiveLine({ status: s }: { status: ChatStatus }) {
-  const now = useTick();
-  if (!s.activity && !s.tool && !s.thinking) return null;
-  return (
-    <p className="mt-2 flex min-w-0 items-center gap-1.5 text-sm text-fg-4" data-testid="chat-live">
-      <Spinner size={10} />
-      {s.activity ? (
-        <span className="truncate">{s.activity}…</span>
-      ) : !s.tool && s.thinking ? (
-        <span data-testid="chat-thinking">
-          Thinking
-          <span className="tabular-nums">
-            {took(now - s.thinking.since) && ` · ${took(now - s.thinking.since)}`}
-          </span>
-        </span>
-      ) : (
-        s.tool && (
-          <>
-            <span className="shrink-0 font-medium text-fg-3" data-testid="chat-tool">
-              {toolLabel(s.tool.name)}
-            </span>
-            {s.tool.target && (
-              <Mono className="min-w-0 truncate" title={s.tool.target}>
-                {s.tool.target}
-              </Mono>
-            )}
-            <span className="shrink-0 tabular-nums">
-              {formatDuration(Math.max(0, now - s.tool.since))}
-            </span>
-          </>
-        )
-      )}
-    </p>
-  );
-}
-
 /** the window of one session. its page has no list and no landing: main says which session */
 export function ChatApp() {
   const [target, setTarget] = useState<ChatTarget | null>();
@@ -347,6 +284,10 @@ export function ChatApp() {
       }),
       api().on("chat:status", (s) => setStatus(s)),
       api().on("chat:appearance", ({ appearance }) => applyAppearance(appearance)),
+      // the session card sent the person here for a file or the agents
+      api().on("chat:show", (show) =>
+        setPane("file" in show ? { kind: "files", file: show.file } : { kind: "agents" }),
+      ),
       api().on("chat:text", ({ at, text }) => {
         stream.current = stream.current.slice(0, at) + text;
         // a message that just finished is drawn until the transcript that has it is read

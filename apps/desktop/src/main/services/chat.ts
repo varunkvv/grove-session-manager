@@ -174,6 +174,8 @@ export interface ChatHostOptions {
    * and its windows go with it
    */
   onReset?: (from: string, to: string, where: ChatWhere) => void;
+  /** its status moved: the main window's session card follows it. never the streamed text */
+  onStatus?: (id: string, status: ChatStatus) => void;
 }
 
 /** vs code's thinking budget (extension.js `M61`), sent for every model as it sends it */
@@ -1152,6 +1154,7 @@ export class ChatHost {
   private set(h: Hosted, patch: Partial<ChatStatus>): void {
     h.status = { ...h.status, ...patch };
     for (const w of h.windows) this.deliver(h, w, "grove:chat:status", h.status);
+    this.o.onStatus?.(h.id, h.status);
   }
 
   private setText(h: Hosted, text: string): void {

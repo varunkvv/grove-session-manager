@@ -1,4 +1,5 @@
 import type {
+  ChatShow,
   InboxView,
   OpenPlan,
   ProjectId,
@@ -160,10 +161,10 @@ export function openWith(
 export const chatOn = (): boolean => state().settings?.chat === true;
 
 /** the session in its own grove chat window, or that window brought to the front */
-export function openChat(key: SessionKey | undefined, label: string): void {
+export function openChat(key: SessionKey | undefined, label: string, show?: ChatShow): void {
   if (!key) return;
   void api()
-    .openChat(key)
+    .openChat(key, show)
     .then((res) => report(`Could not open ${label}`, res));
 }
 
@@ -485,6 +486,9 @@ export function perform(intent: Intent): void {
     case "settings":
       s.set({ dialog: { kind: "settings" } });
       break;
+    case "focus-reply":
+      document.querySelector<HTMLElement>("[data-reply]")?.focus();
+      return;
     case "focus-search":
       // the field is the list's on screen. a form has none: its own list comes back first
       if (!onList(s)) go(s.section);

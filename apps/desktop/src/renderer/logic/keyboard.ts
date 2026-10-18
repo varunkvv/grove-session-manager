@@ -24,7 +24,9 @@ export type Intent =
   | { type: "open-project" }
   | { type: "refresh" }
   | { type: "settings" }
-  | { type: "focus-search" };
+  | { type: "focus-search" }
+  /** grove chat on: R, the session card's reply box */
+  | { type: "focus-reply" };
 
 export interface KeyContext {
   /** a dialog or the palette is open. they own their keys. */
@@ -40,6 +42,8 @@ export interface KeyContext {
   inControl: boolean;
   /** what is typed in the search field */
   query: string;
+  /** the panel is a grove chat session card with a reply box: R goes to it */
+  reply?: boolean;
   /** a session is open in the panel beside its list */
   panel: boolean;
   /** Back has somewhere to go: the stack is not empty */
@@ -81,8 +85,9 @@ function listKey(ctx: KeyContext, key: string, withEnds: boolean): Intent | null
 }
 
 /**
- * one place that decides what a key means. no single letter acts on any screen: a letter only ever
- * types, in the sessions filter or a form.
+ * one place that decides what a key means. no single letter acts on any screen but one: a letter
+ * types, in the sessions filter or a form. the one is R, which moves to a session card's reply box
+ * (grove chat on), never while a field has the keyboard.
  */
 export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   if (e.composing) return null;
@@ -154,6 +159,9 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
   }
   if (e.ctrl) return null;
 
+  if (ctx.reply && !ctx.inSearch && !e.meta && !e.alt && !e.shift && e.key.toLowerCase() === "r") {
+    return { type: "focus-reply" };
+  }
   // in the filter everything else types. Home and End move its caret
   if (isList(ctx.view)) return listKey(ctx, e.key, !ctx.inSearch);
   return null;
