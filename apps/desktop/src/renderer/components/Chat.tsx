@@ -44,6 +44,7 @@ import {
   MODE_HINT,
   MODE_WORD,
   ModeDot,
+  Overlay,
   ProjectMark,
   Segmented,
   SendButton,
@@ -139,7 +140,16 @@ function limitWords(l: NonNullable<ChatStatus["limit"]>): string {
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
 
 /** a file in the composer: an image as its thumbnail, anything else as its name and size */
-function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
+function Chip({
+  file,
+  onRemove,
+  onView,
+}: {
+  file: Attached;
+  onRemove: () => void;
+  /** an image: seen full size */
+  onView?: (url: string) => void;
+}) {
   const remove = (
     <IconButton
       label="Remove attachment"
@@ -158,7 +168,15 @@ function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
         className="group relative overflow-hidden rounded-md border border-line"
         data-testid="chip"
       >
-        <img src={file.url} alt="Attached" className="block h-10 w-auto max-w-32" />
+        <button
+          type="button"
+          className="block"
+          title="See it full size"
+          data-testid="chip-view"
+          onClick={() => file.url && onView?.(file.url)}
+        >
+          <img src={file.url} alt="Attached" className="block h-10 w-auto max-w-32" />
+        </button>
         {remove}
       </div>
     );
@@ -178,6 +196,40 @@ function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
     </div>
   );
 }
+
+/** a long paste, kept out of the way of what is being typed: it goes with the message */
+function PasteChip({
+  text,
+  onRemove,
+  onOpen,
+}: {
+  text: string;
+  onRemove: () => void;
+  onOpen: () => void;
+}) {
+  const lines = text.split("\n").length;
+  return (
+    <div
+      className="flex h-10 max-w-64 items-center gap-2 rounded-md border border-line bg-chrome pr-1 pl-2.5"
+      data-testid="paste-chip"
+    >
+      <button
+        type="button"
+        className="min-w-0 truncate text-sm text-fg-2"
+        title="Put it in the message"
+        onClick={onOpen}
+      >
+        Pasted {lines} lines
+      </button>
+      <IconButton label="Remove" data-testid="paste-remove" onClick={onRemove}>
+        <Icon name="x" size={10} />
+      </IconButton>
+    </div>
+  );
+}
+
+/** a paste this long becomes a chip, not lines in the composer */
+const PASTE_LINES = 40;
 
 /**
  * what claude said along the way that no transcript keeps: a tool it turned down by itself, a
@@ -237,6 +289,10 @@ export function ChatApp() {
   const [draft, setDraft] = useState("");
   /** where the caret is in the draft: what `/` and `@` look at */
   const [caret, setCaret] = useState(0);
+  /** long pastes, as chips: sent after what is typed */
+  const [pastes, setPastes] = useState<string[]>([]);
+  /** an attached image, full size */
+  const [lightbox, setLightbox] = useState<string>();
   /** files picked, dropped or pasted, sent with the next message */
   const [files, setFiles] = useState<Attached[]>([]);
   /** what went with what this window sent, until the transcript has it */
@@ -359,6 +415,9 @@ export function ChatApp() {
   const actionsRef = useRef<ChatAction[]>([]);
   const paneOpen = useRef(false);
   paneOpen.current = !!pane;
+  /** an image is open full size: Esc closes that first */
+  const seeing = useRef(false);
+  seeing.current = !!lightbox;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing || e.defaultPrevented) return;
@@ -366,6 +425,9 @@ export function ChatApp() {
       if (hit) {
         e.preventDefault();
         hit.run();
+      } else if (e.key === "Escape" && seeing.current) {
+        e.preventDefault();
+        setLightbox(undefined);
       } else if (e.key === "Escape" && paneOpen.current) {
         e.preventDefault();
         setPane(null);
@@ -512,7 +574,7 @@ export function ChatApp() {
   /** what is in the composer, or `words` from an action (/compact): those leave the draft alone */
   const send = async (words?: string) => {
     const own = words === undefined;
-    const text = own ? draft.trim() : words;
+    const text = own ? [draft.trim(), ...pastes].filter(Boolean).join("\n\n") : words;
     const attached = own ? files : [];
     if ((!text && attached.length === 0) || readOnly) return;
     const mine = own && attached.length === 0 ? local[text] : undefined;
@@ -529,6 +591,7 @@ export function ChatApp() {
     if (own) {
       setDraft("");
       setFiles([]);
+      setPastes([]);
       history.current = null;
     }
     // what goes over: the chip's size and thumbnail stay here
@@ -915,6 +978,21 @@ export function ChatApp() {
       }}
     >
       {dragging && <DropOverlay />}
+      {lightbox && (
+        <Overlay
+          open
+          onClose={() => setLightbox(undefined)}
+          testId="lightbox"
+          className="flex max-h-[calc(100vh-64px)] max-w-[calc(100vw-64px)] overflow-hidden p-2"
+          style={{ top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
+        >
+          <img
+            src={lightbox}
+            alt="Attached"
+            className="max-h-[calc(100vh-80px)] max-w-[calc(100vw-80px)] object-contain"
+          />
+        </Overlay>
+      )}
       {finding > 0 && (
         <FindBar
           asked={finding}
@@ -1170,7 +1248,7 @@ export function ChatApp() {
                   </p>
                 ) : (
                   <ComposerFrame>
-                    {files.length > 0 && (
+                    {files.length + pastes.length > 0 && (
                       <div className="flex flex-wrap gap-2 px-3 pt-3" data-testid="composer-files">
                         {files.map((f, i) => (
                           <Chip
@@ -1178,6 +1256,20 @@ export function ChatApp() {
                             key={i}
                             file={f}
                             onRemove={() => setFiles(files.filter((_, j) => j !== i))}
+                            onView={setLightbox}
+                          />
+                        ))}
+                        {pastes.map((p, i) => (
+                          <PasteChip
+                            // biome-ignore lint/suspicious/noArrayIndexKey: the same words can be pasted twice
+                            key={`p${i}`}
+                            text={p}
+                            onRemove={() => setPastes(pastes.filter((_, j) => j !== i))}
+                            onOpen={() => {
+                              setDraft((d) => `${d}${d && !d.endsWith("\n") ? "\n" : ""}${p}`);
+                              setPastes(pastes.filter((_, j) => j !== i));
+                              composer.current?.focus();
+                            }}
                           />
                         ))}
                       </div>
@@ -1203,6 +1295,14 @@ export function ChatApp() {
                       onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
                       onPaste={(e) => {
                         const pasted = e.clipboardData.files;
+                        const words = e.clipboardData.getData("text/plain");
+                        // a page of text pasted in is a chip: what is typed around it stays readable
+                        if (pasted.length === 0 && words.split("\n").length > PASTE_LINES) {
+                          e.preventDefault();
+                          setPastes((p) => [...p, words]);
+                          warm();
+                          return;
+                        }
                         if (pasted.length === 0) return;
                         // a screenshot is only an image. a copy from a page that has words too
                         // pastes its words as well
@@ -1343,7 +1443,7 @@ export function ChatApp() {
                           Starting Claude…
                         </span>
                       )}
-                      {running && !draft.trim() && files.length === 0 ? (
+                      {running && !draft.trim() && files.length === 0 && pastes.length === 0 ? (
                         <SendButton
                           ready={false}
                           stop
@@ -1354,7 +1454,7 @@ export function ChatApp() {
                         />
                       ) : (
                         <SendButton
-                          ready={!!draft.trim() || files.length > 0}
+                          ready={!!draft.trim() || files.length > 0 || pastes.length > 0}
                           title={
                             running
                               ? "Queue it (Enter): it goes once this step is done"

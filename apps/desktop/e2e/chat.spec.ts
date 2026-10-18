@@ -806,6 +806,52 @@ test("the … menu lists the MCP servers, and a failed one is tried again", asyn
   ).toBe(true);
 });
 
+test("a long paste becomes a chip that goes with the message, and an attached image opens full size", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  const log = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+  await composer.fill("what does this log say?");
+  await composer.evaluate((el, text) => {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", text);
+    el.dispatchEvent(
+      new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }),
+    );
+  }, log);
+  await expect(chat.getByTestId("paste-chip")).toHaveText(/Pasted 60 lines/);
+  await expect(composer).toHaveValue("what does this log say?");
+  // an image dropped in opens full size from its thumbnail, and Esc closes it
+  await chat.evaluate((b64) => {
+    const dt = new DataTransfer();
+    dt.items.add(
+      new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "shot.png", {
+        type: "image/png",
+      }),
+    );
+    document
+      .querySelector('[data-testid="conversation"]')
+      ?.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==");
+  // the tiny test image sits mostly under its remove button: the click goes to its corner
+  await chat.getByTestId("chip-view").click({ position: { x: 3, y: 36 } });
+  await expect(chat.getByTestId("lightbox")).toBeVisible();
+  await chat.keyboard.press("Escape");
+  await expect(chat.getByTestId("lightbox")).toHaveCount(0);
+  await chat.getByTestId("chip-remove").first().click({ force: true });
+  await composer.press("Enter");
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some((l) => {
+      const c = (l.in as { type?: string; message?: { content?: Array<{ text?: string }> } })
+        ?.message?.content;
+      return !!c?.some((b) => b.text?.startsWith("what does this log say?\n\nline 1\nline 2"));
+    }),
+  );
+  await expect(chat.getByTestId("paste-chip")).toHaveCount(0);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
