@@ -8,7 +8,8 @@ import path from "node:path";
  * has not trusted, while the `untrusted` marker file exists. `-p` is the recap call: it logs the
  * prompt it was sent on stdin and answers from the `recap` file, by the first entry of that file's
  * JSON list whose `when` the prompt holds. a title call goes the same way. node, not sh: a prompt is typed text, quotes and newlines and
- * all, and the log has to hold it exactly.
+ * all, and the log has to hold it exactly. with `--output-format stream-json` it is grove chat's
+ * claude: test/fixtures/chat/replay.cjs plays back the spike's recordings.
  */
 export interface FakeClaude {
   bin: string;
@@ -31,6 +32,9 @@ export interface FakeClaudeCall {
 
 export const FAKE_SHORT_ID = "abcd1234";
 
+/** grove chat's claude: the spike's recordings, played back (test/fixtures/chat/replay.cjs) */
+const REPLAY = path.join(import.meta.dirname, "../../test/fixtures/chat/replay.cjs");
+
 export function writeFakeClaude(dir: string, agents: unknown[] = []): FakeClaude {
   const fake: FakeClaude = {
     bin: path.join(dir, "fake-claude"),
@@ -44,6 +48,11 @@ export function writeFakeClaude(dir: string, agents: unknown[] = []): FakeClaude
   const script = `#!${process.execPath}
 const fs = require("node:fs");
 const args = process.argv.slice(2);
+// grove chat, through the agent sdk: stream-json in and out, played back from the recordings
+if (args.includes("stream-json")) {
+  require(${JSON.stringify(REPLAY)});
+  return;
+}
 const input = args[0] === "-p" ? fs.readFileSync(0, "utf8") : undefined;
 fs.appendFileSync(${JSON.stringify(fake.log)}, JSON.stringify({ argv: args, cwd: process.cwd(), path: process.env.PATH || "", input }) + "\\n");
 if (input !== undefined) {
