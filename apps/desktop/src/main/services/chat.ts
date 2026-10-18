@@ -258,6 +258,67 @@ const TASK_STATE: Record<string, ChatAgent["state"] | undefined> = {
   stopped: "stopped",
 };
 
+/** a workflow agent's state in `workflow_progress`: start and done seen on the wire, the rest guessed */
+const WORKFLOW_AGENT_STATE: Record<string, ChatAgent["state"] | undefined> = {
+  start: "running",
+  done: "done",
+  failed: "failed",
+  error: "failed",
+  skipped: "stopped",
+  cancelled: "stopped",
+  killed: "stopped",
+};
+
+/**
+ * one entry of a workflow's `task_progress.workflow_progress` (recordings/d-workflow): its agents
+ * have no task frames of their own, this is all the stream says of them. not in the sdk's types
+ */
+interface WorkflowAgentProgress {
+  type: "workflow_agent";
+  agentId?: string;
+  label?: string;
+  agentType?: string;
+  state?: string;
+  durationMs?: number;
+  lastToolName?: string;
+  lastToolSummary?: string;
+  resultPreview?: string;
+}
+
+/** a workflow's agents as the agents list shows them, from the latest progress snapshot */
+export function workflowAgents(
+  workflow: string,
+  progress: unknown,
+  had: ReadonlyMap<string, ChatAgent>,
+  now: number,
+): ChatAgent[] {
+  if (!Array.isArray(progress)) return [];
+  return progress.flatMap((p: WorkflowAgentProgress): ChatAgent[] => {
+    // a queued one has no id, and no transcript yet
+    if (p?.type !== "workflow_agent" || typeof p.agentId !== "string") return [];
+    const state = WORKFLOW_AGENT_STATE[p.state ?? ""] ?? "running";
+    const was = had.get(p.agentId);
+    // grove's clock, as for every agent: from when it was first heard of, back by what it took
+    const took = typeof p.durationMs === "number" ? p.durationMs : 0;
+    const since = was?.since ?? (state === "running" ? now : now - took);
+    const tool =
+      p.lastToolName && `${p.lastToolName}${p.lastToolSummary ? ` ${p.lastToolSummary}` : ""}`;
+    const step = tool || (state === "done" && p.resultPreview ? cut(p.resultPreview, 200) : "");
+    return [
+      {
+        id: p.agentId,
+        description: p.label || "agent",
+        ...(p.agentType ? { agentType: p.agentType } : {}),
+        workflow,
+        state,
+        since,
+        ...(state !== "running" ? { ended: was?.ended ?? now } : {}),
+        ...(step ? { step } : {}),
+      },
+    ];
+  });
+}
+
 const MODES: ReadonlySet<string> = new Set([
   "default",
   "acceptEdits",
@@ -552,8 +613,11 @@ export class ChatHost {
   /** one running subagent stops. the turn and the other agents go on */
   async stopAgent(id: string, agentId: string): Promise<void> {
     const h = this.hosted.get(id);
-    if (h?.agents.get(agentId)?.state !== "running") throw new Error("That agent is not running.");
-    await h.q?.stopTask(agentId);
+    const a = h?.agents.get(agentId);
+    if (a?.state !== "running") throw new Error("That agent is not running.");
+    // a workflow's agent has no task of its own: the workflow is what stops
+    if (a.workflow) throw new Error("Stop the workflow it is part of.");
+    await h?.q?.stopTask(agentId);
   }
 
   async interrupt(id: string): Promise<void> {
@@ -934,14 +998,26 @@ export class ChatHost {
   ): void {
     const now = this.now();
     const put = (a: ChatAgent) => h.agents.set(a.id, a);
+    /** a workflow's end is its running agents' too: no progress snapshot comes after a stop (probe) */
+    const end = (a: ChatAgent, state: ChatAgent["state"]) => {
+      put({ ...a, state, ended: a.ended ?? now });
+      if (a.kind !== "workflow") return;
+      for (const c of h.agents.values()) {
+        if (c.workflow === a.id && c.state === "running")
+          put({ ...c, state: state === "done" ? "done" : "stopped", ended: now });
+      }
+    };
     if (m.subtype === "task_started") {
-      if (m.task_type !== "local_agent") return;
+      // a Workflow is one task: its agents only show in its progress frames
+      const workflow = m.task_type === "local_workflow";
+      if (m.task_type !== "local_agent" && !workflow) return;
       put({
         id: m.task_id,
-        description: m.description,
+        description: m.description || m.workflow_name || "Workflow",
         ...(m.subagent_type ? { agentType: m.subagent_type } : {}),
         ...(m.tool_use_id ? { toolUseId: m.tool_use_id } : {}),
-        ...(m.is_backgrounded ? { background: true } : {}),
+        ...(m.is_backgrounded || workflow ? { background: true } : {}),
+        ...(workflow ? { kind: "workflow" as const } : {}),
         state: "running",
         since: now,
       });
@@ -950,38 +1026,36 @@ export class ChatHost {
       // added, one it still thought running and is not in the set any more is over
       const live = new Set(m.tasks.map((t) => t.task_id));
       for (const t of m.tasks) {
-        if (t.task_type === "local_agent" && !h.agents.has(t.task_id)) {
+        const workflow = t.task_type === "local_workflow";
+        if ((t.task_type === "local_agent" || workflow) && !h.agents.has(t.task_id)) {
           put({
             id: t.task_id,
             description: t.description,
             ...(t.subagent_type ? { agentType: t.subagent_type } : {}),
+            ...(workflow ? { kind: "workflow" as const, background: true } : {}),
             state: "running",
             since: now,
           });
         }
       }
       for (const a of h.agents.values()) {
-        if (a.state === "running" && a.background && !live.has(a.id))
-          put({ ...a, state: "done", ended: now });
+        if (a.state === "running" && a.background && !live.has(a.id)) end(a, "done");
       }
     } else {
       const a = h.agents.get(m.task_id);
       if (!a) return;
       if (m.subtype === "task_progress") {
-        put({ ...a, step: m.summary || m.description });
+        if (a.kind === "workflow") {
+          const progress = (m as { workflow_progress?: unknown }).workflow_progress;
+          for (const c of workflowAgents(a.id, progress, h.agents, now)) put(c);
+        } else put({ ...a, step: m.summary || m.description });
       } else if (m.subtype === "task_updated") {
         const state = TASK_STATE[m.patch.status ?? ""];
-        put({
-          ...a,
-          ...(m.patch.is_backgrounded !== undefined ? { background: m.patch.is_backgrounded } : {}),
-          ...(state ? { state, ended: now } : {}),
-        });
+        if (m.patch.is_backgrounded !== undefined)
+          put({ ...a, background: m.patch.is_backgrounded });
+        if (state) end(h.agents.get(a.id) ?? a, state);
       } else {
-        put({
-          ...a,
-          state: TASK_STATE[m.status] ?? "done",
-          ended: a.ended ?? now,
-        });
+        end(a, TASK_STATE[m.status] ?? "done");
       }
     }
     this.set(h, { agents: [...h.agents.values()] });

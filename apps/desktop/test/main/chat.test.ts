@@ -46,6 +46,15 @@ const AGENTS = [
   "Then reply with one short line.",
 ].join("\n");
 
+/** recordings/d-workflowstop: a Workflow of six agents in a row, stopped while the second runs */
+const WORKFLOW = (
+  JSON.parse(
+    readFileSync(path.join(import.meta.dirname, "../fixtures/chat/workflow.jsonl"), "utf8")
+      .split("\n")
+      .find((l) => l.includes('"dir": "in"') && l.includes('"type": "user"')) ?? "{}",
+  ) as { msg: { message: { content: Array<{ text: string }> } } }
+).msg.message.content[0]?.text as string;
+
 interface Setup {
   host: ChatHost;
   where: { cwd: string; dirs: string[] };
@@ -483,6 +492,80 @@ describe("grove chat's host", () => {
     expect(view.text).toContain("produced no output");
     // an id that is no agent id never reaches the folder
     expect(await findAgentFile(s.transcript, "../../etc/passwd")).toBeNull();
+  });
+
+  it("follows a workflow as one row, its agents under it from its progress frames", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, WORKFLOW);
+    const started = await until(() => {
+      const a = s.host.status(SESSION).agents ?? [];
+      return a.some((x) => x.workflow) ? a : undefined;
+    }, "the workflow's first agent");
+    expect(started.find((a) => a.kind === "workflow")).toMatchObject({
+      id: "whjgl3wqb",
+      description: "six agents one after another",
+      toolUseId: "toolu_01BfP2GWPhbkYyPuuy17PBPv",
+      state: "running",
+    });
+    expect(started.find((a) => a.workflow)).toMatchObject({
+      description: "step 1",
+      workflow: "whjgl3wqb",
+      state: "running",
+    });
+    // a workflow's agent has no task of its own to stop
+    const first = started.find((a) => a.workflow)?.id ?? "";
+    await expect(s.host.stopAgent(SESSION, first)).rejects.toThrow("workflow");
+    // killed while step 2 ran: no progress frame says so, the workflow's end does
+    const ended = await until(() => {
+      const a = s.host.status(SESSION).agents ?? [];
+      return a.find((x) => x.kind === "workflow")?.state === "stopped" ? a : undefined;
+    }, "the workflow to stop");
+    expect(ended.filter((a) => a.workflow).map((a) => [a.description, a.state, a.step])).toEqual([
+      ["step 1", "done", "ok 1"],
+      ["step 2", "stopped", undefined],
+    ]);
+  });
+
+  it("puts a workflow's agents under its row, live or from the run's own file", () => {
+    const scanned = (id: string, workflow: string) => ({
+      id,
+      agentType: "workflow-subagent",
+      description: `agent ${id}`,
+      workflow,
+      startedAt: 10,
+      lastActivityAt: 20,
+      state: "done" as const,
+    });
+    // live: claude named the run's agents, so the folder is that row's
+    const live = [
+      {
+        id: "w1",
+        kind: "workflow" as const,
+        description: "six steps",
+        state: "running" as const,
+        since: 5,
+      },
+      { id: "a1", description: "step 1", workflow: "w1", state: "done" as const, since: 6 },
+    ];
+    const rows = agentsOf(
+      live,
+      [scanned("a1", "wf_1"), scanned("a2", "wf_1"), scanned("b1", "wf_2")],
+      {
+        wf_2: { summary: "an older run", status: "completed", startTime: 1, durationMs: 9 },
+      },
+    );
+    expect(Object.fromEntries(rows.map((r) => [r.id, r.kind ?? r.workflow]))).toEqual({
+      w1: "workflow",
+      a1: "w1",
+      a2: "w1",
+      wf_2: "workflow",
+      b1: "wf_2",
+    });
+    expect(rows.find((r) => r.id === "wf_2")).toMatchObject({
+      description: "an older run",
+      state: "done",
+      ended: 10,
+    });
   });
 
   it("a subagent's permission ask names the agent", async () => {

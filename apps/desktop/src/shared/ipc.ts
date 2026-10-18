@@ -694,6 +694,10 @@ export interface ChatAgent {
   ended?: number;
   /** what it is doing or last did: its own progress line, or its last tool */
   step?: string;
+  /** a Workflow run, not an agent: its agents are the rows whose `workflow` is its id */
+  kind?: "workflow";
+  /** one of a workflow's agents: that run's row id */
+  workflow?: string;
 }
 
 /** the session a chat window is for */

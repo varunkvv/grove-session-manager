@@ -170,8 +170,14 @@ export function Turn({
     "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
   // the turn it is in now has no end yet, so no length either
   const going = last && working;
-  // grove chat says its agents apart, as a way to the drawer that lists them
-  const agentsLink = detail && turn.agents > 0 && !!scope?.agents;
+  // grove chat says its agents and workflows apart, as a way to the drawer that lists them
+  const agentsLink = detail && (turn.agents > 0 || !!turn.workflows) && !!scope?.agents;
+  const agentWords = [
+    turn.agents ? `${turn.agents} ${turn.agents === 1 ? "agent" : "agents"}` : "",
+    turn.workflows ? `${turn.workflows} ${turn.workflows === 1 ? "workflow" : "workflows"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const work = workLine({
     ...turn,
     ...(going ? { ms: undefined } : {}),
@@ -241,7 +247,7 @@ export function Turn({
                       onClick={() => scope?.agents?.()}
                       className="fade font-normal underline decoration-line-strong underline-offset-2 hover:text-fg-2"
                     >
-                      {turn.agents} {turn.agents === 1 ? "agent" : "agents"}
+                      {agentWords}
                     </button>
                   </>
                 )}

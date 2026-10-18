@@ -28,6 +28,15 @@ const AGENTS = [
   "Then reply with one short line.",
 ].join("\n");
 
+/** recordings/d-workflowstop: a Workflow of six agents one after another, stopped mid-run */
+const WORKFLOW = (
+  JSON.parse(
+    readFileSync(path.join(import.meta.dirname, "../test/fixtures/chat/workflow.jsonl"), "utf8")
+      .split("\n")
+      .find((l) => l.includes('"dir": "in"') && l.includes('"type": "user"')) ?? "{}",
+  ) as { msg: { message: { content: Array<{ text: string }> } } }
+).msg.message.content[0]?.text as string;
+
 let app: LaunchedApp;
 
 test.afterEach(async () => {
@@ -425,6 +434,47 @@ test("agents: a count in the header, a list in the drawer with a stop each, and 
   await turn.getByTestId("turn-steps-toggle").click();
   await turn.getByTestId("step").filter({ hasText: "long sleeper" }).click();
   await expect(chat.getByTestId("agent-viewer")).toHaveAttribute("data-id", "a4937abaedd25e9dd");
+});
+
+test("a workflow shows as one row with its agents under it, stops whole, and each agent opens", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_TOOL_MS: "4000" });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(WORKFLOW);
+  await composer.press("Enter");
+  const count = chat.getByTestId("chat-agents");
+  await expect(count).toHaveText(/1 workflow/, { timeout: 20_000 });
+  await count.click();
+  const flow = chat.getByTestId("workflow");
+  await expect(flow.getByTestId("workflow-row")).toContainText("six agents one after another");
+  await expect(flow.getByTestId("agent-row")).toHaveText([/step 1/]);
+  // the workflow stops, not one of its agents
+  await expect(flow.getByTestId("agent-row").getByTestId("agent-stop")).toHaveCount(0);
+  await flow.getByTestId("agent-stop").click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) => (l.in as { request?: { subtype?: string } })?.request?.subtype === "stop_task",
+    ),
+  );
+  const stopped = sentToClaude(s.chatLog)
+    .map((l) => (l.in as { request?: { subtype?: string; task_id?: string } })?.request)
+    .filter((r) => r?.subtype === "stop_task");
+  expect(stopped.map((r) => r?.task_id)).toEqual(["whjgl3wqb"]);
+  await expect(flow.getByTestId("workflow-row").getByTestId("agent-state")).toHaveText(/^Stopped/, {
+    timeout: 30_000,
+  });
+  await expect(count).toHaveCount(0);
+  // an agent of it opens its own transcript, like any agent
+  await flow.getByTestId("agent-row").filter({ hasText: "step 1" }).click();
+  const viewer = chat.getByTestId("agent-viewer");
+  await expect(viewer.getByTestId("panel-prompt")).toContainText("Reply with exactly: ok 1");
+  await expect(viewer.getByTestId("panel-text")).toContainText("ok 1");
+  // the turn names its workflow, and that opens the list
+  await chat.getByTestId("agent-viewer-close").click();
+  await chat.getByTestId("turn").nth(1).getByTestId("turn-agents").click();
+  await expect(chat.getByTestId("workflow")).toHaveCount(1);
 });
 
 test("what claude says along the way shows: a command's output, a tool it turned down, and /clear moves the window", async () => {

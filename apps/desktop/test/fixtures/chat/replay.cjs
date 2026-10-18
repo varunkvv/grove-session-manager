@@ -5,7 +5,8 @@
 // - a user message: the recorded turn whose prompt it is (else the first one in turn.jsonl) plays
 //   out. a recorded `can_use_tool` waits for its answer, a recorded interrupt waits for one
 // - any other control request: answered with success
-// it also writes the transcript the real claude would, so grove reads the turn back from disk.
+// it also writes the transcript the real claude would, so grove reads the turn back from disk, and
+// a workflow's agents' own transcripts and its run's file.
 // env: GROVE_FAKE_CHAT_LOG (what it got, a JSON line each), GROVE_FAKE_CHAT_DELAY_MS (the most it
 // waits between two lines, 15 by default), GROVE_FAKE_CHAT_TOOL_MS (how long a main-thread tool
 // runs before its result, 0 by default), GROVE_FAKE_CHAT_RECORDINGS (a folder of recordings to
@@ -140,6 +141,46 @@ function recordAgent(m) {
   };
   agentParents.set(m.agent_id, uuid);
   fs.appendFileSync(path.join(agentsDir, `agent-${m.agent_id}.jsonl`), `${JSON.stringify(line)}\n`);
+}
+
+// ---------- a workflow's agents and its run, where Claude Code keeps them: the stream only names
+// them in the workflow's progress frames (recordings/d-workflow), so their transcripts are made up
+// from those: what each was asked, and what it came back with
+const workflows = new Map();
+function recordWorkflow(m) {
+  if (m.subtype === "task_started" && m.task_type === "local_workflow") {
+    workflows.set(m.task_id, { run: `wf_${m.task_id}`, name: m.workflow_name, summary: m.description, start: Date.now(), agents: new Map() });
+    return;
+  }
+  const w = workflows.get(m.task_id);
+  if (!w) return;
+  const dir = path.join(agentsDir, "workflows", w.run);
+  if (m.subtype === "task_progress" && Array.isArray(m.workflow_progress)) {
+    fs.mkdirSync(dir, { recursive: true });
+    for (const a of m.workflow_progress) {
+      if (a.type !== "workflow_agent" || !a.agentId) continue;
+      const file = path.join(dir, `agent-${a.agentId}.jsonl`);
+      const line = (type, content) =>
+        fs.appendFileSync(file, `${JSON.stringify({ type, isSidechain: true, agentId: a.agentId, sessionId, cwd: process.cwd(), uuid: crypto.randomUUID(), timestamp: new Date().toISOString(), message: { role: type, content } })}\n`);
+      if (!w.agents.has(a.agentId)) {
+        fs.writeFileSync(path.join(dir, `agent-${a.agentId}.meta.json`), JSON.stringify({ agentType: "workflow-subagent", description: a.label, workflowPhase: a.phaseTitle, spawnDepth: 1, requestShape: "foreground" }));
+        line("user", a.promptPreview ?? "");
+        w.agents.set(a.agentId, "start");
+      }
+      if (a.state === "done" && w.agents.get(a.agentId) !== "done") {
+        line("assistant", [{ type: "text", text: a.resultPreview ?? "" }]);
+        w.agents.set(a.agentId, "done");
+      }
+    }
+  }
+  if (m.subtype === "task_notification") {
+    const runs = path.join(path.dirname(transcript), sessionId, "workflows");
+    fs.mkdirSync(runs, { recursive: true });
+    fs.writeFileSync(
+      path.join(runs, `${w.run}.json`),
+      JSON.stringify({ runId: w.run, taskId: m.task_id, workflowName: w.name, summary: w.summary, status: m.status === "stopped" ? "killed" : m.status, startTime: w.start, durationMs: Date.now() - w.start }),
+    );
+  }
 }
 
 // ---------- stdout
@@ -282,6 +323,7 @@ async function play(turn) {
     }
     out(m);
     if (m.type === "system" && m.subtype === "task_started" && m.task_type === "local_agent") recordAgent(m);
+    if (m.type === "system" && /^task_/.test(m.subtype)) recordWorkflow(m);
     if (m.parent_tool_use_id && m.agent_id && (m.type === "assistant" || m.type === "user")) recordAgent(m);
     if (!m.parent_tool_use_id && (m.type === "assistant" || m.type === "user")) {
       record(m.type, m.message, {

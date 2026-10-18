@@ -654,6 +654,8 @@ export interface TurnView {
   thought?: { text: string; ms?: number };
   /** a chat window's only: what a slash command answered, /context's table */
   output?: string;
+  /** a chat window's only: Workflow runs it started. their agents are in the agents list */
+  workflows?: number;
 }
 
 /** one step of a turn's work, as a chat window lists it */
@@ -845,7 +847,13 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
     ...(outputs.length ? { outputs } : {}),
     ...(opts.chat ? stepsOf(item) : {}),
     ...(opts.chat && item.output ? { output: item.output } : {}),
+    ...(opts.chat ? workflowsOf(item.work) : {}),
   };
+}
+
+function workflowsOf(work: TimelineState): Pick<TurnView, "workflows"> {
+  const n = work.steps.filter((s) => s.kind === "tool" && s.name === "Workflow").length;
+  return n ? { workflows: n } : {};
 }
 
 /**

@@ -581,7 +581,8 @@ export function ChatApp() {
   const call = pane?.kind === "agents" ? pane.call : undefined;
   useEffect(() => {
     if (!call || !agents) return;
-    const hit = agents.find((a) => a.toolUseId === call);
+    // a Workflow call opens the list, where its run and its agents are
+    const hit = agents.find((a) => a.toolUseId === call && a.kind !== "workflow");
     setPane({ kind: "agents", ...(hit ? { agent: hit.id } : {}) });
   }, [call, agents]);
 
@@ -791,10 +792,22 @@ export function ChatApp() {
     open: (file: string) => setPane({ kind: "files", file }),
     agents: (call?: string) => setPane({ kind: "agents", ...(call ? { call } : {}) }),
   };
-  /** its agents running now, as its claude says: the header counts them */
-  const runningAgents = (s.agents ?? []).filter((a) => a.state === "running").length;
+  /** what runs now, as its claude says: the header counts its workflows and its other agents */
+  const busy = (s.agents ?? []).filter((a) => a.state === "running");
+  const runningWorkflows = busy.filter((a) => a.kind === "workflow").length;
+  const runningAgents = busy.filter((a) => !a.kind && !a.workflow).length;
+  const runningWords = [
+    runningWorkflows
+      ? `${runningWorkflows} ${runningWorkflows === 1 ? "workflow" : "workflows"}`
+      : "",
+    runningAgents ? `${runningAgents} ${runningAgents === 1 ? "agent" : "agents"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const shownAgent =
-    pane?.kind === "agents" && pane.agent ? agents?.find((a) => a.id === pane.agent) : undefined;
+    pane?.kind === "agents" && pane.agent
+      ? agents?.find((a) => a.id === pane.agent && a.kind !== "workflow")
+      : undefined;
   const stopAgent = async (id: string) => setError(failed(await api().chatStopAgent(id)));
 
   return (
@@ -851,7 +864,7 @@ export function ChatApp() {
             Open in {target.editor}
           </Button>
         )}
-        {runningAgents > 0 && (
+        {runningWords && (
           <Button
             size="sm"
             variant="quiet"
@@ -860,9 +873,7 @@ export function ChatApp() {
             onClick={() => setPane(pane?.kind === "agents" ? null : { kind: "agents" })}
           >
             <AgentState state="running" word={false} />
-            <span className="tabular-nums">
-              {runningAgents} {runningAgents === 1 ? "agent" : "agents"}
-            </span>
+            <span className="tabular-nums">{runningWords}</span>
           </Button>
         )}
         <IconButton

@@ -50,8 +50,10 @@ function Step({ step, going }: { step: StepView; going: boolean }) {
   if (step.kind === "text") {
     return <p className="selectable mt-1.5 line-clamp-3 text-sm text-fg-3">{step.text}</p>;
   }
-  // an agent's step opens the agent: its own transcript, beside the conversation
-  const agent = (step.name === "Agent" || step.name === "Task") && scope?.agents;
+  // an agent's step opens the agent: its own transcript, beside the conversation. a workflow's
+  // opens the list, where its run and its agents are
+  const agent =
+    (step.name === "Agent" || step.name === "Task" || step.name === "Workflow") && scope?.agents;
   const Row = agent ? "button" : "div";
   return (
     <Row

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   agentView,
@@ -781,15 +781,64 @@ async function filesIn(folder: string, gitPath?: string): Promise<string[]> {
   return out.ok ? out.stdout.split("\0").filter(Boolean) : walkFiles(folder);
 }
 
+/** what `<session>/workflows/<run>.json` says of a workflow run, as claude code writes it */
+export interface WorkflowRun {
+  workflowName?: string;
+  summary?: string;
+  status?: string;
+  startTime?: number;
+  durationMs?: number;
+}
+
+/** a workflow run's own file, beside its agents' folder. only what the agents list shows */
+async function readWorkflowRun(transcript: string, run: string): Promise<WorkflowRun | null> {
+  if (!/^wf_[A-Za-z0-9_-]{1,64}$/.test(run)) return null;
+  const file = path.join(transcript.replace(/\.jsonl$/, ""), "workflows", `${run}.json`);
+  const o = await readFile(file, "utf8").then(
+    (t) => JSON.parse(t) as Record<string, unknown>,
+    () => null,
+  );
+  if (!o || typeof o !== "object") return null;
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const r: WorkflowRun = {};
+  for (const [k, v] of [
+    ["workflowName", str(o.workflowName)],
+    ["summary", str(o.summary)],
+    ["status", str(o.status)],
+    ["startTime", num(o.startTime)],
+    ["durationMs", num(o.durationMs)],
+  ] as const) {
+    if (v !== undefined) (r as Record<string, unknown>)[k] = v;
+  }
+  return r;
+}
+
+const RUN_STATE: Record<string, ChatAgent["state"] | undefined> = {
+  completed: "done",
+  failed: "failed",
+  killed: "stopped",
+  stopped: "stopped",
+};
+
 /**
  * a session's subagents: what its claude says of them now over what their transcripts say. a
- * transcript scan only knows running or done, and calls an agent done two quiet minutes in
+ * transcript scan only knows running or done, and calls an agent done two quiet minutes in. a
+ * workflow's agents sit under its row: the live run's when claude named them, else a row made
+ * from the run's own file
  */
 export function agentsOf(
   live: readonly ChatAgent[],
   scanned: readonly SessionAgent[],
+  runs: Readonly<Record<string, WorkflowRun>> = {},
 ): ChatAgent[] {
   const byId = new Map(live.map((a) => [a.id, a]));
+  /** a run folder, by the live workflow row whose agents are in it */
+  const runOf = new Map<string, string>();
+  for (const a of scanned) {
+    const now = a.workflow && byId.get(a.id)?.workflow;
+    if (a.workflow && now) runOf.set(a.workflow, now);
+  }
   for (const a of scanned) {
     const now = byId.get(a.id);
     const step = a.summary ?? a.lastTool;
@@ -797,11 +846,26 @@ export function agentsOf(
       if (!now.step && step) byId.set(a.id, { ...now, step });
       continue;
     }
+    const workflow = a.workflow && (runOf.get(a.workflow) ?? a.workflow);
+    if (workflow && !byId.has(workflow)) {
+      const run = runs[workflow] ?? {};
+      const state = RUN_STATE[run.status ?? ""] ?? "done";
+      const since = run.startTime ?? a.startedAt;
+      byId.set(workflow, {
+        id: workflow,
+        kind: "workflow",
+        description: run.summary ?? run.workflowName ?? "Workflow",
+        state,
+        since,
+        ...(run.durationMs !== undefined ? { ended: since + run.durationMs } : {}),
+      });
+    }
     byId.set(a.id, {
       id: a.id,
       description: a.description ?? a.asked ?? a.agentType,
       agentType: a.agentType,
       ...(a.toolUseId ? { toolUseId: a.toolUseId } : {}),
+      ...(workflow ? { workflow } : {}),
       state: a.state,
       since: a.startedAt,
       ...(a.state === "done" ? { ended: a.lastActivityAt } : {}),
@@ -1018,7 +1082,17 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatAgents(id) {
-      return agentsOf(chat.status(id).agents ?? [], newestRow(deps, id)?.agents ?? []);
+      const row = newestRow(deps, id);
+      const scanned = row?.agents ?? [];
+      const ids = [...new Set(scanned.flatMap((a) => (a.workflow ? [a.workflow] : [])))];
+      const runs = Object.fromEntries(
+        (
+          await Promise.all(
+            ids.map(async (w) => [w, row && (await readWorkflowRun(row.key, w))] as const),
+          )
+        ).filter((e): e is readonly [string, WorkflowRun] => !!e[1]),
+      );
+      return agentsOf(chat.status(id).agents ?? [], scanned, runs);
     },
 
     async chatAgent(id, agentId) {
