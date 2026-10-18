@@ -641,6 +641,27 @@ test("a long tool offers to run in the background, and goes there", async () => 
   await expect(chat.getByTestId("chat-stop")).toHaveCount(0, { timeout: 20_000 });
 });
 
+test("/model and /plan are the window's own: they open its menu and set its mode, not go to claude", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill("/model");
+  // the / menu is open on what was typed: Esc leaves it, Enter sends
+  await composer.press("Escape");
+  await composer.press("Enter");
+  await expect(chat.getByTestId("model-menu")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await chat.getByTestId("model-menu").press("Escape");
+  await composer.fill("/plan");
+  await composer.press("Escape");
+  await composer.press("Enter");
+  await expect(chat.getByTestId("chat-mode")).toHaveAttribute("data-mode", "plan");
+  const typed = sentToClaude(s.chatLog).filter((l) => (l.in as { type?: string })?.type === "user");
+  expect(typed).toEqual([]);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

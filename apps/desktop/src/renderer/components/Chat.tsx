@@ -471,12 +471,32 @@ export function ChatApp() {
       });
   };
 
+  /**
+   * commands the window does itself, as vs code does for its own: they open grove's menus rather
+   * than go to claude as text
+   */
+  const local: Record<string, () => void> = {
+    "/model": () => modelButton.current && openMenu("model", modelButton.current),
+    "/effort": () => modelButton.current && openMenu("model", modelButton.current),
+    "/permissions": () => modeButton.current && openMenu("mode", modeButton.current),
+    "/plan": () =>
+      void api()
+        .chatSetMode("plan")
+        .then((o) => setError(failed(o))),
+  };
+
   /** what is in the composer, or `words` from an action (/compact): those leave the draft alone */
   const send = async (words?: string) => {
     const own = words === undefined;
     const text = own ? draft.trim() : words;
     const attached = own ? files : [];
     if ((!text && attached.length === 0) || readOnly) return;
+    const mine = own && attached.length === 0 ? local[text] : undefined;
+    if (mine) {
+      setDraft("");
+      mine();
+      return;
+    }
     // a background agent mid-turn stops when this takes it over: asked first, as Open asks
     const stop = session.runtime === "background" ? session.open.confirm : undefined;
     if (stop && !window.confirm(`${stop.title}\n\n${stop.body}`)) return;

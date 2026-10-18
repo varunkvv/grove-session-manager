@@ -466,6 +466,8 @@ interface Hosted {
   agents: Map<string, ChatAgent>;
   /** the task the tool under way runs as, once claude has made it one */
   toolTask?: string;
+  /** `system/init.terminal_slash_commands`: commands for a terminal, not a chat window */
+  terminalOnly?: Set<string>;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -595,9 +597,10 @@ export class ChatHost {
     return this.hosted.get(id)?.text ?? "";
   }
 
-  /** what `/` offers in this session: empty until claude is up */
+  /** what `/` offers in this session: empty until claude is up. none bound to a terminal */
   commands(id: string): ChatCommand[] {
-    return this.hosted.get(id)?.commands ?? [];
+    const h = this.hosted.get(id);
+    return (h?.commands ?? []).filter((c) => !h?.terminalOnly?.has(c.name));
   }
 
   /** a window shows this session from now on. what it needs to catch up is `status` and `text` */
@@ -999,6 +1002,8 @@ export class ChatHost {
     switch (m.type) {
       case "system":
         if (m.subtype === "init") {
+          // the commands that only make sense in a terminal (exit, statusline...): `/` leaves them out
+          h.terminalOnly = new Set(m.terminal_slash_commands ?? []);
           // every turn starts with one, a turn claude code started itself too: a queued message, a
           // background task that finished
           this.turnStarted(h);

@@ -488,6 +488,28 @@ describe("grove chat's host", () => {
     await until(() => s.host.status(SESSION).queued.length === 0, "the queue to clear");
   });
 
+  it("leaves the commands bound to a terminal out of what `/` offers", async () => {
+    // the hello turn, its init saying one of the two commands is a terminal's
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => {
+        const o = JSON.parse(l);
+        if (o.msg?.type === "system" && o.msg.subtype === "init")
+          o.msg.terminal_slash_commands = ["ask-matt"];
+        return JSON.stringify(o);
+      });
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    await s.host.warm(SESSION, s.where);
+    expect(s.host.commands(SESSION).map((c) => c.name)).toEqual(["amazon-bedrock", "ask-matt"]);
+    await s.host.send(SESSION, s.where, HELLO);
+    await turnEnded(s);
+    expect(s.host.commands(SESSION).map((c) => c.name)).toEqual(["amazon-bedrock"]);
+  });
+
   it("offers the background for a tool only once claude has it as a task, and sends it there", async () => {
     const s = setup();
     await s.host.send(SESSION, s.where, BACKGROUND);
