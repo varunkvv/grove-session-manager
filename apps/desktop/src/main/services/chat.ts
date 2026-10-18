@@ -16,6 +16,8 @@ import type { PushTarget } from "../push.ts";
 
 /** an idle session with no window open is let go after this. the next send resumes it */
 export const REAP_MS = 10 * 60_000;
+/** how long a turn being let go of gets to end on its interrupt */
+const RELEASE_WAIT_MS = 3000;
 /** the streamed answer goes to the window at most this often */
 const FLUSH_MS = 50;
 /** a permission's input, as the card shows it */
@@ -372,7 +374,14 @@ export class ChatHost {
   async release(id: string): Promise<void> {
     const h = this.hosted.get(id);
     if (!h?.q) return;
-    h.q.close();
+    if (h.status.running) {
+      // stopped as Esc stops it, so the transcript ends the turn on an interrupt and not on a
+      // process that vanished. a claude that does not answer is let go anyway
+      const ended = new Promise<void>((r) => h.afterTurn.push(r));
+      await h.q.interrupt().catch(() => {});
+      await Promise.race([ended, new Promise((r) => setTimeout(r, RELEASE_WAIT_MS))]);
+    }
+    h.q?.close();
     await h.ended;
   }
 
@@ -434,6 +443,9 @@ export class ChatHost {
       });
     } catch (e) {
       log.warn(`chat ${h.id.slice(0, 8)} did not start:`, e);
+      // what was sent goes back to the window, which puts it in the composer again. kept here too
+      // it would go out twice with the next start. a query that did start lets go of it as it ends
+      if (!q) h.prompts = new Prompts();
       q?.close();
       this.set(h, { starting: false, live: false, running: false, error: messageOf(e) });
     }

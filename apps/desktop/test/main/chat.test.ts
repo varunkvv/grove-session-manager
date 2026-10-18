@@ -46,7 +46,7 @@ afterEach(() => {
   for (const h of hosts.splice(0)) h.dispose();
 });
 
-function setup(delayMs = 2): Setup {
+function setup(delayMs = 2, failFirst = false): Setup {
   // real: /var/folders is /private/var/folders, and claude reports its cwd resolved
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-chat-")));
   const bin = path.join(dir, "fake-claude");
@@ -61,7 +61,13 @@ function setup(delayMs = 2): Setup {
   const claudeDir = path.join(dir, "claude");
   const now = { at: Date.now() };
   const host = new ChatHost({
-    claudeBin: async () => bin,
+    claudeBin: async () => {
+      if (failFirst) {
+        failFirst = false;
+        throw new Error("no claude here");
+      }
+      return bin;
+    },
     env: async () => ({
       PATH: process.env.PATH,
       HOME: os.homedir(),
@@ -387,5 +393,26 @@ describe("grove chat's host", () => {
     ]) {
       expect(() => parseAnswer(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow("not an answer");
     }
+  });
+
+  it("a send claude could not start for is not sent again with the next one", async () => {
+    const s = setup(2, true);
+    await expect(s.host.send(SESSION, s.where, HELLO)).rejects.toThrow("no claude here");
+    expect(s.host.running(SESSION)).toBe(false);
+    await s.host.send(SESSION, s.where, HELLO);
+    await turnEnded(s);
+    const prompts = s.log().filter((l) => (l.in as { type?: string } | undefined)?.type === "user");
+    expect(prompts).toHaveLength(1);
+  });
+
+  it("letting go mid-turn stops the turn the way Esc does first", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, COUNT);
+    await until(() => s.host.text(SESSION).length > 0, "the count");
+    await s.host.release(SESSION);
+    expect(s.host.hosts(SESSION)).toBe(false);
+    const asked = s.log().map((l) => l.in as { request?: { subtype?: string } } | undefined);
+    expect(asked.some((m) => m?.request?.subtype === "interrupt")).toBe(true);
+    expect(readFileSync(s.transcript, "utf8")).toContain("[Request interrupted by user]");
   });
 });
