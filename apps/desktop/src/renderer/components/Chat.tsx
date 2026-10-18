@@ -918,7 +918,7 @@ export function ChatApp() {
     {
       id: "copy-conversation",
       group: "Session",
-      label: "Copy the conversation as Markdown",
+      label: "Copy as Markdown",
       keys: { key: "c", meta: true, shift: true, alt: true },
       off: !!target.fresh,
       run: () =>
@@ -1688,7 +1688,7 @@ export function ChatApp() {
         <Menu
           anchor={menu.anchor}
           testId="more-menu"
-          width={280}
+          width={300}
           down
           onClose={closeMenu}
           onPick={(id) => {
