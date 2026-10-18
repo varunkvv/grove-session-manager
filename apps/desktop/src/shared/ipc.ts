@@ -544,6 +544,8 @@ export interface PushEvents {
   "chat:text": { at: number; text: string };
   /** a chat window only: the file its viewer shows changed on disk */
   "chat:file": { path: string };
+  /** a chat window only: the Appearance setting moved */
+  "chat:appearance": { appearance: AppSettings["appearance"] };
 }
 
 export const PUSH_CHANNELS = [
@@ -559,6 +561,7 @@ export const PUSH_CHANNELS = [
   "chat:status",
   "chat:text",
   "chat:file",
+  "chat:appearance",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 // ---------- grove chat: a session grove runs itself, through the agent sdk, in a window of its own

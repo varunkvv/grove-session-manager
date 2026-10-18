@@ -2,7 +2,7 @@
 // chat window shows a mermaid fence. strict: labels are text, nothing in a diagram can be clicked
 // or run. the svg it draws goes into an <img>, never into the page, so nothing in it runs either.
 // that is also why labels are svg text: an <img> draws no html inside an svg.
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 type Mermaid = typeof import("mermaid").default;
 
@@ -44,6 +44,18 @@ export const isDark = (): boolean => {
   const pinned = document.documentElement.dataset.theme;
   return pinned ? pinned === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
 };
+
+/** the appearance moved: pinned in Settings, or macOS at sunset */
+function onLook(changed: () => void): () => void {
+  const system = matchMedia("(prefers-color-scheme: dark)");
+  system.addEventListener("change", changed);
+  const pinned = new MutationObserver(changed);
+  pinned.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => {
+    system.removeEventListener("change", changed);
+    pinned.disconnect();
+  };
+}
 
 /** an svg as an <img> can show it: a size of its own, from its viewBox */
 function asImage(svg: string): string {
@@ -90,7 +102,8 @@ function draw(code: string, dark: boolean): Promise<string | null> {
 }
 
 export function MermaidDiagram({ code }: { code: string }) {
-  const dark = isDark();
+  // drawn again in the other appearance's colours when it flips
+  const dark = useSyncExternalStore(onLook, isDark);
   const [got, setGot] = useState<{ code: string; dark: boolean; url: string | null }>();
   useEffect(() => {
     let live = true;

@@ -328,6 +328,7 @@ export function ChatApp() {
         void load();
       }),
       api().on("chat:status", (s) => setStatus(s)),
+      api().on("chat:appearance", ({ appearance }) => applyAppearance(appearance)),
       api().on("chat:text", ({ at, text }) => {
         stream.current = stream.current.slice(0, at) + text;
         // a message that just finished is drawn until the transcript that has it is read

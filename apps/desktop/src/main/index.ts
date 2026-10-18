@@ -290,6 +290,7 @@ async function start(): Promise<void> {
     // looking at it in its own window is landing on it
     focused: (id) => live.markSeen([id]),
     fixedSize: !!appEnv.customRoot,
+    stateFile: path.join(electron.app.getPath("userData"), "chat-window-state.json"),
   });
 
   // packaged, or under GROVE_ROOT. a dev build next to the installed app leaves its projects, and
@@ -484,9 +485,10 @@ async function start(): Promise<void> {
       const lookMoved = s.appearance !== settings.appearance;
       settings = s;
       if (menuMoved) menu(resolveEditor(s).label);
-      // the spare chat window is there only while grove chat is on, and in the page's appearance
+      // the spare chat window is there only while grove chat is on, and in the page's appearance.
+      // an open chat window draws in it too
       if (chatMoved) chatWindows.setSpare(s.chat === true);
-      else if (lookMoved && s.chat === true) chatWindows.remakeSpare();
+      if (lookMoved) chatWindows.appearance(s.appearance);
       if (recapsMoved) projects.recapsSwitched();
       if (recapsMoved || renamesMoved) {
         sessions.retitle();
@@ -572,6 +574,7 @@ async function start(): Promise<void> {
   // the page follows the media query on its own. this is only the frame behind it.
   electron.nativeTheme.on("updated", () => {
     win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors));
+    chatWindows.repaint();
   });
   electron.powerMonitor.on("resume", () => void sessions.refresh());
 

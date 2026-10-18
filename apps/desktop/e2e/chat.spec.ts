@@ -361,3 +361,40 @@ test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project
   await expect(page.getByTestId("project-form")).toBeVisible();
   expect(readExecLog(s.fx)).toEqual([]);
 });
+
+test("chat windows follow the appearance, cascade from the last one, and open at the size it was left", async () => {
+  const s = seed(true);
+  const SID2 = "cccccccc-0000-4000-8000-000000000002";
+  writeSession(s.fx, { cwd: s.root, sessionId: SID2, title: "another", prompt: "and this" });
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const first = await chatWindow(electron, SID);
+  // the setting moved while it was open: it draws in the new one at once
+  await page.evaluate(() => window.grove.updateSettings({ appearance: "dark" }));
+  await expect(first.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.evaluate(() => window.grove.updateSettings({ appearance: "light" }));
+  await expect(first.locator("html")).toHaveAttribute("data-theme", "light");
+
+  const bounds = (title: string) =>
+    electron.evaluate(
+      ({ BrowserWindow }, t) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => w.getTitle() === t)
+          ?.getBounds(),
+      title,
+    );
+  // the person makes it smaller
+  await electron.evaluate(({ BrowserWindow }, t) => {
+    BrowserWindow.getAllWindows()
+      .find((w) => w.getTitle() === t)
+      ?.setSize(700, 640);
+  }, TITLE);
+  await page.waitForTimeout(700);
+  const a = await bounds(TITLE);
+  await page.locator(`[data-testid="session-row"][data-id="${SID2}"]`).dblclick();
+  await chatWindow(electron, SID2);
+  await expect.poll(() => bounds("another")).toMatchObject({ width: 700, height: 640 });
+  const b = await bounds("another");
+  expect(b?.x).toBe((a?.x ?? 0) + 26);
+  expect(b?.y).toBe((a?.y ?? 0) + 26);
+});

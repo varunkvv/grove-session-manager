@@ -2,7 +2,9 @@
 // opening a session only hands the spare its id. the same renderer bundle on `#/chat`.
 import type { BrowserWindow, WebContents } from "electron";
 import * as electron from "electron";
+import type { AppSettings } from "../shared/ipc.ts";
 import { canvasColor } from "./window.ts";
+import { loadWindowState, saveWindowState } from "./windowState.ts";
 
 export interface ChatWindowsOptions {
   preload: string;
@@ -15,11 +17,15 @@ export interface ChatWindowsOptions {
   focused?: (sessionId: string) => void;
   /** a test root's window keeps the size it asks for, as the main window does */
   fixedSize?: boolean;
+  /** where the size the person last gave a chat window is kept */
+  stateFile?: string;
 }
 
 /** a reading column and the header around it */
 const SIZE = { width: 860, height: 880 };
 const MIN = { width: 520, height: 420 };
+/** each window opens this far down and right of the last one, as a document window does */
+const CASCADE = 26;
 
 export class ChatWindows {
   private readonly o: ChatWindowsOptions;
@@ -30,9 +36,25 @@ export class ChatWindows {
   private spareOn = false;
   private refilling: NodeJS.Timeout | null = null;
   private readonly ready = new WeakSet<BrowserWindow>();
+  /** the size the person last left a chat window at: every new one opens at it */
+  private size = SIZE;
+  /** the chat window opened or looked at last: the next one cascades from it */
+  private last: BrowserWindow | null = null;
+  private saving: NodeJS.Timeout | null = null;
 
   constructor(o: ChatWindowsOptions) {
     this.o = o;
+    if (o.stateFile) {
+      void loadWindowState(o.stateFile).then((s) => {
+        const r = s as { width?: unknown; height?: unknown } | undefined;
+        if (typeof r?.width === "number" && typeof r.height === "number") {
+          this.size = {
+            width: Math.max(MIN.width, Math.round(r.width)),
+            height: Math.max(MIN.height, Math.round(r.height)),
+          };
+        }
+      });
+    }
   }
 
   /** the session's window, at the front. made from the spare when there is one */
@@ -45,10 +67,15 @@ export class ChatWindows {
       return;
     }
     const win = this.takeSpare() ?? this.create();
+    this.place(win);
     this.bySession.set(sessionId, win);
     this.byContents.set(win.webContents.id, sessionId);
     this.o.attach(sessionId, win.webContents);
-    win.on("focus", () => this.o.focused?.(sessionId));
+    win.on("focus", () => {
+      this.last = win;
+      this.o.focused?.(sessionId);
+    });
+    this.last = win;
     // a spare's page is up and waiting: it asks which session it is for. a new one asks on load
     win.webContents.send("grove:chat:open", {});
     if (this.ready.has(win)) win.show();
@@ -82,6 +109,43 @@ export class ChatWindows {
       if (sessionId !== undefined && id !== sessionId) continue;
       if (!win.isDestroyed()) win.webContents.send("grove:chat:open", {});
     }
+  }
+
+  /** the Appearance setting moved: every chat window draws in the new one, the spare included */
+  appearance(appearance: AppSettings["appearance"]): void {
+    const dark = electron.nativeTheme.shouldUseDarkColors;
+    for (const win of this.bySession.values()) {
+      if (win.isDestroyed()) continue;
+      win.setBackgroundColor(canvasColor(dark));
+      win.webContents.send("grove:chat:appearance", { appearance });
+    }
+    this.remakeSpare();
+  }
+
+  /** macOS switched between light and dark: the frames behind the pages follow */
+  repaint(): void {
+    const dark = electron.nativeTheme.shouldUseDarkColors;
+    for (const win of this.bySession.values()) {
+      if (!win.isDestroyed()) win.setBackgroundColor(canvasColor(dark));
+    }
+  }
+
+  /** at the size the person left the last one, cascaded from the last one still open */
+  private place(win: BrowserWindow): void {
+    const [w, h] = win.getSize();
+    if (w !== this.size.width || h !== this.size.height)
+      win.setSize(this.size.width, this.size.height);
+    const from = this.last && !this.last.isDestroyed() && this.last.isVisible() ? this.last : null;
+    if (!from) {
+      win.center();
+      return;
+    }
+    const [x = 0, y = 0] = from.getPosition();
+    const area = electron.screen.getDisplayMatching(from.getBounds()).workArea;
+    // past the screen's edge it starts again at the top left of it
+    const nx = x + CASCADE + this.size.width > area.x + area.width ? area.x : x + CASCADE;
+    const ny = y + CASCADE + this.size.height > area.y + area.height ? area.y : y + CASCADE;
+    win.setPosition(nx, ny);
   }
 
   /** the spare exists only while grove chat is on: with it off, no window is added anywhere */
@@ -126,7 +190,7 @@ export class ChatWindows {
 
   private create(): BrowserWindow {
     const win = new electron.BrowserWindow({
-      ...SIZE,
+      ...this.size,
       minWidth: MIN.width,
       minHeight: MIN.height,
       ...(this.o.fixedSize ? { enableLargerThanScreen: true } : {}),
@@ -145,6 +209,18 @@ export class ChatWindows {
       },
     });
     win.once("ready-to-show", () => this.ready.add(win));
+    // the size it is left at is the next one's
+    win.on("resize", () => {
+      if (!this.bySession.size || !this.o.stateFile) return;
+      const file = this.o.stateFile;
+      if (this.saving) clearTimeout(this.saving);
+      this.saving = setTimeout(() => {
+        if (win.isDestroyed()) return;
+        const b = win.getNormalBounds();
+        this.size = { width: b.width, height: b.height };
+        saveWindowState(file, b);
+      }, 400);
+    });
     // kept: once the window is closed its webContents can no longer be asked for
     const contents = win.webContents;
     const id = contents.id;
