@@ -15,6 +15,9 @@ const HELLO = "Reply with exactly: hello from the spike";
 const QUESTION =
   "Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options: Red and Blue. Then reply with one line saying which I picked. Do not use any other tool.";
 const COUNT = "Count from 1 to 400, one number per line, nothing else.";
+const PLAN =
+  "Plan how to create notes.txt containing the word hi in the current folder. Keep the plan to three short steps, then present it with ExitPlanMode. Do not read or write any files.";
+const WRITE = "Create a file named perm.txt containing the letter x, using the Write tool.";
 /** recordings/c-start: haiku 5.5 thinks, with the summary text */
 const THINK = "Think step by step, then reply with just the number: 23*19 + 7^3 - 45?";
 /** recordings/c-denied: under dontAsk a Write is turned down without asking */
@@ -276,6 +279,51 @@ test("the session card of a session live in VS Code only points there", async ()
   const card = page.getByTestId("session-card");
   await expect(card.getByTestId("card-elsewhere")).toHaveText("Live in VS Code. Answer it there.");
   await expect(card.getByTestId("card-reply")).toHaveCount(0);
+});
+
+test("a plan is approved into a mode, and a permission is turned down with a reason", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(PLAN);
+  await composer.press("Enter");
+  const plan = chat.getByTestId("ask-plan");
+  // the modes this session offers, the most hands-off first
+  await expect(plan.getByTestId("plan-approve")).toHaveText(
+    ["Approve, bypass permissions", "Approve, accept edits", "Approve, ask before edits"],
+    { timeout: 15_000 },
+  );
+  await plan.getByTestId("plan-note").fill("add a check that the file exists");
+  await plan.getByTestId("plan-note").press("Enter");
+  await expect(chat.getByTestId("ask-plan")).toBeVisible({ timeout: 15_000 });
+  await chat.getByTestId("ask-plan").locator('[data-mode="acceptEdits"]').click();
+  await expect(chat.getByTestId("ask-plan")).toHaveCount(0);
+  const replies = () =>
+    sentToClaude(s.chatLog).flatMap((l) => {
+      const m = l.in as { type?: string; response?: { response?: Record<string, unknown> } };
+      return m?.type === "control_response" ? [m.response?.response ?? {}] : [];
+    });
+  await waitFor(async () => replies().some((r) => r.behavior === "allow"));
+  expect(replies().find((r) => r.behavior === "deny")).toMatchObject({
+    message: "add a check that the file exists",
+  });
+  expect(replies().find((r) => r.behavior === "allow")).toMatchObject({
+    updatedPermissions: [{ type: "setMode", mode: "acceptEdits", destination: "session" }],
+  });
+  await expect(chat.getByTestId("chat-stop")).toHaveCount(0, { timeout: 15_000 });
+  // a permission, turned down with words of its own
+  await composer.fill(WRITE);
+  await composer.press("Enter");
+  const ask = chat.getByTestId("ask-permission");
+  await expect(ask).toBeVisible({ timeout: 15_000 });
+  await ask.getByTestId("permission-why").fill("call it notes.txt instead");
+  await expect(ask.getByTestId("permission-deny")).toHaveText("Deny and say why");
+  await ask.getByTestId("permission-why").press("Enter");
+  await waitFor(async () =>
+    replies().some((r) => r.behavior === "deny" && r.message === "call it notes.txt instead"),
+  );
 });
 
 test("the mode is a menu: every mode the session can take, said in a line, and the pick goes to claude", async () => {

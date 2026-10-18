@@ -65,7 +65,14 @@ export function parseAnswer(raw: unknown): ChatAnswer {
     return { kind: "question", answers: clean };
   }
   if (a.kind === "plan" && typeof a.approve === "boolean") {
-    return { kind: "plan", approve: a.approve, ...(message ? { message } : {}) };
+    const mode = a.mode === undefined ? undefined : asMode(a.mode);
+    if (a.mode !== undefined && !mode) throw bad();
+    return {
+      kind: "plan",
+      approve: a.approve,
+      ...(message ? { message } : {}),
+      ...(mode ? { mode } : {}),
+    };
   }
   if (a.kind === "permission" && (a.allow === "once" || a.allow === "always" || a.allow === "no")) {
     return { kind: "permission", allow: a.allow, ...(message ? { message } : {}) };
@@ -703,8 +710,17 @@ export class ChatHost {
         },
       };
     } else if (a.kind === "plan") {
+      if (a.mode && !h.status.modes.includes(a.mode))
+        throw new Error(`${a.mode} is not on offer in this session.`);
+      // the mode rides on the allow: a setPermissionMode after it would race the next tool call
       result = a.approve
-        ? { behavior: "allow", updatedInput: w.input }
+        ? {
+            behavior: "allow",
+            updatedInput: w.input,
+            ...(a.mode
+              ? { updatedPermissions: [{ type: "setMode", mode: a.mode, destination: "session" }] }
+              : {}),
+          }
         : { behavior: "deny", message: a.message?.trim() || "Keep planning." };
     } else if (a.allow === "no") {
       result = { behavior: "deny", message: a.message?.trim() || "The user declined this." };

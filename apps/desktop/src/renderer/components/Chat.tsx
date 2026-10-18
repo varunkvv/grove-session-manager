@@ -859,6 +859,7 @@ export function ChatApp() {
                   <Ask
                     key={a.id}
                     ask={a}
+                    modes={s.modes}
                     onAnswer={(x) => void answer(a.id, x)}
                     onLeave={() => composer.current?.focus()}
                     // the keys go to the card, unless the person is in the middle of typing

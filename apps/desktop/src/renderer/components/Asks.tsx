@@ -1,7 +1,7 @@
 // what a session grove runs waits on the person for: a question, a plan, a permission. the chat
 // window draws them under the turn, and the main window's session card draws the same ones.
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { ChatAnswer, ChatAsk, ChatQuestion } from "../../shared/ipc.ts";
+import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion } from "../../shared/ipc.ts";
 import { Markdown } from "./Markdown.tsx";
 import { AskCard, Button, CheckBox, Choice, cx, Icon, Mono } from "./ui.tsx";
 
@@ -268,35 +268,75 @@ export function QuestionCard({
   );
 }
 
+/** what an approved plan goes on in, and how its button says it, most hands-off first */
+const AFTER_PLAN: Array<{ mode: ChatMode; label: string }> = [
+  { mode: "bypassPermissions", label: "Approve, bypass permissions" },
+  { mode: "auto", label: "Approve, auto" },
+  { mode: "acceptEdits", label: "Approve, accept edits" },
+  { mode: "default", label: "Approve, ask before edits" },
+];
+
+/**
+ * a plan, and what happens after it: approved into a mode (the first the session offers is the
+ * main one, as Claude Code lists them), or sent back with what should change
+ */
 export function PlanCard({
   ask,
+  modes,
   onAnswer,
 }: {
   ask: Extract<ChatAsk, { kind: "plan" }>;
+  /** the modes the session can take: an approval goes on in one of them */
+  modes: readonly ChatMode[];
   onAnswer: (a: ChatAnswer) => void;
 }) {
   const [note, setNote] = useState("");
+  const after = AFTER_PLAN.filter((x) => modes.includes(x.mode));
   return (
     <AskCard label="Claude's plan" testId="ask-plan">
       <div className="selectable mt-2">
         <Markdown text={ask.plan} className="md-full" />
       </div>
-      <textarea
-        className="no-drag mt-3 w-full resize-none rounded-md border border-line-strong bg-canvas px-3 py-2 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
-        placeholder="What should change? (for Keep planning)"
-        rows={1}
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-      />
-      <div className="mt-2 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
+        {after.length ? (
+          after.map((x, i) => (
+            <Button
+              key={x.mode}
+              variant={i === 0 ? "primary" : "secondary"}
+              data-testid="plan-approve"
+              data-mode={x.mode}
+              onClick={() => onAnswer({ kind: "plan", approve: true, mode: x.mode })}
+            >
+              {x.label}
+            </Button>
+          ))
+        ) : (
+          <Button
+            variant="primary"
+            data-testid="plan-approve"
+            onClick={() => onAnswer({ kind: "plan", approve: true })}
+          >
+            Approve
+          </Button>
+        )}
+      </div>
+      <div className="mt-3 flex items-start gap-2">
+        <textarea
+          className="no-drag min-w-0 flex-1 resize-none rounded-md border border-line-strong bg-canvas px-3 py-1.5 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
+          placeholder="Or say what should change…"
+          rows={1}
+          value={note}
+          data-testid="plan-note"
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && note.trim()) {
+              e.preventDefault();
+              onAnswer({ kind: "plan", approve: false, message: note });
+            }
+          }}
+        />
         <Button
-          variant="primary"
-          data-testid="plan-approve"
-          onClick={() => onAnswer({ kind: "plan", approve: true })}
-        >
-          Approve
-        </Button>
-        <Button
+          variant="ghost"
           data-testid="plan-keep"
           onClick={() => onAnswer({ kind: "plan", approve: false, message: note })}
         >
@@ -307,6 +347,10 @@ export function PlanCard({
   );
 }
 
+/**
+ * a tool claude wants to run: allow it once, always (when claude suggested a rule), or turn it
+ * down, with words of your own for what to do instead
+ */
 export function PermissionCard({
   ask,
   onAnswer,
@@ -314,6 +358,9 @@ export function PermissionCard({
   ask: Extract<ChatAsk, { kind: "permission" }>;
   onAnswer: (a: ChatAnswer) => void;
 }) {
+  const [why, setWhy] = useState("");
+  const deny = () =>
+    onAnswer({ kind: "permission", allow: "no", ...(why.trim() ? { message: why.trim() } : {}) });
   return (
     <AskCard
       label={`${ask.agent ? "Its agent" : "Claude"} wants to use ${ask.tool}`}
@@ -341,14 +388,23 @@ export function PermissionCard({
             Always allow
           </Button>
         )}
-        <Button
-          variant="ghost"
-          data-testid="permission-deny"
-          onClick={() => onAnswer({ kind: "permission", allow: "no" })}
-        >
-          Deny
+        <Button variant="ghost" data-testid="permission-deny" onClick={deny}>
+          {why.trim() ? "Deny and say why" : "Deny"}
         </Button>
       </div>
+      <input
+        className="no-drag mt-2 h-8 w-full rounded-md border border-line-strong bg-canvas px-3 text-body text-fg placeholder:text-fg-4"
+        placeholder="Or tell Claude what to do instead…"
+        data-testid="permission-why"
+        value={why}
+        onChange={(e) => setWhy(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && why.trim()) {
+            e.preventDefault();
+            deny();
+          }
+        }}
+      />
     </AskCard>
   );
 }
@@ -356,17 +412,20 @@ export function PermissionCard({
 /** whichever card the ask is */
 export function Ask({
   ask,
+  modes,
   onAnswer,
   onLeave,
   autoFocus,
 }: {
   ask: ChatAsk;
+  /** the session's modes: a plan is approved into one */
+  modes: readonly ChatMode[];
   onAnswer: (a: ChatAnswer) => void;
   onLeave?: () => void;
   autoFocus?: boolean;
 }) {
   if (ask.kind === "question")
     return <QuestionCard ask={ask} onAnswer={onAnswer} onLeave={onLeave} autoFocus={autoFocus} />;
-  if (ask.kind === "plan") return <PlanCard ask={ask} onAnswer={onAnswer} />;
+  if (ask.kind === "plan") return <PlanCard ask={ask} modes={modes} onAnswer={onAnswer} />;
   return <PermissionCard ask={ask} onAnswer={onAnswer} />;
 }

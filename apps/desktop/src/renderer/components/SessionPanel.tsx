@@ -387,6 +387,7 @@ function SessionCard({
         <Ask
           key={a.id}
           ask={a}
+          modes={host?.modes ?? []}
           onAnswer={(x) => void window.grove.sessionAnswer(key, a.id, x).then(failed)}
         />
       ))}

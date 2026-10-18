@@ -412,11 +412,18 @@ describe("grove chat's host", () => {
       () => s.host.status(SESSION).asks.find((a) => a.kind === "plan" && a.id !== first.id),
       "the plan again",
     );
-    s.host.answer(SESSION, second.id, { kind: "plan", approve: true });
+    // a mode the session does not offer is refused, one it does rides on the allow
+    expect(() =>
+      s.host.answer(SESSION, second.id, { kind: "plan", approve: true, mode: "dontAsk" }),
+    ).toThrow("not on offer");
+    s.host.answer(SESSION, second.id, { kind: "plan", approve: true, mode: "acceptEdits" });
     await turnEnded(s);
     const [no, yes] = answers(s);
     expect(no).toMatchObject({ behavior: "deny", message: "add a check" });
-    expect(yes?.behavior).toBe("allow");
+    expect(yes).toMatchObject({
+      behavior: "allow",
+      updatedPermissions: [{ type: "setMode", mode: "acceptEdits", destination: "session" }],
+    });
   });
 
   it("a permission: the tool and what it acts on, and a no with the person's words", async () => {
@@ -826,6 +833,11 @@ describe("grove chat's host", () => {
       approve: false,
       message: "more",
     });
+    expect(parseAnswer({ kind: "plan", approve: true, mode: "acceptEdits" })).toEqual({
+      kind: "plan",
+      approve: true,
+      mode: "acceptEdits",
+    });
     expect(parseAnswer({ kind: "permission", allow: "always" })).toEqual({
       kind: "permission",
       allow: "always",
@@ -837,6 +849,7 @@ describe("grove chat's host", () => {
       { kind: "question", answers: { q: 4 } },
       { kind: "question", answers: { q: "x".repeat(200_001) } },
       { kind: "plan", approve: "yes" },
+      { kind: "plan", approve: true, mode: "yolo" },
       { kind: "permission", allow: "forever" },
       { kind: "permission", allow: "once", message: 4 },
       { kind: "bash", command: "rm -rf /" },

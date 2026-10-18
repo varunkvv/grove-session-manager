@@ -636,7 +636,8 @@ export type ChatAsk =
 export type ChatAnswer =
   /** question text -> the label picked, or what was typed. several picks are comma-separated */
   | { kind: "question"; answers: Record<string, string> }
-  | { kind: "plan"; approve: boolean; message?: string }
+  /** `mode`: what claude goes on in once approved. absent: the mode it was in before planning */
+  | { kind: "plan"; approve: boolean; message?: string; mode?: ChatMode }
   | { kind: "permission"; allow: "once" | "always" | "no"; message?: string };
 
 /** the host's side of a session, sent whole every time it moves. the streamed answer goes apart */
