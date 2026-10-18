@@ -1172,7 +1172,8 @@ export const MODE_HINT: Record<ChatMode, string> = {
 
 /**
  * a mode's mark. colour only where it says something: plan is the accent, a mode that runs every
- * tool without asking (or turns everything down) is the danger red, the rest have none
+ * tool without asking (or turns everything down) is the danger red, the rest have none - and no
+ * mark, so the toolbar's word sits where the others do
  */
 export function ModeDot({ mode }: { mode?: ChatMode }) {
   const tone =
@@ -1181,12 +1182,8 @@ export function ModeDot({ mode }: { mode?: ChatMode }) {
       : mode === "bypassPermissions" || mode === "dontAsk"
         ? "bg-danger"
         : undefined;
-  return (
-    <span
-      aria-hidden="true"
-      className={cx("size-1.5 shrink-0 rounded-full", tone ?? "bg-transparent")}
-    />
-  );
+  if (!tone) return null;
+  return <span aria-hidden="true" className={cx("size-1.5 shrink-0 rounded-full", tone)} />;
 }
 
 const WORDS = { running: "Running", done: "Done", failed: "Failed", stopped: "Stopped" };
@@ -1453,6 +1450,8 @@ export function Menu({
   useEffect(() => box.current?.focus(), []);
   // the rows came in after it opened (claude was starting): the keyboard starts on the checked one
   useEffect(() => setActive(at), [at]);
+  /** a column for the marks when any row has one, so the labels line up with or without */
+  const marks = items.some((i) => i.mark);
   return (
     <Overlay
       open
@@ -1518,7 +1517,7 @@ export function Menu({
             onClick={() => onPick(it.key)}
             className="fade flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left data-[active]:bg-raised"
           >
-            {it.mark && <span className="flex h-5 items-center">{it.mark}</span>}
+            {marks && <span className="flex h-5 w-1.5 shrink-0 items-center">{it.mark}</span>}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-body text-fg">{it.label}</span>
               {it.description && <span className="block text-sm text-fg-4">{it.description}</span>}
