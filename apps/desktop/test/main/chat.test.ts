@@ -182,6 +182,18 @@ describe("grove chat's host", () => {
     expect(env).toEqual({ entrypoint: "sdk-ts" });
   });
 
+  it("starts claude with claude code's own system prompt, not an empty one", async () => {
+    const s = setup();
+    await s.host.warm(SESSION, s.where);
+    const init = s
+      .log()
+      .map((l) => l.in as { request?: Record<string, unknown> } | undefined)
+      .find((m) => m?.request?.subtype === "initialize")?.request;
+    expect(init).toBeDefined();
+    // the preset sends no prompt of its own: claude code uses its own. left out, the sdk sent [""]
+    expect(init).not.toHaveProperty("systemPrompt");
+  });
+
   it("streams a turn to its window and writes it where grove reads transcripts", async () => {
     // the recorded gap between the two deltas is 208ms. kept over the window's 50ms
     const s = setup(150);
