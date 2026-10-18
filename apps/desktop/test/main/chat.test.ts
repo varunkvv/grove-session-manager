@@ -242,18 +242,20 @@ describe("grove chat's host", () => {
     expect(s.host.status(SESSION).context).toEqual({ used: 31708, limit: 967000 });
     await s.host.send(SESSION, s.where, HELLO);
     await turnEnded(s);
-    await until(() => s.host.status(SESSION).context, "the count after the turn");
-    const asked = s
-      .log()
-      .filter(
-        (l) =>
-          (l.in as { request?: { subtype?: string; detail?: string } })?.request?.subtype ===
-          "get_context_usage",
-      )
-      .map((l) => (l.in as { request: { detail?: string } }).request.detail);
+    const asked = () =>
+      s
+        .log()
+        .filter(
+          (l) =>
+            (l.in as { request?: { subtype?: string; detail?: string } })?.request?.subtype ===
+            "get_context_usage",
+        )
+        .map((l) => (l.in as { request: { detail?: string } }).request.detail);
+    // asked again once the turn's result is in. the count from the start is already there, so
+    // waiting on it would not wait for this one
+    await until(() => asked().length >= 2, "the count after the turn");
     // the summary: no token-count call
-    expect(asked.length).toBeGreaterThanOrEqual(2);
-    expect(new Set(asked)).toEqual(new Set(["summary"]));
+    expect(new Set(asked())).toEqual(new Set(["summary"]));
   });
 
   it("starts claude with claude code's own system prompt, not an empty one", async () => {
