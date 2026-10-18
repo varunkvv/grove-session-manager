@@ -1,3 +1,28 @@
+## 0.19
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.19 lets you talk to them in Grove, as a beta.
+
+New:
+
+- **Grove chat (beta)** is a switch at the bottom of Settings, off by default. with it on, opening a session
+  (double-click, a second Enter, a notification) opens it in a Grove window of its own instead of your editor
+- the chat streams Claude's answer as it comes. Esc stops the turn, and what you type while it runs waits for it.
+  the mode pill and model picker work as in Claude Code, Shift-Tab changes the mode
+- Claude's questions and plans show as cards you answer with a click
+- **Open in VS Code** (Cmd-Shift-Enter, or the button in the header) moves a session to your editor. if a turn is
+  running, Grove asks whether to stop it or move when it finishes
+- closing a chat window does not stop the session. a running turn keeps going, and Grove still tells you when it
+  needs you
+
+Keep in mind:
+
+- Grove runs your own `claude`, with your login, settings, hooks and MCP servers. the session is the same one your
+  editor and the terminal see, so it moves between them
+- a session open in VS Code, a terminal or Zed shows read-only. close it there to talk to it in Grove
+- Claude starts when you start typing, not when the window opens
+- new sessions (Cmd-N) still open in your editor. code highlighting, images and diagrams, a files panel and `/` and
+  `@` menus come in a later release
+
 ## 0.18
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.18 works with Zed.
