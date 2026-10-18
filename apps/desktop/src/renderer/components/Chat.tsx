@@ -16,6 +16,7 @@ import type {
 } from "../../shared/ipc.ts";
 import { attachKind, bytes } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
+import { type Walk, walk } from "../logic/history.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
@@ -226,7 +227,8 @@ export function ChatApp() {
   const picker = useRef<HTMLInputElement>(null);
   /** bumped each time main hands the window a session */
   const [openings, setOpenings] = useState(0);
-  const last = useRef("");
+  /** up and down through what was said: where the walk is, null when not walking */
+  const history = useRef<Walk | null>(null);
   const warmed = useRef(false);
   const [error, setError] = useState<string>();
   /** what main said that is not a failure: when it will open in the editor */
@@ -243,6 +245,8 @@ export function ChatApp() {
   const modelButton = useRef<HTMLButtonElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
+  /** scrolled up from the end: the Latest button shows */
+  const [away, setAway] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null);
 
   const read = useCallback(async () => {
@@ -473,7 +477,7 @@ export function ChatApp() {
     if (own) {
       setDraft("");
       setFiles([]);
-      if (text) last.current = text;
+      history.current = null;
     }
     // what goes over: the chip's size and thumbnail stay here
     const out = attached.map(({ size: _size, url: _url, ...f }) => f as ChatAttachment);
@@ -601,6 +605,19 @@ export function ChatApp() {
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
+  /** down to what was said last, and staying there as more comes */
+  const toLatest = () => {
+    const el = scroller.current;
+    if (!el) return;
+    atEnd.current = true;
+    setAway(false);
+    el.scrollTo({ top: el.scrollHeight });
+  };
+
+  /** what was said in this session, oldest first: the composer's up and down walk it */
+  const prompts = rows.flatMap((r) =>
+    r.kind === "turn" && r.prompt?.kind === "human" && r.prompt.text ? [r.prompt.text] : [],
+  );
   /** the last thing claude said in full, for ⇧⌘C */
   const lastAnswer = rows.findLast((r): r is TurnView => r.kind === "turn" && !!r.text)?.text;
 
@@ -678,6 +695,13 @@ export function ChatApp() {
       keys: { key: "k", meta: true, shift: true },
       off: !!readOnly,
       run: () => void send("/compact"),
+    },
+    {
+      id: "latest",
+      group: "View",
+      label: "Jump to the latest",
+      keys: { key: "ArrowDown", meta: true },
+      run: toLatest,
     },
     {
       id: "files",
@@ -819,6 +843,9 @@ export function ChatApp() {
               onScroll={(e) => {
                 const el = e.currentTarget;
                 atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+                // more than a screen up: far enough that the end is worth a button
+                const far = el.scrollHeight - el.scrollTop - el.clientHeight > el.clientHeight / 2;
+                if (far !== away) setAway(far);
               }}
             >
               <div className={cx(COLUMN, "pt-6 pb-8")}>
@@ -889,6 +916,18 @@ export function ChatApp() {
             </div>
             <footer className="shrink-0">
               <div className={cx(COLUMN, "relative py-3")}>
+                {away && (
+                  <Button
+                    size="sm"
+                    className="absolute -top-8 left-1/2 -translate-x-1/2 bg-overlay overlay-shadow"
+                    data-testid="chat-latest"
+                    title="⌘↓"
+                    onClick={toLatest}
+                  >
+                    <Icon name="arrow" size={11} className="rotate-180" />
+                    Latest
+                  </Button>
+                )}
                 {suggest.menu}
                 {note && !error && (
                   <p className="mb-2 text-sm text-fg-3" data-testid="chat-note">
@@ -929,6 +968,8 @@ export function ChatApp() {
                       className="no-drag block max-h-[40vh] min-h-9 w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
                       data-composer
                       onChange={(e) => {
+                        // typing makes it a draft of its own: the next up starts from the newest
+                        history.current = null;
                         setDraft(e.target.value);
                         setCaret(e.target.selectionStart);
                         // the first keystroke starts claude, so the send does not wait for it
@@ -955,9 +996,25 @@ export function ChatApp() {
                         } else if (e.key === "Escape" && running) {
                           e.preventDefault();
                           void api().chatInterrupt();
-                        } else if (e.key === "ArrowUp" && !draft && last.current) {
+                        } else if (
+                          (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+                          !e.shiftKey &&
+                          !e.metaKey &&
+                          !e.altKey
+                        ) {
+                          // only from the first line up, or the last line down: else it moves the caret
+                          const el = e.currentTarget;
+                          const up = e.key === "ArrowUp";
+                          const edge = up
+                            ? !el.value.slice(0, el.selectionStart).includes("\n")
+                            : !el.value.slice(el.selectionEnd).includes("\n");
+                          const step = edge && walk(prompts, history.current, draft, up);
+                          if (!step) return;
                           e.preventDefault();
-                          setDraft(last.current);
+                          history.current = step.walk;
+                          setDraft(step.text);
+                          setCaret(step.text.length);
+                          placeCaret.current = step.text.length;
                         } else if (e.key === "Tab" && e.shiftKey) {
                           e.preventDefault();
                           void stepMode();

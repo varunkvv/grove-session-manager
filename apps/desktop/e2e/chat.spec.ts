@@ -431,6 +431,57 @@ test("an answer and a code block copy from a button on hover, and ⇧⌘C copies
   await expect.poll(clipboard).toContain("```sh");
 });
 
+test("up and down walk what was said in the session, and Latest brings back the end", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  const { id, root } = writeProject(fx, { name: "chat-trial" });
+  // a long answer: the conversation scrolls
+  const paragraphs = Array.from({ length: 80 }, (_, i) => `Paragraph ${i + 1} of the answer.`);
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+    reply: paragraphs.join("\n\n"),
+  });
+  app = await launchApp(fx, {
+    GROVE_CLAUDE_BIN: writeFakeClaude(fx.dir).bin,
+    GROVE_FAKE_CHAT_DELAY_MS: "20",
+  });
+  await openRow(app.page, id);
+  const chat = await chatWindow(app.app, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike", {
+    timeout: 20_000,
+  });
+  await expect(chat.getByTestId("chat-stop")).toHaveCount(0, { timeout: 20_000 });
+  // what is being typed is kept: up walks back, down past the newest gives it back
+  await composer.fill("half typed");
+  await composer.press("Home");
+  await composer.press("ArrowUp");
+  await expect(composer).toHaveValue(HELLO);
+  await composer.press("ArrowUp");
+  await expect(composer).toHaveValue("set the scene");
+  await composer.press("ArrowDown");
+  await expect(composer).toHaveValue(HELLO);
+  await composer.press("ArrowDown");
+  await expect(composer).toHaveValue("half typed");
+  // scrolled up a long way: Latest, and ⌘↓, go back to the end
+  const conversation = chat.getByTestId("conversation");
+  await conversation.evaluate((el) => el.scrollTo({ top: 0 }));
+  await chat.getByTestId("chat-latest").click();
+  await expect(chat.getByTestId("chat-latest")).toHaveCount(0);
+  const atEnd = () =>
+    conversation.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 24);
+  await expect.poll(atEnd).toBe(true);
+  await conversation.evaluate((el) => el.scrollTo({ top: 0 }));
+  await expect(chat.getByTestId("chat-latest")).toBeVisible();
+  await composer.press("Meta+ArrowDown");
+  await expect.poll(atEnd).toBe(true);
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
