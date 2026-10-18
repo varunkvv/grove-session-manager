@@ -69,6 +69,8 @@ function draw(code: string, dark: boolean): Promise<string | null> {
       fontFamily: FONT,
       htmlLabels: false,
       flowchart: { htmlLabels: false },
+      // the page has one shadow, and it is an overlay's
+      themeCSS: "* { filter: none !important; }",
     });
     try {
       const { svg } = await mermaid.render(`grove-mermaid-${++n}`, code);

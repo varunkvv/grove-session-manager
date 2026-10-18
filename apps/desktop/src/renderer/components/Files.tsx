@@ -30,7 +30,7 @@ export function OutputCards({ outputs }: { outputs: readonly FileMark[] }) {
   const scope = useChatScope();
   if (!scope) return null;
   return (
-    <div className="mt-3 flex flex-wrap gap-2" data-testid="outputs">
+    <div className="mt-3 flex flex-wrap items-start gap-2" data-testid="outputs">
       {outputs.map((o) => {
         const kind = fileKind(o.path);
         const open = () => scope.open?.(o.path);

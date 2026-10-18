@@ -302,13 +302,19 @@ export function ChatApp() {
     };
   }, [load]);
 
-  // cmd-shift-Enter is the editor, as it is on a list in the main window
+  // cmd-shift-Enter is the editor, as it is on a list in the main window. Esc closes the files
+  // pane, unless the composer took it to stop a turn
   const editorKey = useRef<() => void>(() => {});
+  const paneOpen = useRef(false);
+  paneOpen.current = !!pane;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey && e.shiftKey && e.key === "Enter") {
         e.preventDefault();
         editorKey.current();
+      } else if (e.key === "Escape" && !e.defaultPrevented && paneOpen.current) {
+        e.preventDefault();
+        setPane(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -548,7 +554,7 @@ export function ChatApp() {
                     </p>
                   ) : (
                     // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-                    <div key={(talk?.older ?? 0) + i}>
+                    <div key={(talk?.older ?? 0) + i} className="mt-6 first:mt-0">
                       <Turn turn={item} last={i === end} working={running} />
                       {item.outputs && <OutputCards outputs={item.outputs} />}
                     </div>

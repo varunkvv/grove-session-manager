@@ -169,9 +169,13 @@ test("what a turn wrote is a card in it, and opens beside the conversation, live
   await expect(frame.locator("h1")).toHaveText("mockup");
   await expect(frame.locator("#out")).toHaveText("grove: blocked");
 
-  // the toggle closes it
+  // the toggle closes it, and so does Esc
   await chat.getByTestId("chat-files").click();
   await expect(chat.getByTestId("viewer")).toHaveCount(0);
+  await chat.getByTestId("chat-files").click();
+  await expect(chat.getByTestId("files")).toBeVisible();
+  await chat.getByTestId("composer").press("Escape");
+  await expect(chat.getByTestId("files")).toHaveCount(0);
 });
 
 test("the viewer reads nothing outside the session's folders", async () => {
