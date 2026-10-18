@@ -21,6 +21,7 @@ import { connect, useStore } from "./state/store.ts";
 // one table for the menu and the keys, so the two cannot disagree and compile
 const MENU_INTENTS: Record<MenuCommandId, Intent> = {
   "new-project": { type: "new-project" },
+  "new-chat": { type: "new-chat" },
   "open-project": { type: "open-project" },
   "edit-project": { type: "edit-project" },
   "archive-project": { type: "archive-project" },
@@ -88,6 +89,7 @@ export function App() {
       const intent = interpret(
         {
           overlay: Boolean(s.overlay || s.dialog),
+          chat: s.settings?.chat === true,
           view: s.view.name,
           inText:
             target?.tagName === "INPUT" ||

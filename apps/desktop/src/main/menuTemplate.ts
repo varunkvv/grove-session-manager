@@ -9,6 +9,8 @@ export interface MenuTemplateOptions {
   editorLabel: string;
   isDev: boolean;
   isMac: boolean;
+  /** grove chat is on: cmd-N is a new session in it, and a new project moves to cmd-shift-N */
+  chat?: boolean;
   send: (id: MenuCommandId) => void;
 }
 
@@ -46,7 +48,12 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
   const fileMenu: MenuItemConstructorOptions = {
     label: "File",
     submenu: [
-      command("New Project…", "CmdOrCtrl+N", "new-project"),
+      ...(o.chat
+        ? [
+            command("New Session", "CmdOrCtrl+N", "new-chat"),
+            command("New Project…", "CmdOrCtrl+Shift+N", "new-project"),
+          ]
+        : [command("New Project…", "CmdOrCtrl+N", "new-project")]),
       command(`Open Project in ${o.editorLabel}`, "CmdOrCtrl+O", "open-project"),
       command("Edit Project…", "CmdOrCtrl+E", "edit-project"),
       // one item for both ways: the menu is not rebuilt when the project on screen changes. the

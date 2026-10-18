@@ -16,7 +16,7 @@ import type { MenuCommandId } from "../shared/ipc.ts";
 import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
-import { chatRoots, registerIpc } from "./ipc.ts";
+import { chatRoots, type FreshChats, registerIpc } from "./ipc.ts";
 import { keepAwake, leftRunningCount, runningCount, watchingCount } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
@@ -280,6 +280,8 @@ async function start(): Promise<void> {
     // where a session runs moved: its rows say Grove, or no longer do
     onChange: () => projects.sessionsChanged(),
   });
+  /** sessions grove chat made, until their transcript is in the list */
+  const fresh: FreshChats = new Map();
   const chatWindows = new ChatWindows({
     preload: preloadFile,
     url: () => entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance),
@@ -395,6 +397,12 @@ async function start(): Promise<void> {
     onSessions: () => {
       pusher.send("sessions:changed", {});
       showTray();
+      // a session made in grove chat is in the list now: its window shows it as any other
+      for (const id of fresh.keys()) {
+        if (!sessions.byId(id)[0]) continue;
+        fresh.delete(id);
+        chatWindows.reload(id);
+      }
     },
     onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId) }),
   });
@@ -419,9 +427,18 @@ async function start(): Promise<void> {
     installMenu({
       isDev: appEnv.isDev,
       editorLabel,
+      chat: settings.chat === true,
       send: (id: MenuCommandId) => {
+        const from = chatWindows.focusedSession();
+        // cmd-N in a chat window: a new session in that one's project, and the main window stays
+        // where it is
+        const project = from && (projects.projectOf(from) ?? fresh.get(from)?.project);
+        if (id === "new-chat" && project) {
+          handlers.newChat(project).catch((e) => log.warn("new chat:", e));
+          return;
+        }
         // the menu's commands are the main window's: from a chat window they bring it forward
-        if (chatWindows.focusedSession()) showMain();
+        if (from && id !== "new-chat") showMain();
         pusher.send("menu:command", { id });
       },
     });
@@ -431,7 +448,7 @@ async function start(): Promise<void> {
   // copy of the setting, because nativeTheme does not reach the renderer's media queries.
   electron.nativeTheme.themeSource = settings.appearance;
   serveRenderer(rendererDir);
-  serveSessionFiles((id) => chatRoots({ sessions, combos, chatWindows }, id));
+  serveSessionFiles((id) => chatRoots({ sessions, combos, chatWindows, fresh }, id));
   denyAllPermissions();
 
   await combos.load();
@@ -458,13 +475,15 @@ async function start(): Promise<void> {
             pusher.send("toast", { level: "error", title: "Session status", body: String(e) }),
           );
       }
-      // File > Open Project in {editor} names it
-      if (s.editor !== settings.editor) menu(resolveEditor(s).label);
+      // File > Open Project in {editor} names it, and grove chat's switch moves cmd-N
+      const menuMoved =
+        s.editor !== settings.editor || (s.chat === true) !== (settings.chat === true);
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
       const chatMoved = (s.chat === true) !== (settings.chat === true);
       const lookMoved = s.appearance !== settings.appearance;
       settings = s;
+      if (menuMoved) menu(resolveEditor(s).label);
       // the spare chat window is there only while grove chat is on, and in the page's appearance
       if (chatMoved) chatWindows.setSpare(s.chat === true);
       else if (lookMoved && s.chat === true) chatWindows.remakeSpare();
@@ -495,6 +514,7 @@ async function start(): Promise<void> {
     window: () => win,
     chat,
     chatWindows,
+    fresh,
   });
 
   win = await createMainWindow({

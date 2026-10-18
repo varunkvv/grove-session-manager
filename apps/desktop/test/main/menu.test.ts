@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildMenuTemplate, type TrayView, trayTemplate } from "../../src/main/menuTemplate.ts";
 import type { InboxRowView, LandingTarget, MenuCommandId } from "../../src/shared/ipc.ts";
 
-function items(sent: MenuCommandId[] = []): MenuItemConstructorOptions[] {
+function items(sent: MenuCommandId[] = [], chat = false): MenuItemConstructorOptions[] {
   const out: MenuItemConstructorOptions[] = [];
   const walk = (list: MenuItemConstructorOptions[]) => {
     for (const item of list) {
@@ -17,6 +17,7 @@ function items(sent: MenuCommandId[] = []): MenuItemConstructorOptions[] {
       editorLabel: "VS Code",
       isDev: false,
       isMac: true,
+      chat,
       send: (id) => sent.push(id),
     }),
   );
@@ -25,8 +26,21 @@ function items(sent: MenuCommandId[] = []): MenuItemConstructorOptions[] {
 
 describe("the menu", () => {
   it("never binds one key twice", () => {
-    const keys = items().flatMap((i) => (i.accelerator ? [String(i.accelerator)] : []));
-    expect(new Set(keys).size).toBe(keys.length);
+    for (const chat of [false, true]) {
+      const keys = items([], chat).flatMap((i) => (i.accelerator ? [String(i.accelerator)] : []));
+      expect(new Set(keys).size).toBe(keys.length);
+    }
+  });
+
+  it("with grove chat on, cmd-N is a new session in it and a new project is cmd-shift-N", () => {
+    const sent: MenuCommandId[] = [];
+    const file = items(sent, true).filter((i) => /^New /.test(String(i.label)));
+    expect(file.map((i) => [i.label, i.accelerator])).toEqual([
+      ["New Session", "CmdOrCtrl+N"],
+      ["New Project…", "CmdOrCtrl+Shift+N"],
+    ]);
+    for (const i of file) (i.click as () => void)();
+    expect(sent).toEqual(["new-chat", "new-project"]);
   });
 
   it("every command, with its key", () => {

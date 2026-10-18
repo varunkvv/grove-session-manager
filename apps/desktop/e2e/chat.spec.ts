@@ -314,3 +314,50 @@ test("an image dropped or pasted into the composer goes to claude with the messa
     source: { type: "base64", media_type: "image/png", data: png },
   });
 });
+
+test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await page.locator(`[data-testid="project-item"][data-id="${s.id}"]`).click();
+  await page.keyboard.press("Meta+n");
+  let chat: Page | undefined;
+  await waitFor(async () => {
+    for (const p of electron.windows()) {
+      if (
+        p.url().includes("#/chat") &&
+        (await p.locator("h1", { hasText: "New session" }).count())
+      ) {
+        chat = p;
+        return true;
+      }
+    }
+    return false;
+  }, 15_000);
+  const c = chat as Page;
+  const id = await c.getByTestId("chat").getAttribute("data-id");
+  expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(id).not.toBe(SID);
+  // nothing to resume: no transcript, and nothing said about one
+  await expect(c.getByTestId("chat-gone")).toHaveCount(0);
+  const composer = c.getByTestId("composer");
+  await expect(composer).toBeFocused();
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(c.getByTestId("panel-text")).toContainText("hello from the spike");
+  // claude started it under grove's id, in the project's folder
+  const [first] = sentToClaude(s.chatLog) as Array<{ argv: string[]; cwd: string }>;
+  expect(first?.cwd).toBe(s.root);
+  expect(first?.argv.join(" ")).toContain(id);
+  expect(first?.argv.some((a) => a.startsWith("--resume"))).toBe(false);
+  // its transcript is in the list now, and the window shows it as any other session
+  await expect(page.locator(`[data-testid="session-row"][data-id="${id}"]`)).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  await expect(c.locator("h1")).toHaveText(HELLO);
+  await expect(c.getByTestId("turn")).toHaveCount(1);
+  // the editor's project form moved a key over
+  await page.bringToFront();
+  await page.keyboard.press("Meta+Shift+n");
+  await expect(page.getByTestId("project-form")).toBeVisible();
+  expect(readExecLog(s.fx)).toEqual([]);
+});

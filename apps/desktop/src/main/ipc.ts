@@ -97,7 +97,12 @@ export interface Deps {
   /** grove chat: the sessions grove runs itself, and their windows */
   chat: ChatHost;
   chatWindows: ChatWindows;
+  /** sessions made in grove chat (cmd-N) whose transcript is not in the list yet */
+  fresh: FreshChats;
 }
+
+/** a session grove made, by id, and where it runs, until its transcript is in the list */
+export type FreshChats = Map<string, { project: ProjectId; where: ChatWhere }>;
 
 /**
  * the handlers return plain values and throw on failure. the wrapper below turns a method whose
@@ -405,6 +410,24 @@ function buildHandlers(deps: Deps): Handlers {
       }
       deps.chatWindows.open(row.sessionId);
       deps.live.markSeen([row.sessionId]);
+    },
+
+    async newChat(project) {
+      if (deps.settings().chat !== true) {
+        throw new AppError("chat-off", "Grove chat is switched off in Settings.");
+      }
+      if (typeof project !== "string" || !project) throw new AppError("invalid", "No project.");
+      const combo = combos.byId(project);
+      if (!(await isDirectory(combo.root))) {
+        throw new AppError("cwd-missing", `${combo.root} does not exist.`);
+      }
+      // the id is grove's from the start, so the window has its session before claude is up
+      const id = randomUUID();
+      deps.fresh.set(id, {
+        project,
+        where: { cwd: combo.root, dirs: workspaceFolders(combo).slice(1), fresh: true },
+      });
+      deps.chatWindows.open(id);
     },
 
     async startAgent(raw) {
@@ -722,12 +745,14 @@ async function whereOf(deps: Pick<Deps, "combos">, row: SessionRow): Promise<Cha
  * session with no window open, so nothing else can be reached through the session schemes
  */
 export async function chatRoots(
-  deps: Pick<Deps, "sessions" | "combos" | "chatWindows">,
+  deps: Pick<Deps, "sessions" | "combos" | "chatWindows" | "fresh">,
   id: string,
 ): Promise<string[] | null> {
   if (!deps.chatWindows.has(id)) return null;
   const row = newestRow(deps, id);
-  const where = row && (await whereOf(deps, row).catch(() => null));
+  const where = row
+    ? await whereOf(deps, row).catch(() => null)
+    : (deps.fresh.get(id)?.where ?? null);
   return where ? [where.cwd, ...where.dirs, ...TEMP_ROOTS] : null;
 }
 
@@ -752,9 +777,12 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
   /** `@`'s lists, by folder: read again when a window asks for fresh ones */
   const paths = new Map<string, Promise<string[]>>();
 
-  /** where claude runs it, once nothing else holds it: claimed from where it was */
+  /** where claude runs it, once nothing else holds it: made here, or claimed from where it was */
   async function runWhere(id: string): Promise<ChatWhere> {
-    const row = rowOf(id);
+    const row = newestRow(deps, id);
+    const fresh = deps.fresh.get(id);
+    if (!row && fresh) return fresh.where;
+    if (!row) throw new AppError("no-session", "That session is no longer in the list.");
     return chat.hosts(id) ? where(row) : claim(id, row);
   }
 
@@ -790,6 +818,28 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
   return {
     async chatTarget(id): Promise<ChatTarget | null> {
       const hit = projects.hitFor(id);
+      const fresh = deps.fresh.get(id);
+      if (!hit && fresh) {
+        const status = chat.status(id);
+        return {
+          session: {
+            key: "",
+            sessionId: id,
+            title: "New session",
+            where: deps.combos.byId(fresh.project).name,
+            runtime: status.live ? "grove" : "closed",
+            open: {},
+          },
+          project: fresh.project,
+          cwd: fresh.where.cwd,
+          at: Date.now(),
+          appearance: deps.settings().appearance,
+          editor: editor.current().label,
+          status,
+          text: chat.text(id),
+          fresh: true,
+        };
+      }
       if (!hit) return null;
       const row = rowOf(id);
       const refused = readOnly(id, row);
@@ -836,6 +886,8 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatWarm(id) {
+      const fresh = deps.fresh.get(id);
+      if (fresh && !newestRow(deps, id)) return chat.warm(id, fresh.where);
       const row = rowOf(id);
       // a background agent is stopped by a send, which asks first. a keystroke never stops one
       if (projects.runtimeFor(id, row) === "background" || readOnly(id, row)) return;
@@ -857,7 +909,8 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatPaths(id, fresh) {
-      const at = await where(rowOf(id));
+      const at = newestRow(deps, id) ? await where(rowOf(id)) : (deps.fresh.get(id)?.where ?? null);
+      if (!at) return [];
       const folders = [at.cwd, ...at.dirs];
       const lists = await Promise.all(
         folders.map((f) => {
@@ -911,6 +964,9 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatOpenInEditor(id, when) {
+      if (!newestRow(deps, id) && deps.fresh.has(id)) {
+        throw new AppError("fresh", "Send it something first: there is nothing to open yet.");
+      }
       const row = rowOf(id);
       const label = editor.current().label;
       if (when === "after" && chat.running(id)) {

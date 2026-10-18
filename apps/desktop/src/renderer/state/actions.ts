@@ -190,9 +190,16 @@ export function openRow(screen: Section, id: string): void {
   s.set({ peek: id, active: { ...s.active, [screen]: id } });
 }
 
-/** a new conversation in the project's window, with nothing typed for it: the ask is typed there */
-export const newSession = (project: ProjectId): void =>
-  void startAgent({ project, where: "editor", prompt: "" });
+/**
+ * a new conversation in the project's window, with nothing typed for it: the ask is typed there.
+ * with grove chat on, a window of its own in grove, where it is typed
+ */
+export function newSession(project: ProjectId): void {
+  if (!chatOn()) return void startAgent({ project, where: "editor", prompt: "" });
+  void api()
+    .newChat(project)
+    .then((res) => report("Could not start a session", res));
+}
 
 /** the same for every start in the app */
 export async function startAgent(req: StartAgentRequest): Promise<void> {
@@ -453,6 +460,11 @@ export function perform(intent: Intent): void {
     }
     case "new-project":
       newProject();
+      break;
+    // a new session in the project on screen, or the last one. with none at all, a project first
+    case "new-chat":
+      if (s.project) newSession(s.project);
+      else newProject();
       break;
     case "edit-project":
       editProject();

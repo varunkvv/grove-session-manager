@@ -610,7 +610,7 @@ export function ChatApp() {
                     {session.description}
                   </p>
                 )}
-                {talk === null && pending === null && (
+                {talk === null && pending === null && !target.fresh && (
                   <p className={QUIET} data-testid="chat-gone">
                     This session's transcript is not there. Claude Code deletes one after 30 days.
                   </p>

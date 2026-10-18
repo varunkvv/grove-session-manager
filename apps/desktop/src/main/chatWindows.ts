@@ -76,6 +76,14 @@ export class ChatWindows {
     this.bySession.get(sessionId)?.close();
   }
 
+  /** what the window shows moved (a new session's transcript came, the appearance changed): it reads it again */
+  reload(sessionId?: string): void {
+    for (const [id, win] of this.bySession) {
+      if (sessionId !== undefined && id !== sessionId) continue;
+      if (!win.isDestroyed()) win.webContents.send("grove:chat:open", {});
+    }
+  }
+
   /** the spare exists only while grove chat is on: with it off, no window is added anywhere */
   setSpare(on: boolean): void {
     this.spareOn = on;

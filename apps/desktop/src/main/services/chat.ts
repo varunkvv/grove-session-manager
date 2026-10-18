@@ -69,6 +69,8 @@ export function parseAnswer(raw: unknown): ChatAnswer {
 export interface ChatWhere {
   cwd: string;
   dirs: string[];
+  /** a session grove made (cmd-N) that has no transcript yet: claude starts it under this id */
+  fresh?: boolean;
 }
 
 /** what the api takes, as Claude Code's own image paste sends it */
@@ -511,7 +513,8 @@ export class ChatHost {
           pathToClaudeCodeExecutable: bin,
           cwd: h.where.cwd,
           additionalDirectories: h.where.dirs,
-          resume: h.id,
+          // a session grove made has no transcript to resume yet: claude starts one under its id
+          ...(h.where.fresh ? { sessionId: h.id } : { resume: h.id }),
           // CLAUDE.md, skills, hooks and the project's settings, as everywhere else. no mode: the
           // settings' defaultMode decides, as it does in the terminal
           settingSources: ["user", "project", "local"],

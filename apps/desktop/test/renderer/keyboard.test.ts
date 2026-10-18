@@ -121,8 +121,18 @@ describe("what a key means", () => {
       expect(interpret(c, cmd("a", { shift: true }))).toEqual({ type: "archive-project" });
       expect(interpret(c, cmd("A", { shift: true }))).toEqual({ type: "archive-project" });
     }
-    // and cmd-shift-Enter, the editor while grove chat has cmd-Enter
-    expect(interpret(ctx(), cmd("Enter", { shift: true }))).toEqual({ type: "open-in-editor" });
+    // and cmd-shift-Enter, the editor while grove chat has cmd-Enter. with it off the key is
+    // nobody's, as before grove chat
+    expect(interpret(ctx({ chat: true }), cmd("Enter", { shift: true }))).toEqual({
+      type: "open-in-editor",
+    });
+    expect(interpret(ctx(), cmd("Enter", { shift: true }))).toBeNull();
+    // grove chat has cmd-N for a new session, and a new project moves to cmd-shift-N
+    expect(interpret(ctx({ chat: true }), cmd("n"))).toEqual({ type: "new-chat" });
+    expect(interpret(ctx({ chat: true }), cmd("n", { shift: true }))).toEqual({
+      type: "new-project",
+    });
+    expect(interpret(ctx(), cmd("n", { shift: true }))).toBeNull();
     // in a form's field cmd-arrows move the caret: there is no list to jump through
     expect(interpret(ctx({ view: "new-project", inText: true }), cmd("ArrowUp"))).toBeNull();
   });

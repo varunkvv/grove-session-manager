@@ -17,6 +17,8 @@ export type Intent =
   | { type: "palette" }
   | { type: "project-step"; delta: 1 | -1 }
   | { type: "new-project" }
+  /** grove chat on: a new session in the project on screen */
+  | { type: "new-chat" }
   | { type: "edit-project" }
   | { type: "archive-project" }
   | { type: "open-project" }
@@ -27,6 +29,8 @@ export type Intent =
 export interface KeyContext {
   /** a dialog or the palette is open. they own their keys. */
   overlay: boolean;
+  /** grove chat is on: cmd-Enter and cmd-N are its, and the editor and a new project move a key over */
+  chat?: boolean;
   view: View["name"];
   /** focus is in an input, textarea or select. the search field counts. */
   inText: boolean;
@@ -101,6 +105,8 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     // selection, redo
     if (e.shift) {
       if (e.key.toLowerCase() === "a") return { type: "archive-project" };
+      if (!ctx.chat) return null;
+      if (e.key.toLowerCase() === "n") return { type: "new-project" };
       return e.key === "Enter" ? { type: "open-in-editor" } : null;
     }
     switch (e.key.toLowerCase()) {
@@ -113,7 +119,7 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
       case "3":
         return { type: "go-usage" };
       case "n":
-        return { type: "new-project" };
+        return ctx.chat ? { type: "new-chat" } : { type: "new-project" };
       case "e":
         return { type: "edit-project" };
       case "o":

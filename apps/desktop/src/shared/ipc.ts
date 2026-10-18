@@ -369,6 +369,8 @@ export interface UsageView {
 
 export type MenuCommandId =
   | "new-project"
+  /** grove chat on: a new session in the project on screen, in its own window */
+  | "new-chat"
   | "open-project"
   | "edit-project"
   | "archive-project"
@@ -409,6 +411,8 @@ export interface Api {
   openSession(key: SessionKey): Promise<Outcome<{ message?: string }>>;
   /** grove chat: the session in its own window. one there already comes to the front */
   openChat(key: SessionKey): Promise<Outcome>;
+  /** grove chat: a new session in the project, in a window of its own. claude starts on the first key */
+  newChat(project: ProjectId): Promise<Outcome>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   /**
    * sessions found by their own fields, then by what was said in them. the palette asks with no
@@ -485,6 +489,7 @@ export const INVOKE_CHANNELS = [
   "review",
   "openSession",
   "openChat",
+  "newChat",
   "startAgent",
   "findSessions",
   "listSessions",
@@ -638,6 +643,8 @@ export interface ChatTarget {
   text: string;
   /** why it cannot be talked to from here: it is live in another app */
   readOnly?: string;
+  /** made here a moment ago (cmd-N): no transcript yet */
+  fresh?: boolean;
 }
 
 /** what `/` offers: one of Claude Code's commands, or a skill */
