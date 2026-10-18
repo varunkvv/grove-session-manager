@@ -4,6 +4,7 @@
 import { formatDuration, type TurnView } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import type { ChatAgent } from "../../shared/ipc.ts";
+import { useTick } from "./Live.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { AgentState, Button, cx, Icon, IconButton, Spinner } from "./ui.tsx";
 
@@ -11,16 +12,6 @@ const api = () => window.grove;
 
 /** how long it has run, or ran */
 const tookOf = (a: ChatAgent, now: number) => formatDuration((a.ended ?? now) - a.since);
-
-function useNow(on: boolean): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!on) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [on]);
-  return now;
-}
 
 /** one agent: what it was asked to do, how it is doing, and its stop while it runs */
 function AgentRow({
@@ -107,7 +98,7 @@ export function AgentList({
   onStop: (id: string) => void;
   onClose: () => void;
 }) {
-  const now = useNow(!!agents?.some((a) => a.state === "running"));
+  const now = useTick(!!agents?.some((a) => a.state === "running"));
   const ids = new Set(agents?.map((a) => a.id));
   const top = agents?.filter((a) => !a.workflow || !ids.has(a.workflow));
   return (
@@ -161,7 +152,7 @@ export function AgentViewer({
   /** null: its transcript is not there (yet) */
   const [turn, setTurn] = useState<TurnView | null>();
   const running = agent.state === "running";
-  const now = useNow(running);
+  const now = useTick(running);
   // read again every couple of seconds while it runs: its transcript moves, the session's does not.
   // main reads only what it wrote since the last look
   useEffect(() => {

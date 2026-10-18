@@ -8,13 +8,17 @@ import { Button, Mono, Spinner } from "./ui.tsx";
 /** a second or more, as a step's time says it */
 const took = (ms: number) => (ms >= 1000 ? formatDuration(ms) : "");
 
-/** now, once a second, for as long as it is drawn: only what shows a running time redraws */
-export function useTick(): number {
+/**
+ * now, once a second, for as long as it is drawn (and `on`): only what shows a running time
+ * redraws
+ */
+export function useTick(on = true): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
+    if (!on) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [on]);
   return now;
 }
 

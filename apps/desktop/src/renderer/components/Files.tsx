@@ -82,7 +82,6 @@ export function OutputCards({ outputs }: { outputs: readonly FileMark[] }) {
   );
 }
 
-/** a file the viewer has open: drawn for what it is, and again whenever it changes on disk */
 /** a changed file's diff against the last commit, read again when the file changes */
 function ChangeDiff({ file, v }: { file: string; v: number }) {
   const [lines, setLines] = useState<string[] | string>();
@@ -102,6 +101,7 @@ function ChangeDiff({ file, v }: { file: string; v: number }) {
   return <Diff lines={lines} className="max-h-none!" />;
 }
 
+/** a file the viewer has open: drawn for what it is, and again whenever it changes on disk */
 export function Viewer({
   file,
   diff,
