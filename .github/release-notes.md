@@ -20,8 +20,21 @@ Keep in mind:
   editor and the terminal see, so it moves between them
 - a session open in VS Code, a terminal or Zed shows read-only. close it there to talk to it in Grove
 - Claude starts when you start typing, not when the window opens
-- new sessions (Cmd-N) still open in your editor. code highlighting, images and diagrams, a files panel and `/` and
-  `@` menus come in a later release
+
+New since 0.19.32:
+
+- code in a chat is coloured, and mermaid diagrams draw as pictures
+- images, SVGs, Markdown and HTML pages the session writes show as cards in the turn. click one to open it in a viewer
+  beside the chat, which reloads when the file changes. the files button in the header lists everything the
+  session wrote, plus a project's `plans/` and `artifacts/`
+- HTML pages run in a sandbox. they can load scripts, fonts and images from the web, and cannot reach Grove or
+  send anything
+- `/` lists Claude's commands and skills, `@` finds a file in the session's folders. paste or drop images into the
+  message box
+- Cmd-N starts a new session in a chat window for the project on screen. New Project moves to Cmd-Shift-N
+- Ctrl-Opt-Cmd-G brings Grove forward from any app. change it in Settings
+- chat windows open a step down from the last one, at the size you last left one, and follow the appearance setting
+- long answers are no longer cut in the chat
 
 ## 0.18
 
