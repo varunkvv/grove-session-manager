@@ -464,8 +464,8 @@ function SessionCard({
   };
 
   return (
-    // the first thing in it sits at its top: an ask card's own gap is for under a turn
-    <div data-testid="session-card" className="[&>section:first-child]:mt-0">
+    // one gap between its parts. an ask card's own gap is for under a turn
+    <div data-testid="session-card" className="flex flex-col gap-4 [&>section]:mt-0">
       {elsewhere && (
         <p className={QUIET} data-testid="card-elsewhere">
           Live in {elsewhere}. Answer it there.
@@ -482,10 +482,13 @@ function SessionCard({
         />
       ))}
       {!elsewhere && running && asks.length === 0 && (
-        <div className="flex items-center gap-2" data-testid="card-live">
-          <span className="text-sm text-working">Working</span>
-          {host?.since !== undefined && <Clock since={host.since} />}
-          {host && <LiveLine status={host} className="min-w-0" />}
+        // what the chat window's header and live line say, in the same words
+        <div data-testid="card-live">
+          <span className="flex items-center gap-1.5">
+            <StateLabel state="working" within="panel" />
+            {host?.since !== undefined && <Clock since={host.since} />}
+          </span>
+          {host && <LiveLine status={host} className="mt-1" />}
         </div>
       )}
       {!running && asks.length === 0 && last?.text && (
@@ -497,7 +500,7 @@ function SessionCard({
         </div>
       )}
       {!elsewhere && (
-        <div className="mt-4">
+        <div>
           <ComposerFrame>
             <div className="flex items-end gap-2 py-1 pr-1.5">
               <textarea
@@ -531,15 +534,15 @@ function SessionCard({
               />
             </div>
           </ComposerFrame>
+          {error && (
+            <p className="mt-2 break-words text-sm text-danger" data-testid="card-error">
+              {error}
+            </p>
+          )}
         </div>
       )}
-      {error && (
-        <p className="mt-2 break-words text-sm text-danger" data-testid="card-error">
-          {error}
-        </p>
-      )}
       {made.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-1.5" data-testid="card-made">
+        <div className="flex flex-wrap gap-1.5" data-testid="card-made">
           {made.map((o) => (
             <button
               key={o.path}
