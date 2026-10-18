@@ -479,3 +479,8 @@ dialog::backdrop {
   height: auto;
   margin: 4px 0;
 }
+/* an agent's html page in the viewer: a page expects the white a browser gives it, whatever the
+   appearance around it */
+.page-frame {
+  background: #ffffff;
+}

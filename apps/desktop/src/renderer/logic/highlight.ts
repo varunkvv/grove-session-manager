@@ -6,6 +6,8 @@ export type { Run };
 
 /** past this a block is drawn as it is: a whole file pasted into a fence */
 const MAX = 200_000;
+// ponytail: the answers kept are counted, not weighed. 300 of up to 200KB each is a ceiling of
+// tens of MB in a window open for days. a byte budget if that ever shows
 const KEEP = 300;
 
 let worker: Worker | null = null;

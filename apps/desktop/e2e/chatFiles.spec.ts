@@ -168,6 +168,10 @@ test("what a turn wrote is a card in it, and opens beside the conversation, live
   const frame = chat.frameLocator('[data-testid="viewer-frame"]');
   await expect(frame.locator("h1")).toHaveText("mockup");
   await expect(frame.locator("#out")).toHaveText("grove: blocked");
+  // a page that sets no ground of its own is on white, as in a browser, in either appearance
+  expect(
+    await chat.getByTestId("viewer-frame").evaluate((f) => getComputedStyle(f).backgroundColor),
+  ).toBe("rgb(255, 255, 255)");
 
   // the toggle closes it, and so does Esc
   await chat.getByTestId("chat-files").click();

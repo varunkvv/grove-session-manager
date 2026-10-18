@@ -12,7 +12,14 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatHost, hostEnv, modesFor, parseAnswer, REAP_MS } from "../../src/main/services/chat.ts";
+import {
+  ChatHost,
+  hostEnv,
+  modesFor,
+  parseAnswer,
+  parseImages,
+  REAP_MS,
+} from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
 
 const REPLAY = path.join(import.meta.dirname, "../fixtures/chat/replay.cjs");
@@ -392,6 +399,27 @@ describe("grove chat's host", () => {
       { kind: "bash", command: "rm -rf /" },
     ]) {
       expect(() => parseAnswer(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow("not an answer");
+    }
+  });
+
+  it("takes from a page only images the api takes, and no more of them than it takes", () => {
+    const png = { mediaType: "image/png", data: "iVBORw0KGgo=" };
+    expect(parseImages(undefined)).toEqual([]);
+    expect(parseImages([png, { ...png, mediaType: "image/webp", extra: 1 }])).toEqual([
+      png,
+      { mediaType: "image/webp", data: "iVBORw0KGgo=" },
+    ]);
+    for (const bad of [
+      "png",
+      [null],
+      [{ ...png, mediaType: "image/svg+xml" }],
+      [{ ...png, mediaType: "text/html" }],
+      [{ ...png, data: "not base64!" }],
+      [{ ...png, data: 4 }],
+      [{ ...png, data: "A".repeat(7_000_000) }],
+      Array.from({ length: 11 }, () => png),
+    ]) {
+      expect(() => parseImages(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow("not an image");
     }
   });
 

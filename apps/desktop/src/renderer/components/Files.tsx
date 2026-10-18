@@ -132,7 +132,7 @@ export function Viewer({
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           src={sessionUrl(HTML_SCHEME, scope.session, file, v)}
-          className="min-h-0 w-full flex-1 bg-white"
+          className="page-frame min-h-0 w-full flex-1"
           data-testid="viewer-frame"
         />
       ) : (
