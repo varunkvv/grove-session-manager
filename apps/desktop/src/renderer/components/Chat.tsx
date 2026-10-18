@@ -196,6 +196,10 @@ function Starting({ error }: { error?: string }) {
 /** a refusal from main, as the line over the composer says it */
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
 
+/** a file or a long paste in the composer, as its name and a quiet word on it */
+const CHIP =
+  "flex h-10 max-w-64 items-center gap-2 rounded-md border border-line bg-chrome pr-1 pl-2.5";
+
 /** a file in the composer: an image as its thumbnail, anything else as its name and size */
 function Chip({
   file,
@@ -239,11 +243,7 @@ function Chip({
     );
   }
   return (
-    <div
-      className="flex h-10 max-w-64 items-center gap-2 rounded-md border border-line bg-chrome pr-1 pl-2.5"
-      data-testid="chip"
-      title={file.kind === "image" ? undefined : file.name}
-    >
+    <div className={CHIP} data-testid="chip" title={file.kind === "image" ? undefined : file.name}>
       <Icon name="file" faint />
       <span className="min-w-0 truncate text-sm text-fg-2">
         {file.kind === "image" ? "image" : file.name}
@@ -266,17 +266,16 @@ function PasteChip({
 }) {
   const lines = text.split("\n").length;
   return (
-    <div
-      className="flex h-10 max-w-64 items-center gap-2 rounded-md border border-line bg-chrome pr-1 pl-2.5"
-      data-testid="paste-chip"
-    >
+    <div className={CHIP} data-testid="paste-chip">
+      <Icon name="file" faint />
       <button
         type="button"
-        className="min-w-0 truncate text-sm text-fg-2"
+        className="flex min-w-0 items-baseline gap-2 text-sm"
         title="Put it in the message"
         onClick={onOpen}
       >
-        Pasted {lines} lines
+        <span className="truncate text-fg-2">Pasted text</span>
+        <span className="shrink-0 text-fg-4">{lines} lines</span>
       </button>
       <IconButton label="Remove" data-testid="paste-remove" onClick={onRemove}>
         <Icon name="x" size={10} />

@@ -822,7 +822,7 @@ test("a long paste becomes a chip that goes with the message, and an attached im
       new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }),
     );
   }, log);
-  await expect(chat.getByTestId("paste-chip")).toHaveText(/Pasted 60 lines/);
+  await expect(chat.getByTestId("paste-chip")).toHaveText(/Pasted text.*60 lines/);
   await expect(composer).toHaveValue("what does this log say?");
   // an image dropped in opens full size from its thumbnail, and Esc closes it
   await chat.evaluate((b64) => {
