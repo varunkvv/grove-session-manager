@@ -157,12 +157,14 @@ function MenuSwitch({
   testId,
   checked,
   onChange,
+  ultra,
 }: {
   label: string;
   hint: string;
   testId: string;
   checked: boolean;
   onChange: (on: boolean) => void;
+  ultra?: boolean;
 }) {
   return (
     <div className="mt-1 flex items-start gap-3 border-t border-line px-2 pt-2.5 pb-1.5">
@@ -171,9 +173,23 @@ function MenuSwitch({
         <span className="block text-sm text-fg-4">{hint}</span>
       </span>
       <span className="pt-0.5">
-        <Switch label={label} testId={testId} checked={checked} onChange={onChange} />
+        <Switch label={label} testId={testId} checked={checked} onChange={onChange} ultra={ultra} />
       </span>
     </div>
+  );
+}
+
+/** a menu whose rows are claude's, while it starts: or why it could not */
+function Starting({ error }: { error?: string }) {
+  return (
+    <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
+      {error ?? (
+        <>
+          <Spinner size={10} />
+          Starting Claude…
+        </>
+      )}
+    </p>
   );
 }
 
@@ -1795,6 +1811,7 @@ export function ChatApp() {
           width={340}
           onClose={closeMenu}
           onPick={(m) => void pickModel(m)}
+          footer="For this session only"
           items={s.models.map((m) => ({
             key: m.value,
             label: m.label,
@@ -1802,19 +1819,10 @@ export function ChatApp() {
             checked: m === current,
           }))}
         >
-          {!s.live && (
-            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
-              {s.error ?? (
-                <>
-                  <Spinner size={10} />
-                  Starting Claude…
-                </>
-              )}
-            </p>
-          )}
+          {!s.live && <Starting error={s.error} />}
           {s.live && !!current?.efforts?.length && (
             <div className="mt-1 border-t border-line px-2 pt-2.5 pb-1" data-testid="effort">
-              <p className="mb-1.5 text-sm font-medium text-fg-3">Effort</p>
+              <p className="mb-1.5 text-body text-fg">Effort</p>
               <Segmented
                 label="Effort"
                 size="sm"
@@ -1830,40 +1838,27 @@ export function ChatApp() {
                     .then((o) => setError(failed(o)))
                 }
               />
-              {s.effort === "max" && (
-                <p className="mt-1.5 text-sm text-fg-4">
-                  Max is for this session only and can run long.
-                </p>
-              )}
+              {s.effort === "max" && <p className="mt-1.5 text-sm text-fg-4">Max can run long.</p>}
             </div>
           )}
           {s.live && s.ultracodeAvailable && (
-            <div className="mt-1 flex items-start gap-3 border-t border-line px-2 pt-2.5 pb-1.5">
-              <span className="min-w-0 flex-1">
-                <span className="block text-body text-fg">Ultracode</span>
-                <span className="block text-sm text-fg-4">
-                  Runs a workflow of agents on every task. This session only.
-                </span>
-              </span>
-              <span className="pt-0.5">
-                <Switch
-                  ultra
-                  label="Ultracode"
-                  testId="ultracode"
-                  checked={!!s.ultracode}
-                  onChange={(on) =>
-                    void api()
-                      .chatSetUltracode(on)
-                      .then((o) => setError(failed(o)))
-                  }
-                />
-              </span>
-            </div>
+            <MenuSwitch
+              ultra
+              label="Ultracode"
+              hint="Runs a workflow of agents on every task"
+              testId="ultracode"
+              checked={!!s.ultracode}
+              onChange={(on) =>
+                void api()
+                  .chatSetUltracode(on)
+                  .then((o) => setError(failed(o)))
+              }
+            />
           )}
           {s.live && current?.fast && (
             <MenuSwitch
               label="Fast mode"
-              hint="Quicker answers from this model, billed at a higher rate. This session only."
+              hint="Quicker answers, billed at a higher rate"
               testId="fast"
               checked={!!s.fast}
               onChange={(on) =>
@@ -1910,12 +1905,7 @@ export function ChatApp() {
             checked: st === s.style,
           }))}
         >
-          {!s.live && (
-            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
-              <Spinner size={10} />
-              Starting Claude…
-            </p>
-          )}
+          {!s.live && <Starting error={s.error} />}
         </Menu>
       )}
       {menu?.kind === "mode" && (
@@ -1925,7 +1915,7 @@ export function ChatApp() {
           width={340}
           onClose={closeMenu}
           onPick={(m) => void pickMode(m as ChatMode)}
-          footer="Shift-Tab to switch"
+          footer="⇧⇥ to switch"
           items={
             s.live
               ? s.modes.map((m) => ({
@@ -1938,16 +1928,7 @@ export function ChatApp() {
               : []
           }
         >
-          {!s.live && (
-            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
-              {s.error ?? (
-                <>
-                  <Spinner size={10} />
-                  Starting Claude…
-                </>
-              )}
-            </p>
-          )}
+          {!s.live && <Starting error={s.error} />}
         </Menu>
       )}
     </div>

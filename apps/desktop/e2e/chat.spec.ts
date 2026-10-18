@@ -364,7 +364,7 @@ test("the mode is a menu: every mode the session can take, said in a line, and t
     "data-key",
     "bypassPermissions",
   );
-  await expect(menu).toContainText("Shift-Tab to switch");
+  await expect(menu).toContainText("⇧⇥ to switch");
   // the keyboard: up from bypass is plan, Enter takes it
   await menu.press("ArrowUp");
   await menu.press("Enter");
@@ -1103,7 +1103,7 @@ test("the model is a menu with the model's own effort levels and ultracode, read
   ]);
   await menu.getByTestId("effort-max").click();
   await expect(button).toHaveText(/· Max/);
-  await expect(menu).toContainText("Max is for this session only");
+  await expect(menu).toContainText("Max can run long");
   await menu.getByTestId("ultracode").click();
   await expect(chat.getByTestId("ultra-chip")).toBeVisible();
   await menu.getByTestId("effort-high").click();
