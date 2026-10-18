@@ -9,8 +9,8 @@ import type { ChatFileText } from "../../shared/ipc.ts";
 import { FILE_SCHEME, HTML_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { dirOf } from "../logic/links.ts";
 import { ChatScopeContext, useChatScope } from "../state/chatScope.ts";
-import { Markdown } from "./Markdown.tsx";
-import { cx, Icon, IconButton, Mono, Spinner } from "./ui.tsx";
+import { Highlighted, Markdown } from "./Markdown.tsx";
+import { cx, Icon, IconButton, Spinner } from "./ui.tsx";
 
 const api = () => window.grove;
 
@@ -185,9 +185,9 @@ function TextFile({ file, v }: { file: string; v: number }) {
     );
   }
   return (
-    <Mono className="selectable block whitespace-pre text-fg-2" data-testid="viewer-text">
-      {got.text}
-    </Mono>
+    <pre className="selectable font-mono text-sm text-fg-2" data-testid="viewer-text">
+      <Highlighted lang={file.slice(file.lastIndexOf(".") + 1)} code={got.text} />
+    </pre>
   );
 }
 

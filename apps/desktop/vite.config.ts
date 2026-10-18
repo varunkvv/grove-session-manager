@@ -14,5 +14,7 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     sourcemap: true,
   },
+  // es, so the highlighter's worker can load each language as its own chunk
+  worker: { format: "es" },
   server: { port: 5183, strictPort: true },
 });

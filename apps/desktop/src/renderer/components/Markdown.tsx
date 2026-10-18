@@ -4,10 +4,11 @@
 // grove chat window a path is a file of the session's: an image drawn through <img> from main's
 // session scheme, which serves only the session's folders, or a link that opens the viewer.
 import { fileKind } from "@grove/core/pure";
-import { memo, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
+import { highlight, highlighted, type Run } from "../logic/highlight.ts";
 import { localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
 
@@ -42,6 +43,58 @@ function FileLink({ href, children }: { href?: string; children: ReactNode }) {
   );
 }
 
+/**
+ * code in colour, from shiki in a worker. a block still being written is coloured as far as it
+ * held still, and the rest of it follows as it is
+ */
+export function Highlighted({ lang, code }: { lang: string; code: string }) {
+  const [got, setGot] = useState(() => ({ code, lines: highlighted(lang, code) ?? null }));
+  useEffect(() => {
+    const known = highlighted(lang, code);
+    if (known !== undefined) return setGot({ code, lines: known });
+    let live = true;
+    // a block being streamed changes every frame: it is asked for once it holds still
+    const soon = setTimeout(() => {
+      void highlight(lang, code).then((lines) => live && setGot({ code, lines }));
+    }, 150);
+    return () => {
+      live = false;
+      clearTimeout(soon);
+    };
+  }, [lang, code]);
+  const lines: Run[][] | null = got.lines && code.startsWith(got.code) ? got.lines : null;
+  return (
+    <code data-lang={lang}>
+      {lines?.map((line, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a line's place is what it is
+        <Fragment key={i}>
+          {i > 0 && "\n"}
+          {line.map(([text, light, dark], j) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: a run's place is what it is
+              key={j}
+              style={light ? { color: `light-dark(${light}, ${dark || light})` } : undefined}
+            >
+              {text}
+            </span>
+          ))}
+        </Fragment>
+      ))}
+      {lines ? code.slice(got.code.length) : code}
+    </code>
+  );
+}
+
+/** a fenced block with a language is coloured in a chat window. anything else is as it was */
+function Code({ className, children }: { className?: string; children?: ReactNode }) {
+  const scope = useChatScope();
+  const lang = /\blanguage-(\S+)/.exec(className ?? "")?.[1];
+  if (!scope || !lang || typeof children !== "string") {
+    return <code className={className}>{children}</code>;
+  }
+  return <Highlighted lang={lang} code={children.replace(/\n$/, "")} />;
+}
+
 const components: Components = {
   a: ({ href, children }) => {
     const url = webLink(href);
@@ -61,6 +114,7 @@ const components: Components = {
     );
   },
   img: ({ src, alt }) => <Image src={typeof src === "string" ? src : undefined} alt={alt} />,
+  code: ({ className, children }) => <Code className={className}>{children}</Code>,
 };
 
 const plugins = [remarkGfm];

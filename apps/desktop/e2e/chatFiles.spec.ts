@@ -188,3 +188,27 @@ test("the viewer reads nothing outside the session's folders", async () => {
     await app.page.evaluate(() => window.grove.chatReadFile("/etc/hosts").then((o) => o.ok)),
   ).toBe(false);
 });
+
+test("code is coloured in a chat window, as a viewer's text file is, and the panel's is as it was", async () => {
+  const s = seed(
+    "```ts\nconst answer: number = 42;\n```\n\n```nosuchlang\nplain words\n```\n\nSee [the app](app.py).",
+  );
+  writeFileSync(path.join(s.root, "app.py"), "def hello():\n    return 1\n");
+  const chat = await open(s);
+  const ts = chat.locator('code[data-lang="ts"]');
+  await expect(ts).toContainText("const answer");
+  await expect.poll(() => ts.locator("span[style]").count()).toBeGreaterThan(2);
+  // a language shiki does not know stays plain
+  await expect(chat.locator('code[data-lang="nosuchlang"]')).toHaveText("plain words");
+  expect(await chat.locator('code[data-lang="nosuchlang"] span[style]').count()).toBe(0);
+  // a link to a file opens it beside the conversation, coloured by its extension
+  await chat.locator(".md-file", { hasText: "the app" }).click();
+  const py = chat.getByTestId("viewer").locator('code[data-lang="py"]');
+  await expect(py).toContainText("def hello");
+  await expect.poll(() => py.locator("span[style]").count()).toBeGreaterThan(1);
+  // the main window's panel: the same words, no colour, no file link
+  await app.page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
+  await expect(app.page.getByTestId("panel-text")).toContainText("const answer");
+  expect(await app.page.locator("[data-testid=panel-text] span[style]").count()).toBe(0);
+  expect(await app.page.locator("[data-testid=panel-text] .md-file").count()).toBe(0);
+});
