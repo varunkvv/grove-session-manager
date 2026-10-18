@@ -166,6 +166,14 @@ select {
   cursor: text;
 }
 
+/* grove chat's find: every match soft, the one it is on in the accent's line colour */
+::highlight(find) {
+  background-color: var(--color-accent-soft);
+}
+::highlight(find-current) {
+  background-color: var(--color-accent-line);
+}
+
 mark {
   background: var(--color-accent-soft);
   color: inherit;

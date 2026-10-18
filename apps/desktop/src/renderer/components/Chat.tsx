@@ -24,6 +24,7 @@ import { AgentList, AgentViewer } from "./Agents.tsx";
 import { Ask } from "./Asks.tsx";
 import { CommandPalette, ShortcutSheet } from "./ChatPalette.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
+import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
@@ -239,6 +240,8 @@ export function ChatApp() {
     kind: "mode" | "model" | "attach" | "more" | "context";
     anchor: DOMRect;
   } | null>(null);
+  /** ⌘F's bar: a number, so a second ⌘F puts the keyboard back in it */
+  const [finding, setFinding] = useState(0);
   /** ⌘K's palette or ⌘/'s sheet of keys */
   const [sheet, setSheet] = useState<"palette" | "shortcuts" | null>(null);
   const modeButton = useRef<HTMLButtonElement>(null);
@@ -302,6 +305,8 @@ export function ChatApp() {
       }),
       api().on("chat:status", (s) => setStatus(s)),
       api().on("chat:appearance", ({ appearance }) => applyAppearance(appearance)),
+      // ⌘F, which the app's menu sends here when this window has the keyboard
+      api().on("chat:find", () => setFinding((n) => n + 1)),
       // the session card sent the person here for a file or the agents
       api().on("chat:show", (show) =>
         setPane("file" in show ? { kind: "files", file: show.file } : { kind: "agents" }),
@@ -697,6 +702,14 @@ export function ChatApp() {
       run: () => void send("/compact"),
     },
     {
+      id: "find",
+      group: "View",
+      label: "Find in the conversation",
+      // the app menu sends ⌘F here too (chat:find): either way the bar opens
+      keys: { key: "f", meta: true },
+      run: () => setFinding((n) => n + 1),
+    },
+    {
       id: "latest",
       group: "View",
       label: "Jump to the latest",
@@ -765,6 +778,17 @@ export function ChatApp() {
       }}
     >
       {dragging && <DropOverlay />}
+      {finding > 0 && (
+        <FindBar
+          asked={finding}
+          root={scroller}
+          rev={talk}
+          onClose={() => {
+            setFinding(0);
+            composer.current?.focus();
+          }}
+        />
+      )}
       {/* the traffic lights sit in the first 76px */}
       <header className="drag flex h-12 shrink-0 items-center gap-2.5 border-b border-line pr-3 pl-20">
         {target.project && <ProjectMark id={target.project} />}

@@ -482,6 +482,42 @@ test("up and down walk what was said in the session, and Latest brings back the 
   await expect.poll(atEnd).toBe(true);
 });
 
+test("⌘F in a chat window finds in its conversation, and the main window stays where it is", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  const { id, root } = writeProject(fx, { name: "chat-trial" });
+  const paragraphs = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} says retry.`);
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+    reply: paragraphs.join("\n\n"),
+  });
+  app = await launchApp(fx, { GROVE_CLAUDE_BIN: writeFakeClaude(fx.dir).bin });
+  await openRow(app.page, id);
+  const chat = await chatWindow(app.app, SID);
+  await chat.bringToFront();
+  await chat.getByTestId("composer").press("Meta+f");
+  const find = chat.getByTestId("find");
+  await expect(find).toBeVisible();
+  await expect(chat.getByTestId("find-input")).toBeFocused();
+  await chat.getByTestId("find-input").fill("retry");
+  await expect(chat.getByTestId("find-count")).toHaveText("1 of 60");
+  await chat.getByTestId("find-input").press("Enter");
+  await expect(chat.getByTestId("find-count")).toHaveText("2 of 60");
+  await chat.getByTestId("find-input").press("Shift+Enter");
+  await chat.getByTestId("find-input").press("Shift+Enter");
+  await expect(chat.getByTestId("find-count")).toHaveText("60 of 60");
+  await chat.getByTestId("find-input").fill("nowhere");
+  await expect(chat.getByTestId("find-count")).toHaveText("None");
+  // the main window's own search was not touched
+  await expect(app.page.locator("#search")).not.toBeFocused();
+  await chat.getByTestId("find-input").press("Escape");
+  await expect(find).toHaveCount(0);
+  await expect(chat.getByTestId("composer")).toBeFocused();
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

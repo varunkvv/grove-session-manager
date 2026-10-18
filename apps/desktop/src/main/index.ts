@@ -491,6 +491,11 @@ async function start(): Promise<void> {
           handlers.newChat(project).catch((e) => log.warn("new chat:", e));
           return;
         }
+        // ⌘F finds where it was pressed: a chat window looks in its own conversation
+        if (from && id === "focus-search") {
+          chatWindows.find(from);
+          return;
+        }
         // the menu's commands are the main window's: from a chat window they bring it forward
         if (from && id !== "new-chat") showMain();
         pusher.send("menu:command", { id });

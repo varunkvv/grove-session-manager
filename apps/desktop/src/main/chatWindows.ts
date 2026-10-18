@@ -96,6 +96,12 @@ export class ChatWindows {
     return this.byContents.get(contents.id);
   }
 
+  /** ⌘F in a chat window: it finds in its own conversation, the main window stays put */
+  find(sessionId: string): void {
+    const win = this.bySession.get(sessionId);
+    if (win && !win.isDestroyed()) win.webContents.send("grove:chat:find", {});
+  }
+
   /** the session of the chat window that has the keyboard */
   focusedSession(): string | undefined {
     const win = electron.BrowserWindow.getFocusedWindow();

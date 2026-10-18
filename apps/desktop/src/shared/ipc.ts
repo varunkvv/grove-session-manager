@@ -569,6 +569,8 @@ export interface PushEvents {
   "chat:appearance": { appearance: AppSettings["appearance"] };
   /** a chat window only: open this beside the conversation, as the session card asked */
   "chat:show": ChatShow;
+  /** a chat window only: ⌘F was pressed in it. it finds in its own conversation */
+  "chat:find": Record<string, never>;
   /** the main window: a session grove runs moved (a state, an ask, a tool). never its tokens */
   "chat:host": { sessionId: string; status: ChatStatus };
 }
@@ -591,6 +593,7 @@ export const PUSH_CHANNELS = [
   "chat:file",
   "chat:appearance",
   "chat:show",
+  "chat:find",
   "chat:host",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
