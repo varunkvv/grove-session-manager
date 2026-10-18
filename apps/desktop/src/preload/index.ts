@@ -1,6 +1,6 @@
 // the whole bridge. sandboxed, so this must stay one bundled file that only requires electron.
 // ipcRenderer itself never crosses into the page: the page gets named methods and nothing else.
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { CHAT_CHANNELS, INVOKE_CHANNELS, PUSH_CHANNELS } from "../shared/ipc.ts";
 
 const pushChannels: ReadonlySet<string> = new Set(PUSH_CHANNELS);
@@ -21,6 +21,16 @@ bridge.on = (channel: unknown, listener: unknown): (() => void) => {
   return () => {
     ipcRenderer.removeListener(`grove:${channel}`, wrapped);
   };
+};
+
+// a file the page was handed (a drop, the picker) names its path only through this. not ipc: the
+// page learns nothing it was not given
+bridge.pathOf = (file: unknown): string => {
+  try {
+    return webUtils.getPathForFile(file as File);
+  } catch {
+    return "";
+  }
 };
 
 contextBridge.exposeInMainWorld("grove", bridge);

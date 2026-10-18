@@ -1315,6 +1315,20 @@ export function ComposerFrame({ children }: { children: ReactNode }) {
   );
 }
 
+/** files dragged over a chat window: the whole window takes them */
+export function DropOverlay() {
+  return (
+    <div
+      className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-line bg-accent-soft"
+      data-testid="drop-overlay"
+    >
+      <span className="rounded-md bg-overlay px-3 py-1.5 text-body font-medium text-fg overlay-shadow">
+        Drop to attach
+      </span>
+    </div>
+  );
+}
+
 /** the composer's send: the accent once there is something to send */
 export function SendButton({
   ready,

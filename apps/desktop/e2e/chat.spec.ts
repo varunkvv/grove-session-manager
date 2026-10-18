@@ -388,10 +388,10 @@ test("an image dropped or pasted into the composer goes to claude with the messa
         new ClipboardEvent("paste", { clipboardData: paste, bubbles: true, cancelable: true }),
       );
   }, png);
-  await expect(chat.getByTestId("composer-images").locator("img")).toHaveCount(2);
+  await expect(chat.getByTestId("composer-files").locator("img")).toHaveCount(2);
   await composer.fill(HELLO);
   await composer.press("Enter");
-  await expect(chat.getByTestId("composer-images")).toHaveCount(0);
+  await expect(chat.getByTestId("composer-files")).toHaveCount(0);
   await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
   await expect(chat.getByTestId("turn").last()).toContainText("You · 2 images");
   const sent = sentToClaude(s.chatLog)
@@ -401,6 +401,90 @@ test("an image dropped or pasted into the composer goes to claude with the messa
   expect(sent?.message?.content?.[0]).toMatchObject({
     source: { type: "base64", media_type: "image/png", data: png },
   });
+});
+
+test("files: the + menu's picker, a drop anywhere, chips, and what can't be attached goes in as its path", async () => {
+  const s = seed(true);
+  const dir = path.join(s.fx.dir, "attach");
+  mkdirSync(dir, { recursive: true });
+  const pdf = path.join(dir, "spec.pdf");
+  const csv = path.join(dir, "data.csv");
+  const docx = path.join(dir, "report.docx");
+  writeFileSync(pdf, "%PDF-1.4\n%%EOF\n");
+  writeFileSync(csv, "a,b\n1,2\n");
+  writeFileSync(docx, "PK not really a docx");
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("chat-attach").click();
+  const menu = chat.getByTestId("attach-menu");
+  await expect(menu.getByTestId("menu-item")).toHaveText([
+    /Upload from computer/,
+    /Mention a file/,
+  ]);
+  // Upload from computer opens the picker: what it hands back is the person's choice
+  const chooser = chat.waitForEvent("filechooser");
+  await menu.getByTestId("menu-item").first().click();
+  await (await chooser).setFiles([pdf, csv, docx]);
+  const chips = chat.getByTestId("chip");
+  await expect(chips).toHaveCount(2);
+  await expect(chips.first()).toContainText("spec.pdf");
+  await expect(chips.last()).toContainText("data.csv");
+  // a docx is no type claude takes: the message names where it is instead
+  await expect(chat.getByTestId("chat-note")).toContainText(
+    "report.docx can't be attached, so its path is in the message",
+  );
+  const composer = chat.getByTestId("composer");
+  await expect(composer).toHaveValue(`${docx} `);
+  // a drag over the window says where it lands
+  await chat.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["x"], "notes.md", { type: "text/markdown" }));
+    document
+      .querySelector('[data-testid="conversation"]')
+      ?.dispatchEvent(new DragEvent("dragenter", { dataTransfer: dt, bubbles: true }));
+  });
+  await expect(chat.getByTestId("drop-overlay")).toContainText("Drop to attach");
+  await chat.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["# notes"], "notes.md", { type: "text/markdown" }));
+    document
+      .querySelector('[data-testid="conversation"]')
+      ?.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(chat.getByTestId("drop-overlay")).toHaveCount(0);
+  await expect(chips).toHaveCount(3);
+  // one taken back
+  await chips.last().getByTestId("chip-remove").click();
+  await expect(chips).toHaveCount(2);
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chips).toHaveCount(0);
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
+  await expect(chat.getByTestId("turn").last().getByTestId("turn-attached")).toHaveText(
+    " · spec.pdf · data.csv",
+  );
+  const sent = sentToClaude(s.chatLog)
+    .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
+    .find((m) => m?.type === "user");
+  expect(sent?.message?.content).toEqual([
+    {
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: "JVBERi0xLjQKJSVFT0YK" },
+      title: "spec.pdf",
+    },
+    {
+      type: "document",
+      source: { type: "text", media_type: "text/plain", data: "a,b\n1,2\n" },
+      title: "data.csv",
+    },
+    { type: "text", text: HELLO },
+  ]);
+  // Mention a file puts an @ where the caret is, and the files menu opens on it
+  await chat.getByTestId("chat-attach").click();
+  await menu.getByTestId("menu-item").last().click();
+  await expect(composer).toHaveValue("@");
+  await expect(chat.getByTestId("suggest")).toHaveAttribute("data-kind", "@");
 });
 
 test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project", async () => {

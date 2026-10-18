@@ -16,8 +16,8 @@ import type {
 import type {
   ChatAnswer,
   ChatAsk,
+  ChatAttachment,
   ChatCommand,
-  ChatImage,
   ChatMode,
   ChatQuestion,
   ChatStatus,
@@ -77,21 +77,82 @@ export interface ChatWhere {
 
 /** what the api takes, as Claude Code's own image paste sends it */
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-/** 5MB an image once decoded, which is the api's own limit */
-const IMAGE_MAX = Math.ceil((5 * 1024 * 1024 * 4) / 3);
-const IMAGES_MAX = 10;
+const MB = 1024 * 1024;
+/** base64 of n bytes */
+const encoded = (n: number) => Math.ceil(n / 3) * 4;
+/**
+ * grove's caps, on what goes over the wire. claude code shrinks an image before the api sees it
+ * (probe: an 18.7MB png went as a 455KB jpeg), so an image's cap only bounds what crosses ipc. a
+ * pdf and a text file go as they are, and again with every later turn: together they stay under
+ * half the api's 32MB request, so the conversation around them still fits
+ */
+export const ATTACH = {
+  files: 10,
+  image: encoded(20 * MB),
+  pdf: encoded(10 * MB),
+  text: 512 * 1024,
+  documents: 16 * MB,
+} as const;
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
-/** pasted or dropped images, as the page sent them, held to what the api takes. else refused */
-export function parseImages(raw: unknown): ChatImage[] {
+/** files attached in the composer, as the page sent them, held to what grove sends. else refused */
+export function parseAttachments(raw: unknown): ChatAttachment[] {
   if (raw === undefined) return [];
-  const bad = () => new AppError("invalid", "That is not an image Claude can take.");
-  if (!Array.isArray(raw) || raw.length > IMAGES_MAX) throw bad();
-  return raw.map((i) => {
-    const o = i as Record<string, unknown> | null;
-    if (!o || typeof o.mediaType !== "string" || !IMAGE_TYPES.has(o.mediaType)) throw bad();
-    if (!isText(o.data, IMAGE_MAX) || !/^[A-Za-z0-9+/]+={0,2}$/.test(o.data)) throw bad();
-    return { mediaType: o.mediaType as ChatImage["mediaType"], data: o.data };
+  const bad = (why = "That is not a file Claude can take.") => new AppError("invalid", why);
+  if (!Array.isArray(raw) || raw.length > ATTACH.files) throw bad();
+  let documents = 0;
+  const out = raw.map((f): ChatAttachment => {
+    const o = f as Record<string, unknown> | null;
+    if (o?.kind === "image") {
+      if (typeof o.mediaType !== "string" || !IMAGE_TYPES.has(o.mediaType)) throw bad();
+      if (!isText(o.data, ATTACH.image) || !BASE64.test(o.data)) throw bad();
+      return { kind: "image", mediaType: o.mediaType as "image/png", data: o.data };
+    }
+    if (!isText(o?.name, 255) || !o.name.trim()) throw bad();
+    if (o.kind === "pdf") {
+      if (!isText(o.data, ATTACH.pdf) || !BASE64.test(o.data)) throw bad();
+      documents += o.data.length;
+      return { kind: "pdf", name: o.name, data: o.data };
+    }
+    if (o.kind === "text") {
+      if (!isText(o.text, ATTACH.text)) throw bad();
+      documents += o.text.length;
+      return { kind: "text", name: o.name, text: o.text };
+    }
+    throw bad();
   });
+  if (documents > ATTACH.documents) throw bad("Those files are too big to send together.");
+  return out;
+}
+
+/** a message's content blocks: what is attached first, in the shapes vs code sends, then the words */
+function blocksFor(text: string, files: ChatAttachment[]): SDKUserMessage["message"]["content"] {
+  return [
+    ...files.map((f) =>
+      f.kind === "image"
+        ? {
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: f.mediaType, data: f.data },
+          }
+        : f.kind === "pdf"
+          ? {
+              type: "document" as const,
+              source: {
+                type: "base64" as const,
+                media_type: "application/pdf" as const,
+                data: f.data,
+              },
+              title: f.name,
+            }
+          : {
+              // always text/plain: a csv sent as text/csv makes the api drop the document
+              type: "document" as const,
+              source: { type: "text" as const, media_type: "text/plain" as const, data: f.text },
+              title: f.name,
+            },
+    ),
+    ...(text ? [{ type: "text" as const, text }] : []),
+  ];
 }
 
 export interface ChatHostOptions {
@@ -161,19 +222,10 @@ class Prompts implements AsyncIterable<SDKUserMessage> {
   private queue: SDKUserMessage[] = [];
   private wake: (() => void) | null = null;
 
-  push(text: string, images: ChatImage[] = []): void {
+  push(text: string, files: ChatAttachment[] = []): void {
     this.queue.push({
       type: "user",
-      message: {
-        role: "user",
-        content: [
-          ...images.map((i) => ({
-            type: "image" as const,
-            source: { type: "base64" as const, media_type: i.mediaType, data: i.data },
-          })),
-          ...(text ? [{ type: "text" as const, text }] : []),
-        ],
-      },
+      message: { role: "user", content: blocksFor(text, files) },
       parent_tool_use_id: null,
       // typed by a person: the sdk treats a message with no origin as nobody's
       origin: { kind: "human" },
@@ -418,14 +470,22 @@ export class ChatHost {
   }
 
   /** while a turn runs, Claude Code queues it */
-  async send(id: string, where: ChatWhere, text: string, images: ChatImage[] = []): Promise<void> {
+  async send(
+    id: string,
+    where: ChatWhere,
+    text: string,
+    files: ChatAttachment[] = [],
+  ): Promise<void> {
     const h = this.entry(id, where);
     const queued = h.status.running;
-    h.prompts.push(text, images);
+    h.prompts.push(text, files);
     if (queued) {
-      const shown = images.length
-        ? `${text}${text ? " " : ""}[${images.length} image${images.length === 1 ? "" : "s"}]`
-        : text;
+      const images = files.filter((f) => f.kind === "image").length;
+      const named = [
+        ...(images ? [`${images} image${images === 1 ? "" : "s"}`] : []),
+        ...files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
+      ];
+      const shown = named.length ? `${text}${text ? " " : ""}[${named.join(" · ")}]` : text;
       this.set(h, { queued: [...h.status.queued, shown] });
     } else this.turnStarted(h);
     await this.warm(id, where);

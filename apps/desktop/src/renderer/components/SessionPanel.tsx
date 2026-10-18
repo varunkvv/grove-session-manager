@@ -146,7 +146,7 @@ export function Turn({
   turn: TurnView;
   last: boolean;
   working: boolean;
-  /** say how many images came with a prompt: grove chat, where they are sent from */
+  /** say what was attached to a prompt (images, files): grove chat, where they are sent from */
   images?: boolean;
 }) {
   const p = turn.prompt;
@@ -163,9 +163,10 @@ export function Turn({
         <>
           <h3 className="text-sm font-medium text-fg-4">
             You
-            {images && !!p.images && (
-              <span className="font-normal">
-                {` · ${p.images} ${p.images === 1 ? "image" : "images"}`}
+            {images && (!!p.images || !!p.files?.length) && (
+              <span className="font-normal" data-testid="turn-attached">
+                {p.images ? ` · ${p.images} ${p.images === 1 ? "image" : "images"}` : ""}
+                {p.files?.map((f) => ` · ${f}`).join("")}
               </span>
             )}
           </h3>

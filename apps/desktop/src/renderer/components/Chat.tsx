@@ -6,13 +6,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type {
   ChatAnswer,
   ChatAsk,
+  ChatAttachment,
   ChatConversation,
-  ChatImage,
   ChatMode,
   ChatStatus,
   ChatTarget,
   Outcome,
 } from "../../shared/ipc.ts";
+import { attachKind, bytes } from "../logic/attach.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
@@ -26,6 +27,7 @@ import {
   Choice,
   ComposerFrame,
   cx,
+  DropOverlay,
   EFFORT_WORD,
   Icon,
   IconButton,
@@ -52,38 +54,100 @@ const COLUMN = "mx-auto w-full max-w-[760px] px-6";
 /** what the window sent, until the transcript has it: a prompt's start is enough to know it */
 const same = (a: string, b: string) => a.trim().slice(0, 200) === b.trim().slice(0, 200);
 
-/** what the api takes, and its limit: 5MB an image */
-const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-const IMAGE_MAX = 5 * 1024 * 1024;
+/** grove's caps on what crosses into main (main holds them too): see ATTACH in services/chat.ts */
+const CAP = { image: 20 * 1024 * 1024, pdf: 10 * 1024 * 1024, text: 512 * 1024, files: 10 };
 
-type Pasted = ChatImage & { url: string };
+/** a file in the composer: what goes to claude, and what its chip shows */
+type Attached = ChatAttachment & { size: number; url?: string };
 
-/** the images among pasted or dropped files, read as the api takes them */
-async function imagesOf(files: FileList | null | undefined): Promise<Pasted[] | string> {
-  const picked = [...(files ?? [])].filter((f) => IMAGE_TYPES.has(f.type));
-  if (picked.some((f) => f.size > IMAGE_MAX)) return "An image can be 5 MB at most.";
-  return Promise.all(
-    picked.map(
-      (f) =>
-        new Promise<Pasted>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => {
-            const url = String(r.result);
-            resolve({
-              mediaType: f.type as ChatImage["mediaType"],
-              data: url.slice(url.indexOf(",") + 1),
-              url,
-            });
-          };
-          r.onerror = () => reject(r.error);
-          r.readAsDataURL(f);
-        }),
-    ),
-  );
+const dataUrl = (f: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(f);
+  });
+const base64 = (url: string) => url.slice(url.indexOf(",") + 1);
+
+/**
+ * files picked, dropped or pasted, read as claude takes them. one it cannot take, or one over its
+ * cap, is said why. one that is not a type it takes goes into the message as its path
+ */
+async function readAttachment(f: File): Promise<Attached | { path: string } | { refused: string }> {
+  const kind = attachKind(f.type, f.name);
+  if (kind === "unsupported") {
+    const path = window.grove.pathOf(f);
+    return path ? { path } : { refused: `${f.name} can't be attached.` };
+  }
+  if (f.size > CAP[kind]) {
+    return {
+      refused:
+        kind === "text"
+          ? `${f.name} is over ${bytes(CAP.text)}: mention it with @ instead.`
+          : `${f.name} is over ${bytes(CAP[kind])}.`,
+    };
+  }
+  if (kind === "text") return { kind, name: f.name, text: await f.text(), size: f.size };
+  const url = await dataUrl(f);
+  if (kind === "pdf") return { kind, name: f.name, data: base64(url), size: f.size };
+  return {
+    kind,
+    mediaType: f.type.toLowerCase() as "image/png",
+    data: base64(url),
+    size: f.size,
+    url,
+  };
 }
+
+/** what went to claude, as the turn's header names it until the transcript has it */
+const namesOf = (files: ChatAttachment[]) => ({
+  images: files.filter((f) => f.kind === "image").length,
+  files: files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
+});
 
 /** a refusal from main, as the line over the composer says it */
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
+
+/** a file in the composer: an image as its thumbnail, anything else as its name and size */
+function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
+  const remove = (
+    <IconButton
+      label="Remove attachment"
+      data-testid="chip-remove"
+      className={
+        file.url ? "absolute top-0.5 right-0.5 bg-overlay opacity-0 group-hover:opacity-100" : ""
+      }
+      onClick={onRemove}
+    >
+      <Icon name="x" size={10} />
+    </IconButton>
+  );
+  if (file.url) {
+    return (
+      <div
+        className="group relative overflow-hidden rounded-md border border-line"
+        data-testid="chip"
+      >
+        <img src={file.url} alt="Attached" className="block h-10 w-auto max-w-32" />
+        {remove}
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex h-10 max-w-64 items-center gap-2 rounded-md border border-line bg-chrome pr-1 pl-2.5"
+      data-testid="chip"
+      title={file.kind === "image" ? undefined : file.name}
+    >
+      <Icon name="file" faint />
+      <span className="min-w-0 truncate text-sm text-fg-2">
+        {file.kind === "image" ? "image" : file.name}
+      </span>
+      <span className="shrink-0 text-sm text-fg-4">{bytes(file.size)}</span>
+      {remove}
+    </div>
+  );
+}
 
 function QuestionCard({
   ask,
@@ -270,10 +334,14 @@ export function ChatApp() {
   const [draft, setDraft] = useState("");
   /** where the caret is in the draft: what `/` and `@` look at */
   const [caret, setCaret] = useState(0);
-  /** images pasted or dropped, sent with the next message */
-  const [images, setImages] = useState<Pasted[]>([]);
-  /** how many images went with what this window sent, until the transcript has it */
-  const [sentImages, setSentImages] = useState(0);
+  /** files picked, dropped or pasted, sent with the next message */
+  const [files, setFiles] = useState<Attached[]>([]);
+  /** what went with what this window sent, until the transcript has it */
+  const [sentFiles, setSentFiles] = useState<{ images: number; files: string[] }>();
+  /** files are being dragged over the window */
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const picker = useRef<HTMLInputElement>(null);
   /** bumped each time main hands the window a session */
   const [openings, setOpenings] = useState(0);
   const last = useRef("");
@@ -283,7 +351,10 @@ export function ChatApp() {
   const [note, setNote] = useState<string>();
   const [moving, setMoving] = useState(false);
   /** the toolbar menu that is open, and the button it opens from */
-  const [menu, setMenu] = useState<{ kind: "mode" | "model"; anchor: DOMRect } | null>(null);
+  const [menu, setMenu] = useState<{
+    kind: "mode" | "model" | "attach";
+    anchor: DOMRect;
+  } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -443,7 +514,8 @@ export function ChatApp() {
             prompt: {
               kind: "human",
               text: pending,
-              ...(sentImages ? { images: sentImages } : {}),
+              ...(sentFiles?.images ? { images: sentFiles.images } : {}),
+              ...(sentFiles?.files.length ? { files: sentFiles.files } : {}),
             },
             tools: 0,
             files: 0,
@@ -472,38 +544,67 @@ export function ChatApp() {
 
   const send = async () => {
     const text = draft.trim();
-    const pasted = images;
-    if ((!text && pasted.length === 0) || readOnly) return;
+    const attached = files;
+    if ((!text && attached.length === 0) || readOnly) return;
     // a background agent mid-turn stops when this takes it over: asked first, as Open asks
     const stop = session.runtime === "background" ? session.open.confirm : undefined;
     if (stop && !window.confirm(`${stop.title}\n\n${stop.body}`)) return;
     setError(undefined);
+    setNote(undefined);
     setDraft("");
-    setImages([]);
+    setFiles([]);
     if (text) last.current = text;
+    // what goes over: the chip's size and thumbnail stay here
+    const out = attached.map(({ size: _size, url: _url, ...f }) => f as ChatAttachment);
     if (!running) {
       setSent(text);
-      setSentImages(pasted.length);
+      setSentFiles(namesOf(out));
     }
     atEnd.current = true;
-    const res = await api().chatSend(
-      text,
-      pasted.map(({ mediaType, data }) => ({ mediaType, data })),
-    );
-    const why = failed(res);
+    const why = failed(await api().chatSend(text, out));
     if (why) {
       setError(why);
       setSent(null);
       setDraft(text);
-      setImages(pasted);
+      setFiles(attached);
     }
   };
 
-  const addImages = async (files: FileList | null | undefined) => {
-    const got = await imagesOf(files).catch(() => "That image could not be read.");
-    if (typeof got === "string") return setError(got);
-    if (got.length === 0) return;
-    setImages((was) => [...was, ...got]);
+  /** picked, dropped or pasted: what claude can take is attached, the rest is said why */
+  const attach = async (list: FileList | null | undefined) => {
+    const got = await Promise.all(
+      [...(list ?? [])].map((f) =>
+        readAttachment(f).catch(() => ({ refused: `${f.name} could not be read.` })),
+      ),
+    );
+    const taken = got.filter((g): g is Attached => "kind" in g);
+    const paths = got.flatMap((g) => ("path" in g ? [g.path] : []));
+    const refused = got.flatMap((g) => ("refused" in g ? [g.refused] : []));
+    const room = CAP.files - files.length;
+    if (taken.length > room) refused.push(`${CAP.files} files at most go with one message.`);
+    if (taken.length) setFiles((was) => [...was, ...taken.slice(0, Math.max(0, room))]);
+    if (paths.length) {
+      // claude reads it from where it is: the message names it
+      setDraft((d) => `${d}${d && !/\s$/.test(d) ? " " : ""}${paths.join(" ")} `);
+      const names = paths.map((p) => p.slice(p.lastIndexOf("/") + 1)).join(", ");
+      setNote(
+        `${names} can't be attached, so ${paths.length === 1 ? "its path is" : "their paths are"} in the message.`,
+      );
+    }
+    setError(refused.length ? refused.join(" ") : undefined);
+    if (taken.length || paths.length) warm();
+    composer.current?.focus();
+  };
+
+  /** "Mention a file": an @ where the caret is, which opens the files menu */
+  const mention = () => {
+    const at = composer.current?.selectionStart ?? draft.length;
+    const before = draft.slice(0, at);
+    const insert = `${before && !/\s$/.test(before) ? " " : ""}@`;
+    const next = before + insert + draft.slice(at);
+    setDraft(next);
+    setCaret(at + insert.length);
+    placeCaret.current = at + insert.length;
     warm();
   };
 
@@ -512,11 +613,11 @@ export function ChatApp() {
     composer.current?.focus();
   };
 
-  const openMenu = (kind: "mode" | "model", el: HTMLElement) => {
+  const openMenu = (kind: "mode" | "model" | "attach", el: HTMLElement) => {
     if (menu?.kind === kind) return setMenu(null);
     setMenu({ kind, anchor: el.getBoundingClientRect() });
     // the rows are claude's: opening the menu starts it, as shift-tab does
-    warm();
+    if (kind !== "attach") warm();
   };
 
   const closeMenu = () => {
@@ -559,10 +660,31 @@ export function ChatApp() {
 
   return (
     <div
-      className="@container flex h-full flex-col bg-canvas"
+      className="@container relative flex h-full flex-col bg-canvas"
       data-testid="chat"
       data-id={session.sessionId}
+      // files dragged anywhere over the window attach where they are dropped
+      onDragEnter={(e) => {
+        if (readOnly || !e.dataTransfer.types.includes("Files")) return;
+        dragDepth.current++;
+        setDragging(true);
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDragOver={(e) => {
+        if (!readOnly && e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        dragDepth.current = 0;
+        setDragging(false);
+        if (readOnly || e.dataTransfer.files.length === 0) return;
+        e.preventDefault();
+        void attach(e.dataTransfer.files);
+      }}
     >
+      {dragging && <DropOverlay />}
       {/* the traffic lights sit in the first 76px */}
       <header className="drag flex h-12 shrink-0 items-center gap-2.5 border-b border-line pr-3 pl-20">
         {target.project && <ProjectMark id={target.project} />}
@@ -687,17 +809,7 @@ export function ChatApp() {
                 ))}
               </div>
             </div>
-            <footer
-              className="shrink-0"
-              onDragOver={(e) => {
-                if (!readOnly) e.preventDefault();
-              }}
-              onDrop={(e) => {
-                if (readOnly) return;
-                e.preventDefault();
-                void addImages(e.dataTransfer.files);
-              }}
-            >
+            <footer className="shrink-0">
               <div className={cx(COLUMN, "relative py-3")}>
                 {suggest.menu}
                 {note && !error && (
@@ -716,27 +828,15 @@ export function ChatApp() {
                   </p>
                 ) : (
                   <ComposerFrame>
-                    {images.length > 0 && (
-                      <div className="flex flex-wrap gap-2 px-3 pt-3" data-testid="composer-images">
-                        {images.map((img, i) => (
-                          <div
-                            // biome-ignore lint/suspicious/noArrayIndexKey: the same image can be pasted twice
+                    {files.length > 0 && (
+                      <div className="flex flex-wrap gap-2 px-3 pt-3" data-testid="composer-files">
+                        {files.map((f, i) => (
+                          <Chip
+                            // biome-ignore lint/suspicious/noArrayIndexKey: the same file can be attached twice
                             key={i}
-                            className="group relative overflow-hidden rounded-md border border-line"
-                          >
-                            <img
-                              src={img.url}
-                              alt="Pasted"
-                              className="block h-14 w-auto max-w-40"
-                            />
-                            <IconButton
-                              label="Remove"
-                              className="absolute top-0.5 right-0.5 bg-overlay opacity-0 group-hover:opacity-100"
-                              onClick={() => setImages(images.filter((_, j) => j !== i))}
-                            >
-                              <Icon name="x" size={10} />
-                            </IconButton>
-                          </div>
+                            file={f}
+                            onRemove={() => setFiles(files.filter((_, j) => j !== i))}
+                          />
                         ))}
                       </div>
                     )}
@@ -758,12 +858,12 @@ export function ChatApp() {
                       }}
                       onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
                       onPaste={(e) => {
-                        const files = e.clipboardData.files;
-                        if (![...files].some((f) => f.type.startsWith("image/"))) return;
+                        const pasted = e.clipboardData.files;
+                        if (pasted.length === 0) return;
                         // a screenshot is only an image. a copy from a page that has words too
                         // pastes its words as well
                         if (!e.clipboardData.getData("text/plain")) e.preventDefault();
-                        void addImages(files);
+                        void attach(pasted);
                       }}
                       onKeyDown={(e) => {
                         if (e.nativeEvent.isComposing) return;
@@ -790,6 +890,29 @@ export function ChatApp() {
                       className="flex h-10 items-center gap-1.5 px-2"
                       data-testid="composer-toolbar"
                     >
+                      <ToolbarButton
+                        title="Attach files"
+                        aria-label="Attach"
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.kind === "attach"}
+                        data-testid="chat-attach"
+                        className="w-7 justify-center px-0"
+                        onClick={(e) => openMenu("attach", e.currentTarget)}
+                      >
+                        <Icon name="plus" size={14} />
+                      </ToolbarButton>
+                      <input
+                        ref={picker}
+                        type="file"
+                        multiple
+                        hidden
+                        data-testid="chat-picker"
+                        onChange={(e) => {
+                          void attach(e.currentTarget.files);
+                          // the same file picked again is a change too
+                          e.currentTarget.value = "";
+                        }}
+                      />
                       {/* the mode is the settings', known once claude is up: opening the menu starts it */}
                       <ToolbarButton
                         title="Permission mode (Shift-Tab)"
@@ -833,7 +956,7 @@ export function ChatApp() {
                         </span>
                       )}
                       <SendButton
-                        ready={!!draft.trim() || images.length > 0}
+                        ready={!!draft.trim() || files.length > 0}
                         title="Send (Enter). Shift-Enter is a new line"
                         aria-label="Send"
                         data-testid="chat-send"
@@ -854,6 +977,27 @@ export function ChatApp() {
           )}
         </div>
       </ChatScopeContext.Provider>
+      {menu?.kind === "attach" && (
+        <Menu
+          anchor={menu.anchor}
+          testId="attach-menu"
+          width={280}
+          onClose={closeMenu}
+          onPick={(k) => {
+            closeMenu();
+            if (k === "upload") picker.current?.click();
+            else mention();
+          }}
+          items={[
+            {
+              key: "upload",
+              label: "Upload from computer…",
+              description: "Images, PDFs and text files",
+            },
+            { key: "mention", label: "Mention a file", description: "@ a file in this project" },
+          ]}
+        />
+      )}
       {menu?.kind === "model" && (
         <Menu
           anchor={menu.anchor}

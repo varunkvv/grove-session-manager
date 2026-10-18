@@ -44,6 +44,8 @@ export interface Prompt {
   at: number;
   /** images pasted with it. counted, never decoded. */
   images?: number;
+  /** the names of the files attached to it as documents (a pdf, a text file) */
+  files?: string[];
   /** it was typed in plan mode */
   plan?: boolean;
   /** a task notification's status: completed, failed, killed... */
@@ -148,6 +150,13 @@ function textOf(content: unknown): string {
 
 function imagesIn(content: unknown): number {
   return blocksOf(content).filter((b) => isObject(b) && b.type === "image").length;
+}
+
+/** the titles of the documents attached to a message: what grove chat and vs code name them */
+function filesIn(content: unknown): string[] {
+  return blocksOf(content).flatMap((b) =>
+    isObject(b) && b.type === "document" ? [cut(str(b.title) || "a file", 200)] : [],
+  );
 }
 
 const ENTITIES: Record<string, string> = {
@@ -418,13 +427,15 @@ export class ConversationFold {
       return;
     }
     const images = imagesIn(content);
+    const files = filesIn(content);
     const said = typed(content);
-    if (!said && images === 0) return;
+    if (!said && images === 0 && files.length === 0) return;
     this.startTurn({
       kind: "human",
       text: said,
       at,
       ...(images ? { images } : {}),
+      ...(files.length ? { files } : {}),
       ...(entry.permissionMode === "plan" ? { plan: true } : {}),
     });
   }
@@ -605,7 +616,7 @@ const VIEW_LAST_TEXT = 20_000;
 export interface TurnView {
   kind: "turn";
   /** what started it. absent when the work carried on after a compaction */
-  prompt?: { kind: Prompt["kind"]; text: string; images?: number };
+  prompt?: { kind: Prompt["kind"]; text: string; images?: number; files?: string[] };
   /** what the person typed while it worked */
   said?: string[];
   /** tool calls, files edited, subagents started, and how long it took */
@@ -681,8 +692,11 @@ export interface ConversationView {
 /** the last VIEW_TURNS turns, each text cut. compactions between them stay where they happened */
 export function conversationView(
   state: ConversationState,
-  /** `textMax`: what a message keeps, every turn's. a chat window reads them whole */
-  opts: { textMax?: number } = {},
+  /**
+   * `textMax`: what a message keeps, every turn's. a chat window reads them whole. `chat`: what
+   * only a chat window draws - the files a prompt came with
+   */
+  opts: { textMax?: number; chat?: boolean } = {},
 ): ConversationView {
   const turns = state.items.filter((i) => i.kind === "turn").length;
   const older = Math.max(0, turns - VIEW_TURNS);
@@ -712,6 +726,7 @@ export function conversationView(
                 kind: item.prompt.kind,
                 text: cut(item.prompt.text, VIEW_PROMPT),
                 ...(item.prompt.images ? { images: item.prompt.images } : {}),
+                ...(opts.chat && item.prompt.files ? { files: item.prompt.files } : {}),
               },
             }
           : {}),

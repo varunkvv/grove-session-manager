@@ -681,11 +681,18 @@ export interface ChatCommand {
   hint: string;
 }
 
-/** an image pasted or dropped into the composer, base64 */
-export interface ChatImage {
-  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
-  data: string;
-}
+/**
+ * a file attached in the composer, in the shapes the vs code extension sends: an image or a pdf as
+ * base64, a text or code file as its text. `name` is what claude sees as the document's title
+ */
+export type ChatAttachment =
+  | {
+      kind: "image";
+      mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+      data: string;
+    }
+  | { kind: "pdf"; name: string; data: string }
+  | { kind: "text"; name: string; text: string };
 
 /** a file `@` offers: what goes in the message, and how the menu shows it */
 export interface ChatPath {
@@ -718,7 +725,7 @@ export interface ChatApi {
   chatWatch(path: string | null): Promise<Outcome>;
   /** the first keystroke: claude starts now, so the first send does not wait for it */
   chatWarm(): Promise<Outcome>;
-  chatSend(text: string, images?: ChatImage[]): Promise<Outcome>;
+  chatSend(text: string, files?: ChatAttachment[]): Promise<Outcome>;
   /** what `/` offers. empty until claude is up */
   chatCommands(): Promise<ChatCommand[]>;
   /** what `@` offers: the files of the session's folders. `fresh`: list them again first */
@@ -766,6 +773,8 @@ export const CHANNELS_COMPLETE: [MissingInvoke, MissingPush, MissingChat] extend
   : never = true;
 
 export interface Bridge extends Api, ChatApi {
+  /** where a dropped or picked file is on disk: "" for one that is not a file there (a paste) */
+  pathOf(file: File): string;
   on<K extends keyof PushEvents>(
     channel: K,
     listener: (payload: PushEvents[K]) => void,

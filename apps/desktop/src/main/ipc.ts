@@ -50,7 +50,7 @@ import {
   type ChatWhere,
   isText,
   parseAnswer,
-  parseImages,
+  parseAttachments,
 } from "./services/chat.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
@@ -873,7 +873,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       return readConversation(row.key).then(
         // whole messages: the panel's view is a preview, this is where they are read
         (state) => ({
-          ...conversationView(state, { textMax: MESSAGE_MAX }),
+          ...conversationView(state, { textMax: MESSAGE_MAX, chat: true }),
           written: filesWritten(state),
         }),
         () => null,
@@ -908,14 +908,14 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       await chat.warm(id, await where(row));
     },
 
-    async chatSend(id, text, rawImages) {
-      const images = parseImages(rawImages);
-      if (!isText(text) || (!text.trim() && images.length === 0)) {
+    async chatSend(id, text, rawFiles) {
+      const files = parseAttachments(rawFiles);
+      if (!isText(text) || (!text.trim() && files.length === 0)) {
         throw new AppError("invalid", "There is nothing to send.");
       }
       const at = await runWhere(id);
       deps.live.markSeen([id]);
-      await chat.send(id, at, text.trim() ? text : "", images);
+      await chat.send(id, at, text.trim() ? text : "", files);
     },
 
     async chatCommands(id) {

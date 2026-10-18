@@ -469,6 +469,29 @@ describe("what the real stretch does not have", () => {
     expect(t?.work.steps.map((s) => s.kind)).toEqual(["thinking", "text"]);
   });
 
+  it("names the files a prompt came with, and only a chat window's view carries them", async () => {
+    const doc = (title: string) => ({
+      type: "document",
+      source: { type: "text", media_type: "text/plain", data: "a,b" },
+      title,
+    });
+    const state = await fold([
+      prompt([image(), doc("data.csv"), doc("spec.pdf"), text("what is in these?")], 0),
+      says("m1", text("Two files."), 1),
+      // nothing but a file: still a turn
+      prompt([doc("notes.txt")], 2),
+      says("m2", text("Notes."), 3),
+    ]);
+    const [a, b] = turns(state);
+    expect(a?.prompt).toMatchObject({ images: 1, files: ["data.csv", "spec.pdf"] });
+    expect(b?.prompt).toMatchObject({ text: "", files: ["notes.txt"] });
+    const chat = conversationView(state, { chat: true }).items[0] as TurnView;
+    expect(chat.prompt?.files).toEqual(["data.csv", "spec.pdf"]);
+    // the panel's view is as it was
+    const panel = conversationView(state).items[0] as TurnView;
+    expect(panel.prompt).not.toHaveProperty("files");
+  });
+
   it("a prompt that was nothing but editor context still starts a turn", async () => {
     const state = await fold([
       prompt("first", 0),

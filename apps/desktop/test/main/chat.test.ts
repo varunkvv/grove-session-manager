@@ -13,11 +13,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  ATTACH,
   ChatHost,
   hostEnv,
   modesFor,
   parseAnswer,
-  parseImages,
+  parseAttachments,
   REAP_MS,
 } from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
@@ -471,25 +472,59 @@ describe("grove chat's host", () => {
     }
   });
 
-  it("takes from a page only images the api takes, and no more of them than it takes", () => {
-    const png = { mediaType: "image/png", data: "iVBORw0KGgo=" };
-    expect(parseImages(undefined)).toEqual([]);
-    expect(parseImages([png, { ...png, mediaType: "image/webp", extra: 1 }])).toEqual([
-      png,
-      { mediaType: "image/webp", data: "iVBORw0KGgo=" },
-    ]);
+  it("takes from a page only files grove sends, within its caps, and nothing riding along", () => {
+    const png = { kind: "image", mediaType: "image/png", data: "iVBORw0KGgo=" };
+    const pdf = { kind: "pdf", name: "spec.pdf", data: "JVBERi0=" };
+    const txt = { kind: "text", name: "data.csv", text: "a,b\n1,2" };
+    expect(parseAttachments(undefined)).toEqual([]);
+    expect(parseAttachments([png, { ...pdf, extra: 1 }, txt])).toEqual([png, pdf, txt]);
     for (const bad of [
       "png",
       [null],
       [{ ...png, mediaType: "image/svg+xml" }],
-      [{ ...png, mediaType: "text/html" }],
       [{ ...png, data: "not base64!" }],
-      [{ ...png, data: 4 }],
-      [{ ...png, data: "A".repeat(7_000_000) }],
+      [{ ...png, data: "A".repeat(ATTACH.image + 4) }],
+      [{ ...pdf, data: "not base64!" }],
+      [{ ...pdf, name: "" }],
+      [{ ...pdf, name: 4 }],
+      [{ ...pdf, data: "A".repeat(ATTACH.pdf + 4) }],
+      [{ ...txt, text: "x".repeat(ATTACH.text + 1) }],
+      [{ kind: "docx", name: "a.docx", data: "AAAA" }],
       Array.from({ length: 11 }, () => png),
     ]) {
-      expect(() => parseImages(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow("not an image");
+      expect(() => parseAttachments(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow(
+        "not a file Claude can take",
+      );
     }
+    // each under its cap, too much together: pdfs and text go again with every turn
+    const big = { ...pdf, data: "A".repeat(ATTACH.pdf - 100) };
+    expect(() => parseAttachments([big, big])).toThrow("too big to send together");
+  });
+
+  it("sends a pdf and a text file as documents, before the words, as vs code does", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, HELLO, [
+      { kind: "pdf", name: "spec.pdf", data: "JVBERi0=" },
+      { kind: "text", name: "data.csv", text: "a,b" },
+    ]);
+    await turnEnded(s);
+    const sent = s
+      .log()
+      .map((l) => l.in as { type?: string; message?: { content?: unknown[] } })
+      .find((m) => m?.type === "user");
+    expect(sent?.message?.content).toEqual([
+      {
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: "JVBERi0=" },
+        title: "spec.pdf",
+      },
+      {
+        type: "document",
+        source: { type: "text", media_type: "text/plain", data: "a,b" },
+        title: "data.csv",
+      },
+      { type: "text", text: HELLO },
+    ]);
   });
 
   it("a send claude could not start for is not sent again with the next one", async () => {
