@@ -8,6 +8,7 @@ import type {
   ChatAsk,
   ChatConversation,
   ChatImage,
+  ChatMode,
   ChatStatus,
   ChatTarget,
   Outcome,
@@ -27,13 +28,17 @@ import {
   cx,
   Icon,
   IconButton,
-  ModePill,
+  Menu,
+  MODE_HINT,
+  MODE_WORD,
+  ModeDot,
   Mono,
   ProjectMark,
   Select,
   SendButton,
   Spinner,
   StateLabel,
+  ToolbarButton,
 } from "./ui.tsx";
 
 const api = () => window.grove;
@@ -274,6 +279,8 @@ export function ChatApp() {
   /** what main said that is not a failure: when it will open in the editor */
   const [note, setNote] = useState<string>();
   const [moving, setMoving] = useState(false);
+  /** the toolbar menu that is open, and the button it opens from */
+  const [menu, setMenu] = useState<{ kind: "mode"; anchor: DOMRect } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -497,6 +504,23 @@ export function ChatApp() {
   const answer = async (askId: string, a: ChatAnswer) => {
     setError(failed(await api().chatAnswer(askId, a)));
     composer.current?.focus();
+  };
+
+  const openMenu = (kind: "mode", el: HTMLElement) => {
+    if (menu?.kind === kind) return setMenu(null);
+    setMenu({ kind, anchor: el.getBoundingClientRect() });
+    // the rows are claude's: opening the menu starts it, as shift-tab does
+    warm();
+  };
+
+  const closeMenu = () => {
+    setMenu(null);
+    composer.current?.focus();
+  };
+
+  const pickMode = async (mode: ChatMode) => {
+    closeMenu();
+    if (mode !== s.mode) setError(failed(await api().chatSetMode(mode)));
   };
 
   const stepMode = async () => {
@@ -755,15 +779,19 @@ export function ChatApp() {
                       className="flex h-10 items-center gap-1.5 px-2"
                       data-testid="composer-toolbar"
                     >
-                      {/* the mode is the settings', known once claude is up. shift-tab starts it before that */}
-                      {s.live && (
-                        <ModePill
-                          mode={s.mode}
-                          title="Permission mode (Shift-Tab)"
-                          data-testid="chat-mode"
-                          onClick={() => void stepMode()}
-                        />
-                      )}
+                      {/* the mode is the settings', known once claude is up: opening the menu starts it */}
+                      <ToolbarButton
+                        title="Permission mode (Shift-Tab)"
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.kind === "mode"}
+                        data-testid="chat-mode"
+                        data-mode={s.mode}
+                        onClick={(e) => openMenu("mode", e.currentTarget)}
+                      >
+                        <ModeDot mode={s.mode} />
+                        {s.mode ? MODE_WORD[s.mode] : "Mode"}
+                        <Icon name="chevron" size={9} className="rotate-90" faint />
+                      </ToolbarButton>
                       {s.models.length > 0 && (
                         <Select
                           wrapClassName="w-36 shrink-0"
@@ -821,6 +849,38 @@ export function ChatApp() {
           )}
         </div>
       </ChatScopeContext.Provider>
+      {menu?.kind === "mode" && (
+        <Menu
+          anchor={menu.anchor}
+          testId="mode-menu"
+          width={340}
+          onClose={closeMenu}
+          onPick={(m) => void pickMode(m as ChatMode)}
+          footer="Shift-Tab to switch"
+          items={
+            s.live
+              ? s.modes.map((m) => ({
+                  key: m,
+                  label: MODE_WORD[m],
+                  description: MODE_HINT[m],
+                  checked: m === s.mode,
+                  mark: <ModeDot mode={m} />,
+                }))
+              : []
+          }
+        >
+          {!s.live && (
+            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
+              {s.error ?? (
+                <>
+                  <Spinner size={10} />
+                  Starting Claude…
+                </>
+              )}
+            </p>
+          )}
+        </Menu>
+      )}
     </div>
   );
 }

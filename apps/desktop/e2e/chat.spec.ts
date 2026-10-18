@@ -149,6 +149,47 @@ test("a question comes as a card, and the pick goes back to claude", async () =>
   });
 });
 
+test("the mode is a menu: every mode the session can take, said in a line, and the pick goes to claude", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const button = chat.getByTestId("chat-mode");
+  // before claude is up the button says nothing it does not know
+  await expect(button).toHaveText("Mode");
+  await button.click();
+  const menu = chat.getByTestId("mode-menu");
+  // opening it starts claude, which is what knows the mode: the recording started in bypass
+  await expect(menu.getByTestId("menu-item")).toHaveText([
+    /^Manual.*Asks before each edit and command/,
+    /^Accept edits/,
+    /^Plan.*changes nothing until you approve/,
+    /^Bypass permissions.*Runs every tool without asking/,
+  ]);
+  await expect(menu.locator('[aria-checked="true"]')).toHaveAttribute(
+    "data-key",
+    "bypassPermissions",
+  );
+  await expect(menu).toContainText("Shift-Tab to switch");
+  // the keyboard: up from bypass is plan, Enter takes it
+  await menu.press("ArrowUp");
+  await menu.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(button).toHaveAttribute("data-mode", "plan");
+  await expect(button).toHaveText("Plan");
+  await expect(chat.getByTestId("composer")).toBeFocused();
+  const asked = sentToClaude(s.chatLog)
+    .map((l) => l.in as { request?: { subtype?: string; mode?: string } } | undefined)
+    .filter((m) => m?.request?.subtype === "set_permission_mode");
+  expect(asked.map((m) => m?.request?.mode)).toEqual(["plan"]);
+  // Esc closes it and changes nothing
+  await button.click();
+  await expect(menu).toBeVisible();
+  await menu.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(button).toHaveText("Plan");
+});
+
 test("closing the window leaves the turn running under grove, and reopening it picks it up", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s);

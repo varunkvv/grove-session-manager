@@ -1110,7 +1110,7 @@ export function Choice({
 }
 
 export const MODE_WORD: Record<ChatMode, string> = {
-  default: "Default",
+  default: "Manual",
   acceptEdits: "Accept edits",
   plan: "Plan",
   bypassPermissions: "Bypass permissions",
@@ -1118,34 +1118,163 @@ export const MODE_WORD: Record<ChatMode, string> = {
   dontAsk: "Don't ask",
 };
 
+/** what each mode does, in a line: the mode menu's second line */
+export const MODE_HINT: Record<ChatMode, string> = {
+  default: "Asks before each edit and command",
+  acceptEdits: "Edits files without asking, asks before commands",
+  plan: "Reads and plans, changes nothing until you approve",
+  auto: "Approves what passes a safety check, pauses on anything risky",
+  bypassPermissions: "Runs every tool without asking",
+  dontAsk: "Turns down anything that would need approval",
+};
+
 /**
- * the permission mode a chat is in. colour only where it says something: plan is the accent, a
- * mode that runs every tool without asking is the danger red
+ * a mode's mark. colour only where it says something: plan is the accent, a mode that runs every
+ * tool without asking (or turns everything down) is the danger red, the rest have none
  */
-export function ModePill({
-  mode,
-  className,
-  ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { mode?: ChatMode }) {
+export function ModeDot({ mode }: { mode?: ChatMode }) {
   const tone =
     mode === "plan"
-      ? "text-accent"
+      ? "bg-accent"
       : mode === "bypassPermissions" || mode === "dontAsk"
-        ? "text-danger"
-        : "text-fg-3";
+        ? "bg-danger"
+        : undefined;
+  return (
+    <span
+      aria-hidden="true"
+      className={cx("size-1.5 shrink-0 rounded-full", tone ?? "bg-transparent")}
+    />
+  );
+}
+
+/** a quiet button in grove chat's composer toolbar: the mode, the model */
+export function ToolbarButton({
+  className,
+  children,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
       {...rest}
-      data-mode={mode}
       className={cx(
-        "no-drag fade inline-flex h-6 shrink-0 items-center rounded-full border border-line-strong bg-raised px-2.5 text-sm font-medium enabled:hover:text-fg disabled:opacity-40",
-        tone,
+        "no-drag fade inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm text-fg-3 hover:bg-raised hover:text-fg aria-expanded:bg-raised aria-expanded:text-fg",
         className,
       )}
     >
-      {mode ? MODE_WORD[mode] : "Mode"}
+      {children}
     </button>
+  );
+}
+
+export interface MenuItem {
+  key: string;
+  label: string;
+  description?: string;
+  checked?: boolean;
+  /** before the label: a mode's dot */
+  mark?: ReactNode;
+}
+
+/**
+ * a menu that opens upward from a toolbar button: rows to pick from, with the keyboard's row
+ * marked, and whatever else the menu holds under them. the chat window has no store of open
+ * overlays, so the menu takes the keys itself: arrows, Enter, Esc
+ */
+export function Menu({
+  anchor,
+  items,
+  onPick,
+  onClose,
+  testId,
+  width = 300,
+  children,
+  footer,
+}: {
+  /** the button it opens from */
+  anchor: DOMRect;
+  items: MenuItem[];
+  onPick: (key: string) => void;
+  onClose: () => void;
+  testId: string;
+  width?: number;
+  /** under the rows: a note while they load, effort, a switch */
+  children?: ReactNode;
+  /** the last line: the key that does the same */
+  footer?: string;
+}) {
+  const at = Math.max(
+    0,
+    items.findIndex((i) => i.checked),
+  );
+  const [active, setActive] = useState(at);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => box.current?.focus(), []);
+  // the rows came in after it opened (claude was starting): the keyboard starts on the checked one
+  useEffect(() => setActive(at), [at]);
+  return (
+    <Overlay
+      open
+      onClose={onClose}
+      testId={testId}
+      style={{
+        left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
+        bottom: window.innerHeight - anchor.top + 6,
+        width,
+      }}
+    >
+      <div
+        ref={box}
+        role="menu"
+        tabIndex={-1}
+        data-list
+        className="p-1"
+        onKeyDown={(e) => {
+          const n = items.length;
+          if (e.key === "Escape" || e.key === "Tab") {
+            e.preventDefault();
+            onClose();
+          } else if (n && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+          } else if (n && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            const it = items[active];
+            if (it) onPick(it.key);
+          }
+        }}
+      >
+        {items.map((it, i) => (
+          <button
+            key={it.key}
+            type="button"
+            role="menuitemradio"
+            aria-checked={!!it.checked}
+            data-testid="menu-item"
+            data-key={it.key}
+            data-active={i === active || undefined}
+            onMouseEnter={() => setActive(i)}
+            onClick={() => onPick(it.key)}
+            className="fade flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left data-[active]:bg-raised"
+          >
+            {it.mark && <span className="flex h-5 items-center">{it.mark}</span>}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body text-fg">{it.label}</span>
+              {it.description && <span className="block text-sm text-fg-4">{it.description}</span>}
+            </span>
+            <span className="flex h-5 w-3.5 items-center">
+              {it.checked && <Icon name="check" size={12} className="text-fg-2" />}
+            </span>
+          </button>
+        ))}
+        {children}
+        {footer && (
+          <p className="mt-1 border-t border-line px-2 pt-1.5 pb-0.5 text-meta text-fg-4">
+            {footer}
+          </p>
+        )}
+      </div>
+    </Overlay>
   );
 }
 
