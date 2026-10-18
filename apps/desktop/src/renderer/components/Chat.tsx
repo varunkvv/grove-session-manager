@@ -288,6 +288,19 @@ export function ChatApp() {
     };
   }, [load]);
 
+  // cmd-shift-Enter is the editor, as it is on a list in the main window
+  const editorKey = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.shiftKey && e.key === "Enter") {
+        e.preventDefault();
+        editorKey.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // the transcript moved: a message finished, a tool answered, the turn ended
   const rev = status?.rev;
   useEffect(() => {
@@ -393,6 +406,9 @@ export function ChatApp() {
     else setError(res.error.message);
   };
 
+  const toEditor = () => (running ? setMoving(!moving) : void openInEditor("now"));
+  editorKey.current = toEditor;
+
   return (
     <div
       className="@container flex h-full flex-col bg-canvas"
@@ -441,11 +457,7 @@ export function ChatApp() {
             ))}
           </Select>
         )}
-        <Button
-          size="sm"
-          data-testid="chat-open-editor"
-          onClick={() => (running ? setMoving(!moving) : void openInEditor("now"))}
-        >
+        <Button size="sm" data-testid="chat-open-editor" title="cmd-shift-Enter" onClick={toEditor}>
           Open in {target.editor}
         </Button>
       </header>

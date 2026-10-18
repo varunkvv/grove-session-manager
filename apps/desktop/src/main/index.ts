@@ -419,7 +419,11 @@ async function start(): Promise<void> {
     installMenu({
       isDev: appEnv.isDev,
       editorLabel,
-      send: (id: MenuCommandId) => pusher.send("menu:command", { id }),
+      send: (id: MenuCommandId) => {
+        // the menu's commands are the main window's: from a chat window they bring it forward
+        if (chatWindows.focusedSession()) showMain();
+        pusher.send("menu:command", { id });
+      },
     });
 
   await electron.app.whenReady();
