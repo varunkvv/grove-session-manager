@@ -1227,10 +1227,11 @@ test("a turn's steps open from its work line: each tool and what it acted on", a
     /^Agent\s*long sleeper/,
     /^Bash\s*sleep 5 && echo main-done/,
   ]);
-  // the panel in the main window draws the same turn as it always has: no steps to open
+  // the main window's panel is the session card with grove chat on: no turns, no steps to open
   await page.bringToFront();
   await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
-  await expect(page.getByTestId("session-panel").getByTestId("turn")).toHaveCount(2);
+  await expect(page.getByTestId("session-card")).toBeVisible();
+  await expect(page.getByTestId("session-panel").getByTestId("turn")).toHaveCount(0);
   await expect(page.getByTestId("session-panel").getByTestId("turn-steps-toggle")).toHaveCount(0);
 });
 

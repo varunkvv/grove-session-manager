@@ -83,9 +83,9 @@ test("an image the agent points at is drawn from the session's folder, and nothi
   // a web image is its words, as everywhere else
   await expect(chat.locator('img[alt="web"]')).toHaveCount(0);
   await expect(chat.locator(".md-alt", { hasText: "web" })).toHaveCount(1);
-  // and the main window's panel draws none of it: its markdown is as it was
+  // and the main window's session card draws none of it: the end of the answer as words
   await app.page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
-  await expect(app.page.getByTestId("panel-text")).toContainText("Here:");
+  await expect(app.page.getByTestId("card-tail")).toContainText("web");
   await expect(app.page.locator(".md img")).toHaveCount(0);
 });
 
@@ -197,7 +197,7 @@ test("the viewer reads nothing outside the session's folders", async () => {
   ).toBe(false);
 });
 
-test("code is coloured in a chat window, as a viewer's text file is, and the panel's is as it was", async () => {
+test("code is coloured in a chat window, as a viewer's text file is, and the card's is plain", async () => {
   const s = seed(
     "```ts\nconst answer: number = 42;\n```\n\n```nosuchlang\nplain words\n```\n\nSee [the app](app.py).",
   );
@@ -214,11 +214,11 @@ test("code is coloured in a chat window, as a viewer's text file is, and the pan
   const py = chat.getByTestId("viewer").locator('code[data-lang="py"]');
   await expect(py).toContainText("def hello");
   await expect.poll(() => py.locator("span[style]").count()).toBeGreaterThan(1);
-  // the main window's panel: the same words, no colour, no file link
+  // the main window's session card: the end of the answer, no colour, no file link
   await app.page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
-  await expect(app.page.getByTestId("panel-text")).toContainText("const answer");
-  expect(await app.page.locator("[data-testid=panel-text] span[style]").count()).toBe(0);
-  expect(await app.page.locator("[data-testid=panel-text] .md-file").count()).toBe(0);
+  await expect(app.page.getByTestId("card-tail")).toContainText("plain words");
+  expect(await app.page.locator("[data-testid=card-tail] span[style]").count()).toBe(0);
+  expect(await app.page.locator("[data-testid=card-tail] .md-file").count()).toBe(0);
 });
 
 test("a mermaid fence is drawn as a picture, and one that is not a diagram stays code", async () => {
