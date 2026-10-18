@@ -57,7 +57,13 @@ test("the packaged app runs grove chat's claude: the sdk is bundled, and spawns 
   writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
   const { root } = writeProject(fx, { name: "toy" });
   const sid = "dddddddd-0000-4000-8000-000000000001";
-  writeSession(fx, { cwd: root, sessionId: sid, title: "packaged chat" });
+  // the highlighter's worker and mermaid are lazy chunks: they have to load out of the asar too
+  writeSession(fx, {
+    cwd: root,
+    sessionId: sid,
+    title: "packaged chat",
+    reply: "```ts\nconst packaged = true;\n```\n\n```mermaid\nflowchart LR\n  A --> B\n```",
+  });
   const fake = writeFakeClaude(fx.dir);
 
   const app = await _electron.launch({
@@ -96,7 +102,12 @@ test("the packaged app runs grove chat's claude: the sdk is bundled, and spawns 
       }
       return false;
     }, 20_000);
-    const composer = (chat as Page).getByTestId("composer");
+    const c = chat as Page;
+    await expect
+      .poll(() => c.locator('code[data-lang="ts"] span[style]').count())
+      .toBeGreaterThan(0);
+    await expect(c.getByTestId("diagram")).toHaveCount(1, { timeout: 20_000 });
+    const composer = c.getByTestId("composer");
     await composer.fill("Reply with exactly: hello from the spike");
     await composer.press("Enter");
     await expect((chat as Page).getByTestId("panel-text")).toContainText("hello from the spike", {
