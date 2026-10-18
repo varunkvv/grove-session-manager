@@ -4,7 +4,19 @@ import { modelLabel } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion } from "../../shared/ipc.ts";
 import { Markdown } from "./Markdown.tsx";
-import { AskCard, Button, CheckBox, Choice, cx, Diff, Icon, Mono, Switch } from "./ui.tsx";
+import {
+  AskCard,
+  Button,
+  CheckBox,
+  Choice,
+  cx,
+  Diff,
+  Icon,
+  inputClass,
+  Mono,
+  Select,
+  Switch,
+} from "./ui.tsx";
 
 /** a header chip holds this much, as Claude Code's does */
 const HEADER_MAX = 12;
@@ -202,7 +214,7 @@ export function QuestionCard({
                   );
                 })}
                 <input
-                  className="no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-3 text-body text-fg placeholder:text-fg-4"
+                  className={inputClass}
                   placeholder="Something else…"
                   data-testid="ask-other"
                   value={other[q.question] ?? ""}
@@ -298,6 +310,7 @@ export function PlanCard({
       <div className="selectable mt-2">
         <Markdown text={ask.plan} className="md-full" />
       </div>
+      {/* the permission card's shape: what it can do in a row, and words of your own under it */}
       <div className="mt-3 flex flex-wrap gap-2">
         {after.length ? (
           after.map((x, i) => (
@@ -320,22 +333,6 @@ export function PlanCard({
             Approve
           </Button>
         )}
-      </div>
-      <div className="mt-3 flex items-start gap-2">
-        <textarea
-          className="no-drag min-w-0 flex-1 resize-none rounded-md border border-line-strong bg-canvas px-3 py-1.5 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
-          placeholder="Or say what should change…"
-          rows={1}
-          value={note}
-          data-testid="plan-note"
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && note.trim()) {
-              e.preventDefault();
-              onAnswer({ kind: "plan", approve: false, message: note });
-            }
-          }}
-        />
         <Button
           variant="ghost"
           data-testid="plan-keep"
@@ -344,6 +341,23 @@ export function PlanCard({
           Keep planning
         </Button>
       </div>
+      <textarea
+        className={cx(
+          inputClass,
+          "mt-2 block h-auto! min-h-8 resize-none py-1.5 [field-sizing:content]",
+        )}
+        placeholder="Or say what should change…"
+        rows={1}
+        value={note}
+        data-testid="plan-note"
+        onChange={(e) => setNote(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && note.trim()) {
+            e.preventDefault();
+            onAnswer({ kind: "plan", approve: false, message: note });
+          }
+        }}
+      />
     </AskCard>
   );
 }
@@ -401,7 +415,7 @@ export function PermissionCard({
         </Button>
       </div>
       <input
-        className="no-drag mt-2 h-8 w-full rounded-md border border-line-strong bg-canvas px-3 text-body text-fg placeholder:text-fg-4"
+        className={cx(inputClass, "mt-2")}
         placeholder="Or tell Claude what to do instead…"
         data-testid="permission-why"
         value={why}
@@ -517,8 +531,6 @@ export function ElicitCard({
     (f) =>
       f.required && f.type !== "boolean" && (values[f.key] === undefined || values[f.key] === ""),
   );
-  const field =
-    "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-3 text-body text-fg placeholder:text-fg-4";
   return (
     <AskCard label={`${ask.server} asks`} testId="ask-elicit">
       {ask.title && <p className="mt-1 font-medium text-fg">{ask.title}</p>}
@@ -539,9 +551,9 @@ export function ElicitCard({
               />
             </span>
           ) : f.type === "enum" ? (
-            <select
+            <Select
               aria-label={f.label}
-              className={cx(field, "mt-1")}
+              wrapClassName="mt-1"
               value={String(values[f.key] ?? "")}
               onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
             >
@@ -551,11 +563,11 @@ export function ElicitCard({
                   {o}
                 </option>
               ))}
-            </select>
+            </Select>
           ) : (
             <input
               aria-label={f.label}
-              className={cx(field, "mt-1")}
+              className={cx(inputClass, "mt-1")}
               type={f.type === "number" ? "number" : "text"}
               value={String(values[f.key] ?? "")}
               onChange={(e) =>
