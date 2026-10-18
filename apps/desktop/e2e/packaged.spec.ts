@@ -1,8 +1,10 @@
 // the built .app, not the out/ bundles. opt-in: `pnpm app:package` first.
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { _electron, expect, test } from "@playwright/test";
-import { makeFixture } from "./helpers/fixture.ts";
+import { _electron, expect, type Page, test } from "@playwright/test";
+import { writeFakeClaude } from "./helpers/fakeClaude.ts";
+import { makeFixture, writeSession } from "./helpers/fixture.ts";
+import { waitFor } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 
 const APP = path.join(import.meta.dirname, "../dist/mac-arm64/Grove.app");
@@ -45,6 +47,61 @@ test("the packaged app opens on its projects and carries the companion extension
     const status = await page.evaluate(() => window.grove.editorStatus(true));
     expect(status.bundledCompanionVersion).not.toBeNull();
     expect(status.companionState).toBe("ok");
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
+test("the packaged app runs grove chat's claude: the sdk is bundled, and spawns the one it is given", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  const { root } = writeProject(fx, { name: "toy" });
+  const sid = "dddddddd-0000-4000-8000-000000000001";
+  writeSession(fx, { cwd: root, sessionId: sid, title: "packaged chat" });
+  const fake = writeFakeClaude(fx.dir);
+
+  const app = await _electron.launch({
+    executablePath: EXECUTABLE,
+    env: {
+      HOME: fx.dir,
+      PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+      GROVE_ROOT: fx.root,
+      CLAUDE_CONFIG_DIR: fx.claudeDir,
+      GROVE_EDITOR_BIN: fx.fakeCode,
+      GROVE_OPEN_BIN: fx.fakeOpen,
+      GROVE_EXTENSIONS_DIR: fx.extensionsDir,
+      GROVE_FAKE_LOG: fx.execLog,
+      GROVE_CLAUDE_BIN: fake.bin,
+    },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.getByTestId("app-ready").waitFor({ timeout: 45_000 });
+    let key: string | undefined;
+    await waitFor(async () => {
+      const hits = await page.evaluate(() => window.grove.listSessions(null));
+      key = hits.find((h) => h.sessionId === "dddddddd-0000-4000-8000-000000000001")?.key;
+      return !!key;
+    });
+    expect(await page.evaluate((k) => window.grove.openChat(k), key as string)).toEqual({
+      ok: true,
+    });
+    let chat: Page | undefined;
+    await waitFor(async () => {
+      for (const p of app.windows()) {
+        if (p.url().includes("#/chat") && (await p.locator(`[data-id="${sid}"]`).count())) {
+          chat = p;
+          return true;
+        }
+      }
+      return false;
+    }, 20_000);
+    const composer = (chat as Page).getByTestId("composer");
+    await composer.fill("Reply with exactly: hello from the spike");
+    await composer.press("Enter");
+    await expect((chat as Page).getByTestId("panel-text")).toContainText("hello from the spike", {
+      timeout: 20_000,
+    });
   } finally {
     await app.close().catch(() => {});
   }
