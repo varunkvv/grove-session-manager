@@ -105,7 +105,8 @@ export function AgentViewer({
   const [turn, setTurn] = useState<TurnView | null>();
   const running = agent.state === "running";
   const now = useNow(running);
-  // read again every couple of seconds while it runs: its transcript moves, the session's does not
+  // read again every couple of seconds while it runs: its transcript moves, the session's does not.
+  // ponytail: the whole transcript each time, fine for an agent's size. a tail read if one runs long
   useEffect(() => {
     let live = true;
     const read = () =>

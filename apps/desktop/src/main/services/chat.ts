@@ -238,6 +238,15 @@ export function retryLine(m: {
   return `Retrying in ${wait}s · ${why} (${m.attempt} of ${m.max_retries})`;
 }
 
+/**
+ * the model as the window names it. claude reports the id it runs ("claude-opus-5-5"), and more
+ * than one row can stand for that id (Default and Opus both do): the row picked stays picked
+ */
+export function modelFor(status: Pick<ChatStatus, "model" | "models">, reported: string): string {
+  const named = status.models.find((m) => m.value === status.model || m.id === status.model);
+  return named && (named.id === reported || named.value === reported) ? named.value : reported;
+}
+
 /** notes kept under a turn: past this the oldest go */
 const NOTES_MAX = 20;
 
@@ -787,7 +796,10 @@ export class ChatHost {
           // every turn starts with one, a turn claude code started itself too: a queued message, a
           // background task that finished
           this.turnStarted(h);
-          this.set(h, { mode: asMode(m.permissionMode) ?? h.status.mode, model: m.model });
+          this.set(h, {
+            mode: asMode(m.permissionMode) ?? h.status.mode,
+            model: modelFor(h.status, m.model),
+          });
         } else if (m.subtype === "commands_changed") {
           h.commands = commandsOf(m.commands);
         } else if (m.subtype === "status") {
@@ -986,7 +998,7 @@ export class ChatHost {
     if (!a) return;
     this.set(h, {
       // the model it is on before a turn has said so
-      ...(typeof a.model === "string" && a.model ? { model: a.model } : {}),
+      ...(typeof a.model === "string" && a.model ? { model: modelFor(h.status, a.model) } : {}),
       effort: typeof a.effort === "string" ? a.effort : undefined,
       ultracode: a.ultracode === true,
       ultracodeAvailable: a.ultracodeAvailable === true,

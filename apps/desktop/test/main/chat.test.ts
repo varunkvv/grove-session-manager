@@ -252,6 +252,10 @@ describe("grove chat's host", () => {
       { ultracode: true },
       { effortLevel: "low", ultracode: true },
     ]);
+    // opus and default both run claude-opus-5-5: the one picked stays the one shown
+    await s.host.setModel(SESSION, "opus");
+    expect(s.host.status(SESSION).model).toBe("opus");
+    await s.host.setModel(SESSION, "haiku");
     // a level the model does not list never goes to claude
     await expect(s.host.setEffort(SESSION, s.where, "ludicrous")).rejects.toThrow("not an effort");
     // a model with no effort setting and no ultracode: both go, and a switch on is refused
