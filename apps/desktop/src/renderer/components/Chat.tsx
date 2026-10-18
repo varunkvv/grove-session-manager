@@ -30,6 +30,7 @@ import {
   AgentState,
   Button,
   ComposerFrame,
+  ContextRing,
   cx,
   DropOverlay,
   EFFORT_WORD,
@@ -107,6 +108,13 @@ const namesOf = (files: ChatAttachment[]) => ({
   images: files.filter((f) => f.kind === "image").length,
   files: files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
 });
+
+/** how full, out of where it compacts: 62 */
+const pct = (c: { used: number; limit: number }) =>
+  Math.min(100, Math.round((c.used / c.limit) * 100));
+/** 620k, 1.2M */
+const tokens = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
 
 /** a refusal from main, as the line over the composer says it */
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
@@ -226,7 +234,7 @@ export function ChatApp() {
   const [moving, setMoving] = useState(false);
   /** the menu that is open, and the button it opens from: the toolbar's, or the header's … */
   const [menu, setMenu] = useState<{
-    kind: "mode" | "model" | "attach" | "more";
+    kind: "mode" | "model" | "attach" | "more" | "context";
     anchor: DOMRect;
   } | null>(null);
   /** ⌘K's palette or ⌘/'s sheet of keys */
@@ -451,18 +459,22 @@ export function ChatApp() {
       });
   };
 
-  const send = async () => {
-    const text = draft.trim();
-    const attached = files;
+  /** what is in the composer, or `words` from an action (/compact): those leave the draft alone */
+  const send = async (words?: string) => {
+    const own = words === undefined;
+    const text = own ? draft.trim() : words;
+    const attached = own ? files : [];
     if ((!text && attached.length === 0) || readOnly) return;
     // a background agent mid-turn stops when this takes it over: asked first, as Open asks
     const stop = session.runtime === "background" ? session.open.confirm : undefined;
     if (stop && !window.confirm(`${stop.title}\n\n${stop.body}`)) return;
     setError(undefined);
     setNote(undefined);
-    setDraft("");
-    setFiles([]);
-    if (text) last.current = text;
+    if (own) {
+      setDraft("");
+      setFiles([]);
+      if (text) last.current = text;
+    }
     // what goes over: the chip's size and thumbnail stay here
     const out = attached.map(({ size: _size, url: _url, ...f }) => f as ChatAttachment);
     if (!running) {
@@ -474,8 +486,10 @@ export function ChatApp() {
     if (why) {
       setError(why);
       setSent(null);
-      setDraft(text);
-      setFiles(attached);
+      if (own) {
+        setDraft(text);
+        setFiles(attached);
+      }
     }
   };
 
@@ -522,7 +536,7 @@ export function ChatApp() {
     composer.current?.focus();
   };
 
-  const openMenu = (kind: "mode" | "model" | "attach" | "more", el: HTMLElement) => {
+  const openMenu = (kind: "mode" | "model" | "attach" | "more" | "context", el: HTMLElement) => {
     if (menu?.kind === kind) return setMenu(null);
     setMenu({ kind, anchor: el.getBoundingClientRect() });
     // the rows are claude's: opening the menu starts it, as shift-tab does
@@ -644,6 +658,14 @@ export function ChatApp() {
       shown: "esc",
       off: !running,
       run: () => void api().chatInterrupt(),
+    },
+    {
+      id: "compact",
+      group: "Session",
+      label: "Compact the conversation",
+      keys: { key: "k", meta: true, shift: true },
+      off: !!readOnly,
+      run: () => void send("/compact"),
     },
     {
       id: "files",
@@ -991,6 +1013,19 @@ export function ChatApp() {
                       </ToolbarButton>
                       {s.ultracode && <UltraChip />}
                       <span className="flex-1" />
+                      {/* how full the conversation is, once it matters: a click offers to compact */}
+                      {s.context && s.context.used / s.context.limit >= 0.5 && (
+                        <ToolbarButton
+                          title={`${pct(s.context)}% of the context used. It compacts by itself at ${tokens(s.context.limit)} tokens`}
+                          aria-haspopup="menu"
+                          aria-expanded={menu?.kind === "context"}
+                          data-testid="chat-context"
+                          onClick={(e) => openMenu("context", e.currentTarget)}
+                        >
+                          <ContextRing used={s.context.used} limit={s.context.limit} />
+                          <span className="tabular-nums">{pct(s.context)}%</span>
+                        </ToolbarButton>
+                      )}
                       {s.starting && (
                         <span
                           className="flex items-center gap-1.5 text-sm text-fg-4"
@@ -1081,6 +1116,27 @@ export function ChatApp() {
       )}
       {sheet === "palette" && <CommandPalette actions={actions} onClose={closeSheet} />}
       {sheet === "shortcuts" && <ShortcutSheet actions={actions} onClose={closeSheet} />}
+      {menu?.kind === "context" && s.context && (
+        <Menu
+          anchor={menu.anchor}
+          testId="context-menu"
+          width={300}
+          onClose={closeMenu}
+          onPick={() => {
+            closeMenu();
+            void send("/compact");
+          }}
+          footer={`${tokens(s.context.used)} of ${tokens(s.context.limit)} tokens before it compacts by itself`}
+          items={[
+            {
+              key: "compact",
+              label: "Compact now",
+              description: "Summarises the conversation so far, to free up room",
+              keys: "⇧⌘K",
+            },
+          ]}
+        />
+      )}
       {menu?.kind === "attach" && (
         <Menu
           anchor={menu.anchor}

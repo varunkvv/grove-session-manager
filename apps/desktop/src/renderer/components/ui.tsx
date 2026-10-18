@@ -1211,6 +1211,45 @@ export function AgentState({
   );
 }
 
+/**
+ * how full a conversation is, as a ring: the stroke goes round as it fills. it turns the danger
+ * colour in its last tenth before claude compacts by itself, the one time it needs a look
+ */
+export function ContextRing({ used, limit }: { used: number; limit: number }) {
+  const f = Math.max(0, Math.min(1, used / limit));
+  const c = 2 * Math.PI * 5.5;
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+      data-testid="context-ring"
+      className={cx("shrink-0", f >= 0.9 ? "text-danger" : "text-fg-3")}
+    >
+      <circle
+        cx="7"
+        cy="7"
+        r="5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        strokeWidth="2"
+      />
+      <circle
+        cx="7"
+        cy="7"
+        r="5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeDasharray={`${c * f} ${c}`}
+        transform="rotate(-90 7 7)"
+      />
+    </svg>
+  );
+}
+
 /** ultracode is on: beside the model, in its own colour */
 export function UltraChip() {
   return (

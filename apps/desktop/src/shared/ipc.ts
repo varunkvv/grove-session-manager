@@ -687,6 +687,11 @@ export interface ChatStatus {
    * come in one burst as the block ends (probe), so a count would read nothing until it is over
    */
   thinking?: { since: number };
+  /**
+   * how full the conversation is, as claude counts it after each turn: tokens in it, and where it
+   * compacts itself (auto-compact's threshold, else the window)
+   */
+  context?: { used: number; limit: number };
   /** sent while a turn ran, and not taken yet */
   queued: string[];
   /** what went wrong last: claude did not start, a control was refused */

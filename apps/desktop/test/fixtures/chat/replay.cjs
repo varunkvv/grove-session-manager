@@ -10,7 +10,8 @@
 // env: GROVE_FAKE_CHAT_LOG (what it got, a JSON line each), GROVE_FAKE_CHAT_DELAY_MS (the most it
 // waits between two lines, 15 by default), GROVE_FAKE_CHAT_TOOL_MS (how long a main-thread tool
 // runs before its result, 0 by default), GROVE_FAKE_CHAT_RECORDINGS (a folder of recordings to
-// play instead of these: the perf script's long answer)
+// play instead of these: the perf script's long answer), GROVE_FAKE_CHAT_CONTEXT (the tokens
+// get_context_usage says are in use)
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -215,6 +216,17 @@ function settingsControl(r) {
   }
   // the agent goes on in the recording: what it says after a stop is what was recorded
   if (r.subtype === "stop_task") return {};
+  // the summary's numbers, as recordings/d-compact has them. GROVE_FAKE_CHAT_CONTEXT: tokens in use
+  if (r.subtype === "get_context_usage") {
+    return {
+      totalTokens: Number(process.env.GROVE_FAKE_CHAT_CONTEXT ?? 31708),
+      maxTokens: 1000000,
+      autoCompactThreshold: 967000,
+      isAutoCompactEnabled: true,
+      percentage: 3,
+      categories: [],
+    };
+  }
   if (r.subtype === "set_model") {
     const m = modelOf(r.model);
     const levels = m?.supportedEffortLevels ?? [];

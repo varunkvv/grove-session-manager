@@ -827,6 +827,8 @@ export class ChatHost {
         })),
       });
       await this.settings(h);
+      // a resumed session is as full as it was: the ring knows before the first turn
+      await this.contextUsage(h);
     } catch (e) {
       log.warn(`chat ${h.id.slice(0, 8)} did not start:`, e);
       // what was sent goes back to the window, which puts it in the composer again. kept here too
@@ -992,9 +994,23 @@ export class ChatHost {
         });
         this.o.onChange?.();
         for (const run of h.afterTurn.splice(0)) run();
+        void this.contextUsage(h);
         return;
       }
     }
+  }
+
+  /**
+   * how full the conversation is, from claude's own count: the summary answers from the last
+   * response's usage in ~30ms (probe) with no token-count call. a turn's result usage can't be used:
+   * it is summed over every request of the turn
+   */
+  private async contextUsage(h: Hosted): Promise<void> {
+    const u = await h.q?.getContextUsage({ detail: "summary" }).catch(() => undefined);
+    if (typeof u?.totalTokens !== "number") return;
+    const limit = u.autoCompactThreshold ?? u.maxTokens;
+    if (typeof limit === "number" && limit > 0)
+      this.set(h, { context: { used: u.totalTokens, limit } });
   }
 
   /** a line of what claude said along the way, under the turn. the last few */

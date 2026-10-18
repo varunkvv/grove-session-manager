@@ -350,6 +350,31 @@ test("⌘K runs any action by name, ⌘/ lists every key, and the header's … h
   ]);
 });
 
+test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await expect(chat.getByTestId("chat-context")).toHaveCount(0);
+  await chat.getByTestId("composer").press("a");
+  const ring = chat.getByTestId("chat-context");
+  await expect(ring).toHaveText("72%");
+  await ring.click();
+  await expect(chat.getByTestId("context-menu")).toContainText("700k of 967k tokens");
+  await chat.getByTestId("context-menu").getByTestId("menu-item").click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { type?: string; message?: { content?: Array<{ text?: string }> } })?.type ===
+          "user" &&
+        (l.in as { message: { content: Array<{ text?: string }> } }).message.content[0]?.text ===
+          "/compact",
+    ),
+  );
+  // the draft was left alone
+  await expect(chat.getByTestId("composer")).toHaveValue("a");
+});
+
 test("the model is a menu with the model's own effort levels and ultracode, read back from claude", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s);

@@ -231,6 +231,26 @@ describe("grove chat's host", () => {
     );
   });
 
+  it("says how full the conversation is from claude's own count, at start and after each turn", async () => {
+    const s = setup();
+    await s.host.warm(SESSION, s.where);
+    expect(s.host.status(SESSION).context).toEqual({ used: 31708, limit: 967000 });
+    await s.host.send(SESSION, s.where, HELLO);
+    await turnEnded(s);
+    await until(() => s.host.status(SESSION).context, "the count after the turn");
+    const asked = s
+      .log()
+      .filter(
+        (l) =>
+          (l.in as { request?: { subtype?: string; detail?: string } })?.request?.subtype ===
+          "get_context_usage",
+      )
+      .map((l) => (l.in as { request: { detail?: string } }).request.detail);
+    // the summary: no token-count call
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(asked)).toEqual(new Set(["summary"]));
+  });
+
   it("starts claude with claude code's own system prompt, not an empty one", async () => {
     const s = setup();
     await s.host.warm(SESSION, s.where);
