@@ -763,6 +763,9 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatRename",
   "chatMcp",
   "chatMcpReconnect",
+  "chatSetFast",
+  "chatSetThinking",
+  "chatSetStyle",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1193,6 +1196,21 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       folds.set(file, state);
       if (folds.size > 32) folds.delete(folds.keys().next().value as string);
       return agentView(state);
+    },
+
+    async chatSetFast(id, on) {
+      if (typeof on !== "boolean") throw new AppError("invalid", "That is not on or off.");
+      await chat.setFast(id, await runWhere(id), on);
+    },
+
+    async chatSetThinking(id, on) {
+      if (typeof on !== "boolean") throw new AppError("invalid", "That is not on or off.");
+      await chat.setThinking(id, await runWhere(id), on);
+    },
+
+    async chatSetStyle(id, style) {
+      if (!isText(style, 100)) throw new AppError("invalid", "That is not an output style.");
+      await chat.setStyle(id, await runWhere(id), style);
     },
 
     async chatMcp(id) {

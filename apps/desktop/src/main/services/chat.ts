@@ -310,6 +310,24 @@ const LIMIT_WINDOW: Record<string, string> = {
   overage: "extra usage",
 };
 
+/** the output styles there are, and the one it starts in, from init's answer */
+function stylesOf(init: unknown): Pick<ChatStatus, "style" | "styles"> {
+  const i = init as { available_output_styles?: unknown; output_style?: unknown };
+  const styles = Array.isArray(i.available_output_styles)
+    ? i.available_output_styles.filter((x): x is string => typeof x === "string")
+    : [];
+  return {
+    ...(styles.length ? { styles } : {}),
+    ...(typeof i.output_style === "string" ? { style: i.output_style } : {}),
+  };
+}
+
+/** a model that can answer without thinking: the 4.x ones. 5.x and fable always think */
+export const thinksOff = (s: Pick<ChatStatus, "model" | "models">): boolean => {
+  const m = s.models.find((x) => x.value === s.model || x.id === s.model);
+  return /claude-(opus|sonnet|haiku)-4/.test(m?.id ?? m?.value ?? s.model ?? "");
+};
+
 /** notes kept under a turn: past this the oldest go */
 const NOTES_MAX = 20;
 
@@ -726,6 +744,43 @@ export class ChatHost {
     await renameSession(id, title, { dir: where.cwd });
   }
 
+  /** fast mode, this session only (probe: the flag layer takes it, getSettings().effective says so) */
+  async setFast(id: string, where: ChatWhere, on: boolean): Promise<void> {
+    await this.warm(id, where);
+    const h = this.entry(id);
+    const model = h.status.models.find(
+      (m) => m.value === h.status.model || m.id === h.status.model,
+    );
+    if (on && !model?.fast) throw new Error("This model has no fast mode.");
+    await h.q?.applyFlagSettings({ fastMode: on ? true : null } as never);
+    await this.settings(h);
+  }
+
+  /**
+   * thinking off and on again. only a 4.x model can answer without it (probe: haiku 4.5 off had no
+   * thinking blocks); the 5.x models think regardless and bill it, so it is not offered there
+   */
+  async setThinking(id: string, where: ChatWhere, on: boolean): Promise<void> {
+    await this.warm(id, where);
+    const h = this.entry(id);
+    if (!on && !thinksOff(h.status)) throw new Error("This model always thinks.");
+    const summaries = await showsThinking(this.o.claudeSettings);
+    await h.q?.setMaxThinkingTokens(
+      on ? THINKING_BUDGET : 0,
+      on && summaries ? "summarized" : null,
+    );
+    this.set(h, { thinkingOff: !on });
+  }
+
+  /** an output style for this session only, through the flag layer: no settings file is written */
+  async setStyle(id: string, where: ChatWhere, style: string): Promise<void> {
+    await this.warm(id, where);
+    const h = this.entry(id);
+    if (!h.status.styles?.includes(style)) throw new Error(`${style} is not an output style here.`);
+    await h.q?.applyFlagSettings({ outputStyle: style } as never);
+    this.set(h, { style });
+  }
+
   /** its claude's MCP servers, as it has them now (probe: 2ms). claude is started for it */
   async mcp(
     id: string,
@@ -775,7 +830,11 @@ export class ChatHost {
       return;
     }
     await h.q.setModel(model);
-    this.set(h, { model });
+    // a model that always thinks: the switch is not there for it
+    this.set(h, {
+      model,
+      ...(h.status.thinkingOff && !thinksOff({ ...h.status, model }) ? { thinkingOff: false } : {}),
+    });
     // the model moves effort to its own default, and ultracode off where it has none
     await this.settings(h);
   }
@@ -976,7 +1035,10 @@ export class ChatHost {
           ...(m.resolvedModel ? { id: m.resolvedModel } : {}),
           ...(m.description ? { description: m.description } : {}),
           ...(m.supportedEffortLevels?.length ? { efforts: [...m.supportedEffortLevels] } : {}),
+          ...(m.supportsFastMode ? { fast: true } : {}),
         })),
+        // the output styles there are, and the one it is in (init's answer, probe)
+        ...stylesOf(init),
       });
       await this.settings(h);
       // a resumed session is as full as it was: the ring knows before the first turn
@@ -1317,10 +1379,16 @@ export class ChatHost {
    * is in the sdk at runtime but not in its types
    */
   private async settings(h: Hosted): Promise<void> {
-    const q = h.q as (Query & { getSettings?: () => Promise<{ applied?: Applied }> }) | undefined;
-    const a = (await q?.getSettings?.().catch(() => undefined))?.applied;
+    const q = h.q as
+      | (Query & {
+          getSettings?: () => Promise<{ applied?: Applied; effective?: { fastMode?: unknown } }>;
+        })
+      | undefined;
+    const got = await q?.getSettings?.().catch(() => undefined);
+    const a = got?.applied;
     if (!a) return;
     this.set(h, {
+      fast: got?.effective?.fastMode === true,
       // the model it is on before a turn has said so
       ...(typeof a.model === "string" && a.model ? { model: modelFor(h.status, a.model) } : {}),
       effort: typeof a.effort === "string" ? a.effort : undefined,

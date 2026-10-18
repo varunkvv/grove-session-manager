@@ -69,6 +69,13 @@ const isInit = (m) => m?.type === "control_request" && m.request?.subtype === "i
 const initAnswer = recordings[0].find(
   (l) => l.dir === "out" && l.msg.type === "control_response" && l.msg.response?.response?.models,
 ).msg;
+// what the fixtures were trimmed of that the window draws, as recordings/d-could's init has it
+{
+  const r = initAnswer.response.response;
+  r.available_output_styles ??= ["default", "Proactive", "Concise", "Explanatory", "Learning"];
+  r.output_style ??= "default";
+  for (const m of r.models) if (m.value === "default" || m.value === "opus") m.supportsFastMode ??= true;
+}
 
 /** every recorded prompt and the lines that follow it, up to the next prompt */
 const turns = [];
@@ -202,7 +209,7 @@ const applied = {
 /** the failed MCP server was tried again */
 let mcpRetried = false;
 function settingsControl(r) {
-  if (r.subtype === "get_settings") return { effective: {}, sources: [], applied: { ...applied } };
+  if (r.subtype === "get_settings") return { effective: { fastMode: applied.fast }, sources: [], applied: { ...applied } };
   if (r.subtype === "apply_flag_settings") {
     const s = r.settings ?? {};
     if ("effortLevel" in s) {
@@ -210,6 +217,7 @@ function settingsControl(r) {
       // a level sent without the ultracode key turns ultracode off
       if (!("ultracode" in s)) applied.ultracode = applied.ultracodeRequested = false;
     }
+    if ("fastMode" in s) applied.fast = s.fastMode === true;
     if ("ultracode" in s) {
       applied.ultracodeRequested = s.ultracode === true;
       applied.ultracode = applied.ultracodeRequested && applied.ultracodeAvailable;

@@ -852,6 +852,51 @@ test("a long paste becomes a chip that goes with the message, and an attached im
   await expect(chat.getByTestId("paste-chip")).toHaveCount(0);
 });
 
+test("fast mode and thinking are switches on the models that have them, and the output style is a menu", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("chat-model").click();
+  const menu = chat.getByTestId("model-menu");
+  // haiku 5.5: no fast mode, and it always thinks
+  await expect(menu.getByTestId("effort")).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByTestId("fast")).toHaveCount(0);
+  await expect(menu.getByTestId("thinking")).toHaveCount(0);
+  await menu.locator('[data-key="opus"]').click();
+  await chat.getByTestId("chat-model").click();
+  await chat.getByTestId("model-menu").getByTestId("fast").click();
+  await expect(chat.getByTestId("model-menu").getByTestId("fast")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await chat.getByTestId("model-menu").press("Escape");
+  // haiku 4.5 can answer without thinking
+  await chat.getByTestId("chat-model").click();
+  await chat.getByTestId("model-menu").locator('[data-key="claude-haiku-4-5-20251001"]').click();
+  await chat.getByTestId("chat-model").click();
+  await chat.getByTestId("model-menu").getByTestId("thinking").click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { request?: { subtype?: string; max_thinking_tokens?: number } })?.request
+          ?.max_thinking_tokens === 0,
+    ),
+  );
+  await chat.getByTestId("model-menu").press("Escape");
+  // the output style, from the … menu
+  await chat.getByTestId("chat-more").click();
+  await chat.getByTestId("more-menu").locator('[data-key="style"]').click();
+  await chat.getByTestId("style-menu").locator('[data-key="Explanatory"]').click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { request?: { settings?: { outputStyle?: string } } })?.request?.settings
+          ?.outputStyle === "Explanatory",
+    ),
+  );
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

@@ -136,6 +136,45 @@ function limitWords(l: NonNullable<ChatStatus["limit"]>): string {
   return when ? `${what} · resets ${when}` : what;
 }
 
+/** the menus: the toolbar's (+, mode, model, the ring) and the header …'s (its own, MCP, style) */
+type MenuKind = "mode" | "model" | "attach" | "more" | "context" | "mcp" | "style";
+
+/** what each of claude code's own output styles does, in a line */
+const STYLE_HINT: Record<string, string> = {
+  default: "Claude Code as it is",
+  Proactive: "Takes the next step without asking",
+  Concise: "Shorter answers",
+  Explanatory: "Explains what it does and why",
+  Learning: "Leaves parts for you to write",
+};
+
+/** a switch row under a toolbar menu's rows: what it is, a line on it, the switch */
+function MenuSwitch({
+  label,
+  hint,
+  testId,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  testId: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <div className="mt-1 flex items-start gap-3 border-t border-line px-2 pt-2.5 pb-1.5">
+      <span className="min-w-0 flex-1">
+        <span className="block text-body text-fg">{label}</span>
+        <span className="block text-sm text-fg-4">{hint}</span>
+      </span>
+      <span className="pt-0.5">
+        <Switch label={label} testId={testId} checked={checked} onChange={onChange} />
+      </span>
+    </div>
+  );
+}
+
 /** a refusal from main, as the line over the composer says it */
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
 
@@ -312,7 +351,7 @@ export function ChatApp() {
   const [moving, setMoving] = useState(false);
   /** the menu that is open, and the button it opens from: the toolbar's, or the header's … */
   const [menu, setMenu] = useState<{
-    kind: "mode" | "model" | "attach" | "more" | "context" | "mcp";
+    kind: MenuKind;
     anchor: DOMRect;
   } | null>(null);
   /** its claude's MCP servers, read when their menu opens */
@@ -655,11 +694,11 @@ export function ChatApp() {
     composer.current?.focus();
   };
 
-  const openMenu = (kind: "mode" | "model" | "attach" | "more" | "context", el: HTMLElement) => {
+  const openMenu = (kind: MenuKind, el: HTMLElement) => {
     if (menu?.kind === kind) return setMenu(null);
     setMenu({ kind, anchor: el.getBoundingClientRect() });
     // the rows are claude's: opening the menu starts it, as shift-tab does
-    if (kind === "mode" || kind === "model") warm();
+    if (kind === "mode" || kind === "model" || kind === "style") warm();
   };
 
   const closeMenu = () => {
@@ -773,6 +812,10 @@ export function ChatApp() {
   const prompts = rows.flatMap((r) =>
     r.kind === "turn" && r.prompt?.kind === "human" && r.prompt.text ? [r.prompt.text] : [],
   );
+  /** a 4.x model can answer without thinking, so the model menu offers the switch */
+  const canThinkOff = /claude-(opus|sonnet|haiku)-4/.test(
+    current?.id ?? current?.value ?? s.model ?? "",
+  );
   /** the last thing claude said in full, for ⇧⌘C */
   const lastAnswer = rows.findLast((r): r is TurnView => r.kind === "turn" && !!r.text)?.text;
 
@@ -820,6 +863,14 @@ export function ChatApp() {
           .then((o) =>
             o.ok ? o.value.path && setNote(`Saved to ${o.value.path}`) : setError(o.error.message),
           ),
+    },
+    {
+      id: "style",
+      group: "Session",
+      label: "Output style…",
+      keys: { key: "o", meta: true, alt: true },
+      off: !!readOnly,
+      run: () => moreButton.current && openMenu("style", moreButton.current),
     },
     {
       id: "mcp",
@@ -1403,6 +1454,9 @@ export function ChatApp() {
                               · {EFFORT_WORD[s.effort] ?? s.effort}
                             </span>
                           )}
+                          {/* the session costs more while it is on: said where the model is */}
+                          {s.fast && current?.fast && <span className="text-fg-4"> · Fast</span>}
+                          {s.thinkingOff && <span className="text-fg-4"> · No thinking</span>}
                         </span>
                         <Icon name="chevron" size={9} className="rotate-90" faint />
                       </ToolbarButton>
@@ -1674,6 +1728,62 @@ export function ChatApp() {
                 />
               </span>
             </div>
+          )}
+          {s.live && current?.fast && (
+            <MenuSwitch
+              label="Fast mode"
+              hint="Quicker answers from this model, billed at a higher rate. This session only."
+              testId="fast"
+              checked={!!s.fast}
+              onChange={(on) =>
+                void api()
+                  .chatSetFast(on)
+                  .then((o) => setError(failed(o)))
+              }
+            />
+          )}
+          {/* only a 4.x model answers without thinking: 5.x ones think whatever is asked */}
+          {s.live && canThinkOff && (
+            <MenuSwitch
+              label="Thinking"
+              hint="Thinks before it answers. Off is quicker and cheaper."
+              testId="thinking"
+              checked={!s.thinkingOff}
+              onChange={(on) =>
+                void api()
+                  .chatSetThinking(on)
+                  .then((o) => setError(failed(o)))
+              }
+            />
+          )}
+        </Menu>
+      )}
+      {menu?.kind === "style" && (
+        <Menu
+          anchor={menu.anchor}
+          testId="style-menu"
+          width={260}
+          down
+          onClose={closeMenu}
+          onPick={(style) => {
+            closeMenu();
+            if (style !== s.style)
+              void api()
+                .chatSetStyle(style)
+                .then((o) => setError(failed(o)));
+          }}
+          items={(s.styles ?? []).map((st) => ({
+            key: st,
+            label: st === "default" ? "Default" : st,
+            description: STYLE_HINT[st],
+            checked: st === s.style,
+          }))}
+        >
+          {!s.live && (
+            <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
+              <Spinner size={10} />
+              Starting Claude…
+            </p>
           )}
         </Menu>
       )}

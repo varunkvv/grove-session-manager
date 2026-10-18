@@ -675,9 +675,18 @@ export interface ChatStatus {
     id?: string;
     description?: string;
     efforts?: string[];
+    /** it has a fast mode */
+    fast?: boolean;
   }>;
   /** the effort the next turn runs at, as claude applies it: "low" ... "max" */
   effort?: string;
+  /** fast mode is on, as claude applies it (this session only) */
+  fast?: boolean;
+  /** thinking was turned off (a 4.x model: 5.x models always think) */
+  thinkingOff?: boolean;
+  /** the output style it answers in, and the ones there are */
+  style?: string;
+  styles?: string[];
   /** ultracode is on: a workflow of agents on every task, this session only */
   ultracode?: boolean;
   /** the model takes ultracode */
@@ -855,6 +864,12 @@ export interface ChatApi {
   chatMcp(): Promise<Outcome<Array<{ name: string; status: string; error?: string }>>>;
   /** try a failed MCP server again */
   chatMcpReconnect(name: string): Promise<Outcome>;
+  /** fast mode on or off, this session only */
+  chatSetFast(on: boolean): Promise<Outcome>;
+  /** thinking on or off: only a model that can answer without it */
+  chatSetThinking(on: boolean): Promise<Outcome>;
+  /** one of the output styles there are, this session only */
+  chatSetStyle(style: string): Promise<Outcome>;
   /** the session's name, as /rename gives one: claude code keeps it, and grove's list follows */
   chatRename(title: string): Promise<Outcome>;
   /** the tool under way goes on in the background, and the turn goes on without it (⌃B) */
@@ -892,6 +907,9 @@ export const CHAT_CHANNELS = [
   "chatRename",
   "chatMcp",
   "chatMcpReconnect",
+  "chatSetFast",
+  "chatSetThinking",
+  "chatSetStyle",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;
