@@ -35,6 +35,18 @@ New since 0.19.32:
 - Ctrl-Opt-Cmd-G brings Grove forward from any app. change it in Settings
 - chat windows open a step down from the last one, at the size you last left one, and follow the appearance setting
 - long answers are no longer cut in the chat
+- the mode and model controls move to a toolbar under the message box. the mode is a menu with a line on what each
+  one does. the model menu holds effort (the levels that model offers) and an **Ultracode** switch for the session
+- attach any file with **+**, by dropping it anywhere on the window, or by pasting. images, PDFs and text or code
+  files go to Claude as attachments, anything else goes in as its path
+- while a turn runs, send turns into a stop button, the header counts the time, and a line says what Claude is doing
+- thinking and steps are folded under each answer ("Thought for 6s", "5 steps · 38s"). click to see them
+- subagents show in a side panel from the header or the turn, each with its state, a stop, and its own transcript
+- what `/context`, `/usage` and `/mcp` print shows in the chat, and the window follows `/clear` to the new session
+
+Fixed since 0.19.32:
+
+- chat sessions run with Claude Code's own system prompt. 0.19.32 started them with an empty one
 
 ## 0.18
 
