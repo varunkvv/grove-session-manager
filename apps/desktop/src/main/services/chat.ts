@@ -11,7 +11,15 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion, ChatStatus } from "../../shared/ipc.ts";
+import type {
+  ChatAnswer,
+  ChatAsk,
+  ChatCommand,
+  ChatImage,
+  ChatMode,
+  ChatQuestion,
+  ChatStatus,
+} from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { PushTarget } from "../push.ts";
@@ -61,6 +69,25 @@ export function parseAnswer(raw: unknown): ChatAnswer {
 export interface ChatWhere {
   cwd: string;
   dirs: string[];
+}
+
+/** what the api takes, as Claude Code's own image paste sends it */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+/** 5MB an image once decoded, which is the api's own limit */
+const IMAGE_MAX = Math.ceil((5 * 1024 * 1024 * 4) / 3);
+const IMAGES_MAX = 10;
+
+/** pasted or dropped images, as the page sent them, held to what the api takes. else refused */
+export function parseImages(raw: unknown): ChatImage[] {
+  if (raw === undefined) return [];
+  const bad = () => new AppError("invalid", "That is not an image Claude can take.");
+  if (!Array.isArray(raw) || raw.length > IMAGES_MAX) throw bad();
+  return raw.map((i) => {
+    const o = i as Record<string, unknown> | null;
+    if (!o || typeof o.mediaType !== "string" || !IMAGE_TYPES.has(o.mediaType)) throw bad();
+    if (!isText(o.data, IMAGE_MAX) || !/^[A-Za-z0-9+/]+={0,2}$/.test(o.data)) throw bad();
+    return { mediaType: o.mediaType as ChatImage["mediaType"], data: o.data };
+  });
 }
 
 export interface ChatHostOptions {
@@ -115,10 +142,19 @@ class Prompts implements AsyncIterable<SDKUserMessage> {
   private queue: SDKUserMessage[] = [];
   private wake: (() => void) | null = null;
 
-  push(text: string): void {
+  push(text: string, images: ChatImage[] = []): void {
     this.queue.push({
       type: "user",
-      message: { role: "user", content: [{ type: "text", text }] },
+      message: {
+        role: "user",
+        content: [
+          ...images.map((i) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: i.mediaType, data: i.data },
+          })),
+          ...(text ? [{ type: "text" as const, text }] : []),
+        ],
+      },
       parent_tool_use_id: null,
       // typed by a person: the sdk treats a message with no origin as nobody's
       origin: { kind: "human" },
@@ -168,6 +204,8 @@ interface Hosted {
   afterTurn: Array<() => void>;
   /** a model picked before claude was up */
   model?: string;
+  /** what `/` offers: Claude Code's commands and the skills it found */
+  commands: ChatCommand[];
   /** the file its window's viewer shows: a change to it is pushed there */
   watching?: FSWatcher;
 }
@@ -184,6 +222,19 @@ const emptyStatus = (): ChatStatus => ({
 });
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+const commandsOf = (raw: unknown): ChatCommand[] =>
+  (Array.isArray(raw) ? raw : []).flatMap((c) =>
+    c && typeof c.name === "string"
+      ? [
+          {
+            name: c.name,
+            description: typeof c.description === "string" ? c.description : "",
+            hint: typeof c.argumentHint === "string" ? c.argumentHint : "",
+          },
+        ]
+      : [],
+  );
 
 const cut = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
@@ -251,6 +302,7 @@ export class ChatHost {
         windows: new Set(),
         lastActive: this.now(),
         afterTurn: [],
+        commands: [],
       };
       this.hosted.set(id, h);
     } else if (where && !h.q) {
@@ -279,6 +331,11 @@ export class ChatHost {
 
   text(id: string): string {
     return this.hosted.get(id)?.text ?? "";
+  }
+
+  /** what `/` offers in this session: empty until claude is up */
+  commands(id: string): ChatCommand[] {
+    return this.hosted.get(id)?.commands ?? [];
   }
 
   /** a window shows this session from now on. what it needs to catch up is `status` and `text` */
@@ -333,12 +390,16 @@ export class ChatHost {
   }
 
   /** while a turn runs, Claude Code queues it */
-  async send(id: string, where: ChatWhere, text: string): Promise<void> {
+  async send(id: string, where: ChatWhere, text: string, images: ChatImage[] = []): Promise<void> {
     const h = this.entry(id, where);
     const queued = h.status.running;
-    h.prompts.push(text);
-    if (queued) this.set(h, { queued: [...h.status.queued, text] });
-    else this.turnStarted(h);
+    h.prompts.push(text, images);
+    if (queued) {
+      const shown = images.length
+        ? `${text}${text ? " " : ""}[${images.length} image${images.length === 1 ? "" : "s"}]`
+        : text;
+      this.set(h, { queued: [...h.status.queued, shown] });
+    } else this.turnStarted(h);
     await this.warm(id, where);
     if (!h.status.live) throw new Error(h.status.error ?? "Claude did not start.");
   }
@@ -465,6 +526,7 @@ export class ChatHost {
       h.ended = this.pump(h, q);
       const init = await q.initializationResult();
       const mode = asMode((init as { current_permission_mode?: unknown }).current_permission_mode);
+      h.commands = commandsOf(init.commands);
       this.set(h, {
         live: true,
         starting: false,
@@ -526,6 +588,8 @@ export class ChatHost {
           // background task that finished
           this.turnStarted(h);
           this.set(h, { mode: asMode(m.permissionMode) ?? h.status.mode, model: m.model });
+        } else if (m.subtype === "commands_changed") {
+          h.commands = commandsOf(m.commands);
         } else if (m.subtype === "status") {
           const mode = asMode(m.permissionMode);
           if (mode && mode !== h.status.mode) this.set(h, { mode });

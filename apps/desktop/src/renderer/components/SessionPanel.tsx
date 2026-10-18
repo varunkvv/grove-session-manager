@@ -137,7 +137,18 @@ export const QUIET = "text-sm text-fg-4";
  * inside the work are in the editor. the message is an agent's and goes through Markdown, what
  * the person typed is plain text
  */
-export function Turn({ turn, last, working }: { turn: TurnView; last: boolean; working: boolean }) {
+export function Turn({
+  turn,
+  last,
+  working,
+  images,
+}: {
+  turn: TurnView;
+  last: boolean;
+  working: boolean;
+  /** say how many images came with a prompt: grove chat, where they are sent from */
+  images?: boolean;
+}) {
   const p = turn.prompt;
   const typed =
     "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
@@ -150,7 +161,14 @@ export function Turn({ turn, last, working }: { turn: TurnView; last: boolean; w
     <section className="mt-6 first:mt-0" data-testid="turn">
       {p?.kind === "human" ? (
         <>
-          <h3 className="text-sm font-medium text-fg-4">You</h3>
+          <h3 className="text-sm font-medium text-fg-4">
+            You
+            {images && !!p.images && (
+              <span className="font-normal">
+                {` · ${p.images} ${p.images === 1 ? "image" : "images"}`}
+              </span>
+            )}
+          </h3>
           {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near */}
           <p className={typed} data-testid={last ? "panel-prompt" : undefined}>
             {p.text}

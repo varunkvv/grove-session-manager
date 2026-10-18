@@ -7,6 +7,7 @@ import type {
   ChatAnswer,
   ChatAsk,
   ChatConversation,
+  ChatImage,
   ChatStatus,
   ChatTarget,
   Outcome,
@@ -17,6 +18,7 @@ import { useStore } from "../state/store.ts";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
+import { useSuggest } from "./Suggest.tsx";
 import {
   AskCard,
   Button,
@@ -39,6 +41,36 @@ const COLUMN = "mx-auto w-full max-w-[760px] px-6";
 
 /** what the window sent, until the transcript has it: a prompt's start is enough to know it */
 const same = (a: string, b: string) => a.trim().slice(0, 200) === b.trim().slice(0, 200);
+
+/** what the api takes, and its limit: 5MB an image */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const IMAGE_MAX = 5 * 1024 * 1024;
+
+type Pasted = ChatImage & { url: string };
+
+/** the images among pasted or dropped files, read as the api takes them */
+async function imagesOf(files: FileList | null | undefined): Promise<Pasted[] | string> {
+  const picked = [...(files ?? [])].filter((f) => IMAGE_TYPES.has(f.type));
+  if (picked.some((f) => f.size > IMAGE_MAX)) return "An image can be 5 MB at most.";
+  return Promise.all(
+    picked.map(
+      (f) =>
+        new Promise<Pasted>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const url = String(r.result);
+            resolve({
+              mediaType: f.type as ChatImage["mediaType"],
+              data: url.slice(url.indexOf(",") + 1),
+              url,
+            });
+          };
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(f);
+        }),
+    ),
+  );
+}
 
 /** a refusal from main, as the line over the composer says it */
 const failed = (o: Outcome<unknown>): string | undefined => (o.ok ? undefined : o.error.message);
@@ -226,6 +258,14 @@ export function ChatApp() {
   /** what this window sent while nothing ran, until the transcript has it */
   const [sent, setSent] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  /** where the caret is in the draft: what `/` and `@` look at */
+  const [caret, setCaret] = useState(0);
+  /** images pasted or dropped, sent with the next message */
+  const [images, setImages] = useState<Pasted[]>([]);
+  /** how many images went with what this window sent, until the transcript has it */
+  const [sentImages, setSentImages] = useState(0);
+  /** bumped each time main hands the window a session */
+  const [openings, setOpenings] = useState(0);
   const last = useRef("");
   const warmed = useRef(false);
   const [error, setError] = useState<string>();
@@ -284,6 +324,7 @@ export function ChatApp() {
         setOpened(true);
         setSent(null);
         setPane(null);
+        setOpenings((n) => n + 1);
         void load();
       }),
       api().on("chat:status", (s) => setStatus(s)),
@@ -334,6 +375,18 @@ export function ChatApp() {
     if (turn?.prompt && same(turn.prompt.text, sent)) setSent(null);
   }, [talk, sent]);
 
+  const suggest = useSuggest({
+    text: draft,
+    caret,
+    live: !!status?.live,
+    opened: openings,
+    onPick: (text, at) => {
+      setDraft(text);
+      setCaret(at);
+      requestAnimationFrame(() => composer.current?.setSelectionRange(at, at));
+    },
+  });
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: these are when to scroll, not what is read
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -356,14 +409,19 @@ export function ChatApp() {
 
   const items = talk?.items ?? [];
   const lastTurn = items.findLast((i): i is TurnView => i.kind === "turn");
-  const pending = sent && !(lastTurn?.prompt && same(lastTurn.prompt.text, sent)) ? sent : null;
+  const pending =
+    sent !== null && !(lastTurn?.prompt && same(lastTurn.prompt.text, sent)) ? sent : null;
   const rows = [
     ...items,
-    ...(pending
+    ...(pending !== null
       ? [
           {
             kind: "turn",
-            prompt: { kind: "human", text: pending },
+            prompt: {
+              kind: "human",
+              text: pending,
+              ...(sentImages ? { images: sentImages } : {}),
+            },
             tools: 0,
             files: 0,
             agents: 0,
@@ -388,22 +446,39 @@ export function ChatApp() {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || readOnly) return;
+    const pasted = images;
+    if ((!text && pasted.length === 0) || readOnly) return;
     // a background agent mid-turn stops when this takes it over: asked first, as Open asks
     const stop = session.runtime === "background" ? session.open.confirm : undefined;
     if (stop && !window.confirm(`${stop.title}\n\n${stop.body}`)) return;
     setError(undefined);
     setDraft("");
-    last.current = text;
-    if (!running) setSent(text);
+    setImages([]);
+    if (text) last.current = text;
+    if (!running) {
+      setSent(text);
+      setSentImages(pasted.length);
+    }
     atEnd.current = true;
-    const res = await api().chatSend(text);
+    const res = await api().chatSend(
+      text,
+      pasted.map(({ mediaType, data }) => ({ mediaType, data })),
+    );
     const why = failed(res);
     if (why) {
       setError(why);
       setSent(null);
       setDraft(text);
+      setImages(pasted);
     }
+  };
+
+  const addImages = async (files: FileList | null | undefined) => {
+    const got = await imagesOf(files).catch(() => "That image could not be read.");
+    if (typeof got === "string") return setError(got);
+    if (got.length === 0) return;
+    setImages((was) => [...was, ...got]);
+    warm();
   };
 
   const answer = async (askId: string, a: ChatAnswer) => {
@@ -535,7 +610,7 @@ export function ChatApp() {
                     {session.description}
                   </p>
                 )}
-                {talk === null && !pending && (
+                {talk === null && pending === null && (
                   <p className={QUIET} data-testid="chat-gone">
                     This session's transcript is not there. Claude Code deletes one after 30 days.
                   </p>
@@ -555,7 +630,7 @@ export function ChatApp() {
                   ) : (
                     // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
                     <div key={(talk?.older ?? 0) + i} className="mt-6 first:mt-0">
-                      <Turn turn={item} last={i === end} working={running} />
+                      <Turn turn={item} last={i === end} working={running} images />
                       {item.outputs && <OutputCards outputs={item.outputs} />}
                     </div>
                   ),
@@ -581,8 +656,19 @@ export function ChatApp() {
                 ))}
               </div>
             </div>
-            <footer className="shrink-0 border-t border-line">
-              <div className={cx(COLUMN, "py-3")}>
+            <footer
+              className="shrink-0 border-t border-line"
+              onDragOver={(e) => {
+                if (!readOnly) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                if (readOnly) return;
+                e.preventDefault();
+                void addImages(e.dataTransfer.files);
+              }}
+            >
+              <div className={cx(COLUMN, "relative py-3")}>
+                {suggest.menu}
                 {note && !error && (
                   <p className="mb-2 text-sm text-fg-3" data-testid="chat-note">
                     {note}
@@ -599,6 +685,30 @@ export function ChatApp() {
                   </p>
                 ) : (
                   <>
+                    {images.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-images">
+                        {images.map((img, i) => (
+                          <div
+                            // biome-ignore lint/suspicious/noArrayIndexKey: the same image can be pasted twice
+                            key={i}
+                            className="group relative overflow-hidden rounded-md border border-line"
+                          >
+                            <img
+                              src={img.url}
+                              alt="Pasted"
+                              className="block h-14 w-auto max-w-40"
+                            />
+                            <IconButton
+                              label="Remove"
+                              className="absolute top-0.5 right-0.5 bg-overlay opacity-0 group-hover:opacity-100"
+                              onClick={() => setImages(images.filter((_, j) => j !== i))}
+                            >
+                              <Icon name="x" size={10} />
+                            </IconButton>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <textarea
                       ref={composer}
                       // the window is opened to write in
@@ -610,11 +720,25 @@ export function ChatApp() {
                       className="no-drag max-h-[40vh] min-h-9 w-full resize-none rounded-lg border border-line-strong bg-canvas px-3 py-2 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
                       onChange={(e) => {
                         setDraft(e.target.value);
+                        setCaret(e.target.selectionStart);
                         // the first keystroke starts claude, so the send does not wait for it
                         warm();
                       }}
+                      onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+                      onPaste={(e) => {
+                        const files = e.clipboardData.files;
+                        if (![...files].some((f) => f.type.startsWith("image/"))) return;
+                        // a screenshot is only an image. a copy from a page that has words too
+                        // pastes its words as well
+                        if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+                        void addImages(files);
+                      }}
                       onKeyDown={(e) => {
                         if (e.nativeEvent.isComposing) return;
+                        if (suggest.onKey(e)) {
+                          e.preventDefault();
+                          return;
+                        }
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
                           void send();

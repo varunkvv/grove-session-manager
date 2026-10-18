@@ -598,7 +598,7 @@ const VIEW_LAST_TEXT = 20_000;
 export interface TurnView {
   kind: "turn";
   /** what started it. absent when the work carried on after a compaction */
-  prompt?: { kind: Prompt["kind"]; text: string };
+  prompt?: { kind: Prompt["kind"]; text: string; images?: number };
   /** what the person typed while it worked */
   said?: string[];
   /** tool calls, files edited, subagents started, and how long it took */
@@ -696,7 +696,13 @@ export function conversationView(state: ConversationState): ConversationView {
       return {
         kind: "turn",
         ...(item.prompt
-          ? { prompt: { kind: item.prompt.kind, text: cut(item.prompt.text, VIEW_PROMPT) } }
+          ? {
+              prompt: {
+                kind: item.prompt.kind,
+                text: cut(item.prompt.text, VIEW_PROMPT),
+                ...(item.prompt.images ? { images: item.prompt.images } : {}),
+              },
+            }
           : {}),
         ...(said.length ? { said } : {}),
         tools: n.tools,

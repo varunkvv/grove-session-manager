@@ -14,6 +14,7 @@ import {
   type Runtime,
   readConversation,
   runDetached,
+  runGit,
   type Settings,
   saveSettings,
   workspaceFolders,
@@ -32,6 +33,7 @@ import type {
   OpenReport,
   Outcome,
   PathInfoView,
+  ProjectId,
   SessionKey,
   SessionRow,
 } from "../shared/ipc.ts";
@@ -42,7 +44,13 @@ import { log } from "./log.ts";
 import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
 import type { BackgroundService } from "./services/background.ts";
-import { type ChatHost, type ChatWhere, isText, parseAnswer } from "./services/chat.ts";
+import {
+  type ChatHost,
+  type ChatWhere,
+  isText,
+  parseAnswer,
+  parseImages,
+} from "./services/chat.ts";
 import type { ComboService } from "./services/combos.ts";
 import { parseDraft } from "./services/draft.ts";
 import { compareVersions, type EditorService } from "./services/editor.ts";
@@ -64,7 +72,7 @@ import type { Reveals } from "./services/reveal.ts";
 import type { SessionService } from "./services/sessions.ts";
 import { parseStartAgent } from "./services/startAgent.ts";
 import { keptFolderToast } from "./services/views.ts";
-import { listFiles, readText, TEMP_ROOTS, within } from "./sessionFiles.ts";
+import { listFiles, readText, TEMP_ROOTS, walkFiles, within } from "./sessionFiles.ts";
 
 export interface Deps {
   env: AppEnv;
@@ -723,6 +731,15 @@ export async function chatRoots(
   return where ? [where.cwd, ...where.dirs, ...TEMP_ROOTS] : null;
 }
 
+/** the folder's files, as `git ls-files` has them, or a few levels of it when it is no repo */
+async function filesIn(folder: string, gitPath?: string): Promise<string[]> {
+  const out = await runGit(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+    cwd: folder,
+    gitPath,
+  });
+  return out.ok ? out.stdout.split("\0").filter(Boolean) : walkFiles(folder);
+}
+
 function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
   const { projects, chat, editor } = deps;
 
@@ -732,6 +749,14 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     return row;
   };
   const where = (row: SessionRow) => whereOf(deps, row);
+  /** `@`'s lists, by folder: read again when a window asks for fresh ones */
+  const paths = new Map<string, Promise<string[]>>();
+
+  /** where claude runs it, once nothing else holds it: claimed from where it was */
+  async function runWhere(id: string): Promise<ChatWhere> {
+    const row = rowOf(id);
+    return chat.hosts(id) ? where(row) : claim(id, row);
+  }
 
   /** a path the page sent, as long as it is a file of the session's */
   async function allowed(id: string, file: unknown): Promise<string> {
@@ -817,12 +842,43 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       await chat.warm(id, await where(row));
     },
 
-    async chatSend(id, text) {
-      if (!isText(text) || !text.trim()) throw new AppError("invalid", "There is nothing to send.");
-      const row = rowOf(id);
-      const at = chat.hosts(id) ? await where(row) : await claim(id, row);
+    async chatSend(id, text, rawImages) {
+      const images = parseImages(rawImages);
+      if (!isText(text) || (!text.trim() && images.length === 0)) {
+        throw new AppError("invalid", "There is nothing to send.");
+      }
+      const at = await runWhere(id);
       deps.live.markSeen([id]);
-      await chat.send(id, at, text);
+      await chat.send(id, at, text.trim() ? text : "", images);
+    },
+
+    async chatCommands(id) {
+      return chat.commands(id);
+    },
+
+    async chatPaths(id, fresh) {
+      const at = await where(rowOf(id));
+      const folders = [at.cwd, ...at.dirs];
+      const lists = await Promise.all(
+        folders.map((f) => {
+          let list = paths.get(f);
+          if (!list || fresh === true) {
+            list = filesIn(f, deps.settings().gitPath);
+            paths.set(f, list);
+          }
+          return list;
+        }),
+      );
+      // the session's own folder by its relative path, which is how claude names them too. the
+      // project's other folders whole, under their name in the menu
+      return lists.flatMap((files, i) =>
+        i === 0
+          ? files.map((f) => ({ insert: f, shown: f }))
+          : files.map((f) => ({
+              insert: path.join(folders[i] as string, f),
+              shown: `${path.basename(folders[i] as string)}/${f}`,
+            })),
+      );
     },
 
     async chatInterrupt(id) {
@@ -833,12 +889,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       if (typeof mode !== "string" || !CHAT_MODES.has(mode)) {
         throw new AppError("invalid", "That is not a permission mode.");
       }
-      const row = rowOf(id);
-      await chat.setMode(
-        id,
-        chat.hosts(id) ? await where(row) : await claim(id, row),
-        mode as ChatMode,
-      );
+      await chat.setMode(id, await runWhere(id), mode as ChatMode);
     },
 
     async chatSetModel(id, model) {

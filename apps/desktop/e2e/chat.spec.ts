@@ -1,6 +1,6 @@
 // grove chat (beta): a session in its own window, talked to through a fake claude that plays back
 // the spike's recordings (test/fixtures/chat). with the switch off, nothing of it is there.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
@@ -232,4 +232,85 @@ test("quitting while a chat works asks first", async () => {
     return (globalThis as unknown as { groveTest: { quitAsks(): number } }).groveTest.quitAsks();
   });
   expect(asked).toBe(1);
+});
+
+test("/ lists claude's commands and skills, and @ the session's files, both by the keyboard", async () => {
+  const s = seed(true);
+  mkdirSync(path.join(s.root, "plans"), { recursive: true });
+  writeFileSync(path.join(s.root, "plans", "grove-chat.md"), "# plan");
+  writeFileSync(path.join(s.root, "notes.txt"), "notes");
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+
+  // the first key starts claude, which is what knows its commands
+  await composer.press("/");
+  const menu = chat.getByTestId("suggest");
+  await expect(menu).toHaveAttribute("data-kind", "/");
+  await expect(menu.getByTestId("suggest-item")).toHaveCount(2);
+  await composer.pressSequentially("askm");
+  await expect(menu.getByTestId("suggest-item")).toHaveText([/\/ask-matt/]);
+  await composer.press("Enter");
+  // Enter took the command into the message, and sent nothing
+  await expect(composer).toHaveValue("/ask-matt ");
+  await expect(menu).toHaveCount(0);
+
+  await composer.pressSequentially("about @grvch");
+  await expect(menu).toHaveAttribute("data-kind", "@");
+  await expect(menu.getByTestId("suggest-item").first()).toHaveText("plans/grove-chat.md");
+  await composer.press("Tab");
+  await expect(composer).toHaveValue("/ask-matt about @plans/grove-chat.md ");
+  // Esc closes a menu without touching the message
+  await composer.pressSequentially("@no");
+  await expect(menu).toBeVisible();
+  await composer.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(composer).toHaveValue("/ask-matt about @plans/grove-chat.md @no");
+  const users = sentToClaude(s.chatLog).filter((l) => (l.in as { type?: string })?.type === "user");
+  expect(users).toEqual([]);
+});
+
+test("an image dropped or pasted into the composer goes to claude with the message", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==";
+  // a drop on the composer, and a paste into it: what the page gets from Finder and a screenshot
+  await chat.evaluate((b64) => {
+    const file = () =>
+      new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "shot.png", {
+        type: "image/png",
+      });
+    const drop = new DataTransfer();
+    drop.items.add(file());
+    document
+      .querySelector("footer")
+      ?.dispatchEvent(
+        new DragEvent("drop", { dataTransfer: drop, bubbles: true, cancelable: true }),
+      );
+    const paste = new DataTransfer();
+    paste.items.add(file());
+    document
+      .querySelector('[data-testid="composer"]')
+      ?.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: paste, bubbles: true, cancelable: true }),
+      );
+  }, png);
+  await expect(chat.getByTestId("composer-images").locator("img")).toHaveCount(2);
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("composer-images")).toHaveCount(0);
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
+  await expect(chat.getByTestId("turn").last()).toContainText("You · 2 images");
+  const sent = sentToClaude(s.chatLog)
+    .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
+    .find((m) => m?.type === "user");
+  expect(sent?.message?.content?.map((c) => c.type)).toEqual(["image", "image", "text"]);
+  expect(sent?.message?.content?.[0]).toMatchObject({
+    source: { type: "base64", media_type: "image/png", data: png },
+  });
 });

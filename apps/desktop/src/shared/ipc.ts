@@ -640,6 +640,26 @@ export interface ChatTarget {
   readOnly?: string;
 }
 
+/** what `/` offers: one of Claude Code's commands, or a skill */
+export interface ChatCommand {
+  name: string;
+  description: string;
+  /** what it takes after its name, `<file>` */
+  hint: string;
+}
+
+/** an image pasted or dropped into the composer, base64 */
+export interface ChatImage {
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+  data: string;
+}
+
+/** a file `@` offers: what goes in the message, and how the menu shows it */
+export interface ChatPath {
+  insert: string;
+  shown: string;
+}
+
 /** a chat window's conversation: the turns, and every file the session wrote, the latest first */
 export interface ChatConversation extends ConversationView {
   written: string[];
@@ -665,7 +685,11 @@ export interface ChatApi {
   chatWatch(path: string | null): Promise<Outcome>;
   /** the first keystroke: claude starts now, so the first send does not wait for it */
   chatWarm(): Promise<Outcome>;
-  chatSend(text: string): Promise<Outcome>;
+  chatSend(text: string, images?: ChatImage[]): Promise<Outcome>;
+  /** what `/` offers. empty until claude is up */
+  chatCommands(): Promise<ChatCommand[]>;
+  /** what `@` offers: the files of the session's folders. `fresh`: list them again first */
+  chatPaths(fresh: boolean): Promise<ChatPath[]>;
   chatInterrupt(): Promise<Outcome>;
   chatSetMode(mode: ChatMode): Promise<Outcome>;
   chatSetModel(model: string): Promise<Outcome>;
@@ -682,6 +706,8 @@ export const CHAT_CHANNELS = [
   "chatWatch",
   "chatWarm",
   "chatSend",
+  "chatCommands",
+  "chatPaths",
   "chatInterrupt",
   "chatSetMode",
   "chatSetModel",

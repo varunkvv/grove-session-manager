@@ -58,24 +58,33 @@ export async function readText(file: string): Promise<FileText> {
 }
 
 /**
- * the files under a folder, newest first, a few levels down and no more than `max`: a project's
- * plans/ and artifacts/. dot files and folders are left out
+ * a folder's files, a few levels down: dot files, node_modules and any folder that is a repo of
+ * its own are left out. what `@` offers in a folder that is no repo, a project's root
  */
+export async function walkFiles(dir: string, max = 5000, depth = 4): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(at: string, rel: string, left: number): Promise<void> {
+    const entries = await readdir(at, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (out.length >= max) return;
+      if (e.name.startsWith(".") || e.name === "node_modules") continue;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isFile()) out.push(r);
+      else if (e.isDirectory() && left > 0) {
+        const full = path.join(at, e.name);
+        if (!(await stat(path.join(full, ".git")).catch(() => null))) await walk(full, r, left - 1);
+      }
+    }
+  }
+  await walk(dir, "", depth);
+  return out;
+}
+
+/** the files under a folder, newest first, no more than `max`: a project's plans/ and artifacts/ */
 export async function listFiles(dir: string, max = 300): Promise<string[]> {
-  // ponytail: readdir walks the whole tree before the depth cut. a walker that stops at depth 4 if
-  // someone keeps a node_modules in artifacts/
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => []);
-  const files = entries
-    .filter((e) => e.isFile())
-    .map((e) => path.join(e.parentPath, e.name))
-    .filter((f) => {
-      const rel = path.relative(dir, f).split(path.sep);
-      return rel.length <= 4 && !rel.some((p) => p.startsWith("."));
-    });
+  const files = (await walkFiles(dir, 2000, 3)).map((f) => path.join(dir, f));
   const dated = await Promise.all(
-    files
-      .slice(0, 2000)
-      .map(async (f) => ({ f, at: (await stat(f).catch(() => null))?.mtimeMs ?? 0 })),
+    files.map(async (f) => ({ f, at: (await stat(f).catch(() => null))?.mtimeMs ?? 0 })),
   );
   return dated
     .sort((a, b) => b.at - a.at)
