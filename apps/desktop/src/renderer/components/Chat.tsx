@@ -240,6 +240,8 @@ export function ChatApp() {
     kind: "mode" | "model" | "attach" | "more" | "context";
     anchor: DOMRect;
   } | null>(null);
+  /** the title being typed over: null when it is not */
+  const [renaming, setRenaming] = useState<string | null>(null);
   /** ⌘F's bar: a number, so a second ⌘F puts the keyboard back in it */
   const [finding, setFinding] = useState(0);
   /** ⌘K's palette or ⌘/'s sheet of keys */
@@ -634,6 +636,20 @@ export function ChatApp() {
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
+  /** a name only a session of its own with a transcript can take: one live elsewhere keeps its own */
+  const canRename = !readOnly && !target.fresh;
+  const rename = async (name: string) => {
+    const title = name.trim();
+    setRenaming(null);
+    composer.current?.focus();
+    if (!title || title === session.title) return;
+    const o = await api().chatRename(title);
+    if (!o.ok) return setError(o.error.message);
+    // the list picks it up from the transcript: the window says it now
+    setTarget({ ...target, session: { ...session, title } });
+    document.title = title;
+  };
+
   const toBackground = async () => {
     const o = await api().chatBackground();
     if (!o.ok) setError(o.error.message);
@@ -683,6 +699,14 @@ export function ChatApp() {
       keys: { key: "c", meta: true, shift: true },
       off: !lastAnswer,
       run: () => void api().chatCopy(lastAnswer ?? ""),
+    },
+    {
+      id: "rename",
+      group: "Session",
+      label: "Rename…",
+      keys: { key: "r", meta: true, shift: true },
+      off: !canRename,
+      run: () => setRenaming(session.title),
     },
     {
       id: "attach",
@@ -839,9 +863,43 @@ export function ChatApp() {
       {/* the traffic lights sit in the first 76px */}
       <header className="drag flex h-12 shrink-0 items-center gap-2.5 border-b border-line pr-3 pl-20">
         {target.project && <ProjectMark id={target.project} />}
-        <h1 className="min-w-0 flex-1 truncate font-semibold" title={session.title}>
-          {session.title}
-        </h1>
+        {renaming !== null ? (
+          <input
+            // a click on the title asked to type in it
+            autoFocus
+            aria-label="Name"
+            data-testid="chat-rename"
+            className="no-drag h-7 min-w-0 flex-1 rounded-md border border-line-strong bg-canvas px-2 font-semibold text-fg"
+            value={renaming}
+            onChange={(e) => setRenaming(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            // anywhere else: the name stays as it was
+            onBlur={() => setRenaming(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void rename(renaming);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                setRenaming(null);
+                composer.current?.focus();
+              }
+            }}
+          />
+        ) : (
+          <h1
+            className={cx(
+              "min-w-0 flex-1 truncate font-semibold",
+              canRename && "no-drag cursor-text",
+            )}
+            title={canRename ? `${session.title} (click to rename)` : session.title}
+            data-testid="chat-title"
+            onClick={() => canRename && setRenaming(session.title)}
+          >
+            {session.title}
+          </h1>
+        )}
         {s.asks.length > 0 ? (
           <StateLabel state="turn" within="panel" />
         ) : (

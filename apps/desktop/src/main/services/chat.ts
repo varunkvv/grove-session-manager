@@ -703,6 +703,20 @@ export class ChatHost {
     return (await h?.q?.backgroundTasks(tool.id)) === true;
   }
 
+  /**
+   * a name the person gave it, as /rename gives one (probe): through its claude when one is up, which
+   * counts it as the person's; else a custom-title line appended to its transcript by the sdk
+   */
+  async rename(id: string, where: ChatWhere, title: string): Promise<void> {
+    const h = this.hosted.get(id);
+    const q = h?.q as
+      | (Query & { renameSession?: (t: string, s: string) => Promise<void> })
+      | undefined;
+    if (q?.renameSession && h?.status.live) return q.renameSession(title, id);
+    const { renameSession } = await import("@anthropic-ai/claude-agent-sdk");
+    await renameSession(id, title, { dir: where.cwd });
+  }
+
   /** one running subagent stops. the turn and the other agents go on */
   async stopAgent(id: string, agentId: string): Promise<void> {
     const h = this.hosted.get(id);

@@ -662,6 +662,40 @@ test("/model and /plan are the window's own: they open its menu and set its mode
   expect(typed).toEqual([]);
 });
 
+test("a click on the title renames the session, through its claude, and the list follows", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  // claude up first: the name goes through it
+  await chat.getByTestId("composer").press("a");
+  await expect(chat.getByTestId("chat-mode")).not.toHaveText("Mode");
+  await chat.getByTestId("chat-title").click();
+  const field = chat.getByTestId("chat-rename");
+  await expect(field).toBeFocused();
+  // Esc keeps the name
+  await field.fill("not this");
+  await field.press("Escape");
+  await expect(chat.getByTestId("chat-title")).toHaveText(TITLE);
+  await chat.getByTestId("composer").press("Meta+Shift+r");
+  await chat.getByTestId("chat-rename").fill("the retry loop");
+  await chat.getByTestId("chat-rename").press("Enter");
+  await expect(chat.getByTestId("chat-title")).toHaveText("the retry loop");
+  await expect.poll(() => chat.title()).toBe("the retry loop");
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { request?: { subtype?: string; title?: string } })?.request?.title ===
+        "the retry loop",
+    ),
+  );
+  // claude code kept it: the main window's row says it
+  await expect(page.locator(`[data-testid="session-row"][data-id="${SID}"]`)).toContainText(
+    "the retry loop",
+    { timeout: 15_000 },
+  );
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });

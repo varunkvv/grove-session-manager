@@ -216,6 +216,12 @@ function settingsControl(r) {
   }
   // the agent goes on in the recording: what it says after a stop is what was recorded
   if (r.subtype === "stop_task") return {};
+  // a rename from the host: claude code keeps it as a custom title (recordings/d-rename)
+  if (r.subtype === "rename_session") {
+    fs.mkdirSync(path.dirname(transcript), { recursive: true });
+    fs.appendFileSync(transcript, `${JSON.stringify({ type: "custom-title", customTitle: r.title, sessionId })}\n`);
+    return {};
+  }
   // a message sent while a turn ran, taken back before it was played (recordings/d-queue)
   if (r.subtype === "cancel_async_message") {
     const i = inbox.findIndex((m) => m.type === "user" && m.uuid === r.message_uuid);

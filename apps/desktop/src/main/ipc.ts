@@ -757,6 +757,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatCopy",
   "chatUnqueue",
   "chatBackground",
+  "chatRename",
   "chatReadFile",
   "chatWatch",
   "chatWarm",
@@ -1141,6 +1142,19 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
       if (!file) return null;
       return readAgentTimeline(file).then(agentView, () => null);
+    },
+
+    async chatRename(id, title) {
+      const name = isText(title, 200) ? title.trim() : "";
+      if (!name || /[\r\n]/.test(name)) throw new AppError("invalid", "That is not a name.");
+      const row = newestRow(deps, id);
+      if (!row)
+        throw new AppError("fresh", "Send it something first: there is nothing to name yet.");
+      // another app has it: its own claude keeps the name it has
+      if (readOnly(id, row)) throw new AppError("live-elsewhere", readOnly(id, row) as string);
+      await chat.rename(id, await where(row), name);
+      // the list reads the transcript again: the name the person gave it wins over grove's own
+      deps.projects.sessionsChanged();
     },
 
     async chatBackground(id) {

@@ -844,6 +844,8 @@ export interface ChatApi {
   chatStepDiff(toolUseId: string): Promise<string[] | null>;
   /** words onto the clipboard: an answer, a code block, the conversation */
   chatCopy(text: string): Promise<Outcome>;
+  /** the session's name, as /rename gives one: claude code keeps it, and grove's list follows */
+  chatRename(title: string): Promise<Outcome>;
   /** the tool under way goes on in the background, and the turn goes on without it (⌃B) */
   chatBackground(): Promise<Outcome<boolean>>;
   /** a queued message, taken back before claude got to it. false: it already had */
@@ -875,6 +877,7 @@ export const CHAT_CHANNELS = [
   "chatCopy",
   "chatUnqueue",
   "chatBackground",
+  "chatRename",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;
