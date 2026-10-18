@@ -4,7 +4,7 @@ import { modelLabel } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion } from "../../shared/ipc.ts";
 import { Markdown } from "./Markdown.tsx";
-import { AskCard, Button, CheckBox, Choice, cx, Diff, Icon, Mono } from "./ui.tsx";
+import { AskCard, Button, CheckBox, Choice, cx, Diff, Icon, Mono, Switch } from "./ui.tsx";
 
 /** a header chip holds this much, as Claude Code's does */
 const HEADER_MAX = 12;
@@ -501,6 +501,112 @@ export function AutoFallbackCard({
   );
 }
 
+/**
+ * an MCP server asks for something: a small form from its schema, or a page to open (a sign-in).
+ * Send, Decline (the server hears no), or Not now (it hears nothing was decided)
+ */
+export function ElicitCard({
+  ask,
+  onAnswer,
+}: {
+  ask: Extract<ChatAsk, { kind: "elicit" }>;
+  onAnswer: (a: ChatAnswer) => void;
+}) {
+  const [values, setValues] = useState<Record<string, string | number | boolean>>({});
+  const missing = ask.fields.some(
+    (f) =>
+      f.required && f.type !== "boolean" && (values[f.key] === undefined || values[f.key] === ""),
+  );
+  const field =
+    "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-3 text-body text-fg placeholder:text-fg-4";
+  return (
+    <AskCard label={`${ask.server} asks`} testId="ask-elicit">
+      {ask.title && <p className="mt-1 font-medium text-fg">{ask.title}</p>}
+      <p className="selectable mt-1 text-fg">{ask.message}</p>
+      {ask.fields.map((f) => (
+        <div key={f.key} className="mt-3" data-testid="elicit-field">
+          <span className="block text-sm text-fg-2">
+            {f.label}
+            {f.required && f.type !== "boolean" && <span className="text-fg-4"> · needed</span>}
+          </span>
+          {f.description && <span className="block text-sm text-fg-4">{f.description}</span>}
+          {f.type === "boolean" ? (
+            <span className="mt-1 block">
+              <Switch
+                label={f.label}
+                checked={values[f.key] === true}
+                onChange={(on) => setValues({ ...values, [f.key]: on })}
+              />
+            </span>
+          ) : f.type === "enum" ? (
+            <select
+              aria-label={f.label}
+              className={cx(field, "mt-1")}
+              value={String(values[f.key] ?? "")}
+              onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+            >
+              <option value="">Pick one</option>
+              {f.options?.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              aria-label={f.label}
+              className={cx(field, "mt-1")}
+              type={f.type === "number" ? "number" : "text"}
+              value={String(values[f.key] ?? "")}
+              onChange={(e) =>
+                setValues({
+                  ...values,
+                  [f.key]:
+                    f.type === "number" && e.target.value !== ""
+                      ? Number(e.target.value)
+                      : e.target.value,
+                })
+              }
+            />
+          )}
+        </div>
+      ))}
+      <div className="mt-3 flex gap-2">
+        {ask.url ? (
+          <Button
+            variant="primary"
+            data-testid="elicit-open"
+            onClick={() => {
+              void window.grove.openExternal(ask.url as string);
+              onAnswer({ kind: "elicit", action: "accept" });
+            }}
+          >
+            Open {new URL(ask.url).host}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            data-testid="elicit-send"
+            disabled={missing}
+            onClick={() => onAnswer({ kind: "elicit", action: "accept", content: values })}
+          >
+            Send
+          </Button>
+        )}
+        <Button
+          data-testid="elicit-decline"
+          onClick={() => onAnswer({ kind: "elicit", action: "decline" })}
+        >
+          Decline
+        </Button>
+        <Button variant="ghost" onClick={() => onAnswer({ kind: "elicit", action: "cancel" })}>
+          Not now
+        </Button>
+      </div>
+    </AskCard>
+  );
+}
+
 /** whichever card the ask is */
 export function Ask({
   ask,
@@ -525,5 +631,6 @@ export function Ask({
   if (ask.kind === "refusal")
     return <RefusalCard ask={ask} onAnswer={onAnswer} onEditPrompt={onEditPrompt} />;
   if (ask.kind === "auto-fallback") return <AutoFallbackCard ask={ask} onAnswer={onAnswer} />;
+  if (ask.kind === "elicit") return <ElicitCard ask={ask} onAnswer={onAnswer} />;
   return <PermissionCard ask={ask} onAnswer={onAnswer} />;
 }

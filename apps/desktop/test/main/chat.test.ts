@@ -835,6 +835,61 @@ describe("grove chat's host", () => {
     });
   });
 
+  it("an MCP server's form is a card, and only the fields it asked for go back", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean);
+    const at = lines.findIndex((l) => JSON.parse(l).msg?.type === "assistant");
+    lines.splice(
+      at,
+      0,
+      JSON.stringify({
+        t: JSON.parse(lines[at] as string).t,
+        dir: "out",
+        msg: {
+          type: "control_request",
+          request_id: "el-1",
+          request: {
+            subtype: "elicitation",
+            mcp_server_name: "tickets",
+            message: "Which board should the card go on?",
+            mode: "form",
+            requested_schema: {
+              type: "object",
+              properties: {
+                board: { type: "string", enum: ["CDIT", "OPS"], title: "Board" },
+                points: { type: "integer", title: "Points" },
+                urgent: { type: "boolean" },
+              },
+              required: ["board"],
+            },
+          },
+        },
+      }),
+    );
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    await s.host.send(SESSION, s.where, HELLO);
+    const card = await ask(s, "elicit");
+    expect(card.fields.map((f) => [f.key, f.type, f.required])).toEqual([
+      ["board", "enum", true],
+      ["points", "number", false],
+      ["urgent", "boolean", false],
+    ]);
+    s.host.answer(SESSION, card.id, {
+      kind: "elicit",
+      action: "accept",
+      content: { board: "CDIT", points: 3, urgent: true, sneaky: "x" },
+    });
+    await turnEnded(s);
+    expect(answers(s)).toContainEqual({
+      action: "accept",
+      content: { board: "CDIT", points: 3, urgent: true },
+    });
+  });
+
   it("knows a dialog by its payload, and leaves one it does not know to claude", () => {
     expect(dialogOf("1", "auto_mode_server_fallback", { paragraphs: ["a", 4, ""] })).toEqual({
       id: "1",

@@ -371,7 +371,9 @@ async function play(turn) {
     if (TOOL_MS && result) await sleep(TOOL_MS);
     if (
       m.type === "control_request" &&
-      (m.request?.subtype === "can_use_tool" || m.request?.subtype === "request_user_dialog")
+      (m.request?.subtype === "can_use_tool" ||
+        m.request?.subtype === "request_user_dialog" ||
+        m.request?.subtype === "elicitation")
     ) {
       out(m);
       const got = await next((x) => x.type === "control_response" && x.response?.request_id === m.request_id);

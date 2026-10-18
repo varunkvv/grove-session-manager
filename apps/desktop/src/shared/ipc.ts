@@ -662,7 +662,29 @@ export type ChatAsk =
   /** the model turned the request down: try it on the fallback, or change what was asked */
   | { id: string; kind: "refusal"; model: string; fallback: string; category?: string }
   /** auto mode fell back to claude code's own classifier, which is billed: go on, or stop */
-  | { id: string; kind: "auto-fallback"; title?: string; paragraphs: string[] };
+  | { id: string; kind: "auto-fallback"; title?: string; paragraphs: string[] }
+  /** an MCP server asks the person for something: a small form, or a page to open (sign-in) */
+  | {
+      id: string;
+      kind: "elicit";
+      server: string;
+      message: string;
+      title?: string;
+      /** a page to open, for "url" mode: nothing to fill in */
+      url?: string;
+      fields: ElicitField[];
+    };
+
+/** one field of an MCP server's form, from its JSON schema's flat properties */
+export interface ElicitField {
+  key: string;
+  label: string;
+  type: "string" | "number" | "boolean" | "enum";
+  required: boolean;
+  description?: string;
+  /** an enum's choices */
+  options?: string[];
+}
 
 export type ChatAnswer =
   /** question text -> the label picked, or what was typed. several picks are comma-separated */
@@ -671,7 +693,13 @@ export type ChatAnswer =
   | { kind: "plan"; approve: boolean; message?: string; mode?: ChatMode }
   | { kind: "permission"; allow: "once" | "always" | "no"; message?: string }
   /** a dialog's button, as claude code names it. null: dismissed, claude does what it would */
-  | { kind: "dialog"; choice: DialogChoice | null };
+  | { kind: "dialog"; choice: DialogChoice | null }
+  /** an MCP server's form: sent, turned down, or left */
+  | {
+      kind: "elicit";
+      action: "accept" | "decline" | "cancel";
+      content?: Record<string, string | number | boolean>;
+    };
 
 export type DialogChoice = "retry_fallback" | "edit_prompt" | "continue" | "interrupt";
 

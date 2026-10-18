@@ -8,6 +8,8 @@ import path from "node:path";
 import type {
   CanUseTool,
   EffortLevel,
+  ElicitationRequest,
+  ElicitationResult,
   PermissionResult,
   PermissionUpdate,
   Query,
@@ -29,6 +31,7 @@ import type {
   ChatRewind,
   ChatStatus,
   DialogChoice,
+  ElicitField,
 } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
@@ -63,6 +66,64 @@ const CHOICES: ReadonlySet<string> = new Set([
  * refusal's fallback and auto mode's billed classifier. neither could be made to come on the wire
  */
 export const DIALOG_KINDS = ["refusal_fallback_prompt", "auto_mode_server_fallback"];
+
+/**
+ * an MCP server's elicitation as a card: a form from its schema's flat properties (string, number,
+ * integer, boolean, enum, as MCP allows), or a page to open. undefined for a schema grove cannot draw
+ */
+export function elicitOf(
+  id: string,
+  r: {
+    serverName: string;
+    message: string;
+    mode?: string;
+    url?: string;
+    title?: string;
+    requestedSchema?: Record<string, unknown>;
+  },
+): ChatAsk | undefined {
+  const base = {
+    id,
+    kind: "elicit" as const,
+    server: r.serverName,
+    message: cut(r.message, 4000),
+    ...(r.title ? { title: cut(r.title, 200) } : {}),
+  };
+  if (r.mode === "url") {
+    return typeof r.url === "string" && /^https?:\/\//.test(r.url)
+      ? { ...base, url: r.url, fields: [] }
+      : undefined;
+  }
+  const props = (r.requestedSchema?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = new Set(
+    Array.isArray(r.requestedSchema?.required) ? (r.requestedSchema.required as string[]) : [],
+  );
+  const fields: ElicitField[] = [];
+  for (const [key, p] of Object.entries(props).slice(0, 20)) {
+    const options = Array.isArray(p.enum)
+      ? p.enum.filter((x): x is string => typeof x === "string")
+      : undefined;
+    const type = options?.length
+      ? "enum"
+      : p.type === "boolean"
+        ? "boolean"
+        : p.type === "number" || p.type === "integer"
+          ? "number"
+          : p.type === "string"
+            ? "string"
+            : undefined;
+    if (!type) return undefined;
+    fields.push({
+      key,
+      label: typeof p.title === "string" ? p.title : key,
+      type,
+      required: required.has(key),
+      ...(typeof p.description === "string" ? { description: cut(p.description, 300) } : {}),
+      ...(options?.length ? { options } : {}),
+    });
+  }
+  return { ...base, fields };
+}
 
 /** a dialog's payload as a card, or undefined for one in a shape grove does not know */
 export function dialogOf(
@@ -120,6 +181,26 @@ export function parseAnswer(raw: unknown): ChatAnswer {
   }
   if (a.kind === "dialog" && (a.choice === null || CHOICES.has(a.choice as string))) {
     return { kind: "dialog", choice: a.choice as DialogChoice | null };
+  }
+  if (
+    a.kind === "elicit" &&
+    (a.action === "accept" || a.action === "decline" || a.action === "cancel")
+  ) {
+    if (a.content === undefined) return { kind: "elicit", action: a.action };
+    const c = a.content as Record<string, unknown> | null;
+    if (!c || typeof c !== "object" || Array.isArray(c) || Object.keys(c).length > 50) throw bad();
+    const clean: Record<string, string | number | boolean> = {};
+    for (const [k, v] of Object.entries(c)) {
+      if (!isText(k, 100)) throw bad();
+      if (
+        typeof v === "boolean" ||
+        (typeof v === "number" && Number.isFinite(v)) ||
+        isText(v, 10_000)
+      )
+        clean[k] = v;
+      else throw bad();
+    }
+    return { kind: "elicit", action: a.action, content: clean };
   }
   throw bad();
 }
@@ -463,6 +544,8 @@ interface Waiting {
   resolve: (r: PermissionResult) => void;
   /** a dialog, not a tool's permission: its answer goes here instead */
   dialog?: (r: UserDialogResult) => void;
+  /** an MCP server's form: its answer goes here */
+  elicit?: (r: ElicitationResult) => void;
 }
 
 interface Hosted {
@@ -898,6 +981,30 @@ export class ChatHost {
     const w = h?.waiting.get(askId);
     if (!h || !w) throw new Error("That question has already been answered.");
     const ask = h.status.asks.find((x) => x.id === askId);
+    if (a.kind === "elicit") {
+      if (!w.elicit || ask?.kind !== "elicit")
+        throw new Error("That answer is for another kind of question.");
+      // only the fields it asked for, each as its kind
+      const content =
+        a.action === "accept" && a.content
+          ? Object.fromEntries(
+              ask.fields.flatMap((f) => {
+                const v = a.content?.[f.key];
+                if (v === undefined) return [];
+                const ok =
+                  (f.type === "boolean" && typeof v === "boolean") ||
+                  (f.type === "number" && typeof v === "number") ||
+                  (f.type === "string" && typeof v === "string") ||
+                  (f.type === "enum" && typeof v === "string" && !!f.options?.includes(v));
+                return ok ? [[f.key, v]] : [];
+              }),
+            )
+          : undefined;
+      h.waiting.delete(askId);
+      this.set(h, { asks: h.status.asks.filter((x) => x.id !== askId) });
+      w.elicit({ action: a.action, ...(content ? { content } : {}) });
+      return;
+    }
     if (a.kind === "dialog") {
       if (!w.dialog) throw new Error("That answer is for another kind of question.");
       const picks: Record<string, readonly string[]> = {
@@ -1043,6 +1150,8 @@ export class ChatHost {
           canUseTool: (tool, input, opts) => this.ask(h, tool, input, opts),
           // a refusal's fallback and auto's billed classifier come as cards, as in vs code
           onUserDialog: (req, opts) => this.dialog(h, req, opts.signal),
+          // an MCP server's form or sign-in page: a card, not a silent decline
+          onElicitation: (req, opts) => this.elicit(h, req, opts.signal),
           supportedDialogKinds: DIALOG_KINDS,
           stderr: (data) => log.warn(`chat ${h.id.slice(0, 8)}:`, data.trimEnd()),
         },
@@ -1487,6 +1596,30 @@ export class ChatHost {
         if (!h.waiting.delete(id)) return;
         this.set(h, { asks: h.status.asks.filter((a) => a.id !== id) });
         resolve({ behavior: "cancelled" });
+      });
+    });
+  }
+
+  private elicit(
+    h: Hosted,
+    req: ElicitationRequest,
+    signal: AbortSignal,
+  ): Promise<ElicitationResult> {
+    const id = randomUUID();
+    const view = elicitOf(id, req);
+    // a form grove cannot draw: turned down, as with no host at all
+    if (!view) return Promise.resolve({ action: "decline" });
+    return new Promise<ElicitationResult>((resolve) => {
+      h.waiting.set(id, {
+        input: {},
+        resolve: () => resolve({ action: "cancel" }),
+        elicit: resolve,
+      });
+      this.set(h, { asks: [...h.status.asks, view] });
+      signal.addEventListener("abort", () => {
+        if (!h.waiting.delete(id)) return;
+        this.set(h, { asks: h.status.asks.filter((a) => a.id !== id) });
+        resolve({ action: "cancel" });
       });
     });
   }
