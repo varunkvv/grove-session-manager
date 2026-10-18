@@ -74,6 +74,14 @@ New since 0.19.33:
   and a usage limit close to its end shows by the send button
 - `/model`, `/effort` and `/plan` open Grove's own menus, and commands meant for a terminal are left out of `/`
 
+Fixed since 0.19.34:
+
+- the chat reads calmer: the `/` and `@` menu looks like the other menus, plan and permission cards share one
+  layout, the model menu says once that its settings are for this session, and one dot breathes in the header
+- the session card says "Working 0:12" with what Claude is doing under it, as the chat window does
+- a card that takes another's place scrolls into view, and a fork into a window that was still opening keeps its words
+- the first arrow key in a list starts from its top row, not from a row the pointer happened to rest on
+
 ## 0.18
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.18 works with Zed.
