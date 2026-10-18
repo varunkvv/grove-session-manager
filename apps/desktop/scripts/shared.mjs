@@ -25,7 +25,18 @@ function nodeBundle(entry, outfile) {
   };
 }
 
-export const mainOptions = () => nodeBundle("src/main/index.ts", "main/index.cjs");
+/**
+ * the agent sdk is an es module that calls createRequire(import.meta.url) when it loads. a cjs
+ * bundle has no import.meta, so main says where it is. main only: a sandboxed preload cannot
+ * require node:url
+ */
+export const mainOptions = () => ({
+  ...nodeBundle("src/main/index.ts", "main/index.cjs"),
+  define: { "import.meta.url": "__grove_import_meta_url" },
+  banner: {
+    js: 'var __grove_import_meta_url = require("node:url").pathToFileURL(__filename).href;',
+  },
+});
 export const preloadOptions = () => nodeBundle("src/preload/index.ts", "preload/index.cjs");
 /**
  * the agent zed runs, under whatever `node` zed finds rather than electron, so it needs nothing
