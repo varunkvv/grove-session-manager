@@ -212,3 +212,23 @@ test("code is coloured in a chat window, as a viewer's text file is, and the pan
   expect(await app.page.locator("[data-testid=panel-text] span[style]").count()).toBe(0);
   expect(await app.page.locator("[data-testid=panel-text] .md-file").count()).toBe(0);
 });
+
+test("a mermaid fence is drawn as a picture, and one that is not a diagram stays code", async () => {
+  const s = seed(
+    "```mermaid\nflowchart LR\n  A[open] --> B{chat}\n  B --> C[files]\n```\n\n```mermaid\nthis is not a diagram\n```",
+  );
+  const chat = await open(s);
+  const blocked: string[] = [];
+  chat.on("console", (m) => {
+    if (/Content Security Policy|Refused to/i.test(m.text())) blocked.push(m.text());
+  });
+  const diagram = chat.getByTestId("diagram");
+  await expect(diagram).toHaveCount(1, { timeout: 20_000 });
+  await expect
+    .poll(() => diagram.evaluate((i: HTMLImageElement) => i.naturalWidth))
+    .toBeGreaterThan(50);
+  await expect(chat.locator('code[data-lang="mermaid"]')).toContainText(
+    "Could not draw this diagram",
+  );
+  expect(blocked).toEqual([]);
+});

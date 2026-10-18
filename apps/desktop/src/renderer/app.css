@@ -468,3 +468,14 @@ dialog::backdrop {
   border-radius: var(--radius-md);
   cursor: zoom-in;
 }
+/* a mermaid diagram: drawn, not code, so it loses the code block's rule */
+.md pre:has(> .md-diagram) {
+  padding: 0;
+  border: 0;
+}
+.md .md-diagram {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 4px 0;
+}

@@ -11,6 +11,7 @@ import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { highlight, highlighted, type Run } from "../logic/highlight.ts";
 import { localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
+import { MermaidDiagram } from "./Mermaid.tsx";
 
 /** an image the agent pointed at: one of the session's files, in a chat window. else its words */
 function Image({ src, alt }: { src?: string; alt?: string }) {
@@ -92,7 +93,9 @@ function Code({ className, children }: { className?: string; children?: ReactNod
   if (!scope || !lang || typeof children !== "string") {
     return <code className={className}>{children}</code>;
   }
-  return <Highlighted lang={lang} code={children.replace(/\n$/, "")} />;
+  const code = children.replace(/\n$/, "");
+  if (lang === "mermaid") return <MermaidDiagram code={code} />;
+  return <Highlighted lang={lang} code={code} />;
 }
 
 const components: Components = {
