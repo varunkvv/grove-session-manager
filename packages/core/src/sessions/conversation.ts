@@ -583,6 +583,56 @@ export function answerOf(work: TimelineState): string {
 /** the tools that change a file. a run of edits to one file is one file edited. */
 export const EDITS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
+/** a diff shows this many lines, then says how many more */
+const DIFF_MAX = 400;
+
+/**
+ * what an edit changed, as lines a diff draws by their first character: "+" added, "-" taken out,
+ * " " around them, "@" where a hunk starts, "…" what was left out. from Claude Code's own patch
+ * (`toolUseResult.structuredPatch`) when there is one, else from the call's input: a Write is all
+ * added, an Edit its old and new strings. undefined for a tool that edits nothing
+ */
+export function editDiff(name: string, input: unknown, result?: unknown): string[] | undefined {
+  if (!EDITS.has(name)) return undefined;
+  const i = isObject(input) ? input : {};
+  const r = isObject(result) ? result : {};
+  const as = (text: unknown, mark: string) =>
+    typeof text === "string"
+      ? text
+          .replace(/\n$/, "")
+          .split("\n")
+          .map((l) => mark + l)
+      : [];
+  let out: string[] = [];
+  const patch = Array.isArray(r.structuredPatch) ? r.structuredPatch.filter(isObject) : [];
+  if (patch.length) {
+    for (const h of patch) {
+      out.push(
+        `@@ -${num(h.oldStart) ?? 0},${num(h.oldLines) ?? 0} +${num(h.newStart) ?? 0},${num(h.newLines) ?? 0} @@`,
+      );
+      if (Array.isArray(h.lines))
+        out.push(...h.lines.filter((l): l is string => typeof l === "string"));
+    }
+  } else if (name === "Write") {
+    out = as(r.content ?? i.content, "+");
+  } else if (name === "Edit") {
+    out = [...as(i.old_string, "-"), ...as(i.new_string, "+")];
+  } else if (name === "MultiEdit" && Array.isArray(i.edits)) {
+    out = i.edits
+      .filter(isObject)
+      .flatMap((e, n) => [
+        ...(n ? ["@@"] : []),
+        ...as(e.old_string, "-"),
+        ...as(e.new_string, "+"),
+      ]);
+  } else if (name === "NotebookEdit") {
+    out = as(i.new_source, "+");
+  }
+  return out.length > DIFF_MAX
+    ? [...out.slice(0, DIFF_MAX), `… ${out.length - DIFF_MAX} more lines`]
+    : out;
+}
+
 export interface TurnNumbers {
   /** tool calls. the advisor runs on the api side and is not one. */
   tools: number;

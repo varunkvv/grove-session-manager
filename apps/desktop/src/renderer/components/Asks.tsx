@@ -3,7 +3,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion } from "../../shared/ipc.ts";
 import { Markdown } from "./Markdown.tsx";
-import { AskCard, Button, CheckBox, Choice, cx, Icon, Mono } from "./ui.tsx";
+import { AskCard, Button, CheckBox, Choice, cx, Diff, Icon, Mono } from "./ui.tsx";
 
 /** a header chip holds this much, as Claude Code's does */
 const HEADER_MAX = 12;
@@ -372,9 +372,16 @@ export function PermissionCard({
         </p>
       )}
       {ask.title && <p className="selectable mt-1 text-fg">{ask.title}</p>}
-      <Mono className="selectable mt-2 block max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-canvas px-3 py-2 text-fg-2">
+      <Mono
+        className={cx(
+          "selectable mt-2 block overflow-y-auto whitespace-pre-wrap break-words text-fg-2",
+          // an edit: the file it is in, over what it changes
+          ask.diff?.length ? "" : "max-h-48 rounded-md bg-canvas px-3 py-2",
+        )}
+      >
         {ask.detail}
       </Mono>
+      {!!ask.diff?.length && <Diff lines={ask.diff} className="mt-1.5" />}
       <div className="mt-3 flex gap-2">
         <Button
           variant="primary"

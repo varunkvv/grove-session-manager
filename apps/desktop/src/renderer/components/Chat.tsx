@@ -579,6 +579,7 @@ export function ChatApp() {
     base: target.cwd,
     open: (file: string) => setPane({ kind: "files", file }),
     agents: (call?: string) => setPane({ kind: "agents", ...(call ? { call } : {}) }),
+    diff: (call: string) => api().chatStepDiff(call),
   };
   /** what runs now, as its claude says: the header counts its workflows and its other agents */
   const busy = (s.agents ?? []).filter((a) => a.state === "running");

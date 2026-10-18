@@ -1,8 +1,14 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import os from "node:os";
-import { ConversationFold, type ConversationState, MESSAGE_MAX } from "./conversation.ts";
-import { TimelineFold, type TimelineState } from "./timeline.ts";
+import {
+  ConversationFold,
+  type ConversationState,
+  EDITS,
+  editDiff,
+  MESSAGE_MAX,
+} from "./conversation.ts";
+import { type LineRef, TimelineFold, type TimelineState } from "./timeline.ts";
 import { readWholeLines } from "./transcriptLines.ts";
 
 /**
@@ -57,6 +63,47 @@ export async function readConversation(
   } finally {
     await fh.close();
   }
+}
+
+/**
+ * what one edit of a session changed, by its call's id: the two lines the fold kept for it (the
+ * call, and its result) read back from the transcript, as `editDiff` draws them. null for a call
+ * that is not an edit of this session's
+ */
+export async function readEditDiff(
+  file: string,
+  toolUseId: string,
+  opts: { home?: string } = {},
+): Promise<string[] | null> {
+  const state = await readConversation(file, undefined, opts);
+  for (const item of state.items) {
+    if (item.kind !== "turn") continue;
+    const step = item.work.steps.find((s) => s.kind === "tool" && s.id === toolUseId);
+    if (step?.kind !== "tool" || !EDITS.has(step.name)) continue;
+    const fh = await open(file, constants.O_RDONLY);
+    try {
+      const line = async (ref?: LineRef) => {
+        if (!ref) return undefined;
+        const buf = Buffer.alloc(ref.length);
+        await fh.read(buf, 0, ref.length, ref.offset);
+        try {
+          return JSON.parse(buf.toString("utf8")) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      };
+      const use = await line(step.use);
+      const blocks = (use?.message as { content?: unknown } | undefined)?.content;
+      const call = Array.isArray(blocks)
+        ? blocks.find((b) => (b as { id?: unknown })?.id === toolUseId)
+        : undefined;
+      const result = (await line(step.ref))?.toolUseResult;
+      return editDiff(step.name, (call as { input?: unknown } | undefined)?.input, result) ?? null;
+    } finally {
+      await fh.close();
+    }
+  }
+  return null;
 }
 
 /**

@@ -4,7 +4,7 @@ import { formatDuration, type StepView, toolLabel } from "@grove/core/pure";
 import { useState } from "react";
 import { useChatScope } from "../state/chatScope.ts";
 import { Markdown } from "./Markdown.tsx";
-import { cx, Icon, Mono, Spinner } from "./ui.tsx";
+import { cx, Diff, Icon, Mono, Spinner } from "./ui.tsx";
 
 /** a second or more: under that a step's time says nothing */
 const took = (ms?: number) => (ms !== undefined && ms >= 1000 ? formatDuration(ms) : "");
@@ -43,24 +43,41 @@ export function Thought({ text, ms }: { text: string; ms?: number }) {
   );
 }
 
+/** the tools whose step opens what they changed */
+const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+
 /** one row of the list: a tool and what it acted on, a thought, or what it said on the way */
 function Step({ step, going }: { step: StepView; going: boolean }) {
   const scope = useChatScope();
+  /** an edit opened: what it changed, read when first opened. null: nothing to show */
+  const [diff, setDiff] = useState<string[] | null>();
+  const [open, setOpen] = useState(false);
   if (step.kind === "thinking") return <Thought text={step.text} ms={step.ms} />;
   if (step.kind === "text") {
     return <p className="selectable mt-1.5 line-clamp-3 text-sm text-fg-3">{step.text}</p>;
   }
   // an agent's step opens the agent: its own transcript, beside the conversation. a workflow's
-  // opens the list, where its run and its agents are
+  // opens the list, where its run and its agents are. a finished edit opens its diff in place
   const agent =
     (step.name === "Agent" || step.name === "Task" || step.name === "Workflow") && scope?.agents;
-  const Row = agent ? "button" : "div";
-  return (
+  const edit = !!scope?.diff && EDIT_TOOLS.has(step.name) && step.ms !== undefined && !step.failed;
+  const click = agent
+    ? () => scope?.agents?.(step.id)
+    : edit
+      ? () => {
+          setOpen(!open);
+          if (diff === undefined) void scope?.diff?.(step.id).then(setDiff, () => setDiff(null));
+        }
+      : undefined;
+  const Row = click ? "button" : "div";
+  const row = (
     <Row
-      {...(agent ? { type: "button" as const, onClick: () => scope?.agents?.(step.id) } : {})}
+      {...(click
+        ? { type: "button" as const, onClick: click, "aria-expanded": edit ? open : undefined }
+        : {})}
       className={cx(
         "mt-1 flex w-full min-w-0 items-baseline gap-2 text-left text-sm",
-        agent && "fade rounded-sm hover:text-fg [&:hover_*]:text-fg-2",
+        click && "fade rounded-sm hover:text-fg [&:hover_*]:text-fg-2",
       )}
       data-testid="step"
       data-failed={step.failed ? "" : undefined}
@@ -81,6 +98,13 @@ function Step({ step, going }: { step: StepView; going: boolean }) {
         )}
       </span>
     </Row>
+  );
+  if (!edit) return row;
+  return (
+    <>
+      {row}
+      {open && diff && <Diff lines={diff} className="mt-1 mb-2" />}
+    </>
   );
 }
 

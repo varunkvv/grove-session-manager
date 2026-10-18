@@ -7,13 +7,14 @@ import {
   type ConversationItem,
   type ConversationState,
   conversationView,
+  editDiff,
   filesWritten,
   MESSAGE_MAX,
   type Turn,
   type TurnView,
   turnNumbers,
 } from "../../src/sessions/conversation.ts";
-import { readConversation } from "../../src/sessions/conversationFile.ts";
+import { readConversation, readEditDiff } from "../../src/sessions/conversationFile.ts";
 import {
   apiError,
   apiErrorMessage,
@@ -793,5 +794,75 @@ describe("a long message", () => {
     expect(panel.text?.length).toBeLessThan(long.length);
     const chat = conversationView(state, { textMax: MESSAGE_MAX }).items[0] as TurnView;
     expect(chat.text).toBe(long);
+  });
+});
+
+describe("what an edit changed", () => {
+  it("draws claude code's own patch, a write as all added, an edit from its strings", () => {
+    const patch = {
+      structuredPatch: [
+        {
+          oldStart: 1,
+          oldLines: 3,
+          newStart: 1,
+          newLines: 3,
+          lines: [" alpha", "-beta", "+BETA", " gamma"],
+        },
+      ],
+    };
+    expect(editDiff("Edit", { old_string: "beta", new_string: "BETA" }, patch)).toEqual([
+      "@@ -1,3 +1,3 @@",
+      " alpha",
+      "-beta",
+      "+BETA",
+      " gamma",
+    ]);
+    // a write that made the file: its patch is empty, its content is all of it
+    expect(
+      editDiff(
+        "Write",
+        { content: "a\nb\n" },
+        { type: "create", content: "a\nb\n", structuredPatch: [] },
+      ),
+    ).toEqual(["+a", "+b"]);
+    expect(editDiff("Edit", { old_string: "x\ny", new_string: "z" })).toEqual(["-x", "-y", "+z"]);
+    expect(
+      editDiff("MultiEdit", {
+        edits: [
+          { old_string: "a", new_string: "b" },
+          { old_string: "c", new_string: "d" },
+        ],
+      }),
+    ).toEqual(["-a", "+b", "@@", "-c", "+d"]);
+    expect(editDiff("Bash", { command: "ls" })).toBeUndefined();
+    const long = editDiff("Write", { content: "x\n".repeat(450) });
+    expect(long).toHaveLength(401);
+    expect(long?.at(-1)).toBe("… 50 more lines");
+  });
+
+  it("reads one edit's diff back from the transcript by its call's id", async () => {
+    const file = sandboxFile(
+      jsonl([
+        prompt("change beta", 0),
+        says(
+          "m1",
+          call("t1", "Edit", { file_path: "/p/e.txt", old_string: "beta", new_string: "BETA" }),
+          1,
+        ),
+        result("t1", "updated", 2, {
+          told: {
+            structuredPatch: [
+              { oldStart: 2, oldLines: 1, newStart: 2, newLines: 1, lines: ["-beta", "+BETA"] },
+            ],
+          },
+        }),
+        says("m2", call("t2", "Bash", { command: "ls" }), 3),
+        result("t2", "e.txt", 4),
+      ]),
+    );
+    expect(await readEditDiff(file, "t1")).toEqual(["@@ -2,1 +2,1 @@", "-beta", "+BETA"]);
+    // not an edit, not there
+    expect(await readEditDiff(file, "t2")).toBeNull();
+    expect(await readEditDiff(file, "nope")).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import {
   type Runtime,
   readAgentTimeline,
   readConversation,
+  readEditDiff,
   runDetached,
   runGit,
   type SessionAgent,
@@ -1135,6 +1136,12 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
       if (!file) return null;
       return readAgentTimeline(file).then(agentView, () => null);
+    },
+
+    async chatStepDiff(id, toolUseId) {
+      const row = newestRow(deps, id);
+      if (!row || !isText(toolUseId, 200)) return null;
+      return readEditDiff(row.key, toolUseId).catch(() => null);
     },
 
     async chatStopAgent(id, agentId) {

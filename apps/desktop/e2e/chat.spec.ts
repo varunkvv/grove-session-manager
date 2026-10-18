@@ -313,11 +313,17 @@ test("a plan is approved into a mode, and a permission is turned down with a rea
     updatedPermissions: [{ type: "setMode", mode: "acceptEdits", destination: "session" }],
   });
   await expect(chat.getByTestId("chat-stop")).toHaveCount(0, { timeout: 15_000 });
-  // a permission, turned down with words of its own
+  // what its Write made opens from the step, as a diff
+  const turn = chat.getByTestId("turn").last();
+  await turn.getByTestId("turn-steps-toggle").click();
+  await turn.getByTestId("step").filter({ hasText: "proj/notes.txt" }).click();
+  await expect(turn.getByTestId("diff")).toContainText("+hi");
+  // a permission, turned down with words of its own: an edit's card shows what it would write
   await composer.fill(WRITE);
   await composer.press("Enter");
   const ask = chat.getByTestId("ask-permission");
   await expect(ask).toBeVisible({ timeout: 15_000 });
+  await expect(ask.getByTestId("diff")).toHaveText("+x");
   await ask.getByTestId("permission-why").fill("call it notes.txt instead");
   await expect(ask.getByTestId("permission-deny")).toHaveText("Deny and say why");
   await ask.getByTestId("permission-why").press("Enter");

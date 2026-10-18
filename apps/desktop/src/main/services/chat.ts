@@ -14,7 +14,7 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { firstSentence, toolLabel, toolTarget } from "@grove/core";
+import { editDiff, firstSentence, toolLabel, toolTarget } from "@grove/core";
 import type {
   ChatAgent,
   ChatAnswer,
@@ -1159,6 +1159,7 @@ export class ChatHost {
               tool,
               ...(opts.title ? { title: opts.title } : {}),
               detail: detailOf(input),
+              ...(editDiff(tool, input) ? { diff: editDiff(tool, input) } : {}),
               canAlways: !!opts.suggestions?.length && !opts.suppressAlwaysAllowRule,
               // a subagent's call: the card names which one
               ...(opts.agentID

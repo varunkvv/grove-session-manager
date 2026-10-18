@@ -1250,6 +1250,41 @@ export function ContextRing({ used, limit }: { used: number; limit: number }) {
   );
 }
 
+/**
+ * what an edit changes, line by line: added in green, taken out in red, the lines around them and
+ * where each hunk starts quiet. lines come as `editDiff` makes them, their first character the mark
+ */
+export function Diff({ lines, className }: { lines: readonly string[]; className?: string }) {
+  return (
+    <pre
+      className={cx(
+        "selectable max-h-72 overflow-auto rounded-md bg-canvas py-1.5 font-mono text-meta",
+        className,
+      )}
+      data-testid="diff"
+    >
+      {lines.map((l, i) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: a diff's lines are in place
+          key={i}
+          className={cx(
+            "block px-3 whitespace-pre-wrap break-words",
+            l[0] === "+"
+              ? "text-hue-green"
+              : l[0] === "-"
+                ? "text-hue-red"
+                : l[0] === "@" || l[0] === "…"
+                  ? "text-fg-4"
+                  : "text-fg-3",
+          )}
+        >
+          {l || " "}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
 /** ultracode is on: beside the model, in its own colour */
 export function UltraChip() {
   return (

@@ -12,6 +12,8 @@ export interface ChatScope {
   open?: (file: string) => void;
   /** the session's agents, in the drawer. with a call's id, the agent that call started */
   agents?: (call?: string) => void;
+  /** what one of the session's edits changed, by its call's id. null: nothing to show */
+  diff?: (call: string) => Promise<string[] | null>;
 }
 
 export const ChatScopeContext = createContext<ChatScope | null>(null);
