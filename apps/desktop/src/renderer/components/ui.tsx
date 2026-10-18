@@ -37,7 +37,8 @@ export type IconName =
   | "warning"
   | "check"
   | "chart"
-  | "file";
+  | "file"
+  | "arrow";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -69,6 +70,7 @@ const PATHS: Record<IconName, ReactNode> = {
   file: (
     <path d="M4 1.75h4.75L12 5v8.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1ZM8.75 1.75V5H12" />
   ),
+  arrow: <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />,
 };
 
 export function Icon({
@@ -1143,6 +1145,39 @@ export function ModePill({
       )}
     >
       {mode ? MODE_WORD[mode] : "Mode"}
+    </button>
+  );
+}
+
+/**
+ * grove chat's composer: what is attached, the message, and the toolbar under it, in one box. the
+ * box takes the field's focus look, so the field inside it has none of its own
+ */
+export function ComposerFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="no-drag rounded-lg border border-line-strong bg-canvas focus-within:border-accent-line focus-within:outline-2 focus-within:outline-accent-soft">
+      {children}
+    </div>
+  );
+}
+
+/** the composer's send: the accent once there is something to send */
+export function SendButton({
+  ready,
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { ready: boolean }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={cx(
+        "no-drag fade inline-flex size-7 shrink-0 items-center justify-center rounded-md",
+        ready ? "bg-accent-solid text-on-solid hover:opacity-90" : "bg-raised text-fg-4",
+        className,
+      )}
+    >
+      <Icon name="arrow" size={14} />
     </button>
   );
 }

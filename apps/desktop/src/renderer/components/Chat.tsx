@@ -23,6 +23,7 @@ import {
   AskCard,
   Button,
   Choice,
+  ComposerFrame,
   cx,
   Icon,
   IconButton,
@@ -30,6 +31,7 @@ import {
   Mono,
   ProjectMark,
   Select,
+  SendButton,
   Spinner,
   StateLabel,
 } from "./ui.tsx";
@@ -384,9 +386,19 @@ export function ChatApp() {
     onPick: (text, at) => {
       setDraft(text);
       setCaret(at);
-      requestAnimationFrame(() => composer.current?.setSelectionRange(at, at));
+      placeCaret.current = at;
     },
   });
+
+  // a pick put words in the middle of the message: the caret goes after them as soon as they are
+  // drawn, before the next key can land somewhere else
+  const placeCaret = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the draft is when, not what
+  useLayoutEffect(() => {
+    if (placeCaret.current === null) return;
+    composer.current?.setSelectionRange(placeCaret.current, placeCaret.current);
+    placeCaret.current = null;
+  }, [draft]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: these are when to scroll, not what is read
   useLayoutEffect(() => {
@@ -527,37 +539,6 @@ export function ChatApp() {
         ) : (
           running && <StateLabel state="working" within="panel" />
         )}
-        {/* the mode is the settings', known once claude is up. shift-tab starts it before that */}
-        {!readOnly && s.live && (
-          <ModePill
-            mode={s.mode}
-            title="Permission mode (shift-tab)"
-            data-testid="chat-mode"
-            onClick={() => void stepMode()}
-          />
-        )}
-        {!readOnly && s.models.length > 0 && (
-          <Select
-            wrapClassName="w-36 shrink-0"
-            className="h-6 text-sm"
-            value={s.models.find((m) => m.value === s.model || m.id === s.model)?.value ?? ""}
-            data-testid="chat-model"
-            onChange={(e) =>
-              void api()
-                .chatSetModel(e.target.value)
-                .then((o) => setError(failed(o)))
-            }
-          >
-            {!s.models.some((m) => m.value === s.model || m.id === s.model) && (
-              <option value="">{s.model ? modelLabel(s.model) : "Model"}</option>
-            )}
-            {s.models.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </Select>
-        )}
         {/* a new session has nothing to open in the editor until it has said something */}
         {!target.fresh && (
           <Button
@@ -672,7 +653,7 @@ export function ChatApp() {
               </div>
             </div>
             <footer
-              className="shrink-0 border-t border-line"
+              className="shrink-0"
               onDragOver={(e) => {
                 if (!readOnly) e.preventDefault();
               }}
@@ -699,9 +680,9 @@ export function ChatApp() {
                     {readOnly}
                   </p>
                 ) : (
-                  <>
+                  <ComposerFrame>
                     {images.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-2" data-testid="composer-images">
+                      <div className="flex flex-wrap gap-2 px-3 pt-3" data-testid="composer-images">
                         {images.map((img, i) => (
                           <div
                             // biome-ignore lint/suspicious/noArrayIndexKey: the same image can be pasted twice
@@ -732,7 +713,8 @@ export function ChatApp() {
                       value={draft}
                       placeholder={running ? "Queue a message…" : "Message Claude…"}
                       data-testid="composer"
-                      className="no-drag max-h-[40vh] min-h-9 w-full resize-none rounded-lg border border-line-strong bg-canvas px-3 py-2 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
+                      className="no-drag block max-h-[40vh] min-h-9 w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
+                      data-composer
                       onChange={(e) => {
                         setDraft(e.target.value);
                         setCaret(e.target.selectionStart);
@@ -769,15 +751,63 @@ export function ChatApp() {
                         }
                       }}
                     />
-                    <p className="mt-1.5 flex items-center gap-1 text-meta text-fg-4">
-                      {s.starting && <Spinner size={10} />}
-                      {s.starting
-                        ? "Starting Claude…"
-                        : running
-                          ? "Esc stops the turn. What you send now waits for it."
-                          : "Enter sends, Shift-Enter is a new line, Shift-Tab changes the mode."}
-                    </p>
-                  </>
+                    <div
+                      className="flex h-10 items-center gap-1.5 px-2"
+                      data-testid="composer-toolbar"
+                    >
+                      {/* the mode is the settings', known once claude is up. shift-tab starts it before that */}
+                      {s.live && (
+                        <ModePill
+                          mode={s.mode}
+                          title="Permission mode (Shift-Tab)"
+                          data-testid="chat-mode"
+                          onClick={() => void stepMode()}
+                        />
+                      )}
+                      {s.models.length > 0 && (
+                        <Select
+                          wrapClassName="w-36 shrink-0"
+                          className="h-6 text-sm"
+                          value={
+                            s.models.find((m) => m.value === s.model || m.id === s.model)?.value ??
+                            ""
+                          }
+                          data-testid="chat-model"
+                          onChange={(e) =>
+                            void api()
+                              .chatSetModel(e.target.value)
+                              .then((o) => setError(failed(o)))
+                          }
+                        >
+                          {!s.models.some((m) => m.value === s.model || m.id === s.model) && (
+                            <option value="">{s.model ? modelLabel(s.model) : "Model"}</option>
+                          )}
+                          {s.models.map((m) => (
+                            <option key={m.value} value={m.value}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                      <span className="flex-1" />
+                      {s.starting && (
+                        <span
+                          className="flex items-center gap-1.5 text-sm text-fg-4"
+                          data-testid="chat-starting"
+                        >
+                          <Spinner size={10} />
+                          Starting Claude…
+                        </span>
+                      )}
+                      <SendButton
+                        ready={!!draft.trim() || images.length > 0}
+                        title="Send (Enter). Shift-Enter is a new line"
+                        aria-label="Send"
+                        data-testid="chat-send"
+                        onClick={() => void send()}
+                      />
+                    </div>
+                  </ComposerFrame>
                 )}
               </div>
             </footer>

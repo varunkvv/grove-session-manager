@@ -200,6 +200,11 @@ input[type="checkbox"]:focus-visible {
   outline: none;
 }
 
+/* grove chat's message field sits in the composer's box, which shows the focus for it */
+[data-composer]:focus-visible {
+  outline: none;
+}
+
 /* the palette's field is always focused: its bottom line stays a line */
 [data-palette-input]:focus-visible {
   outline: none;
