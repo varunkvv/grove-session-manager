@@ -7,7 +7,8 @@
 // - any other control request: answered with success
 // it also writes the transcript the real claude would, so grove reads the turn back from disk.
 // env: GROVE_FAKE_CHAT_LOG (what it got, a JSON line each), GROVE_FAKE_CHAT_DELAY_MS (the most it
-// waits between two lines, 15 by default)
+// waits between two lines, 15 by default), GROVE_FAKE_CHAT_RECORDINGS (a folder of recordings to
+// play instead of these: the perf script's long answer)
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -23,13 +24,14 @@ const LOG = process.env.GROVE_FAKE_CHAT_LOG;
 const DELAY = Number(process.env.GROVE_FAKE_CHAT_DELAY_MS ?? 15);
 const note = (o) => LOG && fs.appendFileSync(LOG, `${JSON.stringify(o)}\n`);
 
+const DIR = process.env.GROVE_FAKE_CHAT_RECORDINGS || __dirname;
 const recordings = fs
-  .readdirSync(__dirname)
+  .readdirSync(DIR)
   .filter((f) => f.endsWith(".jsonl"))
   .sort((a, b) => (a === "turn.jsonl" ? -1 : b === "turn.jsonl" ? 1 : a.localeCompare(b)))
   .map((f) =>
     fs
-      .readFileSync(path.join(__dirname, f), "utf8")
+      .readFileSync(path.join(DIR, f), "utf8")
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l))

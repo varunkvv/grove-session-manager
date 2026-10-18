@@ -22,7 +22,8 @@
     "app:build": "pnpm --filter @grove/desktop build",
     "app:e2e": "pnpm --filter @grove/desktop test:e2e",
     "app:package": "pnpm --filter @grove/desktop package",
-    "app:packaged": "pnpm --filter @grove/desktop test:packaged"
+    "app:packaged": "pnpm --filter @grove/desktop test:packaged",
+    "app:perf": "pnpm --filter @grove/desktop perf"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

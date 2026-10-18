@@ -11,6 +11,7 @@
     "src/shared",
     "scripts",
     "e2e",
+    "perf",
     "test/main",
     "test/node",
     "playwright.config.ts",
