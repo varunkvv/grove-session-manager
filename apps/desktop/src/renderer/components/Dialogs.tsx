@@ -258,7 +258,7 @@ function KeyRecorder({ value, onChange }: { value: string; onChange: (key: strin
         onChange(key);
         setRecording(false);
       }}
-      className="min-w-24 font-mono"
+      className="min-w-24"
     >
       {recording ? "Press keys…" : value === "none" ? "None" : keyLabel(value)}
     </Button>

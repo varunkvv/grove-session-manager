@@ -558,9 +558,17 @@ export function ChatApp() {
             ))}
           </Select>
         )}
-        <Button size="sm" data-testid="chat-open-editor" title="cmd-shift-Enter" onClick={toEditor}>
-          Open in {target.editor}
-        </Button>
+        {/* a new session has nothing to open in the editor until it has said something */}
+        {!target.fresh && (
+          <Button
+            size="sm"
+            data-testid="chat-open-editor"
+            title="cmd-shift-Enter"
+            onClick={toEditor}
+          >
+            Open in {target.editor}
+          </Button>
+        )}
         <IconButton
           label="Files"
           aria-pressed={!!pane}
@@ -609,6 +617,12 @@ export function ChatApp() {
                     data-testid="chat-description"
                   >
                     {session.description}
+                  </p>
+                )}
+                {target.fresh && pending === null && (
+                  <p className={QUIET} data-testid="chat-fresh">
+                    A new session in {session.where}. Claude starts as you type, with the project's
+                    settings.
                   </p>
                 )}
                 {talk === null && pending === null && !target.fresh && (

@@ -337,8 +337,10 @@ test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project
   const id = await c.getByTestId("chat").getAttribute("data-id");
   expect(id).toMatch(/^[0-9a-f-]{36}$/);
   expect(id).not.toBe(SID);
-  // nothing to resume: no transcript, and nothing said about one
+  // nothing to resume: no transcript, and nothing said about one. nothing to open in the editor yet
   await expect(c.getByTestId("chat-gone")).toHaveCount(0);
+  await expect(c.getByTestId("chat-fresh")).toContainText("chat-trial");
+  await expect(c.getByTestId("chat-open-editor")).toHaveCount(0);
   const composer = c.getByTestId("composer");
   await expect(composer).toBeFocused();
   await composer.fill(HELLO);
@@ -355,6 +357,7 @@ test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project
   });
   await expect(c.locator("h1")).toHaveText(HELLO);
   await expect(c.getByTestId("turn")).toHaveCount(1);
+  await expect(c.getByTestId("chat-open-editor")).toBeVisible();
   // the editor's project form moved a key over
   await page.bringToFront();
   await page.keyboard.press("Meta+Shift+n");
