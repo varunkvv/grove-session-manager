@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type MouseEvent,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   useEffect,
   useId,
@@ -39,7 +40,8 @@ export type IconName =
   | "chart"
   | "file"
   | "arrow"
-  | "stop";
+  | "stop"
+  | "more";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -73,6 +75,13 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   arrow: <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />,
   stop: <rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1.5" fill="currentColor" />,
+  more: (
+    <>
+      <circle cx="3.5" cy="8" r="0.9" fill="currentColor" />
+      <circle cx="8" cy="8" r="0.9" fill="currentColor" />
+      <circle cx="12.5" cy="8" r="0.9" fill="currentColor" />
+    </>
+  ),
 };
 
 export function Icon({
@@ -1227,7 +1236,7 @@ export function ToolbarButton({
   className,
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: Ref<HTMLButtonElement> }) {
   return (
     <button
       type="button"
@@ -1249,6 +1258,8 @@ export interface MenuItem {
   checked?: boolean;
   /** before the label: a mode's dot */
   mark?: ReactNode;
+  /** the key that does the same, on the right */
+  keys?: string;
 }
 
 /**
@@ -1265,6 +1276,7 @@ export function Menu({
   width = 300,
   children,
   footer,
+  down,
 }: {
   /** the button it opens from */
   anchor: DOMRect;
@@ -1277,6 +1289,8 @@ export function Menu({
   children?: ReactNode;
   /** the last line: the key that does the same */
   footer?: string;
+  /** opens down from a button at the top of the window, its right edge on the button's */
+  down?: boolean;
 }) {
   const at = Math.max(
     0,
@@ -1292,11 +1306,19 @@ export function Menu({
       open
       onClose={onClose}
       testId={testId}
-      style={{
-        left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
-        bottom: window.innerHeight - anchor.top + 6,
-        width,
-      }}
+      style={
+        down
+          ? {
+              left: Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8)),
+              top: anchor.bottom + 6,
+              width,
+            }
+          : {
+              left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
+              bottom: window.innerHeight - anchor.top + 6,
+              width,
+            }
+      }
     >
       <div
         ref={box}
@@ -1337,6 +1359,11 @@ export function Menu({
               <span className="block truncate text-body text-fg">{it.label}</span>
               {it.description && <span className="block text-sm text-fg-4">{it.description}</span>}
             </span>
+            {it.keys && (
+              <span className="flex h-5 items-center">
+                <Kbd>{it.keys}</Kbd>
+              </span>
+            )}
             <span className="flex h-5 w-3.5 items-center">
               {it.checked && <Icon name="check" size={12} className="text-fg-2" />}
             </span>

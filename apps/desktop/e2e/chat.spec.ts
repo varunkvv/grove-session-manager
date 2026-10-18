@@ -319,6 +319,37 @@ test("the mode is a menu: every mode the session can take, said in a line, and t
   await expect(button).toHaveText("Plan");
 });
 
+test("⌘K runs any action by name, ⌘/ lists every key, and the header's … holds the session's", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("composer").press("Meta+k");
+  const palette = chat.getByTestId("chat-palette");
+  await expect(palette).toBeVisible();
+  await chat.getByTestId("chat-palette-input").fill("perm mode");
+  await expect(palette.getByTestId("chat-palette-item").first()).toContainText("Permission mode");
+  await chat.getByTestId("chat-palette-input").press("Enter");
+  await expect(palette).toHaveCount(0);
+  await expect(chat.getByTestId("mode-menu")).toBeVisible();
+  await chat.getByTestId("mode-menu").press("Escape");
+  // a key runs it from anywhere: the files pane
+  await chat.getByTestId("composer").press("Meta+Shift+f");
+  await expect(chat.getByTestId("files")).toBeVisible();
+  await chat.getByTestId("composer").press("Meta+/");
+  const sheet = chat.getByTestId("chat-shortcuts");
+  await expect(sheet).toContainText("Model and effort…");
+  await expect(sheet).toContainText("⇧⌘E");
+  await sheet.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  // the files pane did not close on that Esc: the sheet took it
+  await expect(chat.getByTestId("files")).toBeVisible();
+  await chat.getByTestId("chat-more").click();
+  await expect(chat.getByTestId("more-menu").getByTestId("menu-item")).toContainText([
+    "Open in VS Code",
+  ]);
+});
+
 test("the model is a menu with the model's own effort levels and ultracode, read back from claude", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s);
@@ -636,7 +667,9 @@ test("Open in the editor while a turn runs moves it there once the turn is over"
   await composer.fill(COUNT);
   await composer.press("Enter");
   await expect(chat.getByTestId("panel-text")).toContainText("3");
-  await chat.getByTestId("chat-open-editor").click();
+  // Open in the editor lives in the header's … menu
+  await chat.getByTestId("chat-more").click();
+  await chat.getByTestId("more-menu").locator('[data-key="editor"]').click();
   await chat.getByTestId("move-after").click();
   await expect(chat.getByTestId("chat-note")).toContainText("once this turn has finished");
   // nothing moves while it works
@@ -860,7 +893,9 @@ test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project
   // nothing to resume: no transcript, and nothing said about one. nothing to open in the editor yet
   await expect(c.getByTestId("chat-gone")).toHaveCount(0);
   await expect(c.getByTestId("chat-fresh")).toContainText("chat-trial");
-  await expect(c.getByTestId("chat-open-editor")).toHaveCount(0);
+  await c.getByTestId("chat-more").click();
+  await expect(c.getByTestId("more-menu").locator('[data-key="editor"]')).toHaveCount(0);
+  await c.getByTestId("more-menu").press("Escape");
   const composer = c.getByTestId("composer");
   await expect(composer).toBeFocused();
   await composer.fill(HELLO);
@@ -877,7 +912,9 @@ test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project
   });
   await expect(c.locator("h1")).toHaveText(HELLO);
   await expect(c.getByTestId("turn")).toHaveCount(1);
-  await expect(c.getByTestId("chat-open-editor")).toBeVisible();
+  await c.getByTestId("chat-more").click();
+  await expect(c.getByTestId("more-menu").locator('[data-key="editor"]')).toBeVisible();
+  await c.getByTestId("more-menu").press("Escape");
   // the editor's project form moved a key over
   await page.bringToFront();
   await page.keyboard.press("Meta+Shift+n");

@@ -15,11 +15,13 @@ import type {
   Outcome,
 } from "../../shared/ipc.ts";
 import { attachKind, bytes } from "../logic/attach.ts";
+import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
 import { AgentList, AgentViewer } from "./Agents.tsx";
 import { Ask } from "./Asks.tsx";
+import { CommandPalette, ShortcutSheet } from "./ChatPalette.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
@@ -222,11 +224,15 @@ export function ChatApp() {
   /** what main said that is not a failure: when it will open in the editor */
   const [note, setNote] = useState<string>();
   const [moving, setMoving] = useState(false);
-  /** the toolbar menu that is open, and the button it opens from */
+  /** the menu that is open, and the button it opens from: the toolbar's, or the header's … */
   const [menu, setMenu] = useState<{
-    kind: "mode" | "model" | "attach";
+    kind: "mode" | "model" | "attach" | "more";
     anchor: DOMRect;
   } | null>(null);
+  /** ⌘K's palette or ⌘/'s sheet of keys */
+  const [sheet, setSheet] = useState<"palette" | "shortcuts" | null>(null);
+  const modeButton = useRef<HTMLButtonElement>(null);
+  const modelButton = useRef<HTMLButtonElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -303,17 +309,20 @@ export function ChatApp() {
     };
   }, [load]);
 
-  // cmd-shift-Enter is the editor, as it is on a list in the main window. Esc closes the files
-  // pane, unless the composer took it to stop a turn
-  const editorKey = useRef<() => void>(() => {});
+  // every action's key, from wherever the keyboard is (cmd-shift-Enter is the editor, as on a list
+  // in the main window). Esc closes the pane beside the conversation, unless the composer took it
+  // to stop a turn
+  const actionsRef = useRef<ChatAction[]>([]);
   const paneOpen = useRef(false);
   paneOpen.current = !!pane;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.shiftKey && e.key === "Enter") {
+      if (e.isComposing || e.defaultPrevented) return;
+      const hit = actionsRef.current.find((a) => a.keys && !a.off && pressed(e, a.keys));
+      if (hit) {
         e.preventDefault();
-        editorKey.current();
-      } else if (e.key === "Escape" && !e.defaultPrevented && paneOpen.current) {
+        hit.run();
+      } else if (e.key === "Escape" && paneOpen.current) {
         e.preventDefault();
         setPane(null);
       }
@@ -513,11 +522,11 @@ export function ChatApp() {
     composer.current?.focus();
   };
 
-  const openMenu = (kind: "mode" | "model" | "attach", el: HTMLElement) => {
+  const openMenu = (kind: "mode" | "model" | "attach" | "more", el: HTMLElement) => {
     if (menu?.kind === kind) return setMenu(null);
     setMenu({ kind, anchor: el.getBoundingClientRect() });
     // the rows are claude's: opening the menu starts it, as shift-tab does
-    if (kind !== "attach") warm();
+    if (kind === "mode" || kind === "model") warm();
   };
 
   const closeMenu = () => {
@@ -551,7 +560,6 @@ export function ChatApp() {
   };
 
   const toEditor = () => (running ? setMoving(!moving) : void openInEditor("now"));
-  editorKey.current = toEditor;
   const scope = {
     session: session.sessionId,
     base: target.cwd,
@@ -575,6 +583,102 @@ export function ChatApp() {
       ? agents?.find((a) => a.id === pane.agent && a.kind !== "workflow")
       : undefined;
   const stopAgent = async (id: string) => setError(failed(await api().chatStopAgent(id)));
+  const toggle = (kind: "files" | "agents") =>
+    setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
+
+  /** everything the window does: the palette lists it, the sheet shows its keys, the keys run it */
+  const actions: ChatAction[] = [
+    {
+      id: "editor",
+      group: "Session",
+      label: `Open in ${target.editor}`,
+      keys: { key: "Enter", meta: true, shift: true },
+      // a new session has nothing to open in the editor until it has said something
+      off: !!target.fresh,
+      run: toEditor,
+    },
+    {
+      id: "attach",
+      group: "Composer",
+      label: "Attach files…",
+      keys: { key: "u", meta: true },
+      off: !!readOnly,
+      run: () => picker.current?.click(),
+    },
+    {
+      id: "mention",
+      group: "Composer",
+      label: "Mention a file",
+      shown: "@",
+      off: !!readOnly,
+      run: mention,
+    },
+    {
+      id: "mode",
+      group: "Composer",
+      label: "Permission mode…",
+      keys: { key: "m", meta: true, shift: true },
+      off: !!readOnly,
+      run: () => modeButton.current && openMenu("mode", modeButton.current),
+    },
+    {
+      id: "next-mode",
+      group: "Composer",
+      label: "Next permission mode",
+      shown: "⇧⇥",
+      off: !!readOnly,
+      run: () => void stepMode(),
+    },
+    {
+      id: "model",
+      group: "Composer",
+      label: "Model and effort…",
+      keys: { key: "e", meta: true, shift: true },
+      off: !!readOnly,
+      run: () => modelButton.current && openMenu("model", modelButton.current),
+    },
+    {
+      id: "stop",
+      group: "Composer",
+      label: "Stop the turn",
+      shown: "esc",
+      off: !running,
+      run: () => void api().chatInterrupt(),
+    },
+    {
+      id: "files",
+      group: "View",
+      label: "Files",
+      keys: { key: "f", meta: true, shift: true },
+      run: () => toggle("files"),
+    },
+    {
+      id: "agents",
+      group: "View",
+      label: "Agents",
+      keys: { key: "g", meta: true, shift: true },
+      run: () => toggle("agents"),
+    },
+    {
+      id: "palette",
+      group: "View",
+      label: "Command palette",
+      keys: { key: "k", meta: true },
+      run: () => setSheet(sheet === "palette" ? null : "palette"),
+    },
+    {
+      id: "shortcuts",
+      group: "View",
+      label: "Keyboard shortcuts",
+      keys: { key: "/", meta: true },
+      run: () => setSheet(sheet === "shortcuts" ? null : "shortcuts"),
+    },
+  ];
+  actionsRef.current = actions;
+  const closeSheet = () => {
+    setSheet(null);
+    composer.current?.focus();
+  };
 
   return (
     <div
@@ -619,17 +723,6 @@ export function ChatApp() {
             </span>
           )
         )}
-        {/* a new session has nothing to open in the editor until it has said something */}
-        {!target.fresh && (
-          <Button
-            size="sm"
-            data-testid="chat-open-editor"
-            title="cmd-shift-Enter"
-            onClick={toEditor}
-          >
-            Open in {target.editor}
-          </Button>
-        )}
         {runningWords && (
           <Button
             size="sm"
@@ -650,6 +743,17 @@ export function ChatApp() {
           onClick={() => setPane(pane?.kind === "files" ? null : { kind: "files" })}
         >
           <Icon name="file" />
+        </IconButton>
+        {/* what is about the session as a whole: open it elsewhere, rename, export, the keys */}
+        <IconButton
+          label="More"
+          aria-haspopup="menu"
+          aria-expanded={menu?.kind === "more"}
+          data-testid="chat-more"
+          className={cx(menu?.kind === "more" && "bg-raised text-fg")}
+          onClick={(e) => openMenu("more", e.currentTarget)}
+        >
+          <Icon name="more" />
         </IconButton>
       </header>
       {moving && (
@@ -854,7 +958,8 @@ export function ChatApp() {
                       />
                       {/* the mode is the settings', known once claude is up: opening the menu starts it */}
                       <ToolbarButton
-                        title="Permission mode (Shift-Tab)"
+                        ref={modeButton}
+                        title="Permission mode (⇧⌘M, or ⇧⇥ to step)"
                         aria-haspopup="menu"
                         aria-expanded={menu?.kind === "mode"}
                         data-testid="chat-mode"
@@ -866,7 +971,8 @@ export function ChatApp() {
                         <Icon name="chevron" size={9} className="rotate-90" faint />
                       </ToolbarButton>
                       <ToolbarButton
-                        title="Model and effort"
+                        ref={modelButton}
+                        title="Model and effort (⇧⌘E)"
                         aria-haspopup="menu"
                         aria-expanded={menu?.kind === "model"}
                         data-testid="chat-model"
@@ -950,6 +1056,31 @@ export function ChatApp() {
             ))}
         </div>
       </ChatScopeContext.Provider>
+      {menu?.kind === "more" && (
+        <Menu
+          anchor={menu.anchor}
+          testId="more-menu"
+          width={280}
+          down
+          onClose={closeMenu}
+          onPick={(id) => {
+            closeMenu();
+            actions.find((a) => a.id === id)?.run();
+          }}
+          items={actions
+            .filter(
+              (a) =>
+                !a.off && (a.group === "Session" || a.id === "shortcuts" || a.id === "palette"),
+            )
+            .map((a) => ({
+              key: a.id,
+              label: a.label,
+              ...(a.keys ? { keys: keysLabel(a.keys) } : {}),
+            }))}
+        />
+      )}
+      {sheet === "palette" && <CommandPalette actions={actions} onClose={closeSheet} />}
+      {sheet === "shortcuts" && <ShortcutSheet actions={actions} onClose={closeSheet} />}
       {menu?.kind === "attach" && (
         <Menu
           anchor={menu.anchor}
