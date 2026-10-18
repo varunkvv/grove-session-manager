@@ -15,6 +15,14 @@ const HELLO = "Reply with exactly: hello from the spike";
 const QUESTION =
   "Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options: Red and Blue. Then reply with one line saying which I picked. Do not use any other tool.";
 const COUNT = "Count from 1 to 400, one number per line, nothing else.";
+/** recordings/c-agents: two background agents, then a Bash of its own */
+const AGENTS = [
+  "Do exactly these three things, in this order, with no other tools:",
+  "1. Use the Agent tool with subagent_type general-purpose, run_in_background true, description 'slow lister', and prompt 'Run the Bash command `sleep 4 && ls` and reply with its output.'",
+  "2. Use the Agent tool with subagent_type general-purpose, run_in_background true, description 'long sleeper', and prompt 'Run the Bash command `sleep 60` and then reply done.'",
+  "3. Run the Bash command `sleep 5 && echo main-done` yourself.",
+  "Then reply with one short line.",
+].join("\n");
 
 let app: LaunchedApp;
 
@@ -282,6 +290,8 @@ test("send turns into stop while a turn runs, and stop ends the turn", async () 
   await expect(chat.getByTestId("panel-text")).toContainText("3");
   const stop = chat.getByTestId("chat-stop");
   await expect(stop).toBeVisible();
+  // the header says for how long, as a clock
+  await expect(chat.getByTestId("chat-elapsed")).toHaveText(/^\d+:\d\d$/);
   // typing gives send back: what is typed now queues
   await composer.fill("and then?");
   await expect(stop).toHaveCount(0);
@@ -294,6 +304,20 @@ test("send turns into stop while a turn runs, and stop ends the turn", async () 
     (l) => l.in as { request?: { subtype?: string } } | undefined,
   );
   expect(asked.filter((m) => m?.request?.subtype === "interrupt")).toHaveLength(1);
+});
+
+test("while it works, the live line says which tool, on what, and for how long", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_TOOL_MS: "2500" });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(AGENTS);
+  await composer.press("Enter");
+  const live = chat.getByTestId("chat-live");
+  await expect(live).toContainText("sleep 5 && echo main-done", { timeout: 20_000 });
+  await expect(live.getByTestId("chat-tool")).toHaveText("Bash");
+  await expect(live).toContainText(/\d+s$/);
 });
 
 test("a notification click lands in the session's chat window", async () => {

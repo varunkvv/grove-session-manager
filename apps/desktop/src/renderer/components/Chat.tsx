@@ -1,7 +1,7 @@
 // grove chat's window: one session, its conversation in a reading column, the composer under it.
 // the transcript is what is drawn, as in the panel. the host adds what is not in it yet: the
 // answer being streamed, and what the agent is waiting on the person for.
-import { modelLabel, type TurnView } from "@grove/core/pure";
+import { formatDuration, modelLabel, type TurnView, toolLabel } from "@grove/core/pure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   ChatAnswer,
@@ -146,6 +146,59 @@ function Chip({ file, onRemove }: { file: Attached; onRemove: () => void }) {
       <span className="shrink-0 text-sm text-fg-4">{bytes(file.size)}</span>
       {remove}
     </div>
+  );
+}
+
+/** now, once a second, for as long as it is drawn: only what shows a running time redraws */
+function useTick(): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+/** how long the turn has run, as a clock: 0:42, 12:05 */
+function Clock({ since }: { since: number }) {
+  const s = Math.max(0, Math.floor((useTick() - since) / 1000));
+  return (
+    <span className="text-sm tabular-nums text-fg-4" data-testid="chat-elapsed">
+      {Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}
+    </span>
+  );
+}
+
+/**
+ * what the turn is doing right now, under what it has said: waiting to retry, compacting, or the
+ * tool it is in with what it acts on and for how long. quiet: the answer is what is read
+ */
+function LiveLine({ status: s }: { status: ChatStatus }) {
+  const now = useTick();
+  if (!s.activity && !s.tool) return null;
+  return (
+    <p className="mt-2 flex min-w-0 items-center gap-1.5 text-sm text-fg-4" data-testid="chat-live">
+      <Spinner size={10} />
+      {s.activity ? (
+        <span className="truncate">{s.activity}…</span>
+      ) : (
+        s.tool && (
+          <>
+            <span className="shrink-0 font-medium text-fg-3" data-testid="chat-tool">
+              {toolLabel(s.tool.name)}
+            </span>
+            {s.tool.target && (
+              <Mono className="min-w-0 truncate" title={s.tool.target}>
+                {s.tool.target}
+              </Mono>
+            )}
+            <span className="shrink-0 tabular-nums">
+              {formatDuration(Math.max(0, now - s.tool.since))}
+            </span>
+          </>
+        )
+      )}
+    </p>
   );
 }
 
@@ -694,7 +747,12 @@ export function ChatApp() {
         {s.asks.length > 0 ? (
           <StateLabel state="turn" within="panel" />
         ) : (
-          running && <StateLabel state="working" within="panel" />
+          running && (
+            <span className="flex items-center gap-1.5">
+              <StateLabel state="working" within="panel" />
+              {s.since !== undefined && <Clock since={s.since} />}
+            </span>
+          )
         )}
         {/* a new session has nothing to open in the editor until it has said something */}
         {!target.fresh && (
@@ -788,15 +846,8 @@ export function ChatApp() {
                     </div>
                   ),
                 )}
-                {running && s.tool && (
-                  <p
-                    className={cx(QUIET, "mt-2 flex items-center gap-1.5")}
-                    data-testid="chat-tool"
-                  >
-                    <Spinner size={10} />
-                    {s.tool}
-                  </p>
-                )}
+                {/* a card says what it waits on: the live line would only say its tool's name */}
+                {running && s.asks.length === 0 && <LiveLine status={s} />}
                 {s.asks.map((a) => (
                   <Ask key={a.id} ask={a} onAnswer={(x) => void answer(a.id, x)} />
                 ))}

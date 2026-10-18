@@ -643,8 +643,12 @@ export interface ChatStatus {
   /** the model takes ultracode */
   ultracodeAvailable?: boolean;
   asks: ChatAsk[];
-  /** the tool the turn is in, while it is in one */
-  tool?: string;
+  /** when the turn under way started: the header's clock */
+  since?: number;
+  /** the tool the turn is in, while it is in one: what it acts on, and since when */
+  tool?: { name: string; target?: string; since: number };
+  /** what the turn is doing that is no tool and no words: compacting, waiting to retry */
+  activity?: string;
   /** sent while a turn ran, and not taken yet */
   queued: string[];
   /** what went wrong last: claude did not start, a control was refused */

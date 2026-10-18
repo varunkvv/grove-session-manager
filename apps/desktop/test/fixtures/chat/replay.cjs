@@ -7,7 +7,8 @@
 // - any other control request: answered with success
 // it also writes the transcript the real claude would, so grove reads the turn back from disk.
 // env: GROVE_FAKE_CHAT_LOG (what it got, a JSON line each), GROVE_FAKE_CHAT_DELAY_MS (the most it
-// waits between two lines, 15 by default), GROVE_FAKE_CHAT_RECORDINGS (a folder of recordings to
+// waits between two lines, 15 by default), GROVE_FAKE_CHAT_TOOL_MS (how long a main-thread tool
+// runs before its result, 0 by default), GROVE_FAKE_CHAT_RECORDINGS (a folder of recordings to
 // play instead of these: the perf script's long answer)
 const fs = require("node:fs");
 const path = require("node:path");
@@ -22,6 +23,8 @@ const flag = (name) => {
 };
 const LOG = process.env.GROVE_FAKE_CHAT_LOG;
 const DELAY = Number(process.env.GROVE_FAKE_CHAT_DELAY_MS ?? 15);
+/** how long a tool of the main thread takes before its result: 0, unless a test wants to see it run */
+const TOOL_MS = Number(process.env.GROVE_FAKE_CHAT_TOOL_MS ?? 0);
 const note = (o) => LOG && fs.appendFileSync(LOG, `${JSON.stringify(o)}\n`);
 
 const DIR = process.env.GROVE_FAKE_CHAT_RECORDINGS || __dirname;
@@ -223,6 +226,8 @@ async function play(turn) {
     if (m.type === "control_response") continue;
     if (last !== null) await sleep(Math.min(DELAY, Math.max(0, l.t - last)));
     last = l.t;
+    const result = m.type === "user" && !m.parent_tool_use_id && m.message?.content?.[0]?.type === "tool_result";
+    if (TOOL_MS && result) await sleep(TOOL_MS);
     if (m.type === "control_request" && m.request?.subtype === "can_use_tool") {
       out(m);
       const got = await next((x) => x.type === "control_response" && x.response?.request_id === m.request_id);

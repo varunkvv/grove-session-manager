@@ -20,6 +20,7 @@ import {
   parseAnswer,
   parseAttachments,
   REAP_MS,
+  retryLine,
 } from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
 
@@ -330,6 +331,11 @@ describe("grove chat's host", () => {
     const p = await ask(s, "permission");
     expect(p.tool).toBe("Write");
     expect(p.detail).toContain("perm.txt");
+    // the live line: the tool it is in, the file it acts on, since when, inside the turn's clock
+    const { tool, since } = s.host.status(SESSION);
+    // (the recording's own folder, so it is not shortened to the test's)
+    expect(tool).toMatchObject({ name: "Write", target: expect.stringMatching(/\/perm\.txt$/) });
+    expect(since).toBeLessThanOrEqual(tool?.since ?? 0);
     // a kind that is not the card's is refused
     expect(() => s.host.answer(SESSION, p.id, { kind: "plan", approve: true })).toThrow();
     s.host.answer(SESSION, p.id, { kind: "permission", allow: "no", message: "not now" });
@@ -419,6 +425,16 @@ describe("grove chat's host", () => {
     s.now.at += REAP_MS + 1;
     s.host.reap();
     await until(() => !s.host.hosts(SESSION), "claude to be let go");
+  });
+
+  it("says a retry the way the live line has room for", () => {
+    const frame = { retry_delay_ms: 7600, attempt: 2, max_retries: 10, error_status: 529 };
+    expect(retryLine({ ...frame, error: "overloaded" })).toBe(
+      "Retrying in 8s · overloaded (2 of 10)",
+    );
+    expect(retryLine({ ...frame, error: "rate_limit" })).toContain("rate limited");
+    expect(retryLine({ ...frame, error: "max_output_tokens" })).toContain("max output tokens");
+    expect(retryLine({ ...frame, error_status: null, error: "unknown" })).toContain("no answer");
   });
 
   it("offers bypass only to a session that started in it", () => {

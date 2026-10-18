@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { type FSWatcher, watch } from "node:fs";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type {
   CanUseTool,
@@ -13,6 +14,7 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { toolTarget } from "@grove/core";
 import type {
   ChatAnswer,
   ChatAsk,
@@ -204,6 +206,29 @@ export function hostEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export function modesFor(start: ChatMode | undefined): ChatMode[] {
   const modes: ChatMode[] = ["default", "acceptEdits", "plan"];
   return start && !modes.includes(start) ? [...modes, start] : modes;
+}
+
+/** an api error's kind, as the live line says it */
+const RETRY_WORD: Record<string, string> = {
+  rate_limit: "rate limited",
+  overloaded: "overloaded",
+  server_error: "server error",
+  unknown: "an error",
+};
+
+/** an api_retry frame, as the live line says it: "Retrying in 8s · overloaded (2 of 10)" */
+export function retryLine(m: {
+  retry_delay_ms: number;
+  attempt: number;
+  max_retries: number;
+  error_status: number | null;
+  error: string;
+}): string {
+  // no status: the api sent nothing back in time
+  const why =
+    m.error_status === null ? "no answer" : (RETRY_WORD[m.error] ?? m.error.replace(/_/g, " "));
+  const wait = Math.max(1, Math.round(m.retry_delay_ms / 1000));
+  return `Retrying in ${wait}s · ${why} (${m.attempt} of ${m.max_retries})`;
 }
 
 const MODES: ReadonlySet<string> = new Set([
@@ -706,8 +731,10 @@ export class ChatHost {
       live: false,
       starting: false,
       running: false,
+      since: undefined,
       asks: [],
       tool: undefined,
+      activity: undefined,
       queued: [],
       rev: h.status.rev + 1,
     });
@@ -730,28 +757,45 @@ export class ChatHost {
         } else if (m.subtype === "status") {
           const mode = asMode(m.permissionMode);
           if (mode && mode !== h.status.mode) this.set(h, { mode });
+          if (m.status === "compacting") this.set(h, { activity: "Compacting the conversation" });
+          else if (h.status.activity) this.set(h, { activity: undefined });
+        } else if (m.subtype === "api_retry") {
+          this.set(h, { activity: retryLine(m) });
         }
         return;
       case "stream_event": {
         // a subagent's stream is its own. the turn's own answer is what the window draws
         if (m.parent_tool_use_id) return;
         this.turnStarted(h);
+        // something is coming back: a retry or a compaction is over
+        if (h.status.activity) this.set(h, { activity: undefined });
         const ev = m.event;
         if (ev.type === "content_block_start") {
           if (ev.content_block.type === "text") this.setText(h, "");
           else if (ev.content_block.type === "tool_use")
-            this.set(h, { tool: ev.content_block.name });
+            this.set(h, { tool: { name: ev.content_block.name, since: this.now() } });
         } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
           this.setText(h, h.text + ev.delta.text);
         }
         return;
       }
-      case "assistant":
+      case "assistant": {
         // a whole message: it is in the transcript now
         if (m.parent_tool_use_id) return;
         this.setText(h, "");
-        this.set(h, { rev: h.status.rev + 1 });
+        // a call's input is whole once its block is: what it acts on, for the live line
+        const call = m.message.content.findLast((b) => b.type === "tool_use");
+        const tool =
+          call?.type === "tool_use"
+            ? {
+                name: call.name,
+                target: toolTarget(call.name, call.input, h.where.cwd, os.homedir()),
+                since: h.status.tool?.name === call.name ? h.status.tool.since : this.now(),
+              }
+            : h.status.tool;
+        this.set(h, { tool, rev: h.status.rev + 1 });
         return;
+      }
       case "user":
         if (m.parent_tool_use_id) return;
         this.set(h, { tool: undefined, rev: h.status.rev + 1 });
@@ -760,7 +804,14 @@ export class ChatHost {
         // an interrupt ends like this too, as error_during_execution: it is still a turn's end.
         // the sdk keeps claude's own idle/running states to itself, so this is the end
         this.setText(h, "");
-        this.set(h, { running: false, tool: undefined, queued: [], rev: h.status.rev + 1 });
+        this.set(h, {
+          running: false,
+          since: undefined,
+          tool: undefined,
+          activity: undefined,
+          queued: [],
+          rev: h.status.rev + 1,
+        });
         this.o.onChange?.();
         for (const run of h.afterTurn.splice(0)) run();
         return;
@@ -788,7 +839,7 @@ export class ChatHost {
 
   private turnStarted(h: Hosted): void {
     if (h.status.running) return;
-    this.set(h, { running: true });
+    this.set(h, { running: true, since: this.now() });
     this.o.onChange?.();
   }
 
