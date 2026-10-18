@@ -11,7 +11,9 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { agentView, findAgentFile, readAgentTimeline } from "@grove/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { agentsOf } from "../../src/main/ipc.ts";
 import {
   ATTACH,
   ChatHost,
@@ -35,6 +37,14 @@ const PLAN =
 const WRITE = "Create a file named perm.txt containing the letter x, using the Write tool.";
 const COUNT = "Count from 1 to 400, one number per line, nothing else.";
 const AFTER = "Reply with exactly: after the interrupt";
+/** recordings/c-agents: two background agents (one stopped from the host), then a Bash */
+const AGENTS = [
+  "Do exactly these three things, in this order, with no other tools:",
+  "1. Use the Agent tool with subagent_type general-purpose, run_in_background true, description 'slow lister', and prompt 'Run the Bash command `sleep 4 && ls` and reply with its output.'",
+  "2. Use the Agent tool with subagent_type general-purpose, run_in_background true, description 'long sleeper', and prompt 'Run the Bash command `sleep 60` and then reply done.'",
+  "3. Run the Bash command `sleep 5 && echo main-done` yourself.",
+  "Then reply with one short line.",
+].join("\n");
 
 interface Setup {
   host: ChatHost;
@@ -55,7 +65,7 @@ afterEach(() => {
   for (const h of hosts.splice(0)) h.dispose();
 });
 
-function setup(delayMs = 2, failFirst = false): Setup {
+function setup(delayMs = 2, failFirst = false, recordings?: string): Setup {
   // real: /var/folders is /private/var/folders, and claude reports its cwd resolved
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-chat-")));
   const bin = path.join(dir, "fake-claude");
@@ -89,6 +99,7 @@ function setup(delayMs = 2, failFirst = false): Setup {
       CLAUDE_CONFIG_DIR: claudeDir,
       GROVE_FAKE_CHAT_LOG: logFile,
       GROVE_FAKE_CHAT_DELAY_MS: String(delayMs),
+      ...(recordings ? { GROVE_FAKE_CHAT_RECORDINGS: recordings } : {}),
       // what a grove started from a claude code session would pass on
       CLAUDECODE: "1",
       CLAUDE_CODE_ENTRYPOINT: "claude-vscode",
@@ -425,6 +436,111 @@ describe("grove chat's host", () => {
     s.now.at += REAP_MS + 1;
     s.host.reap();
     await until(() => !s.host.hosts(SESSION), "claude to be let go");
+  });
+
+  it("follows its subagents from the task frames: started, their progress, how each ended", async () => {
+    const s = setup();
+    await s.host.send(SESSION, s.where, AGENTS);
+    const started = await until(
+      () =>
+        s.host.status(SESSION).agents?.length === 2 ? s.host.status(SESSION).agents : undefined,
+      "both agents",
+    );
+    expect(started?.map((a) => a.description)).toEqual(["slow lister", "long sleeper"]);
+    expect(started?.[0]).toMatchObject({ agentType: "general-purpose", background: true });
+    const ended = await until(
+      () => {
+        const a = s.host.status(SESSION).agents ?? [];
+        return a.every((x) => x.state !== "running") ? a : undefined;
+      },
+      "both agents to end",
+      20_000,
+    );
+    // the long sleeper was stopped from the probe's host, the lister finished
+    expect(Object.fromEntries(ended.map((a) => [a.description, a.state]))).toEqual({
+      "slow lister": "done",
+      "long sleeper": "stopped",
+    });
+    expect(ended.find((a) => a.description === "slow lister")?.step).toContain("Running");
+    await expect(s.host.stopAgent(SESSION, ended[0]?.id ?? "")).rejects.toThrow("not running");
+    // claude code wrote each one's own transcript: it reads as a turn
+    const dir = path.join(path.dirname(s.transcript), SESSION);
+    const file = await findAgentFile(path.join(dir, "..", `${SESSION}.jsonl`), "a4b003a351ce28240");
+    expect(file).toBeTruthy();
+    const view = agentView(await readAgentTimeline(file as string));
+    expect(view.prompt?.text).toContain("sleep 4 && ls");
+    expect(view.steps?.find((st) => st.kind === "tool")).toMatchObject({ name: "Bash" });
+    expect(view.text).toContain("produced no output");
+    // an id that is no agent id never reaches the folder
+    expect(await findAgentFile(s.transcript, "../../etc/passwd")).toBeNull();
+  });
+
+  it("a subagent's permission ask names the agent", async () => {
+    // the permission recording, with the ask coming from inside an agent claude said it started
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    writeFileSync(path.join(dir, "turn.jsonl"), readFileSync(path.join(fixtures, "turn.jsonl")));
+    const lines = readFileSync(path.join(fixtures, "permission.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((l) => {
+        const o = JSON.parse(l);
+        if (o.msg?.request?.subtype !== "can_use_tool") return [l];
+        o.msg.request.agent_id = "a-writer";
+        const started = {
+          t: o.t,
+          dir: "out",
+          msg: {
+            type: "system",
+            subtype: "task_started",
+            task_id: "a-writer",
+            description: "file writer",
+            task_type: "local_agent",
+            session_id: o.msg.request.session_id,
+          },
+        };
+        return [JSON.stringify(started), JSON.stringify(o)];
+      });
+    writeFileSync(path.join(dir, "permission.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    await s.host.send(SESSION, s.where, WRITE);
+    const p = await ask(s, "permission");
+    expect(p.agent).toBe("file writer");
+    s.host.answer(SESSION, p.id, { kind: "permission", allow: "once" });
+    await turnEnded(s);
+  });
+
+  it("puts what claude says of its agents over what their transcripts say", () => {
+    const live = [{ id: "a1", description: "lister", state: "running" as const, since: 100 }];
+    const scanned = [
+      {
+        id: "a1",
+        agentType: "general-purpose",
+        startedAt: 90,
+        lastActivityAt: 200,
+        state: "done" as const,
+        lastTool: "Bash",
+      },
+      {
+        id: "a2",
+        agentType: "Explore",
+        asked: "find the retry helper",
+        startedAt: 50,
+        lastActivityAt: 80,
+        state: "done" as const,
+      },
+    ];
+    expect(agentsOf(live, scanned)).toEqual([
+      { id: "a1", description: "lister", state: "running", since: 100, step: "Bash" },
+      {
+        id: "a2",
+        description: "find the retry helper",
+        agentType: "Explore",
+        state: "done",
+        since: 50,
+        ended: 80,
+      },
+    ]);
   });
 
   it("says a retry the way the live line has room for", () => {

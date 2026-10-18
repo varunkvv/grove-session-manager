@@ -10,6 +10,8 @@ export interface ChatScope {
   base: string;
   /** a file, in the viewer beside the conversation */
   open?: (file: string) => void;
+  /** the session's agents, in the drawer. with a call's id, the agent that call started */
+  agents?: (call?: string) => void;
 }
 
 export const ChatScopeContext = createContext<ChatScope | null>(null);

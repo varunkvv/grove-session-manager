@@ -16,6 +16,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { toolTarget } from "@grove/core";
 import type {
+  ChatAgent,
   ChatAnswer,
   ChatAsk,
   ChatAttachment,
@@ -231,6 +232,14 @@ export function retryLine(m: {
   return `Retrying in ${wait}s · ${why} (${m.attempt} of ${m.max_retries})`;
 }
 
+/** a task's end, as the agents list says it */
+const TASK_STATE: Record<string, ChatAgent["state"] | undefined> = {
+  completed: "done",
+  failed: "failed",
+  killed: "stopped",
+  stopped: "stopped",
+};
+
 const MODES: ReadonlySet<string> = new Set([
   "default",
   "acceptEdits",
@@ -313,6 +322,8 @@ interface Hosted {
   commands: ChatCommand[];
   /** the file its window's viewer shows: a change to it is pushed there */
   watching?: FSWatcher;
+  /** its subagents, by task id, as the task frames say */
+  agents: Map<string, ChatAgent>;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -408,6 +419,7 @@ export class ChatHost {
         lastActive: this.now(),
         afterTurn: [],
         commands: [],
+        agents: new Map(),
       };
       this.hosted.set(id, h);
     } else if (where && !h.q) {
@@ -515,6 +527,13 @@ export class ChatHost {
     } else this.turnStarted(h);
     await this.warm(id, where);
     if (!h.status.live) throw new Error(h.status.error ?? "Claude did not start.");
+  }
+
+  /** one running subagent stops. the turn and the other agents go on */
+  async stopAgent(id: string, agentId: string): Promise<void> {
+    const h = this.hosted.get(id);
+    if (h?.agents.get(agentId)?.state !== "running") throw new Error("That agent is not running.");
+    await h.q?.stopTask(agentId);
   }
 
   async interrupt(id: string): Promise<void> {
@@ -726,6 +745,10 @@ export class ChatHost {
     h.waiting.clear();
     h.text = "";
     h.dirty = 0;
+    // its agents ran inside it
+    for (const a of h.agents.values()) {
+      if (a.state === "running") h.agents.set(a.id, { ...a, state: "stopped", ended: this.now() });
+    }
     const after = h.afterTurn.splice(0);
     this.set(h, {
       live: false,
@@ -737,6 +760,7 @@ export class ChatHost {
       activity: undefined,
       thinking: undefined,
       queued: [],
+      agents: [...h.agents.values()],
       rev: h.status.rev + 1,
     });
     this.flushNow(h);
@@ -762,6 +786,14 @@ export class ChatHost {
           else if (h.status.activity) this.set(h, { activity: undefined });
         } else if (m.subtype === "api_retry") {
           this.set(h, { activity: retryLine(m) });
+        } else if (
+          m.subtype === "task_started" ||
+          m.subtype === "task_progress" ||
+          m.subtype === "task_updated" ||
+          m.subtype === "task_notification" ||
+          m.subtype === "background_tasks_changed"
+        ) {
+          this.task(h, m);
         }
         return;
       case "stream_event": {
@@ -831,6 +863,79 @@ export class ChatHost {
   }
 
   /**
+   * a subagent's life, from the task frames: started, its progress line, its end. a task id is
+   * its agent id (probe). only agents: a Bash is a step of the turn, not a task to list
+   */
+  private task(
+    h: Hosted,
+    m: Extract<
+      SDKMessage,
+      {
+        subtype:
+          | "task_started"
+          | "task_progress"
+          | "task_updated"
+          | "task_notification"
+          | "background_tasks_changed";
+      }
+    >,
+  ): void {
+    const now = this.now();
+    const put = (a: ChatAgent) => h.agents.set(a.id, a);
+    if (m.subtype === "task_started") {
+      if (m.task_type !== "local_agent") return;
+      put({
+        id: m.task_id,
+        description: m.description,
+        ...(m.subagent_type ? { agentType: m.subagent_type } : {}),
+        ...(m.tool_use_id ? { toolUseId: m.tool_use_id } : {}),
+        ...(m.is_backgrounded ? { background: true } : {}),
+        state: "running",
+        since: now,
+      });
+    } else if (m.subtype === "background_tasks_changed") {
+      // every live background task, whole: one this process started before it heard of it is
+      // added, one it still thought running and is not in the set any more is over
+      const live = new Set(m.tasks.map((t) => t.task_id));
+      for (const t of m.tasks) {
+        if (t.task_type === "local_agent" && !h.agents.has(t.task_id)) {
+          put({
+            id: t.task_id,
+            description: t.description,
+            ...(t.subagent_type ? { agentType: t.subagent_type } : {}),
+            state: "running",
+            since: now,
+          });
+        }
+      }
+      for (const a of h.agents.values()) {
+        if (a.state === "running" && a.background && !live.has(a.id))
+          put({ ...a, state: "done", ended: now });
+      }
+    } else {
+      const a = h.agents.get(m.task_id);
+      if (!a) return;
+      if (m.subtype === "task_progress") {
+        put({ ...a, step: m.summary || m.description });
+      } else if (m.subtype === "task_updated") {
+        const state = TASK_STATE[m.patch.status ?? ""];
+        put({
+          ...a,
+          ...(m.patch.is_backgrounded !== undefined ? { background: m.patch.is_backgrounded } : {}),
+          ...(state ? { state, ended: now } : {}),
+        });
+      } else {
+        put({
+          ...a,
+          state: TASK_STATE[m.status] ?? "done",
+          ended: a.ended ?? now,
+        });
+      }
+    }
+    this.set(h, { agents: [...h.agents.values()] });
+  }
+
+  /**
    * effort and ultracode as claude applies them. no frame announces a change and an apply's ack
    * can't be trusted, so this is read again after every apply and every model change. getSettings
    * is in the sdk at runtime but not in its types
@@ -873,6 +978,10 @@ export class ChatHost {
               ...(opts.title ? { title: opts.title } : {}),
               detail: detailOf(input),
               canAlways: !!opts.suggestions?.length && !opts.suppressAlwaysAllowRule,
+              // a subagent's call: the card names which one
+              ...(opts.agentID
+                ? { agent: h.agents.get(opts.agentID)?.description ?? "An agent" }
+                : {}),
             };
     return new Promise<PermissionResult>((resolve) => {
       h.waiting.set(id, { input, suggestions: opts.suggestions, resolve });

@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import os from "node:os";
-import { ConversationFold, type ConversationState } from "./conversation.ts";
+import { ConversationFold, type ConversationState, MESSAGE_MAX } from "./conversation.ts";
+import { TimelineFold, type TimelineState } from "./timeline.ts";
 import { readWholeLines } from "./transcriptLines.ts";
 
 /**
@@ -51,6 +52,32 @@ export async function readConversation(
       size,
       (text, at, length) => fold.line(text, at, length),
       noise,
+    );
+    return fold.state;
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
+ * a subagent's transcript folded whole, the way a turn's work is: its prompt, its steps, its
+ * messages uncut. read again on every look, as a session's conversation is
+ */
+export async function readAgentTimeline(
+  file: string,
+  opts: { home?: string } = {},
+): Promise<TimelineState> {
+  const fh = await open(file, constants.O_RDONLY);
+  try {
+    const size = (await fh.stat()).size;
+    const fold = new TimelineFold(undefined, {
+      home: opts.home ?? os.homedir(),
+      inputPreview: 0,
+      resultPreview: 0,
+      textMax: MESSAGE_MAX,
+    });
+    fold.state.offset = await readWholeLines(fh, 0, size, (text, at, length) =>
+      fold.line(text, at, length),
     );
     return fold.state;
   } finally {

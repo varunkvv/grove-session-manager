@@ -367,6 +367,64 @@ test("a turn's steps open from its work line: each tool and what it acted on", a
   await expect(page.getByTestId("session-panel").getByTestId("turn-steps-toggle")).toHaveCount(0);
 });
 
+test("agents: a count in the header, a list in the drawer with a stop each, and each one's own transcript", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_TOOL_MS: "4000" });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(AGENTS);
+  await composer.press("Enter");
+  // both started in the background: the header says so while they run
+  const count = chat.getByTestId("chat-agents");
+  await expect(count).toHaveText(/2 agents/, { timeout: 20_000 });
+  await count.click();
+  const rows = chat.getByTestId("agent-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("long sleeper");
+  await expect(rows.first().getByTestId("agent-state")).toHaveAttribute("data-state", "running");
+  // one stops from its own row, and only that one
+  await chat
+    .getByTestId("agent-row")
+    .filter({ hasText: "long sleeper" })
+    .locator("..")
+    .getByTestId("agent-stop")
+    .click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) => (l.in as { request?: { subtype?: string } })?.request?.subtype === "stop_task",
+    ),
+  );
+  const stopped = sentToClaude(s.chatLog)
+    .map((l) => (l.in as { request?: { subtype?: string; task_id?: string } })?.request)
+    .filter((r) => r?.subtype === "stop_task");
+  expect(stopped.map((r) => r?.task_id)).toEqual(["a4937abaedd25e9dd"]);
+  expect(
+    sentToClaude(s.chatLog).some(
+      (l) => (l.in as { request?: { subtype?: string } })?.request?.subtype === "interrupt",
+    ),
+  ).toBe(false);
+  // both end as the recording has them
+  await expect(chat.getByTestId("agent-state")).toHaveText([/^Stopped/, /^Done/], {
+    timeout: 30_000,
+  });
+  await expect(count).toHaveCount(0);
+  // a row opens the agent's own transcript: what it was asked, what it ran, what it said
+  await rows.filter({ hasText: "slow lister" }).click();
+  const viewer = chat.getByTestId("agent-viewer");
+  await expect(viewer.getByTestId("panel-prompt")).toContainText("sleep 4 && ls");
+  await expect(viewer.getByTestId("step")).toContainText(["Bash"]);
+  await expect(viewer.getByTestId("panel-text")).toContainText("produced no output");
+  await viewer.getByTestId("agent-list").click();
+  await expect(rows).toHaveCount(2);
+  // the turn's Agent step opens its agent too
+  await chat.getByTestId("agents-close").click();
+  const turn = chat.getByTestId("turn").nth(1);
+  await turn.getByTestId("turn-steps-toggle").click();
+  await turn.getByTestId("step").filter({ hasText: "long sleeper" }).click();
+  await expect(chat.getByTestId("agent-viewer")).toHaveAttribute("data-id", "a4937abaedd25e9dd");
+});
+
 test("a notification click lands in the session's chat window", async () => {
   const s = seed(true);
   const { app: electron } = await launch(s);

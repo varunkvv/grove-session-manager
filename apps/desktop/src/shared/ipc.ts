@@ -19,6 +19,7 @@ import type {
   SessionTasks,
   TeardownOutcome,
   TitleSource,
+  TurnView,
 } from "@grove/core/pure";
 
 export type { ProjectId };
@@ -605,6 +606,8 @@ export type ChatAsk =
       detail: string;
       /** Claude Code suggested a rule, so "always" means something */
       canAlways: boolean;
+      /** a subagent asks, not the session itself: its label */
+      agent?: string;
     };
 
 export type ChatAnswer =
@@ -649,6 +652,8 @@ export interface ChatStatus {
   tool?: { name: string; target?: string; since: number };
   /** what the turn is doing that is no tool and no words: compacting, waiting to retry */
   activity?: string;
+  /** the subagents this claude started or heard of, as its task frames say: live state */
+  agents?: ChatAgent[];
   /**
    * it is thinking now, since when. no token count: with the summary on, claude's estimate frames
    * come in one burst as the block ends (probe), so a count would read nothing until it is over
@@ -660,6 +665,24 @@ export interface ChatStatus {
   error?: string;
   /** bumped whenever the transcript moved: the window reads it again */
   rev: number;
+}
+
+/** a subagent of the session, as the agents list shows it */
+export interface ChatAgent {
+  /** the task id, which is the agent id: `subagents/agent-<id>.jsonl` */
+  id: string;
+  /** the label its parent gave it, else the start of what it was asked */
+  description: string;
+  agentType?: string;
+  /** the Agent call that started it */
+  toolUseId?: string;
+  state: "running" | "done" | "failed" | "stopped";
+  /** it was started in the background, so it outlives the turn */
+  background?: boolean;
+  since: number;
+  ended?: number;
+  /** what it is doing or last did: its own progress line, or its last tool */
+  step?: string;
 }
 
 /** the session a chat window is for */
@@ -745,6 +768,12 @@ export interface ChatApi {
   /** one of the current model's effort levels, from the next turn on */
   chatSetEffort(level: string): Promise<Outcome>;
   chatSetUltracode(on: boolean): Promise<Outcome>;
+  /** every subagent of the session: what claude says now, over what its transcripts say */
+  chatAgents(): Promise<ChatAgent[]>;
+  /** one subagent's own transcript, as a turn. null when it is not there */
+  chatAgent(id: string): Promise<TurnView | null>;
+  /** a running subagent stops, the rest of the session goes on */
+  chatStopAgent(id: string): Promise<Outcome>;
   chatAnswer(askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** Open in the editor. `after`: once the turn under way has finished */
   chatOpenInEditor(when: "now" | "after"): Promise<Outcome<{ message?: string }>>;
@@ -765,6 +794,9 @@ export const CHAT_CHANNELS = [
   "chatSetModel",
   "chatSetEffort",
   "chatSetUltracode",
+  "chatAgents",
+  "chatAgent",
+  "chatStopAgent",
   "chatAnswer",
   "chatOpenInEditor",
 ] as const satisfies ReadonlyArray<keyof ChatApi>;

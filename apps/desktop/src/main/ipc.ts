@@ -2,20 +2,24 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  agentView,
   type Combo,
   classifyPath,
   conversationView,
   type EditorTarget,
   filesWritten,
+  findAgentFile,
   isValidSessionId,
   MESSAGE_MAX,
   openInEditor,
   prepareFolderOpen,
   projectIdOf,
   type Runtime,
+  readAgentTimeline,
   readConversation,
   runDetached,
   runGit,
+  type SessionAgent,
   type Settings,
   saveSettings,
   workspaceFolders,
@@ -28,6 +32,7 @@ import type {
   Api,
   AppSettings,
   Bootstrap,
+  ChatAgent,
   ChatApi,
   ChatMode,
   ChatTarget,
@@ -722,6 +727,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatSetModel",
   "chatSetEffort",
   "chatSetUltracode",
+  "chatStopAgent",
   "chatAnswer",
   "chatOpenInEditor",
 ]);
@@ -773,6 +779,39 @@ async function filesIn(folder: string, gitPath?: string): Promise<string[]> {
     gitPath,
   });
   return out.ok ? out.stdout.split("\0").filter(Boolean) : walkFiles(folder);
+}
+
+/**
+ * a session's subagents: what its claude says of them now over what their transcripts say. a
+ * transcript scan only knows running or done, and calls an agent done two quiet minutes in
+ */
+export function agentsOf(
+  live: readonly ChatAgent[],
+  scanned: readonly SessionAgent[],
+): ChatAgent[] {
+  const byId = new Map(live.map((a) => [a.id, a]));
+  for (const a of scanned) {
+    const now = byId.get(a.id);
+    const step = a.summary ?? a.lastTool;
+    if (now) {
+      if (!now.step && step) byId.set(a.id, { ...now, step });
+      continue;
+    }
+    byId.set(a.id, {
+      id: a.id,
+      description: a.description ?? a.asked ?? a.agentType,
+      agentType: a.agentType,
+      ...(a.toolUseId ? { toolUseId: a.toolUseId } : {}),
+      state: a.state,
+      since: a.startedAt,
+      ...(a.state === "done" ? { ended: a.lastActivityAt } : {}),
+      ...(step ? { step } : {}),
+    });
+  }
+  // running first, the newest first in each
+  return [...byId.values()].sort(
+    (a, b) => Number(b.state === "running") - Number(a.state === "running") || b.since - a.since,
+  );
 }
 
 function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
@@ -973,6 +1012,22 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     async chatSetUltracode(id, on) {
       if (typeof on !== "boolean") throw new AppError("invalid", "That is not on or off.");
       await chat.setUltracode(id, await runWhere(id), on);
+    },
+
+    async chatAgents(id) {
+      return agentsOf(chat.status(id).agents ?? [], newestRow(deps, id)?.agents ?? []);
+    },
+
+    async chatAgent(id, agentId) {
+      const row = newestRow(deps, id);
+      const file = row && isText(agentId, 64) ? await findAgentFile(row.key, agentId) : null;
+      if (!file) return null;
+      return readAgentTimeline(file).then(agentView, () => null);
+    },
+
+    async chatStopAgent(id, agentId) {
+      if (!isText(agentId, 64)) throw new AppError("invalid", "That is not an agent.");
+      await chat.stopAgent(id, agentId);
     },
 
     async chatAnswer(id, askId, raw) {

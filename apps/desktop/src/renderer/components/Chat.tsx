@@ -4,6 +4,7 @@
 import { formatDuration, modelLabel, type TurnView, toolLabel } from "@grove/core/pure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
+  ChatAgent,
   ChatAnswer,
   ChatAsk,
   ChatAttachment,
@@ -17,11 +18,13 @@ import { attachKind, bytes } from "../logic/attach.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
+import { AgentList, AgentViewer } from "./Agents.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
+  AgentState,
   AskCard,
   Button,
   Choice,
@@ -340,7 +343,15 @@ function PermissionCard({
   onAnswer: (a: ChatAnswer) => void;
 }) {
   return (
-    <AskCard label={`Claude wants to use ${ask.tool}`} testId="ask-permission">
+    <AskCard
+      label={`${ask.agent ? "Its agent" : "Claude"} wants to use ${ask.tool}`}
+      testId="ask-permission"
+    >
+      {ask.agent && (
+        <p className="mt-0.5 text-sm text-fg-3" data-testid="ask-agent">
+          {ask.agent}
+        </p>
+      )}
       {ask.title && <p className="selectable mt-1 text-fg">{ask.title}</p>}
       <Mono className="selectable mt-2 block max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-canvas px-3 py-2 text-fg-2">
         {ask.detail}
@@ -384,8 +395,15 @@ export function ChatApp() {
   const [status, setStatus] = useState<ChatStatus>();
   /** null: the transcript is gone. undefined: not read yet */
   const [talk, setTalk] = useState<ChatConversation | null>();
-  /** beside the conversation: the session's files, or one of them. closed when the window opens */
-  const [pane, setPane] = useState<{ file?: string } | null>(null);
+  /**
+   * beside the conversation: the session's files or one of them, its agents or one of them (by
+   * id, or by the call that started it until the list is read). closed when the window opens
+   */
+  const [pane, setPane] = useState<
+    { kind: "files"; file?: string } | { kind: "agents"; agent?: string; call?: string } | null
+  >(null);
+  /** every agent of the session, read when the agents pane is open */
+  const [agents, setAgents] = useState<ChatAgent[]>();
   /** the answer as main streams it, and as it is drawn: see `reading` */
   const stream = useRef("");
   const [shown, setShown] = useState("");
@@ -514,6 +532,29 @@ export function ChatApp() {
   useEffect(() => {
     if (rev !== undefined && rev > 0) void read();
   }, [rev, read]);
+
+  // the agents pane reads them all: when it opens, when claude says one moved, when the transcript did
+  const agentsOpen = pane?.kind === "agents";
+  const liveAgents = status?.agents;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the live agents and rev are when, not what
+  useEffect(() => {
+    if (!agentsOpen) return;
+    let live = true;
+    void api()
+      .chatAgents()
+      .then((a) => live && setAgents(a))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [agentsOpen, liveAgents, rev]);
+  // a step's call names its agent once the list is read
+  const call = pane?.kind === "agents" ? pane.call : undefined;
+  useEffect(() => {
+    if (!call || !agents) return;
+    const hit = agents.find((a) => a.toolUseId === call);
+    setPane({ kind: "agents", ...(hit ? { agent: hit.id } : {}) });
+  }, [call, agents]);
 
   // the transcript has the prompt now
   useEffect(() => {
@@ -718,8 +759,14 @@ export function ChatApp() {
   const scope = {
     session: session.sessionId,
     base: target.cwd,
-    open: (file: string) => setPane({ file }),
+    open: (file: string) => setPane({ kind: "files", file }),
+    agents: (call?: string) => setPane({ kind: "agents", ...(call ? { call } : {}) }),
   };
+  /** its agents running now, as its claude says: the header counts them */
+  const runningAgents = (s.agents ?? []).filter((a) => a.state === "running").length;
+  const shownAgent =
+    pane?.kind === "agents" && pane.agent ? agents?.find((a) => a.id === pane.agent) : undefined;
+  const stopAgent = async (id: string) => setError(failed(await api().chatStopAgent(id)));
 
   return (
     <div
@@ -775,12 +822,26 @@ export function ChatApp() {
             Open in {target.editor}
           </Button>
         )}
+        {runningAgents > 0 && (
+          <Button
+            size="sm"
+            variant="quiet"
+            data-testid="chat-agents"
+            title="The session's agents"
+            onClick={() => setPane(pane?.kind === "agents" ? null : { kind: "agents" })}
+          >
+            <AgentState state="running" word={false} />
+            <span className="tabular-nums">
+              {runningAgents} {runningAgents === 1 ? "agent" : "agents"}
+            </span>
+          </Button>
+        )}
         <IconButton
           label="Files"
-          aria-pressed={!!pane}
+          aria-pressed={pane?.kind === "files"}
           data-testid="chat-files"
-          className={cx(pane && "bg-raised text-fg")}
-          onClick={() => setPane(pane ? null : {})}
+          className={cx(pane?.kind === "files" && "bg-raised text-fg")}
+          onClick={() => setPane(pane?.kind === "files" ? null : { kind: "files" })}
         >
           <Icon name="file" />
         </IconButton>
@@ -1044,13 +1105,32 @@ export function ChatApp() {
               </div>
             </footer>
           </div>
-          {pane?.file ? (
-            <Viewer file={pane.file} onList={() => setPane({})} onClose={() => setPane(null)} />
-          ) : (
-            pane && (
+          {pane?.kind === "files" &&
+            (pane.file ? (
+              <Viewer
+                file={pane.file}
+                onList={() => setPane({ kind: "files" })}
+                onClose={() => setPane(null)}
+              />
+            ) : (
               <FileList written={talk?.written ?? []} rev={s.rev} onClose={() => setPane(null)} />
-            )
-          )}
+            ))}
+          {pane?.kind === "agents" &&
+            (shownAgent ? (
+              <AgentViewer
+                agent={shownAgent}
+                onList={() => setPane({ kind: "agents" })}
+                onClose={() => setPane(null)}
+                onStop={() => void stopAgent(shownAgent.id)}
+              />
+            ) : (
+              <AgentList
+                agents={agents}
+                onOpen={(id) => setPane({ kind: "agents", agent: id })}
+                onStop={(id) => void stopAgent(id)}
+                onClose={() => setPane(null)}
+              />
+            ))}
         </div>
       </ChatScopeContext.Provider>
       {menu?.kind === "attach" && (

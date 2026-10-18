@@ -24,6 +24,18 @@ export function subagentsDir(transcriptPath: string): string {
   );
 }
 
+/**
+ * where an agent's own transcript is: under its session's subagents folder, a workflow's one level
+ * deeper. null for an id that is not a plain agent id, or one that is not there
+ */
+export async function findAgentFile(transcriptPath: string, id: string): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  const dir = subagentsDir(transcriptPath);
+  const names = await readdir(dir, { recursive: true }).catch(() => [] as string[]);
+  const hit = names.map(String).find((n) => path.basename(n) === `agent-${id}.jsonl`);
+  return hit ? path.join(dir, hit) : null;
+}
+
 export interface AgentMeta {
   agentType: string;
   description?: string;

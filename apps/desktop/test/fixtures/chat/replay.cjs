@@ -108,6 +108,42 @@ function record(type, message, extra = {}) {
   fs.appendFileSync(transcript, `${JSON.stringify(line)}\n`);
 }
 
+// ---------- a subagent's own transcript and meta, where Claude Code keeps them
+const agentsDir = path.join(path.dirname(transcript), sessionId, "subagents");
+const agentParents = new Map();
+function recordAgent(m) {
+  fs.mkdirSync(agentsDir, { recursive: true });
+  if (m.type === "system") {
+    fs.writeFileSync(
+      path.join(agentsDir, `agent-${m.task_id}.meta.json`),
+      JSON.stringify({
+        agentType: m.subagent_type ?? "general-purpose",
+        description: m.description,
+        toolUseId: m.tool_use_id,
+        spawnDepth: m.spawn_depth ?? 1,
+        requestShape: m.is_backgrounded ? "background" : "foreground",
+      }),
+    );
+    m = { type: "user", agent_id: m.task_id, message: { role: "user", content: m.prompt ?? "" } };
+  }
+  const uuid = m.uuid ?? crypto.randomUUID();
+  const line = {
+    type: m.type,
+    parentUuid: agentParents.get(m.agent_id) ?? null,
+    isSidechain: true,
+    agentId: m.agent_id,
+    userType: "external",
+    cwd: process.cwd(),
+    sessionId,
+    version: "2.1.296",
+    uuid,
+    timestamp: new Date().toISOString(),
+    message: m.message,
+  };
+  agentParents.set(m.agent_id, uuid);
+  fs.appendFileSync(path.join(agentsDir, `agent-${m.agent_id}.jsonl`), `${JSON.stringify(line)}\n`);
+}
+
 // ---------- stdout
 const out = (msg) => process.stdout.write(`${asSession(msg)}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -138,6 +174,8 @@ function settingsControl(r) {
     }
     return {};
   }
+  // the agent goes on in the recording: what it says after a stop is what was recorded
+  if (r.subtype === "stop_task") return {};
   if (r.subtype === "set_model") {
     const m = modelOf(r.model);
     const levels = m?.supportedEffortLevels ?? [];
@@ -236,6 +274,8 @@ async function play(turn) {
     }
     if (m.type === "control_request") continue;
     out(m);
+    if (m.type === "system" && m.subtype === "task_started" && m.task_type === "local_agent") recordAgent(m);
+    if (m.parent_tool_use_id && m.agent_id && (m.type === "assistant" || m.type === "user")) recordAgent(m);
     if (!m.parent_tool_use_id && (m.type === "assistant" || m.type === "user")) {
       record(m.type, m.message, {
         uuid: m.uuid,

@@ -790,41 +790,58 @@ export function conversationView(
   const items = from < 0 ? [] : state.items.slice(from);
   return {
     older,
-    items: items.map((item, i): ConversationViewItem => {
-      if (item.kind === "compact") return { kind: "compact" };
-      const last = i === items.length - 1;
-      const n = turnNumbers(item);
-      const said = item.marks.flatMap((m) => (m.kind === "said" ? [cut(m.text, VIEW_PROMPT)] : []));
-      const answer = answerOf(item.work);
-      // a turn still under way, or one that stopped: the last thing it said, as the panel always showed
-      const words =
-        last && !answer ? item.work.steps.findLast((s) => s.kind === "text") : undefined;
-      const text = answer || (words?.kind === "text" ? words.text : "");
-      const max = opts.textMax ?? (last ? VIEW_LAST_TEXT : VIEW_TEXT);
-      const error = item.work.last?.error ?? (answer ? undefined : item.apiError);
-      const outputs = fileMarks(item.work);
-      return {
-        kind: "turn",
-        ...(item.prompt
-          ? {
-              prompt: {
-                kind: item.prompt.kind,
-                text: cut(item.prompt.text, VIEW_PROMPT),
-                ...(item.prompt.images ? { images: item.prompt.images } : {}),
-                ...(opts.chat && item.prompt.files ? { files: item.prompt.files } : {}),
-              },
-            }
-          : {}),
-        ...(said.length ? { said } : {}),
-        tools: n.tools,
-        files: n.filesEdited,
-        agents: n.agents,
-        ...(n.durationMs !== undefined ? { ms: n.durationMs } : {}),
-        ...(text ? { text: text.length > max ? `…${text.slice(1 - max)}` : text } : {}),
-        ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
-        ...(outputs.length ? { outputs } : {}),
-        ...(opts.chat ? stepsOf(item) : {}),
-      };
-    }),
+    items: items.map(
+      (item, i): ConversationViewItem =>
+        item.kind === "compact"
+          ? { kind: "compact" }
+          : turnView(item, i === items.length - 1, opts),
+    ),
   };
+}
+
+/** one turn as the page gets it. `last`: the one under way, or the one the panel is for */
+function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: boolean }): TurnView {
+  const n = turnNumbers(item);
+  const said = item.marks.flatMap((m) => (m.kind === "said" ? [cut(m.text, VIEW_PROMPT)] : []));
+  const answer = answerOf(item.work);
+  // a turn still under way, or one that stopped: the last thing it said, as the panel always showed
+  const words = last && !answer ? item.work.steps.findLast((s) => s.kind === "text") : undefined;
+  const text = answer || (words?.kind === "text" ? words.text : "");
+  const max = opts.textMax ?? (last ? VIEW_LAST_TEXT : VIEW_TEXT);
+  const error = item.work.last?.error ?? (answer ? undefined : item.apiError);
+  const outputs = fileMarks(item.work);
+  return {
+    kind: "turn",
+    ...(item.prompt
+      ? {
+          prompt: {
+            kind: item.prompt.kind,
+            text: cut(item.prompt.text, VIEW_PROMPT),
+            ...(item.prompt.images ? { images: item.prompt.images } : {}),
+            ...(opts.chat && item.prompt.files ? { files: item.prompt.files } : {}),
+          },
+        }
+      : {}),
+    ...(said.length ? { said } : {}),
+    tools: n.tools,
+    files: n.filesEdited,
+    agents: n.agents,
+    ...(n.durationMs !== undefined ? { ms: n.durationMs } : {}),
+    ...(text ? { text: text.length > max ? `…${text.slice(1 - max)}` : text } : {}),
+    ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
+    ...(outputs.length ? { outputs } : {}),
+    ...(opts.chat ? stepsOf(item) : {}),
+  };
+}
+
+/**
+ * a subagent's own transcript as one turn of a chat window: what it was asked, what it did, what
+ * it came back with. the same view a turn of the session gets, so it is drawn the same way
+ */
+export function agentView(work: TimelineState): TurnView {
+  const turn: Turn = { kind: "turn", work, marks: [] };
+  if (work.prompt !== undefined) {
+    turn.prompt = { kind: "human", text: work.prompt, at: work.startedAt ?? 0 };
+  }
+  return turnView(turn, true, { textMax: MESSAGE_MAX, chat: true });
 }

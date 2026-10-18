@@ -1154,6 +1154,39 @@ export function ModeDot({ mode }: { mode?: ChatMode }) {
   );
 }
 
+const WORDS = { running: "Running", done: "Done", failed: "Failed", stopped: "Stopped" };
+
+/**
+ * a subagent's state, in the agent tree's words (context/agent-tree.md): Running with working's
+ * breathing dot, Done and Stopped quiet, Failed in the danger colour. a finished one says how long
+ * it took after the word
+ */
+export function AgentState({
+  state,
+  took,
+  word = true,
+}: {
+  state: "running" | "done" | "failed" | "stopped";
+  took?: string;
+  /** false: the mark alone, where a count beside it says the rest */
+  word?: boolean;
+}) {
+  return (
+    <span
+      data-testid="agent-state"
+      data-state={state}
+      className={cx(
+        "inline-flex shrink-0 items-center gap-1.5 text-sm",
+        state === "running" ? "text-working" : state === "failed" ? "text-danger" : "text-fg-4",
+      )}
+    >
+      {state === "running" && <span className="live-pulse size-1.5 rounded-full bg-hue-green" />}
+      {word && WORDS[state]}
+      {took && <span className="tabular-nums text-fg-4">{took}</span>}
+    </span>
+  );
+}
+
 /** ultracode is on: beside the model, in its own colour */
 export function UltraChip() {
   return (

@@ -4,6 +4,7 @@ import type { InboxRowView, ProjectId, RecapView, SessionRef, TaskView } from ".
 import { nextActiveKey } from "../logic/rows.ts";
 import { type SessionState, workLine } from "../logic/views.ts";
 import { openChat, openWith, review } from "../state/actions.ts";
+import { useChatScope } from "../state/chatScope.ts";
 import { type Section, useStore } from "../state/store.ts";
 import { Markdown } from "./Markdown.tsx";
 import { StepList, Thought } from "./Steps.tsx";
@@ -144,6 +145,8 @@ export function Turn({
   working,
   images,
   detail,
+  stepsOpen,
+  who = "You",
 }: {
   turn: TurnView;
   last: boolean;
@@ -155,14 +158,25 @@ export function Turn({
    * folded above it. the panel has neither
    */
   detail?: boolean;
+  /** the steps start open: an agent's own transcript, which is opened to see what it did */
+  stepsOpen?: boolean;
+  /** who the prompt is from: an agent's is what it was asked */
+  who?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!stepsOpen);
+  const scope = useChatScope();
   const p = turn.prompt;
   const typed =
     "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
   // the turn it is in now has no end yet, so no length either
   const going = last && working;
-  const work = workLine(going ? { ...turn, ms: undefined } : turn);
+  // grove chat says its agents apart, as a way to the drawer that lists them
+  const agentsLink = detail && turn.agents > 0 && !!scope?.agents;
+  const work = workLine({
+    ...turn,
+    ...(going ? { ms: undefined } : {}),
+    ...(agentsLink ? { agents: 0 } : {}),
+  });
   // the last turn always says what the agent said, even when that is nothing yet
   const talks = !!turn.text || !!work || (last && p?.kind !== "command");
   return (
@@ -170,7 +184,7 @@ export function Turn({
       {p?.kind === "human" ? (
         <>
           <h3 className="text-sm font-medium text-fg-4">
-            You
+            {who}
             {images && (!!p.images || !!p.files?.length) && (
               <span className="font-normal" data-testid="turn-attached">
                 {p.images ? ` · ${p.images} ${p.images === 1 ? "image" : "images"}` : ""}
@@ -210,6 +224,19 @@ export function Turn({
                   {`${work || "working"}${work && going ? " so far" : ""}`}
                   <Icon name="chevron" size={9} faint className={open ? "rotate-90" : undefined} />
                 </button>
+                {agentsLink && (
+                  <>
+                    <span className="font-normal"> · </span>
+                    <button
+                      type="button"
+                      data-testid="turn-agents"
+                      onClick={() => scope?.agents?.()}
+                      className="fade font-normal underline decoration-line-strong underline-offset-2 hover:text-fg-2"
+                    >
+                      {turn.agents} {turn.agents === 1 ? "agent" : "agents"}
+                    </button>
+                  </>
+                )}
               </>
             ) : (
               <span className="font-normal">

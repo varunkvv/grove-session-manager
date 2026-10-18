@@ -2,6 +2,7 @@
 // folded until asked for. the answer stays the only full-weight text in a turn.
 import { formatDuration, type StepView, toolLabel } from "@grove/core/pure";
 import { useState } from "react";
+import { useChatScope } from "../state/chatScope.ts";
 import { Markdown } from "./Markdown.tsx";
 import { cx, Icon, Mono, Spinner } from "./ui.tsx";
 
@@ -44,13 +45,21 @@ export function Thought({ text, ms }: { text: string; ms?: number }) {
 
 /** one row of the list: a tool and what it acted on, a thought, or what it said on the way */
 function Step({ step, going }: { step: StepView; going: boolean }) {
+  const scope = useChatScope();
   if (step.kind === "thinking") return <Thought text={step.text} ms={step.ms} />;
   if (step.kind === "text") {
     return <p className="selectable mt-1.5 line-clamp-3 text-sm text-fg-3">{step.text}</p>;
   }
+  // an agent's step opens the agent: its own transcript, beside the conversation
+  const agent = (step.name === "Agent" || step.name === "Task") && scope?.agents;
+  const Row = agent ? "button" : "div";
   return (
-    <div
-      className="mt-1 flex min-w-0 items-baseline gap-2 text-sm"
+    <Row
+      {...(agent ? { type: "button" as const, onClick: () => scope?.agents?.(step.id) } : {})}
+      className={cx(
+        "mt-1 flex w-full min-w-0 items-baseline gap-2 text-left text-sm",
+        agent && "fade rounded-sm hover:text-fg [&:hover_*]:text-fg-2",
+      )}
       data-testid="step"
       data-failed={step.failed ? "" : undefined}
     >
@@ -69,7 +78,7 @@ function Step({ step, going }: { step: StepView; going: boolean }) {
           took(step.ms)
         )}
       </span>
-    </div>
+    </Row>
   );
 }
 
