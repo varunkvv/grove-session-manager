@@ -636,14 +636,22 @@ export type ChatAsk =
       agent?: string;
       /** an edit: what it would change, as `editDiff` lines ("+", "-", " ", "@", "…" first) */
       diff?: string[];
-    };
+    }
+  /** the model turned the request down: try it on the fallback, or change what was asked */
+  | { id: string; kind: "refusal"; model: string; fallback: string; category?: string }
+  /** auto mode fell back to claude code's own classifier, which is billed: go on, or stop */
+  | { id: string; kind: "auto-fallback"; title?: string; paragraphs: string[] };
 
 export type ChatAnswer =
   /** question text -> the label picked, or what was typed. several picks are comma-separated */
   | { kind: "question"; answers: Record<string, string> }
   /** `mode`: what claude goes on in once approved. absent: the mode it was in before planning */
   | { kind: "plan"; approve: boolean; message?: string; mode?: ChatMode }
-  | { kind: "permission"; allow: "once" | "always" | "no"; message?: string };
+  | { kind: "permission"; allow: "once" | "always" | "no"; message?: string }
+  /** a dialog's button, as claude code names it. null: dismissed, claude does what it would */
+  | { kind: "dialog"; choice: DialogChoice | null };
+
+export type DialogChoice = "retry_fallback" | "edit_prompt" | "continue" | "interrupt";
 
 /** the host's side of a session, sent whole every time it moves. the streamed answer goes apart */
 export interface ChatStatus {

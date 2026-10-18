@@ -706,6 +706,8 @@ export interface TurnView {
   output?: string;
   /** a chat window's only: Workflow runs it started. their agents are in the agents list */
   workflows?: number;
+  /** a chat window's only: it ended on an api error (the note says which), so it can be asked again */
+  failed?: boolean;
 }
 
 /** one step of a turn's work, as a chat window lists it */
@@ -898,6 +900,7 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
     ...(opts.chat ? stepsOf(item) : {}),
     ...(opts.chat && item.output ? { output: item.output } : {}),
     ...(opts.chat ? workflowsOf(item.work) : {}),
+    ...(opts.chat && error ? { failed: true } : {}),
   };
 }
 

@@ -14,6 +14,8 @@ export interface ChatScope {
   agents?: (call?: string) => void;
   /** what one of the session's edits changed, by its call's id. null: nothing to show */
   diff?: (call: string) => Promise<string[] | null>;
+  /** say this again: a turn that ended on an api error, asked once more */
+  retry?: (prompt: string) => void;
 }
 
 export const ChatScopeContext = createContext<ChatScope | null>(null);

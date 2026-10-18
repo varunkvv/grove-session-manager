@@ -304,7 +304,31 @@ export function Turn({
           </div>
         </>
       )}
-      {turn.note && <p className={`${QUIET} mt-2 break-words`}>{turn.note}</p>}
+      {turn.note && (
+        <p className={`${QUIET} mt-2 break-words`} data-testid="turn-note">
+          {turn.note}
+          {/* grove chat: the last turn died on an api error. a prompt cut for the view is not
+              offered: it would go out cut */}
+          {detail &&
+            turn.failed &&
+            last &&
+            !working &&
+            scope?.retry &&
+            p?.kind === "human" &&
+            !p.text.endsWith("…") && (
+              <>
+                {" "}
+                <Button
+                  variant="link"
+                  data-testid="turn-retry"
+                  onClick={() => scope.retry?.(p.text)}
+                >
+                  Try again
+                </Button>
+              </>
+            )}
+        </p>
+      )}
     </section>
   );
 }

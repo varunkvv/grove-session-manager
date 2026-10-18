@@ -17,6 +17,7 @@ import { agentsOf } from "../../src/main/ipc.ts";
 import {
   ATTACH,
   ChatHost,
+  dialogOf,
   hostEnv,
   modesFor,
   parseAnswer,
@@ -674,6 +675,69 @@ describe("grove chat's host", () => {
     await turnEnded(s);
   });
 
+  it("a refusal's dialog is a card: its button goes back as the dialog's result", async () => {
+    // the hello turn, with claude code asking first what to do about a refusal (vs code's shape)
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean);
+    const at = lines.findIndex((l) => JSON.parse(l).msg?.type === "assistant");
+    const t = JSON.parse(lines[at] as string).t;
+    const dialog = {
+      t,
+      dir: "out",
+      msg: {
+        type: "control_request",
+        request_id: "dlg-1",
+        request: {
+          subtype: "request_user_dialog",
+          dialog_kind: "refusal_fallback_prompt",
+          payload: {
+            originalModel: "claude-opus-5-5",
+            fallbackModel: "claude-sonnet-5",
+            apiRefusalCategory: "cyber",
+          },
+        },
+      },
+    };
+    lines.splice(at, 0, JSON.stringify(dialog));
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    await s.host.send(SESSION, s.where, HELLO);
+    const card = await ask(s, "refusal");
+    expect(card).toMatchObject({
+      model: "claude-opus-5-5",
+      fallback: "claude-sonnet-5",
+      category: "cyber",
+    });
+    // a button the card does not have is refused
+    expect(() => s.host.answer(SESSION, card.id, { kind: "dialog", choice: "continue" })).toThrow(
+      "not one of its buttons",
+    );
+    s.host.answer(SESSION, card.id, { kind: "dialog", choice: "retry_fallback" });
+    await turnEnded(s);
+    expect(answers(s)).toContainEqual({ behavior: "completed", result: "retry_fallback" });
+    // declared at start, as vs code declares them
+    const init = s
+      .log()
+      .find((l) => (l.in as { request?: { subtype?: string } })?.request?.subtype === "initialize");
+    expect(
+      (init?.in as { request?: { supportedDialogKinds?: string[] } } | undefined)?.request
+        ?.supportedDialogKinds,
+    ).toEqual(["refusal_fallback_prompt", "auto_mode_server_fallback"]);
+  });
+
+  it("knows a dialog by its payload, and leaves one it does not know to claude", () => {
+    expect(dialogOf("1", "auto_mode_server_fallback", { paragraphs: ["a", 4, ""] })).toEqual({
+      id: "1",
+      kind: "auto-fallback",
+      paragraphs: ["a"],
+    });
+    expect(dialogOf("1", "refusal_fallback_prompt", { originalModel: "x" })).toBeUndefined();
+    expect(dialogOf("1", "fable_overage_consent_prompt", {})).toBeUndefined();
+  });
+
   it("keeps what claude says along the way that no transcript has, until the next send", async () => {
     // the hello turn, with the frames a turn can carry before its answer
     const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
@@ -851,6 +915,7 @@ describe("grove chat's host", () => {
       { kind: "plan", approve: "yes" },
       { kind: "plan", approve: true, mode: "yolo" },
       { kind: "permission", allow: "forever" },
+      { kind: "dialog", choice: "yes" },
       { kind: "permission", allow: "once", message: 4 },
       { kind: "bash", command: "rm -rf /" },
     ]) {

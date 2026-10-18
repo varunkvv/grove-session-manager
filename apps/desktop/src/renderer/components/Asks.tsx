@@ -1,5 +1,6 @@
 // what a session grove runs waits on the person for: a question, a plan, a permission. the chat
 // window draws them under the turn, and the main window's session card draws the same ones.
+import { modelLabel } from "@grove/core/pure";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ChatAnswer, ChatAsk, ChatMode, ChatQuestion } from "../../shared/ipc.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -416,6 +417,90 @@ export function PermissionCard({
   );
 }
 
+/** a model's id as people say it: claude-opus-5-5 is Opus 5.5 */
+const said = (model: string) => {
+  const l = modelLabel(model);
+  return l.charAt(0).toUpperCase() + l.slice(1);
+};
+
+/**
+ * the model turned the request down. as vs code puts it: switch to the fallback for it, or change
+ * what was asked (it goes back in the composer). dismissed, claude ends the turn on the refusal
+ */
+export function RefusalCard({
+  ask,
+  onAnswer,
+  onEditPrompt,
+}: {
+  ask: Extract<ChatAsk, { kind: "refusal" }>;
+  onAnswer: (a: ChatAnswer) => void;
+  onEditPrompt?: () => void;
+}) {
+  return (
+    <AskCard label="Session paused" testId="ask-refusal">
+      <p className="selectable mt-1 text-fg">
+        {said(ask.model)} turned this request down
+        {ask.category ? ` (${ask.category})` : ""}. {said(ask.fallback)} can take it, or you can
+        change what you asked.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          data-testid="refusal-switch"
+          onClick={() => onAnswer({ kind: "dialog", choice: "retry_fallback" })}
+        >
+          Switch to {said(ask.fallback)}
+        </Button>
+        <Button
+          data-testid="refusal-edit"
+          onClick={() => {
+            onAnswer({ kind: "dialog", choice: "edit_prompt" });
+            onEditPrompt?.();
+          }}
+        >
+          Edit what you asked
+        </Button>
+        <Button variant="ghost" onClick={() => onAnswer({ kind: "dialog", choice: null })}>
+          Dismiss
+        </Button>
+      </div>
+    </AskCard>
+  );
+}
+
+/** vs code's words for auto mode falling back to the billed classifier */
+const AUTO_FALLBACK =
+  "Auto mode is using Claude Code's built-in classifier in this session, and those classifier requests are billed. Continue to keep going in auto mode, or Stop to end this turn.";
+
+export function AutoFallbackCard({
+  ask,
+  onAnswer,
+}: {
+  ask: Extract<ChatAsk, { kind: "auto-fallback" }>;
+  onAnswer: (a: ChatAnswer) => void;
+}) {
+  return (
+    <AskCard label={ask.title ?? "Auto mode"} testId="ask-auto-fallback">
+      <p className="selectable mt-1 text-fg">{AUTO_FALLBACK}</p>
+      {ask.paragraphs.map((p) => (
+        <p key={p} className="selectable mt-1.5 text-sm text-fg-3">
+          {p}
+        </p>
+      ))}
+      <div className="mt-3 flex gap-2">
+        <Button
+          variant="primary"
+          data-testid="auto-continue"
+          onClick={() => onAnswer({ kind: "dialog", choice: "continue" })}
+        >
+          Continue
+        </Button>
+        <Button onClick={() => onAnswer({ kind: "dialog", choice: "interrupt" })}>Stop</Button>
+      </div>
+    </AskCard>
+  );
+}
+
 /** whichever card the ask is */
 export function Ask({
   ask,
@@ -423,6 +508,7 @@ export function Ask({
   onAnswer,
   onLeave,
   autoFocus,
+  onEditPrompt,
 }: {
   ask: ChatAsk;
   /** the session's modes: a plan is approved into one */
@@ -430,9 +516,14 @@ export function Ask({
   onAnswer: (a: ChatAnswer) => void;
   onLeave?: () => void;
   autoFocus?: boolean;
+  /** a refusal's "Edit what you asked": the prompt goes back in the composer */
+  onEditPrompt?: () => void;
 }) {
   if (ask.kind === "question")
     return <QuestionCard ask={ask} onAnswer={onAnswer} onLeave={onLeave} autoFocus={autoFocus} />;
   if (ask.kind === "plan") return <PlanCard ask={ask} modes={modes} onAnswer={onAnswer} />;
+  if (ask.kind === "refusal")
+    return <RefusalCard ask={ask} onAnswer={onAnswer} onEditPrompt={onEditPrompt} />;
+  if (ask.kind === "auto-fallback") return <AutoFallbackCard ask={ask} onAnswer={onAnswer} />;
   return <PermissionCard ask={ask} onAnswer={onAnswer} />;
 }

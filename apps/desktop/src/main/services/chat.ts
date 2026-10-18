@@ -13,6 +13,8 @@ import type {
   Query,
   SDKMessage,
   SDKUserMessage,
+  UserDialogRequest,
+  UserDialogResult,
 } from "@anthropic-ai/claude-agent-sdk";
 import { editDiff, firstSentence, toolLabel, toolTarget } from "@grove/core";
 import type {
@@ -25,6 +27,7 @@ import type {
   ChatNote,
   ChatQuestion,
   ChatStatus,
+  DialogChoice,
 } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
@@ -46,6 +49,43 @@ const TEXT_MAX = 200_000;
 
 export const isText = (v: unknown, max = TEXT_MAX): v is string =>
   typeof v === "string" && v.length <= max;
+
+const CHOICES: ReadonlySet<string> = new Set([
+  "retry_fallback",
+  "edit_prompt",
+  "continue",
+  "interrupt",
+]);
+
+/**
+ * the dialogs grove draws, as vs code 2.1.301 declares and reads them (webview `tv1`, `Pv1`): a
+ * refusal's fallback and auto mode's billed classifier. neither could be made to come on the wire
+ */
+export const DIALOG_KINDS = ["refusal_fallback_prompt", "auto_mode_server_fallback"];
+
+/** a dialog's payload as a card, or undefined for one in a shape grove does not know */
+export function dialogOf(
+  id: string,
+  kind: string,
+  p: Record<string, unknown>,
+): ChatAsk | undefined {
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  if (kind === "refusal_fallback_prompt") {
+    const model = str(p.originalModel);
+    const fallback = str(p.fallbackModel);
+    if (!model || !fallback) return undefined;
+    const category = str(p.apiRefusalCategory);
+    return { id, kind: "refusal", model, fallback, ...(category ? { category } : {}) };
+  }
+  if (kind === "auto_mode_server_fallback") {
+    const paragraphs = Array.isArray(p.paragraphs)
+      ? p.paragraphs.flatMap((x) => (typeof x === "string" && x.trim() ? [cut(x, 2000)] : []))
+      : [];
+    const title = str(p.title);
+    return { id, kind: "auto-fallback", ...(title ? { title } : {}), paragraphs };
+  }
+  return undefined;
+}
 
 /** what the page sent as an answer, held to the shapes the host knows. anything else is refused */
 export function parseAnswer(raw: unknown): ChatAnswer {
@@ -76,6 +116,9 @@ export function parseAnswer(raw: unknown): ChatAnswer {
   }
   if (a.kind === "permission" && (a.allow === "once" || a.allow === "always" || a.allow === "no")) {
     return { kind: "permission", allow: a.allow, ...(message ? { message } : {}) };
+  }
+  if (a.kind === "dialog" && (a.choice === null || CHOICES.has(a.choice as string))) {
+    return { kind: "dialog", choice: a.choice as DialogChoice | null };
   }
   throw bad();
 }
@@ -385,6 +428,8 @@ interface Waiting {
   input: Record<string, unknown>;
   suggestions?: PermissionUpdate[];
   resolve: (r: PermissionResult) => void;
+  /** a dialog, not a tool's permission: its answer goes here instead */
+  dialog?: (r: UserDialogResult) => void;
 }
 
 interface Hosted {
@@ -691,6 +736,19 @@ export class ChatHost {
     const w = h?.waiting.get(askId);
     if (!h || !w) throw new Error("That question has already been answered.");
     const ask = h.status.asks.find((x) => x.id === askId);
+    if (a.kind === "dialog") {
+      if (!w.dialog) throw new Error("That answer is for another kind of question.");
+      const picks: Record<string, readonly string[]> = {
+        refusal: ["retry_fallback", "edit_prompt"],
+        "auto-fallback": ["continue", "interrupt"],
+      };
+      if (a.choice && !picks[ask?.kind ?? ""]?.includes(a.choice))
+        throw new Error("That is not one of its buttons.");
+      h.waiting.delete(askId);
+      this.set(h, { asks: h.status.asks.filter((x) => x.id !== askId) });
+      w.dialog(a.choice ? { behavior: "completed", result: a.choice } : { behavior: "cancelled" });
+      return;
+    }
     if (ask?.kind !== a.kind) throw new Error("That answer is for another kind of question.");
     let result: PermissionResult;
     if (a.kind === "question") {
@@ -821,6 +879,9 @@ export class ChatHost {
           env: hostEnv(env),
           ...(h.model ? { model: h.model } : {}),
           canUseTool: (tool, input, opts) => this.ask(h, tool, input, opts),
+          // a refusal's fallback and auto's billed classifier come as cards, as in vs code
+          onUserDialog: (req, opts) => this.dialog(h, req, opts.signal),
+          supportedDialogKinds: DIALOG_KINDS,
           stderr: (data) => log.warn(`chat ${h.id.slice(0, 8)}:`, data.trimEnd()),
         },
       });
@@ -922,6 +983,16 @@ export class ChatHost {
             kind: "denied",
             text: `${toolLabel(m.tool_name)} was turned down. ${why}`,
           });
+        } else if (m.subtype === "model_refusal_fallback") {
+          // the model turned it down and the turn ran again on another
+          if (m.scope !== "local") {
+            this.note(h, {
+              kind: "info",
+              text: `${m.original_model} turned this down, so ${m.fallback_model} answered it.`,
+            });
+          }
+        } else if (m.subtype === "model_refusal_no_fallback") {
+          this.note(h, { kind: "denied", text: `${m.original_model} turned this request down.` });
         } else if (m.subtype === "local_command_output") {
           this.note(h, { kind: "output", text: cut(m.content, 8000) });
         } else if (m.subtype === "informational") {
@@ -1173,6 +1244,31 @@ export class ChatHost {
       opts.signal.addEventListener("abort", () =>
         this.settle(h, id, { behavior: "deny", message: "Cancelled." }),
       );
+    });
+  }
+
+  /** a dialog claude code wants drawn: a card like an ask, its button the answer */
+  private dialog(
+    h: Hosted,
+    req: UserDialogRequest,
+    signal: AbortSignal,
+  ): Promise<UserDialogResult> {
+    const id = randomUUID();
+    const view = dialogOf(id, req.dialogKind, req.payload ?? {});
+    // a kind or a shape grove does not know: claude does what it does with no dialog
+    if (!view) return Promise.resolve({ behavior: "cancelled" });
+    return new Promise<UserDialogResult>((resolve) => {
+      h.waiting.set(id, {
+        input: {},
+        resolve: () => resolve({ behavior: "cancelled" }),
+        dialog: resolve,
+      });
+      this.set(h, { asks: [...h.status.asks, view] });
+      signal.addEventListener("abort", () => {
+        if (!h.waiting.delete(id)) return;
+        this.set(h, { asks: h.status.asks.filter((a) => a.id !== id) });
+        resolve({ behavior: "cancelled" });
+      });
     });
   }
 

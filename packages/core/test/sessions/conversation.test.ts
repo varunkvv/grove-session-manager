@@ -866,3 +866,16 @@ describe("what an edit changed", () => {
     expect(await readEditDiff(file, "nope")).toBeNull();
   });
 });
+
+describe("a chat window's turn that died on an api error", () => {
+  it("says it failed, so it can be asked again, and only in a chat window's view", async () => {
+    const file = sandboxFile(
+      jsonl([prompt("go", 0), says("m1", text("Starting."), 1), apiErrorMessage(2)]),
+    );
+    const state = await readConversation(file);
+    const chat = conversationView(state, { chat: true }).items[0] as TurnView;
+    expect(chat.failed).toBe(true);
+    expect(chat.note).toMatch(/^API Error/);
+    expect((conversationView(state).items[0] as TurnView).failed).toBeUndefined();
+  });
+});

@@ -589,6 +589,7 @@ export function ChatApp() {
     open: (file: string) => setPane({ kind: "files", file }),
     agents: (call?: string) => setPane({ kind: "agents", ...(call ? { call } : {}) }),
     diff: (call: string) => api().chatStepDiff(call),
+    retry: (prompt: string) => void send(prompt),
   };
   /** what runs now, as its claude says: the header counts its workflows and its other agents */
   const busy = (s.agents ?? []).filter((a) => a.state === "running");
@@ -927,6 +928,11 @@ export function ChatApp() {
                     onLeave={() => composer.current?.focus()}
                     // the keys go to the card, unless the person is in the middle of typing
                     autoFocus={!draft}
+                    onEditPrompt={() => {
+                      const said = prompts.at(-1);
+                      if (said) setDraft(said);
+                      composer.current?.focus();
+                    }}
                   />
                 ))}
                 {s.queued.map((q, i) => (

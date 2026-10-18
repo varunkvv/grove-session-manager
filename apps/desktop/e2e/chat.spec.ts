@@ -518,6 +518,101 @@ test("⌘F in a chat window finds in its conversation, and the main window stays
   await expect(chat.getByTestId("composer")).toBeFocused();
 });
 
+test("a refusal is a card that switches models or gives the prompt back, and a failed turn can be tried again", async () => {
+  // the hello turn, with claude code asking first what to do about a refusal (vs code's shape)
+  const rec = path.join(makeFixture({}).dir, "recordings");
+  mkdirSync(rec, { recursive: true });
+  const fixtures = path.join(import.meta.dirname, "../test/fixtures/chat");
+  const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8").split("\n").filter(Boolean);
+  const at = lines.findIndex((l) => JSON.parse(l).msg?.type === "assistant");
+  lines.splice(
+    at,
+    0,
+    JSON.stringify({
+      t: JSON.parse(lines[at] as string).t,
+      dir: "out",
+      msg: {
+        type: "control_request",
+        request_id: "dlg-1",
+        request: {
+          subtype: "request_user_dialog",
+          dialog_kind: "refusal_fallback_prompt",
+          payload: { originalModel: "claude-opus-5-5", fallbackModel: "claude-sonnet-5" },
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(rec, "turn.jsonl"), `${lines.join("\n")}\n`);
+  const s = seed(true);
+  // the session's last turn died on an api error
+  const file = writeSession(s.fx, {
+    cwd: s.root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+  });
+  const stamp = new Date().toISOString();
+  const env = {
+    isSidechain: false,
+    userType: "external",
+    cwd: s.root,
+    sessionId: SID,
+    version: "2.1.296",
+    timestamp: stamp,
+  };
+  writeFileSync(
+    file,
+    `${[
+      {
+        type: "user",
+        ...env,
+        uuid: "f0000000-0000-4000-8000-000000000011",
+        message: { role: "user", content: [{ type: "text", text: "try the migration" }] },
+      },
+      {
+        type: "assistant",
+        ...env,
+        uuid: "f0000000-0000-4000-8000-000000000012",
+        isApiErrorMessage: true,
+        message: {
+          role: "assistant",
+          id: "synthetic-1",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "API Error: 529 Overloaded" }],
+        },
+      },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n")}\n`,
+    { flag: "a" },
+  );
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_RECORDINGS: rec });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await expect(chat.getByTestId("turn-note").last()).toContainText("API Error: 529");
+  await chat.getByTestId("turn-retry").click();
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { message?: { content?: Array<{ text?: string }> } })?.message?.content?.[0]
+          ?.text === "try the migration",
+    ),
+  );
+  // the recording's turn plays: claude code asks about a refusal first
+  const card = chat.getByTestId("ask-refusal");
+  await expect(card).toContainText("Opus 5.5 turned this request down", { timeout: 15_000 });
+  await expect(card.getByTestId("refusal-switch")).toHaveText("Switch to Sonnet 5");
+  await card.getByTestId("refusal-edit").click();
+  await expect(chat.getByTestId("composer")).toHaveValue("try the migration");
+  await waitFor(async () =>
+    sentToClaude(s.chatLog).some(
+      (l) =>
+        (l.in as { response?: { response?: { result?: string } } })?.response?.response?.result ===
+        "edit_prompt",
+    ),
+  );
+});
+
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
