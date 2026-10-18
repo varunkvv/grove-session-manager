@@ -165,7 +165,7 @@ function SuggestMenu({
     list.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
   const quiet = (words: string, spin = false) => (
-    <p className="flex items-center gap-1.5 px-3 py-2 text-sm text-fg-4">
+    <p className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-fg-4">
       {spin && <Spinner size={10} />}
       {words}
     </p>
@@ -176,7 +176,8 @@ function SuggestMenu({
       role="listbox"
       data-testid="suggest"
       data-kind={kind}
-      className="overlay-shadow absolute right-0 bottom-full left-0 mb-2 max-h-72 overflow-y-auto rounded-lg bg-overlay py-1"
+      // the toolbar menus' box and rows, over the composer and as wide as it
+      className="overlay-shadow absolute inset-x-6 bottom-full mb-2 max-h-72 overflow-y-auto rounded-lg border border-line-strong bg-overlay p-1"
     >
       {!items
         ? quiet(waiting ? "Starting Claude…" : "Looking…", true)
@@ -195,8 +196,8 @@ function SuggestMenu({
                 onMouseMove={() => onHover(i)}
                 onClick={() => onPick(item)}
                 className={cx(
-                  "flex w-full min-w-0 items-baseline gap-3 px-3 py-1.5 text-left",
-                  i === active && "bg-active",
+                  "flex w-full min-w-0 items-baseline gap-3 rounded-md px-2 py-1.5 text-left",
+                  i === active && "bg-raised",
                 )}
               >
                 <span className={cx("shrink-0 truncate text-fg", kind === "@" && "min-w-0")}>
