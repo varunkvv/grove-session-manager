@@ -409,6 +409,23 @@ export function SettingsDialog() {
             its lid shut still sleeps.
           </span>
         </div>
+        <div>
+          <span className="mb-1.5 block text-sm font-medium text-fg-2">Chat</span>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 text-sm text-fg-2">Grove chat (beta)</span>
+            <Switch
+              checked={draft.chat === true}
+              onChange={(v) => setDraft({ ...draft, chat: v })}
+              label="Grove chat (beta)"
+              testId="setting-chat"
+            />
+          </div>
+          <span className="mt-1 block text-meta text-fg-3">
+            A double-click or a notification opens the session in its own Grove window, where you
+            talk to it through your own claude and its settings. Open in{" "}
+            {editor?.label ?? "the editor"} stays one click away in that window.
+          </span>
+        </div>
         {error && <p className="text-danger">{error}</p>}
       </div>
     </Modal>

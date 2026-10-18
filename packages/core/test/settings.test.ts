@@ -16,4 +16,13 @@ describe("settings", () => {
     writeFileSync(settingsFilePath(app), JSON.stringify({ editor: "emacs" }));
     expect((await loadSettings(app)).editor).toBe("vscode");
   });
+
+  it("grove chat is off unless it is true", async () => {
+    const app = makeSandbox("grove-settings-");
+    expect((await loadSettings(app)).chat).toBeUndefined();
+    writeFileSync(settingsFilePath(app), JSON.stringify({ chat: "yes" }));
+    expect((await loadSettings(app)).chat).toBeUndefined();
+    expect((await saveSettings(app, { chat: true })).chat).toBe(true);
+    expect((await loadSettings(app)).chat).toBe(true);
+  });
 });

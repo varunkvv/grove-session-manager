@@ -25,6 +25,8 @@ export interface Settings {
   renameSessions?: boolean;
   /** no idle sleep, of the mac or its display, while an agent is mid-turn. on unless false. */
   keepAwake?: boolean;
+  /** grove chat (beta): a session opens in its own grove window, run through the agent sdk. off unless true. */
+  chat?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -58,6 +60,7 @@ function clean(raw: unknown): Settings {
     "recaps",
     "renameSessions",
     "keepAwake",
+    "chat",
   ] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
   }

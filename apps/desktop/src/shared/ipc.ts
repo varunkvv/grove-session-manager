@@ -156,6 +156,8 @@ export interface AppSettings {
   renameSessions?: boolean;
   /** the mac and its display do not idle-sleep while an agent is mid-turn. on unless switched off. */
   keepAwake?: boolean;
+  /** grove chat (beta): a session opens in its own window, talked to from grove. off unless switched on. */
+  chat?: boolean;
 }
 
 export interface EnvInfo {
