@@ -1,3 +1,25 @@
+## 0.20
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.20 adds two themes.
+
+New:
+
+- **Theme** sits next to Appearance in Settings: **Grove** (as before), **Rosé Pine** or **Solarized**. each one has a
+  light and a dark side, so System still follows macOS at sunset
+- Rosé Pine is Dawn in light and the main palette in dark. Solarized is its own light and dark. the violet accent,
+  the fonts and the layout stay Grove's
+- in a chat, code is coloured with the theme's own colours and mermaid diagrams draw in them
+
+Keep in mind:
+
+- some of the original colours are moved a little lighter or darker, where they fell under Grove's contrast rules
+  (Solarized's greys most of all), so every word stays readable on every background
+- there are no custom themes
+
+Fixed:
+
+- labels on a diagram's arrows no longer sit on a black box in dark
+
 ## 0.19
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.19 lets you talk to them in Grove, as a beta.
