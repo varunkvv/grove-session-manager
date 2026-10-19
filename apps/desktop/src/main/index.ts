@@ -334,7 +334,9 @@ async function start(): Promise<void> {
   const fresh: FreshChats = new Map();
   const chatWindows = new ChatWindows({
     preload: preloadFile,
-    url: () => entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance),
+    url: () =>
+      entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance, settings.palette),
+    palette: () => settings.palette,
     attach: (id, contents) => chat.attach(id, contents),
     detach: (id, contents) => chat.detach(id, contents),
     // looking at it in its own window is landing on it
@@ -540,14 +542,18 @@ async function start(): Promise<void> {
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
       const chatMoved = (s.chat === true) !== (settings.chat === true);
-      const lookMoved = s.appearance !== settings.appearance;
+      const lookMoved = s.appearance !== settings.appearance || s.palette !== settings.palette;
       settings = s;
       if (menuMoved) menu(resolveEditor(s).label);
       summon(s);
       // the spare chat window is there only while grove chat is on, and in the page's appearance.
       // an open chat window draws in it too
       if (chatMoved) chatWindows.setSpare(s.chat === true);
-      if (lookMoved) chatWindows.appearance(s.appearance);
+      if (lookMoved) {
+        chatWindows.appearance(s.appearance);
+        // a palette alone moves no nativeTheme, so nothing else repaints the frame
+        win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors, s.palette));
+      }
       if (recapsMoved) projects.recapsSwitched();
       if (recapsMoved || renamesMoved) {
         sessions.retitle();
@@ -583,7 +589,8 @@ async function start(): Promise<void> {
     preload: preloadFile,
     stateFile: path.join(electron.app.getPath("userData"), "window-state.json"),
     fixedSize: !!appEnv.customRoot,
-    url: entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance),
+    url: entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance, settings.palette),
+    palette: settings.palette,
     show: !startHidden,
   });
   lockDown(win.webContents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
@@ -633,7 +640,9 @@ async function start(): Promise<void> {
   });
   // the page follows the media query on its own. this is only the frame behind it.
   electron.nativeTheme.on("updated", () => {
-    win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors));
+    win?.setBackgroundColor(
+      canvasColor(electron.nativeTheme.shouldUseDarkColors, settings.palette),
+    );
     chatWindows.repaint();
   });
   summon(settings);

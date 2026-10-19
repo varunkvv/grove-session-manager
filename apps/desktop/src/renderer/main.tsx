@@ -5,8 +5,9 @@ import { ChatApp } from "./components/Chat.tsx";
 import { applyAppearance } from "./state/appearance.ts";
 import "./app.css";
 
-// before the first render, so a pinned appearance never flashes the other one
-applyAppearance(new URLSearchParams(location.search).get("theme"));
+// before the first render, so a pinned appearance or a palette never flashes another
+const look = new URLSearchParams(location.search);
+applyAppearance(look.get("theme"), look.get("palette"));
 
 // one bundle, two pages: a grove chat window is `#/chat`, and never runs the main window's app
 const chat = location.hash.startsWith("#/chat");

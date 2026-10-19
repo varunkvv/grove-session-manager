@@ -141,6 +141,8 @@ export interface EditorStatus {
 export interface AppSettings {
   editor: "vscode" | "cursor" | "zed";
   appearance: "system" | "light" | "dark";
+  /** the colours. absent is grove */
+  palette?: "grove" | "rose-pine" | "solarized";
   editorBin?: string;
   extensionsDir?: string;
   gitPath?: string;
@@ -565,8 +567,8 @@ export interface PushEvents {
   "chat:text": { at: number; text: string };
   /** a chat window only: the file its viewer shows changed on disk */
   "chat:file": { path: string };
-  /** a chat window only: the Appearance setting moved */
-  "chat:appearance": { appearance: AppSettings["appearance"] };
+  /** a chat window only: the Appearance or Theme setting moved */
+  "chat:appearance": { appearance: AppSettings["appearance"]; palette: AppSettings["palette"] };
   /** a chat window only: open this beside the conversation, as the session card asked */
   "chat:show": ChatShow;
   /** a chat window only: ⌘F was pressed in it. it finds in its own conversation */
@@ -822,6 +824,7 @@ export interface ChatTarget {
   /** when it last moved */
   at: number;
   appearance: AppSettings["appearance"];
+  palette: AppSettings["palette"];
   /** the editor's name, for Open in */
   editor: string;
   status: ChatStatus;

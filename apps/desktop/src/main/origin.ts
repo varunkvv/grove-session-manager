@@ -6,10 +6,18 @@ export const APP_ENTRY_URL = `${APP_SCHEME}://${APP_HOST}/index.html`;
  * electron 44 does not pass nativeTheme.themeSource through to the renderer's
  * prefers-color-scheme, so a pinned appearance is carried on the url instead. it is read before
  * the first render, which a push over ipc could not promise. "system" carries nothing, and the
- * page follows the media query on its own.
+ * page follows the media query on its own. a palette other than grove's rides along, for the same
+ * reason: the first paint is already in its colours
  */
-export function entryUrl(base: string, appearance: "system" | "light" | "dark"): string {
-  return appearance === "system" ? base : `${base}?theme=${appearance}`;
+export function entryUrl(
+  base: string,
+  appearance: "system" | "light" | "dark",
+  palette?: "grove" | "rose-pine" | "solarized",
+): string {
+  const q = new URLSearchParams();
+  if (appearance !== "system") q.set("theme", appearance);
+  if (palette && palette !== "grove") q.set("palette", palette);
+  return q.size ? `${base}?${q}` : base;
 }
 
 /**

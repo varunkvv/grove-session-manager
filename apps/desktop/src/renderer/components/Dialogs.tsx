@@ -319,22 +319,41 @@ export function SettingsDialog() {
     >
       {/* 3.5, not 4: with both switches the dialog still fits a window of the default height */}
       <div className="space-y-3.5">
-        <Field
-          label="Appearance"
-          hint="System follows macOS, including when it switches at sunset."
-        >
-          <Select
-            value={draft.appearance}
-            onChange={(e) =>
-              setDraft({ ...draft, appearance: e.target.value as AppSettings["appearance"] })
-            }
-            data-testid="setting-appearance"
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </Select>
-        </Field>
+        {/* side by side: a row more would push the dialog past a window of the default height */}
+        <div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Appearance">
+              <Select
+                value={draft.appearance}
+                onChange={(e) =>
+                  setDraft({ ...draft, appearance: e.target.value as AppSettings["appearance"] })
+                }
+                data-testid="setting-appearance"
+              >
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </Select>
+            </Field>
+            <Field label="Theme">
+              <Select
+                value={draft.palette ?? "grove"}
+                onChange={(e) =>
+                  setDraft({ ...draft, palette: e.target.value as AppSettings["palette"] })
+                }
+                data-testid="setting-palette"
+              >
+                <option value="grove">Grove</option>
+                <option value="rose-pine">Rosé Pine</option>
+                <option value="solarized">Solarized</option>
+              </Select>
+            </Field>
+          </div>
+          <span className="mt-1.5 block text-sm text-fg-4">
+            System follows macOS, including when it switches at sunset. Each theme comes in light
+            and dark.
+          </span>
+        </div>
         <Field label="Editor">
           <Select
             value={draft.editor}

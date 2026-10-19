@@ -57,11 +57,13 @@ function Screen() {
 export function App() {
   const ready = useStore((s) => s.ready);
   const appearance = useStore((s) => s.settings?.appearance);
+  const palette = useStore((s) => s.settings?.palette);
   const view = useStore((s) => s.view.name);
 
   useEffect(() => {
-    applyAppearance(appearance);
-  }, [appearance]);
+    // until the settings are in, the url's look stands
+    if (appearance) applyAppearance(appearance, palette);
+  }, [appearance, palette]);
 
   useEffect(() => {
     let off: (() => void) | undefined;

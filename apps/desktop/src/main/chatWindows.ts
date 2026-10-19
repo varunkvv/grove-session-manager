@@ -10,6 +10,8 @@ export interface ChatWindowsOptions {
   preload: string;
   /** the page, with the appearance on it. `#/chat` is added here */
   url: () => string;
+  /** the palette now: a window's frame is painted in its canvas */
+  palette: () => AppSettings["palette"];
   /** a window took a session, or let it go: the host pushes to it, or stops */
   attach: (sessionId: string, contents: WebContents) => void;
   detach: (sessionId: string, contents: WebContents) => void;
@@ -146,22 +148,22 @@ export class ChatWindows {
     }
   }
 
-  /** the Appearance setting moved: every chat window draws in the new one, the spare included */
+  /** the Appearance or Theme setting moved: every chat window draws in the new one, the spare included */
   appearance(appearance: AppSettings["appearance"]): void {
-    const dark = electron.nativeTheme.shouldUseDarkColors;
+    const palette = this.o.palette();
     for (const win of this.bySession.values()) {
-      if (win.isDestroyed()) continue;
-      win.setBackgroundColor(canvasColor(dark));
-      win.webContents.send("grove:chat:appearance", { appearance });
+      if (!win.isDestroyed())
+        win.webContents.send("grove:chat:appearance", { appearance, palette });
     }
+    this.repaint();
     this.remakeSpare();
   }
 
-  /** macOS switched between light and dark: the frames behind the pages follow */
+  /** macOS switched between light and dark, or the palette moved: the frames behind the pages follow */
   repaint(): void {
-    const dark = electron.nativeTheme.shouldUseDarkColors;
+    const canvas = canvasColor(electron.nativeTheme.shouldUseDarkColors, this.o.palette());
     for (const win of this.bySession.values()) {
-      if (!win.isDestroyed()) win.setBackgroundColor(canvasColor(dark));
+      if (!win.isDestroyed()) win.setBackgroundColor(canvas);
     }
   }
 
@@ -230,7 +232,7 @@ export class ChatWindows {
       minHeight: MIN.height,
       ...(this.o.fixedSize ? { enableLargerThanScreen: true } : {}),
       show: false,
-      backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors),
+      backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors, this.o.palette()),
       titleBarStyle: "hiddenInset",
       trafficLightPosition: { x: 16, y: 14 },
       // the same lockdown as the main window

@@ -433,7 +433,7 @@ export function ChatApp() {
     if (t.show) showIt(t.show);
     stream.current = t.text;
     setShown(t.text);
-    applyAppearance(t.appearance);
+    applyAppearance(t.appearance, t.palette);
     document.title = t.session.title;
     void read();
   }, [read, showIt]);
@@ -454,7 +454,9 @@ export function ChatApp() {
         void load();
       }),
       api().on("chat:status", (s) => setStatus(s)),
-      api().on("chat:appearance", ({ appearance }) => applyAppearance(appearance)),
+      api().on("chat:appearance", ({ appearance, palette }) =>
+        applyAppearance(appearance, palette),
+      ),
       // ⌘F, which the app's menu sends here when this window has the keyboard
       api().on("chat:find", () => setFinding((n) => n + 1)),
       // the session card sent the person here for a file or the agents, a fork with its words

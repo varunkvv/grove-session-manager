@@ -26,6 +26,16 @@ describe("settings", () => {
     expect((await loadSettings(app)).chat).toBe(true);
   });
 
+  it("the palette is one of the three, absent for anything else", async () => {
+    const app = makeSandbox("grove-settings-");
+    expect((await loadSettings(app)).palette).toBeUndefined();
+    expect((await saveSettings(app, { palette: "rose-pine" })).palette).toBe("rose-pine");
+    expect((await loadSettings(app)).palette).toBe("rose-pine");
+    expect((await saveSettings(app, { palette: "solarized" })).palette).toBe("solarized");
+    writeFileSync(settingsFilePath(app), JSON.stringify({ palette: "dracula" }));
+    expect((await loadSettings(app)).palette).toBeUndefined();
+  });
+
   it("the summon key is kept as given, and cleared it is the default again", async () => {
     const app = makeSandbox("grove-settings-");
     expect((await loadSettings(app)).summonKey).toBeUndefined();

@@ -1,11 +1,13 @@
 import type { BrowserWindow, WebContents } from "electron";
 import * as electron from "electron";
+import type { AppSettings } from "../shared/ipc.ts";
 import { clampBounds, loadWindowState, MIN_SIZE, saveWindowState } from "./windowState.ts";
 
 export interface MainWindowOptions {
   preload: string;
   stateFile: string;
   url: string;
+  palette?: AppSettings["palette"];
   /**
    * a test root's window keeps the size it asks for, even past the display. a CI runner's screen is
    * narrower than a laptop's, and macOS would shrink the window to it - then the pane covers the
@@ -16,11 +18,15 @@ export interface MainWindowOptions {
   show?: boolean;
 }
 
-/** --color-canvas from app.css, in both appearances. the window is painted before the page loads. */
-const CANVAS = { dark: "#17181B", light: "#FFFFFF" } as const;
+/** --color-canvas of each palette in app.css, light and dark. the window is painted before the page loads. */
+export const CANVAS = {
+  grove: { light: "#FFFFFF", dark: "#17181B" },
+  "rose-pine": { light: "#FAF4ED", dark: "#191724" },
+  solarized: { light: "#FDF6E3", dark: "#002B36" },
+} as const;
 
-export function canvasColor(dark: boolean): string {
-  return dark ? CANVAS.dark : CANVAS.light;
+export function canvasColor(dark: boolean, palette: keyof typeof CANVAS = "grove"): string {
+  return dark ? CANVAS[palette].dark : CANVAS[palette].light;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -43,7 +49,7 @@ export async function createMainWindow(o: MainWindowOptions): Promise<BrowserWin
     minHeight: MIN_SIZE.height,
     ...(o.fixedSize ? { enableLargerThanScreen: true } : {}),
     show: false,
-    backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors),
+    backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors, o.palette),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 14 },
     webPreferences: {

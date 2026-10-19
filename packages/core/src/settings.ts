@@ -3,11 +3,15 @@ import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "./fsx
 
 /** shared by the app and the extension. a GUI app launched from Finder sees no shell env, so this is a file. */
 export type Appearance = "system" | "light" | "dark";
+/** the colours: grove's own, or one of two built-in palettes. each has a light and a dark half */
+export type Palette = "grove" | "rose-pine" | "solarized";
 
 export interface Settings {
   editor: "vscode" | "cursor" | "zed";
   /** follows macOS unless it is pinned. "system" is the default. */
   appearance: Appearance;
+  /** absent is grove */
+  palette?: Palette;
   /** absolute path to the editor's CLI. overrides the preset. */
   editorBin?: string;
   extensionsDir?: string;
@@ -45,6 +49,9 @@ function clean(raw: unknown): Settings {
   }
   if (raw.appearance === "light" || raw.appearance === "dark" || raw.appearance === "system") {
     s.appearance = raw.appearance;
+  }
+  if (raw.palette === "grove" || raw.palette === "rose-pine" || raw.palette === "solarized") {
+    s.palette = raw.palette;
   }
   for (const key of [
     "editorBin",
