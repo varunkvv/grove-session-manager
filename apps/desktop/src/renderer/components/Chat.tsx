@@ -454,6 +454,22 @@ export function ChatApp() {
         void load();
       }),
       api().on("chat:status", (s) => setStatus(s)),
+      // grove named it, or it moved project. the same name keeps the target, so nothing redraws
+      api().on("chat:session", (hit) =>
+        setTarget((t) => {
+          if (!t || t.session.sessionId !== hit.sessionId) return t;
+          const was = t.session;
+          if (
+            was.title === hit.title &&
+            was.description === hit.description &&
+            was.where === hit.where &&
+            t.project === hit.project
+          )
+            return t;
+          const { project: _, ...rest } = t;
+          return { ...rest, session: hit, ...(hit.project ? { project: hit.project } : {}) };
+        }),
+      ),
       api().on("chat:appearance", ({ appearance, palette }) =>
         applyAppearance(appearance, palette),
       ),

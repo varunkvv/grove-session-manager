@@ -23,6 +23,11 @@ Keep in mind:
 - there are nine project colours. with more projects than that two share one, and the name in the header and in ⌘K
   tells them apart
 
+Fixed since 0.21.37:
+
+- a chat window's header and its name in the Window menu follow when grove renames its session. before, they kept
+  the title the window opened with
+
 ## 0.20
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.20 adds two themes.

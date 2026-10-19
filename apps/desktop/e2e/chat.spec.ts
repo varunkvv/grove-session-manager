@@ -1,7 +1,7 @@
 // grove chat (beta): a session in its own window, talked to through a fake claude that plays back
 // the spike's recordings (test/fixtures/chat). with the switch off, nothing of it is there.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
@@ -63,10 +63,15 @@ function seed(chat: boolean) {
   const fx = makeFixture({ withCompanion: true });
   if (chat) writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
   const { id, root } = writeProject(fx, { name: "chat-trial" });
-  writeSession(fx, { cwd: root, sessionId: SID, title: TITLE, prompt: "set the scene" });
+  const file = writeSession(fx, {
+    cwd: root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+  });
   const fake = writeFakeClaude(fx.dir);
   const chatLog = path.join(fx.dir, "chat.log");
-  return { fx, id, root, fake, chatLog };
+  return { fx, id, root, file, fake, chatLog };
 }
 
 async function launch(s: ReturnType<typeof seed>, extra: Record<string, string> = {}) {
@@ -126,6 +131,25 @@ test("switched off, grove is as it was: one window, and a double-click opens the
   await page.keyboard.press("Meta+,");
   await expect(page.getByTestId("setting-chat")).toHaveAttribute("aria-checked", "false");
   expect(sentToClaude(s.chatLog)).toEqual([]);
+});
+
+test("grove names a session with its window open: the header and the window's title follow", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await expect(chat.locator("h1")).toHaveText(TITLE);
+  await chat.getByTestId("chat-files").click();
+  await expect(chat.getByTestId("files")).toBeVisible();
+  // what Claude Code appends when grove's hook hands it a name
+  appendFileSync(
+    s.file,
+    `${JSON.stringify({ type: "custom-title", customTitle: "the retry loop", sessionId: SID })}\n`,
+  );
+  await expect(chat.locator("h1")).toHaveText("the retry loop");
+  await expect.poll(() => chat.title()).toBe("the retry loop · chat-trial");
+  // only the name moved: the window was not loaded again
+  await expect(chat.getByTestId("files")).toBeVisible();
 });
 
 test("switched on, a double-click opens the session's own window, and a prompt streams back", async () => {

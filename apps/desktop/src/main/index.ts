@@ -456,6 +456,11 @@ async function start(): Promise<void> {
         fresh.delete(id);
         chatWindows.reload(id);
       }
+      // grove named one that has a window open: its header says so
+      for (const id of chatWindows.windows()) {
+        const hit = projects.hitFor(id);
+        if (hit) chatWindows.named(hit);
+      }
     },
     onStopped: (s) => notifier.stopped({ ...s, click: () => landOn(s.sessionId) }),
   });

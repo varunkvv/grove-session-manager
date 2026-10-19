@@ -592,6 +592,8 @@ export interface PushEvents {
   "chat:show": ChatShow;
   /** a chat window only: ⌘F was pressed in it. it finds in its own conversation */
   "chat:find": Record<string, never>;
+  /** a chat window only: its session as the list has it now (grove named it, it was renamed) */
+  "chat:session": SessionHit;
   /** the main window: a session grove runs moved (a state, an ask, a tool). never its tokens */
   "chat:host": { sessionId: string; status: ChatStatus };
 }
@@ -637,6 +639,7 @@ export const PUSH_CHANNELS = [
   "chat:appearance",
   "chat:show",
   "chat:find",
+  "chat:session",
   "chat:host",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 

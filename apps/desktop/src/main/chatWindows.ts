@@ -2,7 +2,7 @@
 // opening a session only hands the spare its id. the same renderer bundle on `#/chat`.
 import type { BrowserWindow, WebContents } from "electron";
 import * as electron from "electron";
-import type { AppSettings, ChatShow } from "../shared/ipc.ts";
+import type { AppSettings, ChatShow, SessionHit } from "../shared/ipc.ts";
 import { canvasColor } from "./window.ts";
 import { loadWindowState, saveWindowState } from "./windowState.ts";
 
@@ -130,6 +130,12 @@ export class ChatWindows {
   find(sessionId: string): void {
     const win = this.bySession.get(sessionId);
     if (win && !win.isDestroyed()) win.webContents.send("grove:chat:find", {});
+  }
+
+  /** its session's row moved in the list: the header and the window's title follow */
+  named(hit: SessionHit): void {
+    const win = this.bySession.get(hit.sessionId);
+    if (win && !win.isDestroyed()) win.webContents.send("grove:chat:session", hit);
   }
 
   /** the session of the chat window that has the keyboard */
