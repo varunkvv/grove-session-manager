@@ -579,6 +579,7 @@ async function start(): Promise<void> {
     shellEnv: () => loginEnv.fresh(),
     pusher,
     window: () => win,
+    showMain,
     chat,
     chatWindows,
     fresh,

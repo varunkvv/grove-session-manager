@@ -40,8 +40,11 @@ export class ChatWindows {
   private readonly ready = new WeakSet<BrowserWindow>();
   /** the size the person last left a chat window at: every new one opens at it */
   private size = SIZE;
-  /** the chat window opened or looked at last: the next one cascades from it */
-  private last: BrowserWindow | null = null;
+  /**
+   * the open chat windows, the one opened or looked at last first: ⌘K lists them in this order, and
+   * the next one cascades from the first
+   */
+  private order: BrowserWindow[] = [];
   private saving: NodeJS.Timeout | null = null;
   /** a file or the agents a loading window opens with: see `takeShow` */
   private readonly shows = new Map<string, ChatShow>();
@@ -81,12 +84,12 @@ export class ChatWindows {
     this.o.attach(sessionId, win.webContents);
     const contentsId = win.webContents.id;
     win.on("focus", () => {
-      this.last = win;
+      this.front(win);
       // the session it shows now: /clear moves a window to a new one
       const id = this.byContents.get(contentsId);
       if (id) this.o.focused?.(id);
     });
-    this.last = win;
+    this.front(win);
     // a spare's page is up and waiting: it asks which session it is for. a new one asks on load
     win.webContents.send("grove:chat:open", {});
     // a page still loading would miss it: it gets it with its session instead (`takeShow`)
@@ -95,6 +98,18 @@ export class ChatWindows {
     if (this.ready.has(win)) win.show();
     else win.once("ready-to-show", () => win.show());
     this.refill();
+  }
+
+  /** the open chat windows' sessions, the one looked at last first */
+  windows(): string[] {
+    return this.order.flatMap((w) => {
+      const id = w.isDestroyed() ? undefined : this.byContents.get(w.webContents.id);
+      return id ? [id] : [];
+    });
+  }
+
+  private front(win: BrowserWindow): void {
+    this.order = [win, ...this.order.filter((w) => w !== win)];
   }
 
   /** the session a page's calls are about. undefined for the main window and the spare */
@@ -172,7 +187,8 @@ export class ChatWindows {
     const [w, h] = win.getSize();
     if (w !== this.size.width || h !== this.size.height)
       win.setSize(this.size.width, this.size.height);
-    const from = this.last && !this.last.isDestroyed() && this.last.isVisible() ? this.last : null;
+    const last = this.order[0];
+    const from = last && !last.isDestroyed() && last.isVisible() ? last : null;
     if (!from) {
       win.center();
       return;
@@ -262,6 +278,7 @@ export class ChatWindows {
     const contents = win.webContents;
     const id = contents.id;
     win.on("closed", () => {
+      this.order = this.order.filter((w) => w !== win);
       const sessionId = this.byContents.get(id);
       this.byContents.delete(id);
       if (sessionId === undefined) return;

@@ -275,6 +275,12 @@ export interface SessionHit extends SessionRef {
   snippet?: string;
 }
 
+/** an open chat window, as ⌘K lists it: its session, and what it asks when it needs the person */
+export interface ChatWindowView {
+  hit: SessionHit;
+  row?: InboxRowView;
+}
+
 /** a session that needs the person: InboxRow joined with the session it is about */
 export interface InboxRowView extends SessionRef {
   project: ProjectId;
@@ -433,6 +439,13 @@ export interface Api {
   sessionReply(key: SessionKey, text: string): Promise<Outcome>;
   /** grove chat: a new session in the project, in a window of its own. claude starts on the first key */
   newChat(project: ProjectId): Promise<Outcome>;
+  /**
+   * grove chat: the open chat windows, the one looked at last first, each with its inbox row when it
+   * needs the person. what ⌘K's Windows section lists, in a chat window and in the main one
+   */
+  chatWindows(): Promise<ChatWindowView[]>;
+  /** grove chat: an open chat window to the front. null: the main window, on All sessions */
+  showWindow(sessionId: string | null): Promise<void>;
   startAgent(req: StartAgentRequest): Promise<Outcome<{ message: string; body?: string }>>;
   /**
    * sessions found by their own fields, then by what was said in them. the palette asks with no
@@ -513,6 +526,8 @@ export const INVOKE_CHANNELS = [
   "sessionAnswer",
   "sessionReply",
   "newChat",
+  "chatWindows",
+  "showWindow",
   "startAgent",
   "findSessions",
   "listSessions",

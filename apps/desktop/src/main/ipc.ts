@@ -41,10 +41,12 @@ import type {
   ChatChange,
   ChatMode,
   ChatTarget,
+  ChatWindowView,
   OpenReport,
   Outcome,
   PathInfoView,
   ProjectId,
+  SessionHit,
   SessionKey,
   SessionRow,
 } from "../shared/ipc.ts";
@@ -105,6 +107,8 @@ export interface Deps {
   shellEnv: () => Promise<NodeJS.ProcessEnv>;
   pusher: Pusher;
   window: () => BrowserWindow | null;
+  /** the main window to the front, wherever it was */
+  showMain: () => void;
   /** grove chat: the sessions grove runs itself, and their windows */
   chat: ChatHost;
   chatWindows: ChatWindows;
@@ -478,6 +482,23 @@ function buildHandlers(deps: Deps): Handlers {
       deps.chatWindows.open(id);
     },
 
+    async chatWindows(): Promise<ChatWindowView[]> {
+      const asks = new Map(projects.inbox().rows.map((r) => [r.sessionId, r]));
+      return deps.chatWindows.windows().flatMap((id) => {
+        const hit = projects.hitFor(id) ?? freshHit(deps, id);
+        const row = asks.get(id);
+        return hit ? [{ hit, ...(row ? { row } : {}) }] : [];
+      });
+    },
+
+    async showWindow(id) {
+      if (id === null) {
+        deps.showMain();
+        pusher.send("menu:command", { id: "go-inbox" });
+        // only a window that is open: this never opens a session
+      } else if (typeof id === "string" && deps.chatWindows.has(id)) deps.chatWindows.open(id);
+    },
+
     async startAgent(raw) {
       const req = parseStartAgent(raw);
       const combo = combos.byId(req.project);
@@ -797,6 +818,26 @@ type ChatHandlers = {
 const newestRow = (deps: Pick<Deps, "sessions">, id: string): SessionRow | undefined =>
   deps.sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
 
+/** a session grove chat made (cmd-N, /clear), named as its window names it until its transcript lands */
+function freshHit(
+  deps: Pick<Deps, "fresh" | "combos" | "chat">,
+  id: string,
+): SessionHit | undefined {
+  const fresh = deps.fresh.get(id);
+  if (!fresh) return undefined;
+  return {
+    key: "",
+    sessionId: id,
+    title: "New session",
+    // /clear in a session that is in no project: its folder says where
+    where: fresh.project ? deps.combos.byId(fresh.project).name : path.basename(fresh.where.cwd),
+    runtime: deps.chat.status(id).live ? "grove" : "closed",
+    open: {},
+    activityMs: Date.now(),
+    ...(fresh.project ? { project: fresh.project } : {}),
+  };
+}
+
 /** the rule vs code and zed use: a project's own sessions run at its root, with its folders */
 async function whereOf(deps: Pick<Deps, "combos">, row: SessionRow): Promise<ChatWhere> {
   const combo = deps.combos.list().find((c) => c.name === row.comboName);
@@ -990,27 +1031,18 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       const fresh = deps.fresh.get(id);
       // a window that was still loading when it was given a file, the agents or a fork's words
       const show = deps.chatWindows.takeShow(id);
-      if (!hit && fresh) {
-        const status = chat.status(id);
+      const made = !hit && fresh && freshHit(deps, id);
+      if (made && fresh) {
+        const { activityMs, project, ...session } = made;
         return {
-          session: {
-            key: "",
-            sessionId: id,
-            title: "New session",
-            // /clear in a session that is in no project: its folder says where
-            where: fresh.project
-              ? deps.combos.byId(fresh.project).name
-              : path.basename(fresh.where.cwd),
-            runtime: status.live ? "grove" : "closed",
-            open: {},
-          },
-          ...(fresh.project ? { project: fresh.project } : {}),
+          session,
+          ...(project ? { project } : {}),
           cwd: fresh.where.cwd,
-          at: Date.now(),
+          at: activityMs,
           appearance: deps.settings().appearance,
           palette: deps.settings().palette,
           editor: editor.current().label,
-          status,
+          status: chat.status(id),
           text: chat.text(id),
           fresh: true,
           ...(show ? { show } : {}),
