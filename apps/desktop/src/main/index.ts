@@ -329,6 +329,8 @@ async function start(): Promise<void> {
     },
     // the main window's session card: what it waits on and what it is doing, never its tokens
     onStatus: (sessionId, status) => pusher.send("chat:host", { sessionId, status }),
+    // on quit this runs before live.dispose(), which writes the flag out with the rest
+    letGo: (ids) => live.letGo(ids),
   });
   /** sessions grove chat made, until their transcript is in the list */
   const fresh: FreshChats = new Map();

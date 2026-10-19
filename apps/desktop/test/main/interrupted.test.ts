@@ -174,8 +174,32 @@ describe("the interrupted fact survives a restart", () => {
     m.event(SID.other, "UserPromptSubmit");
     m.event(SID.other, "Stop");
     m.event(SID.other, "SessionEnd");
-    const { seen } = await m.start();
+    const { live, seen } = await m.start();
     expect([...seen().keys()]).toEqual([SID.cut]);
+    expect(live.list().has(SID.other)).toBe(false);
+  });
+
+  it("a session grove closed itself keeps what it waited on, once, and mid-turn is still cut off", async () => {
+    const m = machine();
+    m.event(SID.cut, "UserPromptSubmit");
+    m.event(SID.cut, "Stop");
+    m.event(SID.other, "UserPromptSubmit");
+    const first = await m.start();
+    // a quit: grove closes both claudes, one waiting on him and one mid-turn
+    first.live.letGo([SID.cut, SID.other]);
+    await m.stop(first.live);
+    m.event(SID.cut, "SessionEnd");
+    m.event(SID.other, "SessionEnd");
+    const second = await m.start();
+    expect(second.live.list().get(SID.cut)?.state).toBe("waiting");
+    expect(second.live.list().get(SID.cut)?.letGo).toBeUndefined();
+    expect(second.live.list().has(SID.other)).toBe(false);
+    expect([...second.seen().keys()]).toEqual([SID.other]);
+    await m.stop(second.live);
+    // a close of its own later still ends it
+    m.event(SID.cut, "SessionEnd");
+    const third = await m.start();
+    expect(third.live.list().has(SID.cut)).toBe(false);
   });
 
   it("a running session quiet past the stale mark when the app comes up was cut off too", async () => {

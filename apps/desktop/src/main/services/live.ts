@@ -409,6 +409,22 @@ export class LiveService {
     return moved;
   }
 
+  /**
+   * grove is about to close these claudes itself. what one waits on still stands after it, so its
+   * SessionEnd keeps the status (see runDrain). one mid-turn is left as is: cut short, it is Stopped
+   */
+  letGo(sessionIds: Iterable<string>): void {
+    let changed = false;
+    for (const id of sessionIds) {
+      const s = this.statuses.get(id);
+      if (s && s.state !== "running") {
+        this.statuses.set(id, { ...s, letGo: true });
+        changed = true;
+      }
+    }
+    if (changed) this.changed();
+  }
+
   markSeen(sessionIds: Iterable<string>): void {
     let changed = false;
     for (const id of sessionIds) {
@@ -494,7 +510,13 @@ export class LiveService {
       // the session ended mid-turn: a window closed on it. anything else it says means it lives.
       if (ev.event === "SessionEnd" && prev?.state === "running") this.interrupt([ev.sessionId]);
       else if (ev.event !== "SessionEnd") this.resume([ev.sessionId]);
-      const next = reduceStatus(prev, ev);
+      let next = reduceStatus(prev, ev);
+      // grove closed it itself (letGo): what it waited on stands. the flag goes with this one
+      // SessionEnd, so a close of its own later still ends it
+      if (ev.event === "SessionEnd" && prev?.letGo) {
+        const { letGo: _, ...kept } = prev;
+        next = kept;
+      }
       if (next) this.statuses.set(ev.sessionId, next);
       else this.statuses.delete(ev.sessionId);
       const runs = reduceAgentRuns(this.runs.get(ev.sessionId), ev);

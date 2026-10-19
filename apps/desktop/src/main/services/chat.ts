@@ -308,6 +308,11 @@ export interface ChatHostOptions {
   onReset?: (from: string, to: string, where: ChatWhere) => void;
   /** its status moved: the main window's session card follows it. never the streamed text */
   onStatus?: (id: string, status: ChatStatus) => void;
+  /**
+   * grove is about to close these claudes itself, on quit or when the reaper lets one go. the
+   * session did not end, so what it waits on should still show after its SessionEnd
+   */
+  letGo?: (ids: string[]) => void;
 }
 
 /** vs code's thinking budget (extension.js `M61`), sent for every model as it sends it */
@@ -1088,6 +1093,9 @@ export class ChatHost {
 
   dispose(): void {
     clearInterval(this.reaper);
+    // before the close: its SessionEnd can land while the app still drains
+    const up = [...this.hosted.values()].filter((h) => h.q).map((h) => h.id);
+    if (up.length > 0) this.o.letGo?.(up);
     for (const h of this.hosted.values()) {
       h.q?.close();
       h.watching?.close();
@@ -1099,11 +1107,11 @@ export class ChatHost {
   /** called every minute. a test calls it itself */
   reap(): void {
     const now = this.now();
-    for (const h of this.hosted.values()) {
-      if (h.q && !h.status.running && h.windows.size === 0 && now - h.lastActive > REAP_MS) {
-        h.q.close();
-      }
-    }
+    const idle = [...this.hosted.values()].filter(
+      (h) => h.q && !h.status.running && h.windows.size === 0 && now - h.lastActive > REAP_MS,
+    );
+    if (idle.length > 0) this.o.letGo?.(idle.map((h) => h.id));
+    for (const h of idle) h.q?.close();
   }
 
   private async start(h: Hosted): Promise<void> {

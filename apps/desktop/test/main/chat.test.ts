@@ -81,6 +81,8 @@ interface Setup {
     send(c: string, p: unknown): void;
   };
   now: { at: number };
+  /** every letGo the host made: the ids it was about to close */
+  letGo: string[][];
 }
 
 const hosts: ChatHost[] = [];
@@ -113,6 +115,7 @@ function setup(
     JSON.stringify({ showThinkingSummaries: true }),
   );
   const now = { at: Date.now() };
+  const letGo: string[][] = [];
   const host = new ChatHost({
     claudeBin: async () => {
       if (failFirst) {
@@ -135,6 +138,7 @@ function setup(
     now: () => now.at,
     claudeSettings: path.join(claudeDir, "settings.json"),
     ...(onReset ? { onReset } : {}),
+    letGo: (ids) => letGo.push(ids),
   });
   hosts.push(host);
   const sent: Array<[string, unknown]> = [];
@@ -156,6 +160,7 @@ function setup(
     ),
     window: { sent, isDestroyed: () => false, send: (c, p) => sent.push([c, p]) },
     now,
+    letGo,
   };
 }
 
@@ -598,9 +603,19 @@ describe("grove chat's host", () => {
     await until(() => s.host.text(SESSION).length > 0, "the count");
     await s.host.interrupt(SESSION);
     await turnEnded(s);
+    expect(s.letGo).toEqual([]);
     s.now.at += REAP_MS + 1;
     s.host.reap();
+    // told before the close: letting go is not the session ending
+    expect(s.letGo).toEqual([[SESSION]]);
     await until(() => !s.host.hosts(SESSION), "claude to be let go");
+  });
+
+  it("names every claude it is about to close on quit", async () => {
+    const s = setup();
+    await s.host.warm(SESSION, s.where);
+    s.host.dispose();
+    expect(s.letGo).toEqual([[SESSION]]);
   });
 
   it("follows its subagents from the task frames: started, their progress, how each ended", async () => {
