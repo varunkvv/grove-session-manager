@@ -5,6 +5,8 @@ import { type Fixture, makeFixture, makePlainDir, writeSession } from "./helpers
 import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
 
 const CANVAS = { dark: "rgb(23, 24, 27)", light: "rgb(255, 255, 255)" };
+/** rosé pine's base: dawn and main */
+const ROSE_PINE = { dark: "rgb(25, 23, 36)", light: "rgb(250, 244, 237)" };
 
 let fx: Fixture;
 let app: LaunchedApp;
@@ -13,7 +15,7 @@ test.afterEach(async () => {
   await app?.close();
 });
 
-function setup(appearance?: "system" | "light" | "dark"): Fixture {
+function setup(appearance?: "system" | "light" | "dark", palette?: "rose-pine"): Fixture {
   fx = makeFixture({ withCompanion: true });
   writeSession(fx, {
     cwd: makePlainDir(fx, "queue"),
@@ -23,7 +25,7 @@ function setup(appearance?: "system" | "light" | "dark"): Fixture {
   if (appearance) {
     writeFileSync(
       path.join(fx.root, "settings.json"),
-      JSON.stringify({ editor: "vscode", appearance }),
+      JSON.stringify({ editor: "vscode", appearance, palette }),
     );
   }
   return fx;
@@ -31,6 +33,11 @@ function setup(appearance?: "system" | "light" | "dark"): Fixture {
 
 const canvas = (app: LaunchedApp) =>
   app.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+/** what electron paints behind the page, as #rrggbb */
+const frame = (app: LaunchedApp) =>
+  app.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]?.getBackgroundColor().toLowerCase(),
+  );
 
 test("the appearance setting pins the window to light or dark", async () => {
   app = await launchApp(setup("light"));
@@ -42,6 +49,20 @@ test("the appearance setting pins the window to light or dark", async () => {
   app = await launchApp(setup("dark"));
   expect(await canvas(app)).toBe(CANVAS.dark);
   expect(await app.app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)).toBe(true);
+});
+
+test("a palette has its own light and dark, and the frame behind the page agrees", async () => {
+  app = await launchApp(setup("light", "rose-pine"));
+  expect(await canvas(app)).toBe(ROSE_PINE.light);
+  expect(await app.page.evaluate(() => document.documentElement.dataset.palette)).toBe("rose-pine");
+  expect(await app.app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)).toBe(false);
+  expect(await frame(app)).toBe("#faf4ed");
+  await app.close();
+
+  app = await launchApp(setup("dark", "rose-pine"));
+  expect(await canvas(app)).toBe(ROSE_PINE.dark);
+  expect(await app.app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)).toBe(true);
+  expect(await frame(app)).toBe("#191724");
 });
 
 test("by default it follows the system, and switches with it", async () => {
@@ -75,4 +96,11 @@ test("changing the setting takes effect without a restart, and is remembered", a
 
   app = await launchApp(fx);
   expect(await canvas(app)).toBe(CANVAS.light);
+
+  // a theme too, and the frame follows it though macOS's appearance did not move
+  await app.page.keyboard.press("Meta+,");
+  await app.page.getByTestId("setting-palette").selectOption("rose-pine");
+  await app.page.getByTestId("save-settings").click();
+  await expect.poll(() => canvas(app)).toBe(ROSE_PINE.light);
+  await expect.poll(() => frame(app)).toBe("#faf4ed");
 });
