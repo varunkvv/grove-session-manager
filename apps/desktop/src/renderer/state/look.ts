@@ -8,17 +8,35 @@ export const isDark = (): boolean => {
 /** "grove" when no other palette is set */
 export const paletteNow = (): string => document.documentElement.dataset.palette ?? "grove";
 
-/** the look moved: pinned in Settings, macOS at sunset, or another palette */
+const listeners = new Set<() => void>();
+const tell = () => {
+  for (const l of listeners) l();
+};
+let watching: (() => void) | null = null;
+
+/**
+ * the look moved: pinned in Settings, macOS at sunset, or another palette. every code block and
+ * diagram listens, so they share one observer rather than one each
+ */
 export function onLook(changed: () => void): () => void {
-  const system = matchMedia("(prefers-color-scheme: dark)");
-  system.addEventListener("change", changed);
-  const pinned = new MutationObserver(changed);
-  pinned.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["data-theme", "data-palette"],
-  });
+  listeners.add(changed);
+  if (!watching) {
+    const system = matchMedia("(prefers-color-scheme: dark)");
+    system.addEventListener("change", tell);
+    const pinned = new MutationObserver(tell);
+    pinned.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-palette"],
+    });
+    watching = () => {
+      system.removeEventListener("change", tell);
+      pinned.disconnect();
+    };
+  }
   return () => {
-    system.removeEventListener("change", changed);
-    pinned.disconnect();
+    listeners.delete(changed);
+    if (listeners.size || !watching) return;
+    watching();
+    watching = null;
   };
 }
