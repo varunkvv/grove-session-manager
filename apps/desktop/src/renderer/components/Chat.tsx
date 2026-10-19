@@ -55,6 +55,7 @@ import {
   TaskMark,
   ToolbarButton,
   UltraChip,
+  useProjectBand,
 } from "./ui.tsx";
 
 const api = () => window.grove;
@@ -569,6 +570,9 @@ export function ChatApp() {
     const el = scroller.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
   }, [talk, shown, sent, status?.asks, status?.queued.length]);
+
+  /** the header in its project's colour: which project a window is, from its top 26px in a cascade */
+  const band = useProjectBand(target?.project);
 
   if (target === undefined) return <div className="drag h-full bg-canvas" />;
   if (!target) {
@@ -1170,8 +1174,24 @@ export function ChatApp() {
         />
       )}
       {/* the traffic lights sit in the first 76px */}
-      <header className="drag flex h-12 shrink-0 items-center gap-2.5 border-b border-line pr-3 pl-20">
-        {target.project && <ProjectMark id={target.project} />}
+      <header
+        className={cx("drag flex h-12 shrink-0 items-center gap-2.5 border-b pr-3 pl-20", band)}
+        data-testid="chat-header"
+      >
+        {target.project && <ProjectMark id={target.project} title={session.where} />}
+        {/* `project / title`: the project's name gives way first as the window narrows. the mark
+            keeps it as its tooltip, and the native title has it */}
+        {target.project && (
+          <span
+            className="hidden min-w-0 max-w-[30%] shrink-0 items-center gap-2.5 @min-[640px]:flex"
+            data-testid="chat-project"
+          >
+            <span className="truncate text-fg-3">{session.where}</span>
+            <span className="text-fg-4" aria-hidden="true">
+              /
+            </span>
+          </span>
+        )}
         {renaming !== null ? (
           <input
             // a click on the title asked to type in it

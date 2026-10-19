@@ -176,6 +176,34 @@ describe("design lint", () => {
     }
   });
 
+  // a chat window's header is its project's soft band: the title, the project's name, the clock and
+  // any state's word sit on it, and the project's own mark beside them
+  it("every word and mark of the chat header keeps its contrast on each project's band", () => {
+    const WORDS = ["fg", "fg-3", "fg-4", "accent", "working", "danger", "waiting"];
+    const MARKS = ["faint", "hue-orange", "hue-green", "hue-red"];
+    for (const [name, tokens] of palettes()) {
+      for (const half of ["light", "dark"] as const) {
+        const at = (token: string) => halves(tokens.get(token) ?? "")?.[half] ?? "";
+        for (let n = 1; n <= 9; n++) {
+          const band = at(`project-${n}-soft`);
+          expect(band, `${name} ${half} project-${n}-soft`).toMatch(/^#[0-9a-f]{6}$/i);
+          for (const [list, floor] of [
+            [WORDS, 4.5],
+            [[...MARKS, `project-${n}`], 3],
+          ] as const) {
+            for (const token of list) {
+              const r = contrast(at(token), band);
+              expect(
+                r,
+                `${name} ${half}: ${token} on project-${n}-soft is ${r.toFixed(2)}`,
+              ).toBeGreaterThanOrEqual(floor);
+            }
+          }
+        }
+      }
+    }
+  });
+
   it("the window is painted in each palette's canvas before its page loads", () => {
     const all = palettes();
     expect(Object.keys(CANVAS).sort()).toEqual([...all.keys()].sort());

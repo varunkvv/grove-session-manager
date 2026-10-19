@@ -769,16 +769,40 @@ const PROJECT_FILL = [
 ];
 
 /** a project's own colour, beside its name wherever a row says which project it is */
-export function ProjectMark({ id }: { id: ProjectId }) {
+export function ProjectMark({ id, title }: { id: ProjectId; title?: string }) {
   const hue = useStore((s) => projectHues(s.projects).get(id)) ?? 1;
   return (
     <span
       aria-hidden="true"
       data-testid="project-mark"
       data-hue={hue}
+      title={title}
       className={cx("size-2 shrink-0 rounded-[2px]", PROJECT_FILL[hue - 1])}
     />
   );
+}
+
+/** written out whole, as the fills are: a project's soft ground and its line in the full hue */
+const PROJECT_BAND = [
+  "bg-project-1-soft border-project-1",
+  "bg-project-2-soft border-project-2",
+  "bg-project-3-soft border-project-3",
+  "bg-project-4-soft border-project-4",
+  "bg-project-5-soft border-project-5",
+  "bg-project-6-soft border-project-6",
+  "bg-project-7-soft border-project-7",
+  "bg-project-8-soft border-project-8",
+  "bg-project-9-soft border-project-9",
+];
+
+/**
+ * a chat window's header ground and its bottom line: its project's band, so a cascade of windows
+ * says which project each one is. which project only: never a state, never changed on blur. a
+ * session in no project keeps the plain line
+ */
+export function useProjectBand(id: ProjectId | undefined): string {
+  const hue = useStore((s) => (id ? projectHues(s.projects).get(id) : undefined));
+  return (hue && PROJECT_BAND[hue - 1]) || "border-line";
 }
 
 /**

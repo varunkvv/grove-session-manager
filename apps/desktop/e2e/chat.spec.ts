@@ -135,6 +135,13 @@ test("switched on, a double-click opens the session's own window, and a prompt s
   const chat = await chatWindow(electron, SID);
   await expect(chat.locator("h1")).toHaveText(TITLE);
   await expect.poll(() => chat.title()).toBe(TITLE);
+  // the header is in the project's colour, the same hue as its mark, and says the project first
+  const hue = await chat
+    .getByTestId("chat-header")
+    .getByTestId("project-mark")
+    .getAttribute("data-hue");
+  await expect(chat.getByTestId("chat-header")).toHaveClass(new RegExp(`bg-project-${hue}-soft`));
+  await expect(chat.getByTestId("chat-project")).toHaveText("chat-trial/");
   // the transcript is drawn before any claude runs
   await expect(chat.getByTestId("turn")).toHaveCount(1);
   expect(sentToClaude(s.chatLog)).toEqual([]);

@@ -69,6 +69,20 @@
   --color-project-8: light-dark(#26855a, #26855a);
   --color-project-9: light-dark(#6f7b00, #6f7b00);
 
+  /* a project's own ground: a grove chat window's header band, drawn only by ui.tsx. the hue mixed
+     in oklab into a grey at the canvas's lightness (into a cream or teal canvas, cool hues go grey),
+     as strong as every header word at 4.5:1 and the marks at 3:1 allow: 10% light, 18% dark here.
+     each palette has its own. design.test.ts holds them to it */
+  --color-project-1-soft: light-dark(#e9f2f1, #1d2928);
+  --color-project-2-soft: light-dark(#fdecf2, #362129);
+  --color-project-3-soft: light-dark(#ecf1ff, #21273a);
+  --color-project-4-soft: light-dark(#f5efe8, #2d251c);
+  --color-project-5-soft: light-dark(#eef1f5, #24272d);
+  --color-project-6-soft: light-dark(#ebf1f8, #1f2831);
+  --color-project-7-soft: light-dark(#f3effc, #2a2436);
+  --color-project-8-soft: light-dark(#eaf3ed, #1e2a23);
+  --color-project-9-soft: light-dark(#eff1e8, #26281b);
+
   --color-scrim: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.5));
   --color-thumb: light-dark(rgb(0 0 0 / 0.16), rgb(255 255 255 / 0.1));
   --color-thumb-hover: light-dark(rgb(0 0 0 / 0.28), rgb(255 255 255 / 0.2));
@@ -158,6 +172,15 @@
   --color-project-7: light-dark(#8e79a7, #ae91d0);
   --color-project-8: light-dark(#598c71, #8abfa2);
   --color-project-9: light-dark(#bc6a67, #d4a6a4);
+  --color-project-1-soft: light-dark(#e2e8e9, #282e2e);
+  --color-project-2-soft: light-dark(#ede4e6, #322326);
+  --color-project-3-soft: light-dark(#e5e7ee, #282b33);
+  --color-project-4-soft: light-dark(#ece6df, #322c24);
+  --color-project-5-soft: light-dark(#e6e8eb, #282a2d);
+  --color-project-6-soft: light-dark(#e0e6eb, #20292d);
+  --color-project-7-soft: light-dark(#eae8ed, #2c2930);
+  --color-project-8-soft: light-dark(#e5eae7, #282e2b);
+  --color-project-9-soft: light-dark(#f0e7e6, #312b2b);
   --color-scrim: light-dark(rgb(87 82 121 / 0.2), rgb(0 0 0 / 0.5));
   --color-thumb: light-dark(rgb(87 82 121 / 0.16), rgb(224 222 244 / 0.1));
   --color-thumb-hover: light-dark(rgb(87 82 121 / 0.28), rgb(224 222 244 / 0.2));
@@ -199,6 +222,15 @@
   --color-project-7: light-dark(#9a67b8, #9f6bbd);
   --color-project-8: light-dark(#3d9568, #429a6c);
   --color-project-9: light-dark(#687800, #778910);
+  --color-project-1-soft: light-dark(#e7eeed, #2c3937);
+  --color-project-2-soft: light-dark(#f6e8ec, #442e35);
+  --color-project-3-soft: light-dark(#e8e9f1, #32333f);
+  --color-project-4-soft: light-dark(#f0ece5, #3b3529);
+  --color-project-5-soft: light-dark(#eaecec, #343737);
+  --color-project-6-soft: light-dark(#e7eef4, #2a3640);
+  --color-project-7-soft: light-dark(#efeaf2, #38313d);
+  --color-project-8-soft: light-dark(#e8eeea, #2d3831);
+  --color-project-9-soft: light-dark(#eaece4, #323528);
   --color-scrim: light-dark(rgb(0 43 54 / 0.2), rgb(0 0 0 / 0.5));
   --color-thumb: light-dark(rgb(0 43 54 / 0.16), rgb(238 232 213 / 0.1));
   --color-thumb-hover: light-dark(rgb(0 43 54 / 0.28), rgb(238 232 213 / 0.2));
