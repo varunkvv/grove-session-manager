@@ -29,6 +29,7 @@ import {
   IconButton,
   Mono,
   ProjectMark,
+  PromptBlock,
   RecapBlock,
   RuntimeChip,
   SendButton,
@@ -184,10 +185,70 @@ export function Turn({
   const [armed, setArmed] = useState(false);
   const scope = useChatScope();
   const p = turn.prompt;
-  const typed =
-    "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
   // the turn it is in now has no end yet, so no length either
   const going = last && working;
+  const typed =
+    "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
+  // what the person said: a prompt, or a command with words after it. a bare one says nothing
+  // (recap.ts reads them the same way). an agent's prompt is what another agent asked it
+  const mine =
+    who === "You" && (p?.kind === "human" || (p?.kind === "command" && p.text.includes(" ")));
+  // grove chat: what can be done from a message the person typed, on hover. in his block they sit
+  // on the raised ground
+  const actions = p?.kind === "human" && detail && armed && scope && !going && (
+    <div
+      className={cx(
+        "absolute flex gap-0.5 opacity-0 group-hover/prompt:opacity-100 focus-within:opacity-100",
+        mine ? "top-1.5 right-1.5" : "top-0 right-0",
+      )}
+      data-testid="prompt-actions"
+    >
+      {scope.fork && p.text && !p.text.endsWith("…") && (
+        <IconButton
+          label="Edit and send again: a new session from just before this"
+          data-testid="prompt-edit"
+          raised={mine}
+          onClick={() => scope.fork?.(p.parent ?? null, p.text)}
+        >
+          <Icon name="pencil" size={12} />
+        </IconButton>
+      )}
+      {scope.rewind && p.uuid && (
+        <IconButton
+          label="Rewind the files to before this"
+          data-testid="prompt-rewind"
+          raised={mine}
+          onClick={() => p.uuid && scope.rewind?.(p.uuid)}
+        >
+          <Icon name="undo" size={12} />
+        </IconButton>
+      )}
+    </div>
+  );
+  // the label and the words, in his block or, for an agent, as they always were
+  const typedPrompt = p && (
+    <>
+      {actions}
+      {/* in grove chat his label wraps before the buttons */}
+      <h3 className={cx("text-sm font-medium text-fg-4", mine && detail && "pr-14")}>
+        {who}
+        {images && (!!p.images || !!p.files?.length) && (
+          <span className="font-normal" data-testid="turn-attached">
+            {p.images ? ` · ${p.images} ${p.images === 1 ? "image" : "images"}` : ""}
+            {p.files?.map((f) => ` · ${f}`).join("")}
+          </span>
+        )}
+      </h3>
+      {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near. in
+          his block the scrollbar sits in its padding, off the words */}
+      <p
+        className={cx(typed, mine && "-mr-2 pr-2")}
+        data-testid={last ? "panel-prompt" : undefined}
+      >
+        {p.text}
+      </p>
+    </>
+  );
   // grove chat says its agents and workflows apart, as a way to the drawer that lists them
   const agentsLink = detail && (turn.agents > 0 || !!turn.workflows) && !!scope?.agents;
   const agentWords = [
@@ -213,50 +274,13 @@ export function Turn({
         ? { onMouseEnter: () => setArmed(true), onFocus: () => setArmed(true) }
         : {})}
     >
-      {p?.kind === "human" ? (
-        <div className={cx(detail && "group/prompt relative")}>
-          {/* grove chat: what can be done from this message, on hover */}
-          {detail && armed && scope && !going && (
-            <div
-              className="absolute top-0 right-0 flex gap-0.5 opacity-0 group-hover/prompt:opacity-100 focus-within:opacity-100"
-              data-testid="prompt-actions"
-            >
-              {scope.fork && p.text && !p.text.endsWith("…") && (
-                <IconButton
-                  label="Edit and send again: a new session from just before this"
-                  data-testid="prompt-edit"
-                  onClick={() => scope.fork?.(p.parent ?? null, p.text)}
-                >
-                  <Icon name="pencil" size={12} />
-                </IconButton>
-              )}
-              {scope.rewind && p.uuid && (
-                <IconButton
-                  label="Rewind the files to before this"
-                  data-testid="prompt-rewind"
-                  onClick={() => p.uuid && scope.rewind?.(p.uuid)}
-                >
-                  <Icon name="undo" size={12} />
-                </IconButton>
-              )}
-            </div>
-          )}
-          <h3 className="text-sm font-medium text-fg-4">
-            {who}
-            {images && (!!p.images || !!p.files?.length) && (
-              <span className="font-normal" data-testid="turn-attached">
-                {p.images ? ` · ${p.images} ${p.images === 1 ? "image" : "images"}` : ""}
-                {p.files?.map((f) => ` · ${f}`).join("")}
-              </span>
-            )}
-          </h3>
-          {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near */}
-          <p className={typed} data-testid={last ? "panel-prompt" : undefined}>
-            {p.text}
-          </p>
-        </div>
+      {mine ? (
+        <PromptBlock className={cx(detail && "group/prompt")}>{typedPrompt}</PromptBlock>
+      ) : p?.kind === "human" ? (
+        <div className={cx(detail && "group/prompt relative")}>{typedPrompt}</div>
       ) : (
-        // a slash command, or Claude Code saying a background task finished: nobody typed a prompt
+        // a bare slash command, or Claude Code saying a background task finished: nothing the
+        // person said
         p && <p className={`${QUIET} break-words`}>{p.text}</p>
       )}
       {detail && turn.output && (
@@ -268,10 +292,11 @@ export function Turn({
         </div>
       )}
       {turn.said?.map((said) => (
-        <div key={said} className="mt-3">
+        // close under what he said before it: his two messages read as a pair
+        <PromptBlock key={said} className="mt-2">
           <h3 className="text-sm font-medium text-fg-4">You, while it worked</h3>
           <p className={typed}>{said}</p>
-        </div>
+        </PromptBlock>
       ))}
       {talks && (
         <>
