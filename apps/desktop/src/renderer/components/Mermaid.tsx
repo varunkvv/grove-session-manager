@@ -39,6 +39,8 @@ const themeOf = (dark: boolean) => ({
   tertiaryColor: token("canvas"),
   lineColor: token("fg-4"),
   textColor: token("fg-2"),
+  // mermaid's own is near black in dark, a box on a coloured ground
+  edgeLabelBackground: token("canvas"),
 });
 
 /** an svg as an <img> can show it: a size of its own, from its viewBox */
