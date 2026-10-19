@@ -435,7 +435,6 @@ export function ChatApp() {
     stream.current = t.text;
     setShown(t.text);
     applyAppearance(t.appearance, t.palette);
-    document.title = t.session.title;
     void read();
   }, [read, showIt]);
 
@@ -573,6 +572,14 @@ export function ChatApp() {
 
   /** the header in its project's colour: which project a window is, from its top 26px in a cascade */
   const band = useProjectBand(target?.project);
+
+  // the Window menu, the dock's list, Mission Control and a screen share's picker name the window:
+  // the session as its header does, then its project. no state, or the Window menu churns
+  useEffect(() => {
+    if (!target) return;
+    const { title, where } = target.session;
+    document.title = target.project ? `${title} · ${where}` : title;
+  }, [target]);
 
   if (target === undefined) return <div className="drag h-full bg-canvas" />;
   if (!target) {
@@ -840,7 +847,6 @@ export function ChatApp() {
     if (!o.ok) return setError(o.error.message);
     // the list picks it up from the transcript: the window says it now
     setTarget({ ...target, session: { ...session, title } });
-    document.title = title;
   };
 
   /**

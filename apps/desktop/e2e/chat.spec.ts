@@ -134,7 +134,8 @@ test("switched on, a double-click opens the session's own window, and a prompt s
   await openRow(page, s.id);
   const chat = await chatWindow(electron, SID);
   await expect(chat.locator("h1")).toHaveText(TITLE);
-  await expect.poll(() => chat.title()).toBe(TITLE);
+  // named for the Window menu and Mission Control: the session, then its project
+  await expect.poll(() => chat.title()).toBe(`${TITLE} · chat-trial`);
   // the header is in the project's colour, the same hue as its mark, and says the project first
   const hue = await chat
     .getByTestId("chat-header")
@@ -689,7 +690,7 @@ test("a click on the title renames the session, through its claude, and the list
   await chat.getByTestId("chat-rename").fill("the retry loop");
   await chat.getByTestId("chat-rename").press("Enter");
   await expect(chat.getByTestId("chat-title")).toHaveText("the retry loop");
-  await expect.poll(() => chat.title()).toBe("the retry loop");
+  await expect.poll(() => chat.title()).toBe("the retry loop · chat-trial");
   await waitFor(async () =>
     sentToClaude(s.chatLog).some(
       (l) =>
@@ -1151,7 +1152,7 @@ test("closing the window leaves the turn running under grove, and reopening it p
     BrowserWindow.getAllWindows()
       .find((w) => w.getTitle() === title)
       ?.close();
-  }, TITLE);
+  }, `${TITLE} · chat-trial`);
   await waitFor(async () => !electron.windows().some((p) => p.isClosed() === false && p === chat));
   // still going: the main window says so
   await expect(
@@ -1689,13 +1690,15 @@ test("chat windows follow the appearance, cascade from the last one, and open at
     BrowserWindow.getAllWindows()
       .find((w) => w.getTitle() === t)
       ?.setSize(700, 640);
-  }, TITLE);
+  }, `${TITLE} · chat-trial`);
   await page.waitForTimeout(700);
-  const a = await bounds(TITLE);
+  const a = await bounds(`${TITLE} · chat-trial`);
   await page.locator(`[data-testid="session-row"][data-id="${SID2}"]`).dblclick();
   await chatWindow(electron, SID2);
-  await expect.poll(() => bounds("another")).toMatchObject({ width: 700, height: 640 });
-  const b = await bounds("another");
+  await expect
+    .poll(() => bounds("another · chat-trial"))
+    .toMatchObject({ width: 700, height: 640 });
+  const b = await bounds("another · chat-trial");
   expect(b?.x).toBe((a?.x ?? 0) + 26);
   expect(b?.y).toBe((a?.y ?? 0) + 26);
 });
