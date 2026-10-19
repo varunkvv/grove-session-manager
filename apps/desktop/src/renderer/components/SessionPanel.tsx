@@ -295,7 +295,7 @@ export function Turn({
         // close under what he said before it: his two messages read as a pair
         <PromptBlock key={said} className="mt-2">
           <h3 className="text-sm font-medium text-fg-4">You, while it worked</h3>
-          <p className={typed}>{said}</p>
+          <p className={cx(typed, "-mr-2 pr-2")}>{said}</p>
         </PromptBlock>
       ))}
       {talks && (
