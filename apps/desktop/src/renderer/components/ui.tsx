@@ -216,10 +216,16 @@ export function Button({
 
 export function IconButton({
   label,
+  raised,
   className,
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; ref?: Ref<HTMLButtonElement> }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  /** it sits on the raised ground, where a raised hover would vanish */
+  raised?: boolean;
+  ref?: Ref<HTMLButtonElement>;
+}) {
   return (
     <button
       type="button"
@@ -227,7 +233,8 @@ export function IconButton({
       title={label}
       {...rest}
       className={cx(
-        "no-drag fade inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-4 hover:bg-raised hover:text-fg",
+        "no-drag fade inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-4 hover:text-fg",
+        raised ? "hover:bg-active" : "hover:bg-raised",
         className,
       )}
     >
@@ -1577,6 +1584,29 @@ export function Menu({
 export function ComposerFrame({ children }: { children: ReactNode }) {
   return (
     <div className="no-drag rounded-lg border border-line-strong bg-canvas focus-within:border-accent-line focus-within:outline-2 focus-within:outline-accent-soft">
+      {children}
+    </div>
+  );
+}
+
+/** what the person sent: a block on the raised ground. queued: its outline only, until claude takes it */
+export function PromptBlock({
+  queued,
+  className,
+  children,
+}: {
+  queued?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cx(
+        "relative rounded-lg px-3 py-2",
+        queued ? "border border-line-strong" : "bg-raised",
+        className,
+      )}
+    >
       {children}
     </div>
   );
