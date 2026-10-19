@@ -19,6 +19,13 @@ Keep in mind:
 
 - what an agent was asked, in the agents drawer, keeps its plain look: another agent wrote it, not you
 
+Fixed since 0.22.39:
+
+- a session that needed you still does after Grove quits or updates. before, Grove closing its chat's Claude on the
+  way out made it read as closed. the same goes for a chat Grove lets go of ten minutes after its window closed
+- dismissing a background session that Claude Code still lists as blocked sticks after a restart. before, it came
+  back on top of the inbox every time Grove started
+
 ## 0.21
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.21 makes grove chat windows easy to tell
