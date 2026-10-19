@@ -1,3 +1,28 @@
+## 0.21
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.21 makes grove chat windows easy to tell
+apart, and to switch between.
+
+New:
+
+- a chat window's header takes its project's colour: a soft band with a thin line in the project's colour under it,
+  and the project's name before the title (`ingest / fix the retry loop`). a window in no project keeps the plain header
+- with windows stacked, the band shows in the strip each one leaves visible, and in Mission Control
+- **⌘K** in a chat window lists your other open chat windows on top, the one you were in last first, each with its
+  project, its state and what it is for. ⌘K then Enter takes you back to the last one, so two windows flip like ⌘Tab.
+  **All sessions** (⌘1) ends the list
+- typed, ⌘K finds a window by a word of its title, project or description, then the actions, then any session, which
+  opens in a window of its own
+- the main window's ⌘K lists the open chat windows too, and its sessions show their project's colour
+- a chat window is named `title · project` in the Window menu, the Dock, Mission Control and screen sharing
+
+Keep in mind:
+
+- ⌘K then Enter in a chat window used to run Open in VS Code. with other chat windows open it switches window now.
+  ⇧⌘↩ still opens VS Code
+- there are nine project colours. with more projects than that two share one, and the name in the header and in ⌘K
+  tells them apart
+
 ## 0.20
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.20 adds two themes.
