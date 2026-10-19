@@ -1,3 +1,24 @@
+## 0.22
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.22 makes what you said easy to tell from
+what Claude said.
+
+New:
+
+- in a chat window each of your messages sits in a soft block across the column, with its **You** label inside.
+  Claude's answers stay as they were, on the page, so scrolling back you can see where you spoke without reading
+- the block is the theme's own raised grey, light and dark, in Grove, Rosé Pine and Solarized. no new colour
+- a slash command with words after it (`/review fix/retry-backoff`) is yours, so it gets the block. a bare one
+  (`/context`) and "Background task finished" stay the quiet line
+- a message queued while Claude works is the block's outline until Claude takes it. its × to take it back sits at the
+  block's top right, where edit and rewind sit on a sent one
+- what you typed while it worked gets its own block, under your prompt
+- the main window's session panel draws your messages the same way
+
+Keep in mind:
+
+- what an agent was asked, in the agents drawer, keeps its plain look: another agent wrote it, not you
+
 ## 0.21
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.21 makes grove chat windows easy to tell
