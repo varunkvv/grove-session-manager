@@ -279,6 +279,10 @@ export interface SessionHit extends SessionRef {
 export interface ChatWindowView {
   hit: SessionHit;
   row?: InboxRowView;
+  /** what grove's own claude for it says, as the window's header does: it waits on the person */
+  asking?: true;
+  /** and a turn is under way */
+  running?: true;
 }
 
 /** a session that needs the person: InboxRow joined with the session it is about */

@@ -285,6 +285,21 @@ describe("the Windows section", () => {
     ).sections;
     expect(w?.items.map((i) => i.window?.state)).toEqual(["turn", "working", undefined]);
   });
+
+  it("says what grove's own claude for a window says, as its header does, where the hooks are quiet", () => {
+    const [w] = paletteItems(
+      ctx({
+        windows: [
+          { ...open("a", "a"), asking: true, running: true },
+          { ...open("b", "b"), running: true },
+          // an inbox row says what it asks: that wins
+          { ...open("c", "c", {}, "keep it?"), running: true },
+        ],
+      }),
+      "",
+    ).sections;
+    expect(w?.items.map((i) => i.window?.state)).toEqual(["turn", "working", "turn"]);
+  });
 });
 
 describe("the chat palette", () => {

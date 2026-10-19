@@ -58,10 +58,13 @@ export function matchCommand(text: string, words: readonly string[]): boolean {
 
 const REPAIRABLE = new Set(["absent", "stale", "foreign"]);
 
-/** an open chat window as a row says it: the inbox row's parts */
-const windowItem = ({ hit, row }: ChatWindowView): SessionItem => ({
+/**
+ * an open chat window as a row says it: the inbox row's parts. what it is at is what its own
+ * header says: what it asks, then grove's claude for it, then the hooks
+ */
+const windowItem = ({ hit, row, asking, running }: ChatWindowView): SessionItem => ({
   hit,
-  state: stateOf(hit, row),
+  state: row?.kind ?? (asking ? "turn" : running ? "working" : stateOf(hit)),
   ...(row ? { row } : {}),
 });
 

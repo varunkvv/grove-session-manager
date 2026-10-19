@@ -486,8 +486,18 @@ function buildHandlers(deps: Deps): Handlers {
       const asks = new Map(projects.inbox().rows.map((r) => [r.sessionId, r]));
       return deps.chatWindows.windows().flatMap((id) => {
         const hit = projects.hitFor(id) ?? freshHit(deps, id);
+        if (!hit) return [];
         const row = asks.get(id);
-        return hit ? [{ hit, ...(row ? { row } : {}) }] : [];
+        // the hooks say nothing of a session in no project: grove's own claude always does
+        const host = deps.chat.status(id);
+        return [
+          {
+            hit,
+            ...(row ? { row } : {}),
+            ...(host.asks.length > 0 ? { asking: true as const } : {}),
+            ...(host.running ? { running: true as const } : {}),
+          },
+        ];
       });
     },
 
