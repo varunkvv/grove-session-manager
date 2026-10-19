@@ -1179,9 +1179,9 @@ export function ChatApp() {
           }}
         />
       )}
-      {/* the traffic lights sit in the first 76px */}
+      {/* the traffic lights sit in the first 76px, and the header's own gap after them */}
       <header
-        className={cx("drag flex h-12 shrink-0 items-center gap-2.5 border-b pr-3 pl-20", band)}
+        className={cx("drag flex h-12 shrink-0 items-center gap-2.5 border-b pr-3 pl-[86px]", band)}
         data-testid="chat-header"
       >
         {target.project && <ProjectMark id={target.project} title={session.where} />}
