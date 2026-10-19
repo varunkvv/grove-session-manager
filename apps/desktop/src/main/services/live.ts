@@ -138,6 +138,12 @@ export function goneTasks(
   return gone;
 }
 
+/**
+ * what a restart should believe. a registry state is re-read from the live processes, and so is
+ * the supervisor's - but not that someone dismissed it, which rebuilt would come back unseen
+ */
+const restorable = (s: LiveStatus): boolean => !s.source || (s.source === "agents" && !!s.seen);
+
 /** live-tasks.json, read back. it is ours, and it can still be another version's */
 export function parseTasks(value: unknown): Map<string, SessionTasks> {
   const out = new Map<string, SessionTasks>();
@@ -222,10 +228,9 @@ export class LiveService {
     const read = await readJsonGuarded<Record<string, LiveStatus>>(this.stateFile);
     if (read.status === "ok" && isObject(read.value)) {
       for (const [id, s] of Object.entries(read.value)) {
-        // a registry state is only true while the process is up. it is re-derived, never restored.
-        if (isObject(s) && typeof s.state === "string" && typeof s.at === "number" && !s.source) {
-          this.statuses.set(id, s as LiveStatus);
-        }
+        if (!isObject(s) || typeof s.state !== "string" || typeof s.at !== "number") continue;
+        // a registry state is only true while the process is up. see restorable
+        if (restorable(s as LiveStatus)) this.statuses.set(id, s as LiveStatus);
       }
     }
     const kept = await readJsonGuarded(this.interruptedFile);
@@ -547,9 +552,9 @@ export class LiveService {
     ).catch((e) => log.warn("interrupted write:", e));
   }
 
-  /** only what a restart should believe. a registry state is re-read from the live processes. */
+  /** only what a restart should believe. see restorable */
   private persistable(): string {
-    return JSON.stringify(Object.fromEntries([...this.statuses].filter(([, s]) => !s.source)));
+    return JSON.stringify(Object.fromEntries([...this.statuses].filter(([, s]) => restorable(s))));
   }
 
   private changed(): void {

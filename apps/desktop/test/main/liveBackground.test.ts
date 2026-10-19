@@ -15,8 +15,8 @@ afterEach(() => {
   for (const s of services.splice(0)) s.dispose();
 });
 
-function machine() {
-  const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-live-bg-")));
+/** `dir` again is a restart: the same state on disk */
+function machine(dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-live-bg-")))) {
   const registryDir = path.join(dir, "claude", "sessions");
   mkdirSync(registryDir, { recursive: true });
   const moved: number[] = [];
@@ -39,7 +39,7 @@ function machine() {
       path.join(registryDir, `${name}.json`),
       JSON.stringify({ pid: process.pid, ...o }),
     );
-  return { live, registryDir, register, moved, needs, statuses: () => last };
+  return { dir, live, registryDir, register, moved, needs, statuses: () => last };
 }
 
 const blocked = (waitingFor: string): ReadonlyMap<string, BackgroundEntry> =>
@@ -103,7 +103,26 @@ describe("background sessions in the live service", () => {
     expect(m.needs).toHaveLength(1);
   });
 
-  it("the supervisor's word has no shelf life and is never stored", () => {
+  it("a dismissed one stays dismissed after a restart, one nobody looked at is read again", async () => {
+    const m = machine();
+    await m.live.start();
+    // a stale supervisor row: blocked, no worker, so nothing says what on
+    const rows = new Map<string, BackgroundEntry>([
+      [SID.bg, { sessionId: SID.bg, state: "blocked" }],
+      [SID.panel, { sessionId: SID.panel, state: "blocked", waitingFor: "input needed" }],
+    ]);
+    m.live.applyBackground(rows);
+    m.live.markSeen([SID.bg]);
+    m.live.dispose();
+    const again = machine(m.dir);
+    await again.live.start();
+    expect([...again.live.list().keys()]).toEqual([SID.bg]);
+    again.live.applyBackground(rows);
+    expect(again.statuses().get(SID.bg)).toMatchObject({ seen: true, source: "agents" });
+    expect(again.statuses().get(SID.panel)?.seen).toBeUndefined();
+  });
+
+  it("the supervisor's word has no shelf life", () => {
     const now = 1e12;
     const m = new Map<string, LiveStatus>([
       [SID.bg, { state: "waiting", at: 0, lastEventAt: 0, source: "agents" }],

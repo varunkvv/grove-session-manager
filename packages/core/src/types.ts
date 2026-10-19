@@ -270,7 +270,8 @@ export interface LiveStatus {
   letGo?: true;
   /**
    * no hook said this. `registry`: the live session registry saw a busy process. `agents`: Claude
-   * Code's supervisor says its background session is blocked. re-derived on every pass, never stored.
+   * Code's supervisor says its background session is blocked. re-derived on every pass. stored only
+   * when it is an `agents` one someone dismissed: rebuilt, it would come back unseen.
    */
   source?: "registry" | "agents";
 }
