@@ -715,8 +715,11 @@ export function NeedsLine({ state, text }: { state: SessionState; text: string }
   );
 }
 
-/** where the word gives way to its mark alone: a list beside the panel, the head of a narrow panel */
-const WORD = { list: "hidden @xl:inline", panel: "hidden @md:inline" };
+/**
+ * where the word gives way to its mark alone: a list beside the panel, the head of a narrow panel.
+ * a menu (⌘K's Windows) is never narrow enough to drop it
+ */
+const WORD = { list: "hidden @xl:inline", panel: "hidden @md:inline", menu: "" };
 
 /** what a session is at */
 export function StateLabel({

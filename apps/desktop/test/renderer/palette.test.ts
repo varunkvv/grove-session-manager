@@ -1,10 +1,16 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { WindowRow } from "../../src/renderer/components/Palette.tsx";
+import type { ChatAction } from "../../src/renderer/logic/chatKeys.ts";
 import {
+  type ChatPaletteContext,
+  chatPaletteItems,
   matchCommand,
   type PaletteContext,
   paletteItems,
 } from "../../src/renderer/logic/palette.ts";
-import type { FolderView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
+import type { ChatWindowView, FolderView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
 
 const NOW = Date.parse("2026-10-02T15:00:00Z");
 
@@ -186,5 +192,160 @@ describe("matchCommand", () => {
     expect(matchCommand("Sessions go lists", ["li", "x"])).toBe(false);
     expect(matchCommand("chat-features switch project", ["features"])).toBe(true);
     expect(matchCommand("Settings…", ["settings"])).toBe(true);
+  });
+});
+
+// ---------- the open chat windows, in both palettes
+
+/** an open chat window as main lists it. `asks`: it needs the person, and says what for */
+const open = (
+  id: string,
+  title: string,
+  more: Partial<SessionHit> = {},
+  asks?: string,
+): ChatWindowView => {
+  const h: SessionHit = { ...hit(0), key: `k-${id}`, sessionId: id, title, ...more };
+  return {
+    hit: h,
+    ...(asks !== undefined
+      ? {
+          row: {
+            ...h,
+            project: "ingest",
+            kind: "turn" as const,
+            at: NOW,
+            summary: asks,
+            reviewKeys: [],
+          },
+        }
+      : {}),
+  };
+};
+
+const RETRY = open("w-retry", "fix the ingest retry loop", { where: "ingest" });
+const RENAME = open("w-rename", "rename the cli flags", { where: "docs-site" });
+const SELF = open("w-self", "this window", { where: "ingest" });
+
+const act = (id: string, label: string, group: ChatAction["group"]): ChatAction => ({
+  id,
+  label,
+  group,
+  run: () => {},
+});
+const ACTIONS = [
+  act("editor", "Open in VS Code", "Session"),
+  act("rename", "Rename…", "Session"),
+  act("attach", "Attach files…", "Composer"),
+  act("find", "Find in the conversation", "View"),
+];
+const chatIds = (c: Partial<ChatPaletteContext>, q = "") =>
+  chatPaletteItems({ self: "w-self", windows: [SELF], actions: ACTIONS, ...c }, q).map((s) => [
+    s.label,
+    s.items.map((i) => i.id),
+  ]);
+
+describe("the Windows section", () => {
+  it("is on top of the main palette, in the order main gives: the one looked at last first", () => {
+    const c = ctx({ windows: [RENAME, RETRY] });
+    expect(sections(c)).toEqual(["Windows", "Go to", "Projects", "This project", "App"]);
+    expect(ids(c).slice(0, 3)).toEqual(["window:w-rename", "window:w-retry", "go-inbox"]);
+    // none open: the palette is as it was
+    expect(sections(ctx({ windows: [] }))).toEqual(["Go to", "Projects", "This project", "App"]);
+  });
+
+  it("matches a typed word at the start of a word, not fuzzily: `ren` is not in `retry`", () => {
+    const c = ctx({ windows: [RETRY, RENAME] });
+    expect(ids(c, "ren")[0]).toBe("window:w-rename");
+    expect(ids(c, "ren")).not.toContain("window:w-retry");
+    // r, e, n in order would find this one: no word of it starts with them
+    expect(ids(ctx({ windows: [open("w-rerun", "rerun the ingest")] }), "ren")).toEqual([]);
+    // the project's name, the description and what it asks find it too
+    const asks = open("w-asks", "metrics", { description: "count 429s per tenant" }, "page on 1%?");
+    expect(ids(ctx({ windows: [asks] }), "tenant")).toEqual(["window:w-asks"]);
+    expect(ids(ctx({ windows: [asks] }), "page")).toEqual(["window:w-asks"]);
+    expect(ids(ctx({ windows: [RENAME] }), "docs")).toEqual(["window:w-rename"]);
+  });
+
+  it("a session open in a window is that window's row, not a second one under Sessions", () => {
+    const found = { ...hit(7), sessionId: "w-retry", key: "k-w-retry" };
+    const c = ctx({ windows: [RETRY], sessions: { query: "fix", hits: [found, hit(8)] } });
+    expect(ids(c, "fix")).toEqual(["window:w-retry", "session:k8"]);
+  });
+
+  it("says what each window is at, from its inbox row or its run", () => {
+    const [w] = paletteItems(
+      ctx({
+        windows: [
+          open("a", "a", {}, "keep it?"),
+          open("b", "b", { live: "running" }),
+          open("c", "c"),
+        ],
+      }),
+      "",
+    ).sections;
+    expect(w?.items.map((i) => i.window?.state)).toEqual(["turn", "working", undefined]);
+  });
+});
+
+describe("the chat palette", () => {
+  it("with no other window open, is the actions by group as before: no Windows, no All sessions", () => {
+    expect(chatIds({})).toEqual([
+      ["Session", ["editor", "rename"]],
+      ["Composer", ["attach"]],
+      ["View", ["find"]],
+    ]);
+  });
+
+  it("puts the other windows on top, the one looked at last first, then All sessions", () => {
+    const [first, next] = chatIds({ windows: [SELF, RETRY, RENAME] });
+    expect(first).toEqual(["Windows", ["window:w-retry", "window:w-rename", "all-sessions"]]);
+    expect(next).toEqual(["Session", ["editor", "rename"]]);
+  });
+
+  it("typed: the windows by the start of a word, then the actions, then the sessions found", () => {
+    const windows = [SELF, RETRY, RENAME];
+    // `ren` finds the window named rename first, and Rename after it. not the retry window
+    expect(chatIds({ windows }, "ren")).toEqual([
+      ["Windows", ["window:w-rename"]],
+      ["Actions", ["rename"]],
+    ]);
+    // sessions this window or another already shows are not found again
+    const hits = [
+      { ...hit(1), sessionId: "w-self" },
+      { ...hit(2), sessionId: "w-retry" },
+      { ...hit(3), sessionId: "s3" },
+    ];
+    expect(chatIds({ windows, sessions: { query: "session", hits } }, "session")).toEqual([
+      ["Windows", ["all-sessions"]],
+      ["Sessions", ["session:s3"]],
+    ]);
+    // an answer for another query is not shown
+    expect(chatIds({ windows, sessions: { query: "sess", hits } }, "session")).toEqual([
+      ["Windows", ["all-sessions"]],
+    ]);
+  });
+});
+
+describe("a window's row", () => {
+  const row = (w: ChatWindowView) =>
+    renderToStaticMarkup(
+      createElement(WindowRow, {
+        words: [],
+        item: { hit: w.hit, ...(w.row ? { row: w.row, state: w.row.kind } : {}) },
+      }),
+    );
+
+  it("is one line with nothing to say under it: no empty second line", () => {
+    const html = row(RETRY);
+    expect(html).toContain("fix the ingest retry loop");
+    expect(html).not.toContain("w-full");
+  });
+
+  it("says what it is for under it, or what it asks when it needs the person", () => {
+    const described = open("d", "d", { description: "count 429s per tenant" });
+    expect(row(described)).toContain("count 429s per tenant");
+    const asks = open("a", "a", { description: "count 429s per tenant" }, "page on 1%?");
+    expect(row(asks)).toContain('data-testid="inbox-summary"');
+    expect(row(asks)).not.toContain("count 429s per tenant");
   });
 });

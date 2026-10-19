@@ -95,6 +95,8 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
   await project(page, "auth-sso");
   await expect(page.getByTestId("session-row")).toHaveCount(1);
   await page.keyboard.press("Meta+k");
+  // drawn once main has said which chat windows are open
+  await expect(input(page)).toBeFocused();
   expect(await sections(page)).toEqual(["Go to", "Projects", "This project", "App"]);
   // no session until there is a word. no repair row: nothing has drifted
   expect(await ids(page)).toEqual([

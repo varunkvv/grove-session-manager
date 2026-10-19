@@ -1788,7 +1788,14 @@ export function ChatApp() {
           {mcp?.length === 0 && <p className="px-2 py-1.5 text-sm text-fg-4">No MCP servers.</p>}
         </Menu>
       )}
-      {sheet === "palette" && <CommandPalette actions={actions} onClose={closeSheet} />}
+      {sheet === "palette" && (
+        <CommandPalette
+          self={session.sessionId}
+          actions={actions}
+          onClose={closeSheet}
+          onError={setError}
+        />
+      )}
       {sheet === "shortcuts" && <ShortcutSheet actions={actions} onClose={closeSheet} />}
       {menu?.kind === "context" && s.context && (
         <Menu

@@ -1,9 +1,13 @@
-// what cmd-K lists for a query. pure: the palette draws the items and runs them by id.
+// what cmd-K lists for a query, in the main window and in a chat window. pure: the palettes draw
+// the items and run them by id.
 import { tokenize } from "@grove/core/pure";
-import type { ProjectView, SessionHit } from "../../shared/ipc.ts";
-import { startBlocked } from "./views.ts";
+import type { ChatWindowView, ProjectView, SessionHit } from "../../shared/ipc.ts";
+import type { ChatAction } from "./chatKeys.ts";
+import { rank } from "./fuzzy.ts";
+import { type SessionItem, startBlocked, stateOf } from "./views.ts";
 
 export type PaletteSection =
+  | "Windows"
   | "Go to"
   | "Projects"
   | "Archived"
@@ -24,6 +28,8 @@ export interface PaletteItem {
   current?: boolean;
   /** a Sessions row's hit */
   hit?: SessionHit;
+  /** a Windows row's open chat window */
+  window?: SessionItem;
 }
 
 export interface PaletteContext {
@@ -35,6 +41,8 @@ export interface PaletteContext {
   editor: string;
   /** findSessions' newest answer and the query it answered */
   sessions?: { query: string; hits: readonly SessionHit[] };
+  /** the open chat windows, the one looked at last first */
+  windows?: readonly ChatWindowView[];
 }
 
 /** every word starts a word of the text: `sess` finds Sessions, `ssions` does not */
@@ -49,6 +57,30 @@ export function matchCommand(text: string, words: readonly string[]): boolean {
 }
 
 const REPAIRABLE = new Set(["absent", "stale", "foreign"]);
+
+/** an open chat window as a row says it: the inbox row's parts */
+const windowItem = ({ hit, row }: ChatWindowView): SessionItem => ({
+  hit,
+  state: stateOf(hit, row),
+  ...(row ? { row } : {}),
+});
+
+/**
+ * the open windows a query keeps: a word that starts a word of the title, the project, the
+ * description or what it asks. not fuzzy, or `ren` would put windows above Rename
+ */
+function windowsFor(windows: readonly ChatWindowView[], words: readonly string[]): SessionItem[] {
+  return windows
+    .map(windowItem)
+    .filter(
+      (w) =>
+        words.length === 0 ||
+        matchCommand(
+          `${w.hit.title} ${w.hit.where} ${w.hit.description ?? ""} ${w.row?.summary ?? ""}`,
+          words,
+        ),
+    );
+}
 
 function commands(ctx: PaletteContext): PaletteItem[] {
   const p = ctx.project;
@@ -127,6 +159,7 @@ function commands(ctx: PaletteContext): PaletteItem[] {
 }
 
 const ORDER: PaletteSection[] = [
+  "Windows",
   "Go to",
   "Projects",
   "Archived",
@@ -144,13 +177,24 @@ export interface PaletteList {
 export function paletteItems(ctx: PaletteContext, query: string): PaletteList {
   const words = tokenize(query);
   const typed = words.length > 0;
+  // the chat windows open now, the one looked at last first: Enter goes back to it
+  const items: PaletteItem[] = windowsFor(ctx.windows ?? [], words).map((w) => ({
+    id: `window:${w.hit.sessionId}`,
+    section: "Windows",
+    label: w.hit.title,
+    window: w,
+  }));
   // the archived projects show only once something is typed: the keyboard can still reach one
-  const items = commands(ctx).filter((i) =>
-    typed ? matchCommand(`${i.label} ${i.keywords ?? ""}`, words) : i.section !== "Archived",
-  );
+  for (const i of commands(ctx)) {
+    if (typed ? matchCommand(`${i.label} ${i.keywords ?? ""}`, words) : i.section !== "Archived")
+      items.push(i);
+  }
   const answered = ctx.sessions?.query === query;
+  // a session open in a window is that window's row
+  const open = new Set(ctx.windows?.map((w) => w.hit.sessionId));
   if (typed && answered) {
-    for (const hit of ctx.sessions?.hits.slice(0, 50) ?? []) {
+    const hits = ctx.sessions?.hits.filter((h) => !open.has(h.sessionId)) ?? [];
+    for (const hit of hits.slice(0, 50)) {
       items.push({
         id: `session:${hit.key}`,
         section: "Sessions",
@@ -164,4 +208,66 @@ export function paletteItems(ctx: PaletteContext, query: string): PaletteList {
     items: items.filter((i) => i.section === label),
   })).filter((s) => s.items.length > 0);
   return { sections, none: sections.length === 0 && (!typed || answered) };
+}
+
+export type ChatPaletteItem =
+  | { id: string; kind: "window"; window: SessionItem }
+  | { id: "all-sessions"; kind: "all" }
+  | { id: string; kind: "action"; action: ChatAction }
+  | { id: string; kind: "session"; hit: SessionHit };
+
+export interface ChatPaletteContext {
+  /** the window's own session: it is not a window to go to, nor a session to find */
+  self: string;
+  /** the open chat windows, the one looked at last first, this one among them */
+  windows: readonly ChatWindowView[];
+  actions: readonly ChatAction[];
+  /** findSessions' newest answer and the query it answered */
+  sessions?: { query: string; hits: readonly SessionHit[] };
+}
+
+const GROUPS: ChatAction["group"][] = ["Session", "Message", "Composer", "View"];
+
+/**
+ * grove chat's ⌘K: the other open windows on top, the one looked at last first, and All sessions
+ * after them. then the actions by group. typed: the windows by word, the actions by their letters,
+ * then the sessions found. with no other window open it is as it was before there were any
+ */
+export function chatPaletteItems(
+  ctx: ChatPaletteContext,
+  query: string,
+): Array<{ label: string; items: ChatPaletteItem[] }> {
+  const words = tokenize(query);
+  const typed = words.length > 0;
+  const others = ctx.windows.filter((w) => w.hit.sessionId !== ctx.self);
+  const windows: ChatPaletteItem[] = windowsFor(others, words).map((w) => ({
+    id: `window:${w.hit.sessionId}`,
+    kind: "window",
+    window: w,
+  }));
+  if (others.length > 0 && (!typed || matchCommand("All sessions inbox main window", words)))
+    windows.push({ id: "all-sessions", kind: "all" });
+  const live = ctx.actions.filter((a) => !a.off);
+  const action = (a: ChatAction): ChatPaletteItem => ({ id: a.id, kind: "action", action: a });
+  const sections = [{ label: "Windows", items: windows }];
+  if (!typed) {
+    for (const g of GROUPS) {
+      sections.push({ label: g, items: live.filter((a) => a.group === g).map(action) });
+    }
+  } else {
+    sections.push({
+      label: "Actions",
+      items: rank(live, query.trim(), (a) => a.label).map(action),
+    });
+    const open = new Set([ctx.self, ...ctx.windows.map((w) => w.hit.sessionId)]);
+    const hits = ctx.sessions?.query === query ? ctx.sessions.hits : [];
+    sections.push({
+      label: "Sessions",
+      items: hits
+        .filter((h) => !open.has(h.sessionId))
+        .slice(0, 50)
+        .map((hit) => ({ id: `session:${hit.sessionId}`, kind: "session", hit })),
+    });
+  }
+  return sections.filter((s) => s.items.length > 0);
 }

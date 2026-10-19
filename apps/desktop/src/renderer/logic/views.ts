@@ -55,6 +55,14 @@ export function projectHues(projects: readonly { id: ProjectId }[]): Map<Project
  */
 export type SessionState = InboxKind | "working" | "watching";
 
+/** what a session is at: its inbox row's kind when it needs the person, else running or watching */
+export function stateOf(hit: SessionHit, row?: InboxRowView): SessionState | undefined {
+  if (row) return row.kind;
+  if (hit.live === "running") return "working";
+  // its turn ended and something it started still runs: it is not done, and it asks nothing
+  return hit.tasks?.length ? "watching" : undefined;
+}
+
 export interface SessionItem {
   hit: SessionHit;
   state?: SessionState;
@@ -175,10 +183,9 @@ export function groupSessions(i: ListInput): SessionGroup[] {
     if (!local.has(hit) && !found.has(hit.sessionId)) continue;
     const snippet = found.get(hit.sessionId);
     const row = rows.get(hit.sessionId)?.[0];
-    if (row) groups.needs.push({ hit, state: row.kind, row, snippet });
-    else if (hit.live === "running") groups.working.push({ hit, state: "working", snippet });
-    // its turn ended and something it started still runs: it is not done, and it asks nothing
-    else if (hit.tasks?.length) groups.working.push({ hit, state: "watching", snippet });
+    const state = stateOf(hit, row);
+    if (row) groups.needs.push({ hit, state, row, snippet });
+    else if (state) groups.working.push({ hit, state, snippet });
     else {
       // older than three days: it last moved before the start of the day three days ago
       const back = cuts.findIndex((cut) => hit.activityMs >= cut);

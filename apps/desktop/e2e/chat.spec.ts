@@ -1703,6 +1703,66 @@ test("chat windows follow the appearance, cascade from the last one, and open at
   expect(b?.y).toBe((a?.y ?? 0) + 26);
 });
 
+test("⌘K lists the other chat windows: Enter goes to the one looked at last, and ⌘K Enter flips back", async () => {
+  const s = seed(true);
+  const SID2 = "cccccccc-0000-4000-8000-000000000002";
+  writeSession(s.fx, { cwd: s.root, sessionId: SID2, title: "another", prompt: "and this" });
+  const { app: electron, page } = await launch(s);
+  const focused = () =>
+    electron.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.getTitle());
+  await openRow(page, s.id);
+  const first = await chatWindow(electron, SID);
+  // the only chat window: its ⌘K is the actions, as before there were windows to list
+  await first.getByTestId("composer").press("Meta+k");
+  const input = (p: Page) => p.getByTestId("chat-palette-input");
+  const items = (p: Page) => p.getByTestId("chat-palette-item");
+  await expect(input(first)).toHaveAttribute("placeholder", "Run an action");
+  await expect(items(first).first()).toHaveAttribute("data-id", "editor");
+  await expect(first.locator('[data-id^="window:"], [data-id="all-sessions"]')).toHaveCount(0);
+  await input(first).press("Escape");
+
+  await page.locator(`[data-testid="session-row"][data-id="${SID2}"]`).dblclick();
+  const second = await chatWindow(electron, SID2);
+  await expect.poll(focused).toBe("another · chat-trial");
+  // the other window on top, by title and project, then All sessions
+  await second.getByTestId("composer").press("Meta+k");
+  await expect(input(second)).toHaveAttribute("placeholder", "Switch window or run an action");
+  await expect(items(second).first()).toHaveAttribute("data-id", `window:${SID}`);
+  await expect(items(second).first()).toContainText(TITLE);
+  await expect(items(second).first()).toContainText("chat-trial");
+  await expect(items(second).first().getByTestId("project-mark")).toHaveCount(1);
+  await expect(items(second).nth(1)).toHaveAttribute("data-id", "all-sessions");
+  await expect(items(second).nth(1)).toContainText("⌘1");
+  await input(second).press("Enter");
+  await expect(second.getByTestId("chat-palette")).toHaveCount(0);
+  await expect.poll(focused).toBe(`${TITLE} · chat-trial`);
+  // and back
+  await first.getByTestId("composer").press("Meta+k");
+  await expect(items(first).first()).toHaveAttribute("data-id", `window:${SID2}`);
+  await input(first).press("Enter");
+  await expect.poll(focused).toBe("another · chat-trial");
+  // typed: a word of a window's title finds it above the actions
+  await second.getByTestId("composer").press("Meta+k");
+  await input(second).fill("talk");
+  await expect(items(second).first()).toHaveAttribute("data-id", `window:${SID}`);
+  await input(second).press("Escape");
+
+  // the main window's ⌘K has both, the one looked at last first, and Enter goes to it
+  await page.bringToFront();
+  await page.keyboard.press("Meta+k");
+  const rows = page.locator('[data-testid="palette-item"][data-id^="window:"]');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toHaveAttribute("data-id", `window:${SID2}`);
+  await expect(rows.nth(1)).toHaveAttribute("data-id", `window:${SID}`);
+  await rows.nth(1).click();
+  await expect(page.getByTestId("palette")).toHaveCount(0);
+  await expect.poll(focused).toBe(`${TITLE} · chat-trial`);
+  // All sessions in a chat window's ⌘K is ⌘1: the main window, on All sessions
+  await first.getByTestId("composer").press("Meta+k");
+  await items(first).filter({ hasText: "All sessions" }).click();
+  await expect.poll(focused).toBe("Grove");
+});
+
 test("the summon key is grove chat's, can be changed in Settings, and brings the main window back", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s);

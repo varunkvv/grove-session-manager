@@ -71,6 +71,8 @@ export class ChatWindows {
   open(sessionId: string, show?: ChatShow): void {
     const had = this.bySession.get(sessionId);
     if (had && !had.isDestroyed()) {
+      // first in the order whether or not macOS says it took the keyboard
+      this.front(had);
       if (had.isMinimized()) had.restore();
       had.show();
       had.focus();
