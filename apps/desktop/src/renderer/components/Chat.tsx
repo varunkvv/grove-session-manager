@@ -47,6 +47,7 @@ import {
   ModeDot,
   Overlay,
   ProjectMark,
+  PromptBlock,
   Segmented,
   SendButton,
   Spinner,
@@ -1436,19 +1437,23 @@ export function ChatApp() {
                 ))}
                 {s.queued.map((q) => (
                   <div key={q.id} className="group/queued mt-3" data-testid="chat-queued">
-                    <h3 className="flex h-6 items-center gap-1 text-sm font-medium text-fg-4">
-                      You, queued
+                    {/* his block's outline until claude takes it. its one action where a sent
+                        one's are */}
+                    <PromptBlock queued>
                       {/* taken back before claude gets to it: its words go back in the composer */}
                       <IconButton
                         label="Take back"
                         data-testid="chat-unqueue"
-                        className="opacity-0 group-hover/queued:opacity-100 focus-visible:opacity-100"
+                        className="absolute top-1.5 right-1.5 opacity-0 group-hover/queued:opacity-100 focus-visible:opacity-100"
                         onClick={() => void unqueue(q)}
                       >
                         <Icon name="x" size={10} />
                       </IconButton>
-                    </h3>
-                    <p className="selectable whitespace-pre-wrap break-words text-fg-2">{q.text}</p>
+                      <h3 className="pr-8 text-sm font-medium text-fg-4">You, queued</h3>
+                      <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-3">
+                        {q.text}
+                      </p>
+                    </PromptBlock>
                   </div>
                 ))}
               </div>
