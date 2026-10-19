@@ -3,6 +3,7 @@
 // or run. the svg it draws goes into an <img>, never into the page, so nothing in it runs either.
 // that is also why labels are svg text: an <img> draws no html inside an svg.
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { isDark, onLook, paletteNow } from "../state/look.ts";
 
 type Mermaid = typeof import("mermaid").default;
 
@@ -40,23 +41,6 @@ const themeOf = (dark: boolean) => ({
   textColor: token("fg-2"),
 });
 
-export const isDark = (): boolean => {
-  const pinned = document.documentElement.dataset.theme;
-  return pinned ? pinned === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-};
-
-/** the appearance moved: pinned in Settings, or macOS at sunset */
-function onLook(changed: () => void): () => void {
-  const system = matchMedia("(prefers-color-scheme: dark)");
-  system.addEventListener("change", changed);
-  const pinned = new MutationObserver(changed);
-  pinned.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  return () => {
-    system.removeEventListener("change", changed);
-    pinned.disconnect();
-  };
-}
-
 /** an svg as an <img> can show it: a size of its own, from its viewBox */
 function asImage(svg: string): string {
   const box = /viewBox="[-\d.]+ [-\d.]+ ([\d.]+) ([\d.]+)"/.exec(svg);
@@ -66,8 +50,8 @@ function asImage(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sized)}`;
 }
 
-function draw(code: string, dark: boolean): Promise<string | null> {
-  const key = `${dark}\0${code}`;
+function draw(code: string, dark: boolean, palette: string): Promise<string | null> {
+  const key = `${palette}\0${dark}\0${code}`;
   if (drawn.has(key)) return Promise.resolve(drawn.get(key) ?? null);
   loaded ??= import("mermaid").then((m) => m.default);
   const run = queue.then(async () => {
@@ -102,20 +86,21 @@ function draw(code: string, dark: boolean): Promise<string | null> {
 }
 
 export function MermaidDiagram({ code }: { code: string }) {
-  // drawn again in the other appearance's colours when it flips
+  // drawn again in the other appearance's or palette's colours when it moves
   const dark = useSyncExternalStore(onLook, isDark);
-  const [got, setGot] = useState<{ code: string; dark: boolean; url: string | null }>();
+  const palette = useSyncExternalStore(onLook, paletteNow);
+  const [got, setGot] = useState<{ code: string; url: string | null }>();
   useEffect(() => {
     let live = true;
     // a fence still being streamed changes every frame: it is drawn once it holds still
     const soon = setTimeout(() => {
-      void draw(code, dark).then((url) => live && setGot({ code, dark, url }));
+      void draw(code, dark, palette).then((url) => live && setGot({ code, url }));
     }, 250);
     return () => {
       live = false;
       clearTimeout(soon);
     };
-  }, [code, dark]);
+  }, [code, dark, palette]);
   // the last drawing stays while the next is made, so a diagram being written never blinks
   if (got?.url) {
     return <img className="md-diagram" src={got.url} alt="Diagram" data-testid="diagram" />;

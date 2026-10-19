@@ -4,7 +4,15 @@
 // grove chat window a path is a file of the session's: an image drawn through <img> from main's
 // session scheme, which serves only the session's folders, or a link that opens the viewer.
 import { fileKind } from "@grove/core/pure";
-import { Fragment, memo, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  memo,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
@@ -12,6 +20,7 @@ import { blocks } from "../logic/blocks.ts";
 import { highlight, highlighted, type Run } from "../logic/highlight.ts";
 import { localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
+import { onLook, paletteNow } from "../state/look.ts";
 import { MermaidDiagram } from "./Mermaid.tsx";
 import { CopyButton } from "./ui.tsx";
 
@@ -51,20 +60,25 @@ function FileLink({ href, children }: { href?: string; children: ReactNode }) {
  * held still, and the rest of it follows as it is
  */
 export function Highlighted({ lang, code }: { lang: string; code: string }) {
-  const [got, setGot] = useState(() => ({ code, lines: highlighted(lang, code) ?? null }));
+  // light and dark are both in each run. another palette is another pair of themes
+  const palette = useSyncExternalStore(onLook, paletteNow);
+  const [got, setGot] = useState(() => ({
+    code,
+    lines: highlighted(lang, code, palette) ?? null,
+  }));
   useEffect(() => {
-    const known = highlighted(lang, code);
+    const known = highlighted(lang, code, palette);
     if (known !== undefined) return setGot({ code, lines: known });
     let live = true;
     // a block being streamed changes every frame: it is asked for once it holds still
     const soon = setTimeout(() => {
-      void highlight(lang, code).then((lines) => live && setGot({ code, lines }));
+      void highlight(lang, code, palette).then((lines) => live && setGot({ code, lines }));
     }, 150);
     return () => {
       live = false;
       clearTimeout(soon);
     };
-  }, [lang, code]);
+  }, [lang, code, palette]);
   const lines: Run[][] | null = got.lines && code.startsWith(got.code) ? got.lines : null;
   return (
     <code data-lang={lang}>

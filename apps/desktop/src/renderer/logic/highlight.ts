@@ -15,16 +15,21 @@ let next = 0;
 const waiting = new Map<number, (lines: Run[][] | null) => void>();
 const done = new Map<string, Run[][] | null>();
 
-const keyOf = (lang: string, code: string) => `${lang}\0${code}`;
+const keyOf = (lang: string, code: string, palette: string) => `${palette}\0${lang}\0${code}`;
 
 /** what is known already: the runs, null for a language with none, undefined when not asked yet */
-export function highlighted(lang: string, code: string): Run[][] | null | undefined {
+export function highlighted(
+  lang: string,
+  code: string,
+  palette: string,
+): Run[][] | null | undefined {
   if (code.length > MAX) return null;
-  return done.get(keyOf(lang, code));
+  return done.get(keyOf(lang, code, palette));
 }
 
-export function highlight(lang: string, code: string): Promise<Run[][] | null> {
-  const known = highlighted(lang, code);
+/** in the palette's own code colours */
+export function highlight(lang: string, code: string, palette: string): Promise<Run[][] | null> {
+  const known = highlighted(lang, code, palette);
   if (known !== undefined) return Promise.resolve(known);
   if (!worker) {
     worker = new Worker(new URL("../workers/highlight.ts", import.meta.url), { type: "module" });
@@ -34,10 +39,10 @@ export function highlight(lang: string, code: string): Promise<Run[][] | null> {
     };
   }
   const id = ++next;
-  worker.postMessage({ id, lang, code });
+  worker.postMessage({ id, lang, code, palette });
   return new Promise((resolve) => {
     waiting.set(id, (lines) => {
-      done.set(keyOf(lang, code), lines);
+      done.set(keyOf(lang, code, palette), lines);
       // the oldest answer goes first
       if (done.size > KEEP) done.delete(done.keys().next().value as string);
       resolve(lines);
