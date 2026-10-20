@@ -36,6 +36,8 @@ export interface SessionNote {
 export const LONG_TURN_MS = 60_000;
 /** two finished turns from one session this close together notify once */
 const ONCE_MS = 120_000;
+/** one session's permission prompts this close to the last one told are one notification */
+const ASKS_MS = 60_000;
 /** stopped ones this close together fold into one: quitting the editor with several tabs mid-turn */
 const FOLD_MS = 5_000;
 /** a collected notification can lose its click, and macOS does not promise `close` */
@@ -69,6 +71,8 @@ export class Notifier {
   private all = false;
   /** when each session last showed a finished turn */
   private asked = new Map<string, number>();
+  /** when each session last showed a permission prompt */
+  private prompted = new Map<string, number>();
   private stops: Array<SessionNote & { project: ProjectId }> = [];
   private kept: Note[] = [];
 
@@ -90,9 +94,12 @@ export class Notifier {
     const body = liveBody(status, s.needs);
     if (!body || this.o.watching?.(s.sessionId)) return;
     const show = () => this.post(s.project, s.title ?? "Claude session", body, s.click);
+    // a turn in default mode can ask ten times: its first ask says it, the row shows the rest
+    if (status.state === "permission") this.once(this.prompted, ASKS_MS, s.sessionId, show);
     // a wake-up is never folded: two agents ending a minute apart are two results
-    if (status.state === "waiting" && !status.woke) this.once(s.sessionId, show);
-    else show();
+    else if (status.state === "waiting" && !status.woke) {
+      this.once(this.asked, ONCE_MS, s.sessionId, show);
+    } else show();
   }
 
   /** a session in a project stopped mid-turn. waits FOLD_MS for others to join it */
@@ -120,10 +127,16 @@ export class Notifier {
     return this.o.focused() && (this.all || project === undefined || project === this.visible);
   }
 
-  private once(sessionId: string, show: () => boolean): void {
+  /** shown unless one was shown for this session less than `ms` ago. one held back does not count */
+  private once(
+    last: Map<string, number>,
+    ms: number,
+    sessionId: string,
+    show: () => boolean,
+  ): void {
     const now = Date.now();
-    if (now - (this.asked.get(sessionId) ?? Number.NEGATIVE_INFINITY) < ONCE_MS) return;
-    if (show()) this.asked.set(sessionId, now);
+    if (now - (last.get(sessionId) ?? Number.NEGATIVE_INFINITY) < ms) return;
+    if (show()) last.set(sessionId, now);
   }
 
   private post(

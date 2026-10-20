@@ -404,7 +404,8 @@ where the number means something. A model change judges every prompt again.
 Grove notifies when:
 
 - a session asks for permission. in a chat window that includes an MCP server's form or sign-in page and a paused
-  session's dialog, which claude raises no hook for
+  session's dialog, which claude raises no hook for. asks from one session within a minute of the last one told are
+  one notification, and its row under Needs you still says the newest
 - a session stops on an API error
 - a session in a project goes away mid-turn. several within five seconds fold into one
 - a turn that ran for over a minute finishes. one session notifies for this at most once in two minutes. it says

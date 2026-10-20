@@ -57,7 +57,8 @@ describe("the bodies", () => {
   it("today's three keep their words, and a short turn says nothing", () => {
     const { notifier, shown } = setup();
     notifier.live(status({ state: "permission", detail: "Bash" }), S1);
-    notifier.live(status({ state: "permission" }), S1);
+    // another session's: one session's asks within a minute are one notification
+    notifier.live(status({ state: "permission" }), { ...S1, sessionId: "s5" });
     notifier.live(status({ state: "failed" }), S1);
     notifier.live(finished(90_000, "Done with the fix"), S1);
     notifier.live(finished(30_000), { ...S1, sessionId: "s2" });
@@ -115,7 +116,7 @@ describe("one finished turn per session per two minutes", () => {
     const { notifier, shown } = setup();
     notifier.live(finished(), S1);
     notifier.live(status({ state: "permission", detail: "Bash" }), S1);
-    notifier.live(status({ state: "permission", detail: "Bash" }), S1);
+    notifier.live(status({ state: "failed" }), S1);
     notifier.live(status({ state: "failed" }), S1);
     expect(shown).toHaveLength(4);
   });
@@ -174,6 +175,56 @@ describe("a turn a background command or agent's end started", () => {
     expect(toldTurn(status({ state: "waiting" }))).toBe(false);
     expect(toldTurn(status({ state: "running", woke: true }))).toBe(false);
     expect(toldTurn(status({ state: "permission", woke: true }))).toBe(false);
+  });
+});
+
+describe("one session's permission prompts within a minute", () => {
+  const asks = (detail: string) => status({ state: "permission", detail });
+
+  it("three asks in 20s are one notification", () => {
+    const { notifier, shown } = setup();
+    notifier.live(asks("Bash"), S1);
+    vi.advanceTimersByTime(10_000);
+    notifier.live(asks("Edit"), S1);
+    vi.advanceTimersByTime(10_000);
+    notifier.live(asks("Write"), S1);
+    expect(shown.map((s) => s.body)).toEqual(["Needs permission: Bash"]);
+  });
+
+  it("an ask a minute or more after the last one told notifies again", () => {
+    const { notifier, shown } = setup();
+    notifier.live(asks("Bash"), S1);
+    vi.advanceTimersByTime(30_000);
+    notifier.live(asks("Edit"), S1);
+    vi.advanceTimersByTime(40_000);
+    notifier.live(asks("Write"), S1);
+    expect(shown.map((s) => s.body)).toEqual(["Needs permission: Bash", "Needs permission: Write"]);
+  });
+
+  it("two sessions asking together are two", () => {
+    const { notifier, shown } = setup();
+    notifier.live(asks("Bash"), S1);
+    notifier.live(asks("Bash"), { ...S1, sessionId: "s2" });
+    expect(shown).toHaveLength(2);
+  });
+
+  it("one held back by a focused window does not count", () => {
+    let focused = true;
+    const { notifier, shown } = setup({ focused: () => focused });
+    notifier.setVisible("chat", false);
+    notifier.live(asks("Bash"), S1);
+    focused = false;
+    notifier.live(asks("Edit"), S1);
+    expect(shown.map((s) => s.body)).toEqual(["Needs permission: Edit"]);
+  });
+
+  it("a failure and a finished turn after an ask keep their own rules", () => {
+    const { notifier, shown } = setup();
+    notifier.live(asks("Bash"), S1);
+    notifier.live(status({ state: "failed" }), S1);
+    notifier.live(status({ state: "waiting", turnMs: 3_000, woke: true, detail: "done" }), S1);
+    notifier.live(finished(), S1);
+    expect(shown).toHaveLength(4);
   });
 });
 
