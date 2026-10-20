@@ -1,6 +1,8 @@
+import { writeFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { type Fixture, hookEvent, makeFixture, writeSession } from "./helpers/fixture.ts";
-import { groveTest, type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { groveTest, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { liveSession, writeProject } from "./helpers/project.ts";
 
 const IDP = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -184,4 +186,33 @@ test("--hidden starts with no visible window and a working page", async () => {
   expect((await app.page.evaluate(() => window.grove.bootstrap())).inbox.rows).toHaveLength(2);
   await g.trayClick(await openGrove(g));
   await expect.poll(() => g.isMainVisible()).toBe(true);
+});
+
+test("with grove chat on, a row that needs him opens its chat window in front, and it still needs him", async () => {
+  const f = setup();
+  writeFileSync(path.join(f.root, "settings.json"), JSON.stringify({ chat: true }));
+  app = await launchApp(f);
+  const g = await ready(app);
+  await g.trayClick((await g.trayMenu()).findIndex((i) => i.label === "idp config"));
+  await waitFor(async () => {
+    for (const p of app.app.windows()) {
+      if (!p.url().includes("#/chat")) continue;
+      if ((await p.locator(`[data-testid="chat"][data-id="${IDP}"]`).count()) > 0) return true;
+    }
+    return false;
+  }, 15_000);
+  const front = () =>
+    app.app.evaluate(({ BrowserWindow }) => {
+      const url = BrowserWindow.getFocusedWindow()?.webContents.getURL();
+      return url === undefined ? "none" : url.includes("#/chat") ? "chat" : "main";
+    });
+  await expect.poll(front).toBe("chat");
+  // grove reopened for the same click keeps it in front
+  await app.app.evaluate(({ app: a }) => {
+    a.emit("activate", {}, true);
+  });
+  await app.page.waitForTimeout(300);
+  expect(await front()).toBe("chat");
+  // landing is not answering
+  expect(await g.trayTitle()).toBe("2");
 });

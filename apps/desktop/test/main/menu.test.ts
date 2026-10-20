@@ -187,14 +187,12 @@ describe("the tray menu", () => {
     expect(landed).toEqual([{ view: "inbox" }]);
   });
 
-  it("a row lands on its session in the inbox", () => {
-    const { click, landed, shown } = menu(ROWS);
+  it("a row lands on its session where a notification click about it does", () => {
+    const { click, landed, opened, shown } = menu(ROWS);
     click(1);
     click(2);
-    expect(landed).toEqual([
-      { view: "inbox", session: "s4" },
-      { view: "inbox", session: "s9" },
-    ]);
+    expect(opened).toEqual(["s4", "s9"]);
+    expect(landed).toEqual([]);
     click(8);
     expect(shown()).toBe(1);
   });

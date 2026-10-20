@@ -107,7 +107,7 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
 
 export interface TrayActions {
   land: (target: LandingTarget) => void;
-  /** a working session: wherever a click on a notification about it lands */
+  /** a session's row: wherever a click on a notification about it lands */
   open: (sessionId: string) => void;
   showMain: () => void;
 }
@@ -211,8 +211,8 @@ export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOp
           .join(" · "),
         80,
       ),
-      // its row, with its panel open
-      click: () => a.land({ view: "inbox", session: r.sessionId }),
+      // where a notification about it lands: its chat window with grove chat on, else its row
+      click: () => a.open(r.sessionId),
     }),
   );
   return [
