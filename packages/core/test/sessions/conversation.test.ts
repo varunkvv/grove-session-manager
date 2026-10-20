@@ -520,9 +520,9 @@ describe("what the real stretch does not have", () => {
     // from the failed result to when the thinking was written
     expect(view.thought).toEqual({ text: "the counter resets", ms: 6000 });
     expect(view.text).toBe("It resets in the loop.");
-    // the panel's view is as it was
+    // the panel's view has what it said on the way, and no tools or thinking
     const panel = conversationView(state).items[0] as TurnView;
-    expect(panel).not.toHaveProperty("steps");
+    expect(panel.steps).toEqual([{ kind: "text", text: "The tests next." }]);
     expect(panel).not.toHaveProperty("thought");
   });
 
@@ -588,7 +588,7 @@ describe("the conversation as the page gets it", () => {
   const turnsOf = (v: { items: Array<TurnView | { kind: "compact" }> }) =>
     v.items.filter((i): i is TurnView => i.kind === "turn");
 
-  it("is every turn of a real session without the steps inside it", async () => {
+  it("is every turn of a real session without the tools and thinking inside it", async () => {
     const v = conversationView(await readConversation(FIXTURE));
     expect(v.older).toBe(0);
     expect(v.items.filter((i) => i.kind === "compact")).toHaveLength(3);
@@ -596,9 +596,10 @@ describe("the conversation as the page gets it", () => {
     expect(t).toHaveLength(30);
     expect(t.filter((x) => x.prompt?.kind === "human").length).toBeGreaterThan(10);
     expect(t.filter((x) => x.text).length).toBeGreaterThan(20);
-    // no step, no thinking, no tool's name or output: the numbers of the work and nothing else
+    // no thinking, no tool's name or output: the numbers of the work, and what it said
     for (const x of t) {
       expect(Object.keys(x).every((k) => TURN_KEYS.includes(k))).toBe(true);
+      expect(x.steps?.every((s) => s.kind === "text") ?? true).toBe(true);
     }
   });
   const TURN_KEYS = [
@@ -612,6 +613,7 @@ describe("the conversation as the page gets it", () => {
     "text",
     "note",
     "outputs",
+    "steps",
   ];
 
   it("says who started a turn, the work in numbers, and the message it ended on", async () => {
@@ -644,6 +646,7 @@ describe("the conversation as the page gets it", () => {
           files: 1,
           agents: 1,
           ms: 240_000,
+          steps: [{ kind: "text", text: "Looking at the parser." }],
           text: "Fixed, and all 40 pass.",
         },
         {
@@ -684,17 +687,18 @@ describe("the conversation as the page gets it", () => {
       says("m3", text("Reading the second file now."), 14),
       says("m3", call("t2", "Read", { file_path: "/work/api/b.ts" }), 15),
     ]);
+    const said = (t: TurnView) => t.steps?.map((s) => (s.kind === "text" ? s.text : s.kind));
     expect(
-      v.items.map((i) => (i.kind === "turn" ? [i.prompt?.text, i.text, i.note] : "|")),
+      v.items.map((i) => (i.kind === "turn" ? [i.prompt?.text, i.text, i.note, said(i)] : "|")),
     ).toEqual([
-      ["refactor it", undefined, "Interrupted"],
-      // what it said before the error is not what it ended on, so only the last turn would show it
-      ["go on", undefined, "API Error: 529 Overloaded"],
-      ["again", undefined, undefined],
+      ["refactor it", undefined, "Interrupted", undefined],
+      // what it said before the error is not what it ended on: it is what it said on the way
+      ["go on", undefined, "API Error: 529 Overloaded", ["Starting."]],
+      ["again", undefined, undefined, undefined],
       "|",
       // the work that carried on after the compaction: nobody asked, and it has not ended, so
-      // this is the last thing it said
-      [undefined, "Reading the second file now.", undefined],
+      // what it said so far is all it said
+      [undefined, undefined, undefined, ["Reading the second file now."]],
     ]);
   });
 
@@ -922,5 +926,135 @@ describe("the conversation as markdown, and more of it", () => {
     // a chat window asks for more of the last turns than the usual
     expect(conversationView(state, { turns: 1 }).older).toBe(1);
     expect(conversationView(state, { turns: 5 }).older).toBe(0);
+  });
+});
+
+describe("every message claude writes in a turn", () => {
+  const fold = (lines: object[]) => readConversation(sandboxFile(jsonl(lines)));
+  const LINK = "https://claude.ai/code/artifact/5c6ce80e-62a5-4f85-9d6a-6e91bc9e31fb";
+
+  // session 7797c6c8: one api message is a text, then tool calls with their results between them.
+  // a later text took the first one's place, and the first went where nobody saw it
+  const stack = [
+    prompt("go through the security changes in the stack and write it up", 0),
+    says("m1", text(`outline up: ${LINK} - now orienting on the stack and recent main`), 1),
+    says("m1", call("t1", "mcp__claude_ai_Claude_Docs__guide", { items: ["topic.index"] }), 2),
+    result("t1", "the index", 3),
+    says("m1", call("t2", "Bash", { command: "git log --oneline -20 main" }), 4),
+    result("t2", "abc fix", 5),
+    says("m1", call("t3", "Bash", { command: "gh pr view 412" }), 6),
+    result("t3", "#412", 7),
+    says("m2", text("the stack section is in. now checking each security change"), 8),
+    says("m2", call("t4", "Read", { file_path: "/p/src/auth/rotate.ts" }), 9),
+    result("t4", "code", 10),
+    says("m3", thinking("412 keeps the old token valid"), 12),
+    says("m3", text("Two need a change before they merge."), 13),
+  ];
+
+  it("keeps each text where it was said, whole, in the chat window's and the panel's view", async () => {
+    const state = await fold(stack);
+    const chat = conversationView(state, { chat: true, textMax: MESSAGE_MAX }).items[0] as TurnView;
+    expect(chat.steps?.map((s) => (s.kind === "text" ? s.text : s.kind))).toEqual([
+      `outline up: ${LINK} - now orienting on the stack and recent main`,
+      "tool",
+      "tool",
+      "tool",
+      "the stack section is in. now checking each security change",
+      "tool",
+    ]);
+    expect(chat.thought?.text).toBe("412 keeps the old token valid");
+    expect(chat.text).toBe("Two need a change before they merge.");
+    const panel = conversationView(state).items[0] as TurnView;
+    expect(panel.steps).toEqual([
+      { kind: "text", text: `outline up: ${LINK} - now orienting on the stack and recent main` },
+      { kind: "text", text: "the stack section is in. now checking each security change" },
+    ]);
+    expect(panel.text).toBe("Two need a change before they merge.");
+  });
+
+  it("a turn that has not answered has no answer: the last thing it said is a text in its place", async () => {
+    // under way, on the Read it called after its second text
+    const state = await fold(stack.slice(0, 11));
+    for (const view of [conversationView(state, { chat: true }), conversationView(state)]) {
+      const turn = view.items[0] as TurnView;
+      expect(turn.text).toBeUndefined();
+      expect(turn.steps?.findLast((s) => s.kind === "text")).toEqual({
+        kind: "text",
+        text: "the stack section is in. now checking each security change",
+      });
+    }
+  });
+
+  it("gives a mid-turn text the answer's length, not a step's", async () => {
+    const long = `${"a line of the stack section\n".repeat(300)}the end`;
+    const state = await fold([
+      prompt("write it", 0),
+      says("m1", text(long), 1),
+      says("m1", call("t1", "Bash", { command: "ls" }), 2),
+      result("t1", "a", 3),
+      says("m2", text("Done."), 4),
+    ]);
+    const chat = conversationView(state, { chat: true, textMax: MESSAGE_MAX }).items[0] as TurnView;
+    expect(chat.steps?.[0]).toEqual({ kind: "text", text: long });
+    // the panel's last turn keeps what its answer keeps: the end, where the question is
+    const panel = conversationView(state).items[0] as TurnView;
+    expect(panel.steps?.[0]).toEqual({ kind: "text", text: long });
+  });
+
+  it("drops a long turn's oldest tools and thinking, never a text", async () => {
+    const lines: object[] = [prompt("do it all", 0), says("m0", text(`outline up: ${LINK}`), 1)];
+    for (let i = 0; i < 400; i++) {
+      lines.push(says(`m${i + 1}`, call(`t${i}`, "Bash", { command: `step ${i}` }), 2 + i));
+      lines.push(result(`t${i}`, "ok", 2 + i));
+    }
+    lines.push(says("mz", text("All 400 done."), 500));
+    const view = conversationView(await fold(lines), { chat: true }).items[0] as TurnView;
+    expect(view.steps?.[0]).toEqual({ kind: "text", text: `outline up: ${LINK}` });
+    expect(view.steps).toHaveLength(301);
+    expect(view.stepsBefore).toBe(100);
+    expect(view.steps?.[1]).toMatchObject({ kind: "tool", target: "step 100" });
+  });
+
+  it("keeps the thinking before a mid-turn text with that text, not with the answer", async () => {
+    const state = await fold([
+      prompt("plan it", 0),
+      says("m1", thinking("an outline first"), 1),
+      says("m1", text("outline up."), 2),
+      says("m2", thinking("now the answer"), 5),
+      says("m2", text("Here it is."), 6),
+    ]);
+    const view = conversationView(state, { chat: true }).items[0] as TurnView;
+    expect(view.steps).toEqual([
+      { kind: "thinking", text: "an outline first", ms: 1000 },
+      { kind: "text", text: "outline up." },
+    ]);
+    expect(view.thought).toEqual({ text: "now the answer", ms: 3000 });
+  });
+
+  it("the markdown export has every text of a turn in order", async () => {
+    const state = await fold([
+      ...stack,
+      prompt("and the cookie one?", 20),
+      says("m4", text("Looking at it."), 21),
+      says("m4", call("t5", "Read", { file_path: "/p/src/auth/cookie.ts" }), 22),
+      result("t5", "code", 23),
+      apiError(24, 10),
+    ]);
+    expect(conversationMarkdown(state, "stack")).toBe(
+      `${[
+        "# stack",
+        "## You",
+        "go through the security changes in the stack and write it up",
+        "## Claude",
+        `outline up: ${LINK} - now orienting on the stack and recent main`,
+        "the stack section is in. now checking each security change",
+        "Two need a change before they merge.",
+        "## You",
+        "and the cookie one?",
+        "## Claude",
+        "Looking at it.",
+        "_Connection dropped (ECONNRESET) · retry 10 of 10_",
+      ].join("\n\n")}\n`,
+    );
   });
 });
