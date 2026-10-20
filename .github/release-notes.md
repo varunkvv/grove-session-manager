@@ -1,3 +1,34 @@
+## 0.24
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.24 makes needs you predictable: a session
+stays there until you answer it or dismiss it.
+
+New:
+
+- a question, a permission prompt, a finished turn or a failure stays in needs you until you reply in that session (a
+  prompt in a chat window, the editor or the terminal, an answer to a card, approving or denying a permission) or
+  dismiss it
+- what no longer takes it out: opening the session, landing on it from a notification or the menu bar, its chat
+  window having the keyboard, closing its editor tab or terminal, three days passing
+- nor does Claude starting a turn of its own: a background agent or command finishing, a Monitor event, a cron or a
+  `/loop` firing. the row stays under needs you with a working dot beside it, and when that turn ends, its end is what
+  the row says next
+- every message Claude writes in a turn shows, in order. in a chat window the steps between two messages fold into one
+  line, and each message reads in full with its links live. the main window's session panel shows them all, unfolded
+- the markdown export has them in order too
+
+Keep in mind:
+
+- with grove chat on, a notification or a needs you row in the menu bar opens the session's chat window, in front. a
+  click while Grove is the app in front can still do nothing: macOS does not always hand that click to Grove
+- a prompt you type that is word for word a cron's own prompt reads as the cron firing. dismiss it
+
+Fixed since 0.23.44:
+
+- a session whose turn ended with background agents still at work is under Working in the main window once you have
+  answered or dismissed it, as the menu bar already had it. before, it went quiet
+- a notification click with grove chat on lands in the session's chat window, not behind the main window
+
 ## 0.23
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.23 adds a toy you have to switch on:
