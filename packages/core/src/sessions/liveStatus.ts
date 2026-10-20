@@ -317,7 +317,7 @@ export interface StatusEvent {
   /** set when a subagent raised the event, not the session itself */
   agentId?: string;
   agentType?: string;
-  /** background subagents still running. read on Stop: a turn that handed work to one has not ended */
+  /** background subagents still running. read on Stop: the turn is over, the work is not */
   backgroundAgents?: number;
   /**
    * what a Stop says is still in flight, subagents left out: commands, Monitors, wake-ups. absent
@@ -434,7 +434,7 @@ function leftRunning(payload: Record<string, unknown>): StatusEvent["tasks"] {
   if (!Array.isArray(shells) && !Array.isArray(crons)) return undefined;
   const out: NonNullable<StatusEvent["tasks"]> = [];
   for (const t of Array.isArray(shells) ? shells : []) {
-    // a subagent has its own rows, and keeps the turn running: backgroundAgents counts those
+    // a subagent has its own rows, and keeps the mac awake: backgroundAgents counts those
     if (!isObject(t) || typeof t.id !== "string" || t.type === "subagent") continue;
     // the hook's schema says the array is what is in flight, running or pending. anything else
     // it might ever say has ended, and must not keep a mac awake
@@ -470,6 +470,8 @@ function next(
   const turnStart = state === "running" ? (prev?.turnStart ?? ev.at) : prev?.turnStart;
   const out: LiveStatus = { state, at: ev.at, lastEventAt: ev.at, ...extra };
   if (turnStart !== undefined) out.turnStart = turnStart;
+  // a wake-up stays one through its turn's asks and tools, to the Stop
+  if (prev?.woke) out.woke = true;
   return out;
 }
 
@@ -507,7 +509,12 @@ export function reduceStatus(
   const touched = prev ? { ...prev, lastEventAt: Math.max(prev.lastEventAt, ev.at) } : prev;
   switch (ev.event) {
     case "UserPromptSubmit":
-      return next(undefined, ev, "running", { turnStart: ev.at });
+      // a background command or agent that ended wakes the session. what that turn ends on is the
+      // result of work the person handed off
+      return next(undefined, ev, "running", {
+        turnStart: ev.at,
+        ...(ev.endedTask ? { woke: true } : {}),
+      });
     case "PermissionRequest":
       return ask(prev, ev, {
         ...(ev.toolName ? { detail: ev.toolName } : {}),
@@ -539,15 +546,16 @@ export function reduceStatus(
       return touched;
     case "Stop": {
       if (ev.agentId) return touched;
-      // it is still working through a background subagent. its finish starts a new turn and Stop
-      if (ev.backgroundAgents)
-        return touched ? { ...touched, state: "running" } : next(undefined, ev, "running");
       const turnMs = prev?.turnStart !== undefined ? ev.at - prev.turnStart : undefined;
       return next(undefined, ev, "waiting", {
         ...(turnMs !== undefined ? { turnMs } : {}),
         ...(ev.message
           ? { detail: squash(ev.message, 160), question: lastParagraph(ev.message) }
           : {}),
+        // the person's turn, whatever still works in the background: a question asked here is
+        // real. a background agent's finish starts a turn of its own
+        ...(ev.backgroundAgents ? { agentsLeft: ev.backgroundAgents } : {}),
+        ...(prev?.woke ? { woke: true } : {}),
       });
     }
     case "StopFailure":

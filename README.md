@@ -93,8 +93,9 @@ long task. Flip it from `⌘K` (**Run long work in the conversation** / **in the
 
 It is a default by instruction, not an enforcement: Claude still decides what counts as long.
 
-A session whose turn ended while a background subagent it started is still working counts as running, not as waiting
-on you. A background shell left running (a dev server) does not hold the turn open.
+A turn that ends while a background subagent it started is still working is your turn: what it ended on (often a
+question) is under Needs you. The subagent keeps the Mac awake while its tool calls keep coming in. When it finishes,
+its result starts a short turn of its own, and that turn's end notifies however short it was.
 
 ### Archiving and deleting a project
 
@@ -408,6 +409,8 @@ Grove notifies when:
 - a turn that ran for over a minute finishes. one session notifies for this at most once in two minutes. it says
   what the session's recap says you have to do when the recap is there within 15 seconds, else the start of the last
   message. the other three are never held back
+- a turn that a background command or agent ending started finishes, however short. it says what the recap or the
+  last message says, and two of them are never folded into one
 
 Nothing notifies about what the focused window already shows: on All sessions that is every project, on a project's
 sessions that project. What stopped while Grove was closed shows under Needs you and does not notify.
@@ -446,10 +449,11 @@ is kept across a restart of Grove.
 
 ## Staying awake
 
-While any session Grove can see is mid-turn, or is watching a [background task](#background-tasks), Grove keeps the
-Mac and its display from going to sleep on their own, and lets them go when the last of them is done. It is what
-`caffeinate -d -i` takes, held by Grove itself: no terminal and no extra process. A laptop on battery with its lid
-shut still sleeps. A session waiting on you with nothing left running does not count. It holds only while Grove is
+While any session Grove can see is mid-turn, has a background subagent at work, or is watching a
+[background task](#background-tasks), Grove keeps the Mac and its display from going to sleep on their own, and lets
+them go when the last of them is done. A subagent counts until 45 minutes pass with nothing heard from its session. It
+is what `caffeinate -d -i` takes, held by Grove itself: no terminal and no extra process. A laptop on battery with its
+lid shut still sleeps. A session waiting on you with nothing left running does not count. It holds only while Grove is
 running: closing the window keeps Grove in the menu bar, quitting lets go. The menu bar's menu says whether it holds,
 for how long and for which sessions. **Keep the Mac awake while agents work** in Settings switches it off.
 

@@ -1,7 +1,8 @@
-// the mac and its display stay awake while an agent is mid-turn or a session has left something
-// running, and are let go when none is. it is what `caffeinate -d -i` takes, held by grove's own
-// process: no child to start, and none to outlive us.
+// the mac and its display stay awake while an agent is mid-turn or works in the background, or a
+// session has left something running, and are let go when none is. it is what `caffeinate -d -i`
+// takes, held by grove's own process: no child to start, and none to outlive us.
 import { type LiveStatus, liveTasks, type SessionTasks } from "@grove/core";
+import { RUNNING_STALE_MS } from "./services/live.ts";
 
 /** electron's powerSaveBlocker, as far as this needs it */
 export interface PowerBlocker {
@@ -10,19 +11,27 @@ export interface PowerBlocker {
 }
 
 /**
- * the turns in flight. a session working through a background subagent is still `running` (see
- * reduceStatus on Stop), and one that waits on a person is not: nothing moves until they answer
+ * a turn in flight, or a turn over that left a background agent working: it is the person's turn,
+ * and the agent still moves. that one counts while the agent's events keep coming, so a restart
+ * after the agent died does not hold the mac for days. one that waits on a person and nothing else
+ * does not: nothing moves until they answer
  */
-export function runningCount(statuses: ReadonlyMap<string, LiveStatus>): number {
+export function working(s: LiveStatus | undefined, now: number): boolean {
+  if (!s) return false;
+  return s.state === "running" || (!!s.agentsLeft && now - s.lastEventAt < RUNNING_STALE_MS);
+}
+
+/** the sessions working, see working */
+export function runningCount(statuses: ReadonlyMap<string, LiveStatus>, now: number): number {
   let n = 0;
-  for (const s of statuses.values()) if (s.state === "running") n++;
+  for (const s of statuses.values()) if (working(s, now)) n++;
   return n;
 }
 
 /**
  * the sessions between turns that left something running: a background command, a Monitor, a
  * wake-up. every wake-up counts, however far off: a mac that sleeps does not fire it. one that is
- * mid-turn is runningCount's, so no session is counted twice
+ * working is runningCount's, so no session is counted twice
  */
 export function watchingCount(
   tasks: ReadonlyMap<string, SessionTasks>,
@@ -31,7 +40,7 @@ export function watchingCount(
 ): number {
   let n = 0;
   for (const [id, t] of tasks) {
-    if (statuses.get(id)?.state !== "running" && liveTasks(t, now).length > 0) n++;
+    if (!working(statuses.get(id), now) && liveTasks(t, now).length > 0) n++;
   }
   return n;
 }
@@ -45,10 +54,11 @@ export function watchingCount(
 export function leftRunningCount(
   tasks: ReadonlyMap<string, SessionTasks>,
   statuses: ReadonlyMap<string, LiveStatus>,
+  now: number,
 ): number {
   let n = 0;
   for (const [id, t] of tasks) {
-    if (statuses.get(id)?.state !== "running" && t.tasks.length > 0) n++;
+    if (!working(statuses.get(id), now) && t.tasks.length > 0) n++;
   }
   return n;
 }

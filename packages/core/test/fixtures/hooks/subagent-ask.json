@@ -1,0 +1,224 @@
+[
+  {
+    "at": 1792517425000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Do these in order. 1) Launch ONE background agent (Agent tool with run_in_background: true, subagent_type general-purpose) whose task is: \"Run the Bash command `curl -sI https://example.com` once, then run `sleep 3; echo a` twice, then reply finished.\" 2) Right after launching it, use the AskUserQuestion tool to ask me \"Pick a colour\" with options Red and Blue. 3) After my answer, end your turn by asking me in plain text: \"Should I keep going?\""
+    }
+  },
+  {
+    "at": 1792517428010,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Agent",
+      "tool_input": {
+        "description": "Run curl and sleep commands",
+        "prompt": "Run the Bash command `curl -sI https://example.com` once, then run `sleep 3; echo a` twice, then reply finished.",
+        "subagent_type": "general-purpose",
+        "run_in_background": true
+      }
+    }
+  },
+  {
+    "at": 1792517428020,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a025d713d145fb1a0",
+      "agent_type": "general-purpose",
+      "hook_event_name": "SubagentStart"
+    }
+  },
+  {
+    "at": 1792517429010,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "PermissionRequest",
+      "tool_name": "AskUserQuestion",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Pick a colour",
+            "header": "Colour",
+            "options": [
+              {
+                "label": "Red",
+                "description": "The colour red"
+              },
+              {
+                "label": "Blue",
+                "description": "The colour blue"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "at": 1792517430000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "AskUserQuestion",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Pick a colour",
+            "header": "Colour",
+            "options": [
+              {
+                "label": "Red",
+                "description": "The colour red"
+              },
+              {
+                "label": "Blue",
+                "description": "The colour blue"
+              }
+            ],
+            "multiSelect": false
+          }
+        ],
+        "answers": {
+          "Pick a colour": "Red"
+        }
+      }
+    }
+  },
+  {
+    "at": 1792517433000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "Stop",
+      "last_assistant_message": "Got it—you picked Red. The background agent is running in the background and will notify me when it completes.\n\nShould I keep going?",
+      "background_tasks": [
+        {
+          "id": "a025d713d145fb1a0",
+          "type": "subagent",
+          "status": "running",
+          "description": "Run curl and sleep commands",
+          "agent_type": "general-purpose"
+        }
+      ],
+      "session_crons": []
+    }
+  },
+  {
+    "at": 1792517434010,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a025d713d145fb1a0",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PermissionRequest",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "curl -sI https://example.com",
+        "description": "Check headers for example.com"
+      }
+    }
+  },
+  {
+    "at": 1792517435000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a025d713d145fb1a0",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "curl -sI https://example.com",
+        "description": "Check headers for example.com"
+      }
+    }
+  },
+  {
+    "at": 1792517441000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a025d713d145fb1a0",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 3; echo a",
+        "description": "Sleep 3 seconds then echo a (first time)"
+      }
+    }
+  },
+  {
+    "at": 1792517441010,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a025d713d145fb1a0",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 3; echo a",
+        "description": "Sleep 3 seconds then echo a (second time)"
+      }
+    }
+  },
+  {
+    "at": 1792517442000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a025d713d145fb1a0",
+      "agent_type": "general-purpose",
+      "hook_event_name": "SubagentStop",
+      "last_assistant_message": "Finished.",
+      "background_tasks": [
+        {
+          "id": "a025d713d145fb1a0",
+          "type": "subagent",
+          "status": "running",
+          "description": "Run curl and sleep commands",
+          "agent_type": "general-purpose"
+        }
+      ],
+      "session_crons": []
+    }
+  },
+  {
+    "at": 1792517442010,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "<task-notification>\n<task-id>a025d713d145fb1a0</task-id>\n<tool-use-id>toolu_01H1AQyZNtPxBovNY3o56c2N</tool-use-id>\n<output-file>/private/tmp/claude-501/-private-tmp-grove-probe-ws/1f06b6c3-7c1e-4bf3-b002-02c8417619de/tasks/a025d713d145fb1a0.output</output-file>\n<status>completed</status>\n<summary>Agent \"Run curl and sleep commands\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>Finished.</result>\n<usage><subagent_tokens>19954</subagent_tokens><tool_uses>3</tool_uses><duration_ms>14423</duration_ms></usage>\n</task-notification>"
+    }
+  },
+  {
+    "at": 1792517445000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "Stop",
+      "last_assistant_message": "The background agent completed successfully. It ran the curl command and the two sleep/echo sequences, then reported finished.",
+      "background_tasks": [],
+      "session_crons": []
+    }
+  },
+  {
+    "at": 1792517514000,
+    "payload": {
+      "session_id": "1f06b6c3-7c1e-4bf3-b002-02c8417619de",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "SessionEnd",
+      "reason": "other"
+    }
+  }
+]

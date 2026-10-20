@@ -253,6 +253,13 @@ export interface LiveStatus {
   /** when the current turn started, for "finished after 12m" */
   turnStart?: number;
   turnMs?: number;
+  /**
+   * a background command or agent ending started this turn. its end is told however short it is:
+   * it is the result of work the person handed off
+   */
+  woke?: true;
+  /** background subagents the turn's Stop left working: the main thread is idle, the work is not */
+  agentsLeft?: number;
   /** the tool asking for permission, or the notification's text */
   detail?: string;
   /** what the tool asking for permission would act on: the command, the file */

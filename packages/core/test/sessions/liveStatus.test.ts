@@ -209,7 +209,7 @@ describe("session status from hook events", () => {
     expect(needsYou({ state: "running", at: 1, lastEventAt: 1 })).toBe(false);
   });
 
-  it("a turn that hands work to a background subagent is still running. a background shell is not", () => {
+  it("a turn that ends with a background subagent still working is your turn, the agent counted. a shell is not", () => {
     // the shape of a real Stop payload (claude code 2.1.286)
     const stop = (at: number, tasks: unknown[]) =>
       parseStatusEvent(
@@ -226,23 +226,33 @@ describe("session status from hook events", () => {
     const prompt = { sessionId: SID, event: "UserPromptSubmit", at: 1_000 };
     const started = reduceStatus(undefined, prompt);
 
+    // until 0.23.41 this turn read as still running: a question asked here never reached anyone
     expect(stop(5_000, [subagent, shell]).backgroundAgents).toBe(1);
-    const kept = reduceStatus(started, stop(5_000, [subagent]));
-    expect(kept).toMatchObject({ state: "running", turnStart: 1_000, lastEventAt: 5_000 });
-    expect(needsYou(kept)).toBe(false);
-    expect(reduceStatus(undefined, stop(5_000, [subagent]))?.state).toBe("running");
+    const ended = reduceStatus(started, stop(5_000, [subagent]));
+    expect(ended).toMatchObject({
+      state: "waiting",
+      turnMs: 4_000,
+      agentsLeft: 1,
+      lastEventAt: 5_000,
+    });
+    expect(needsYou(ended)).toBe(true);
+    expect(reduceStatus(undefined, stop(5_000, [subagent]))).toMatchObject({
+      state: "waiting",
+      agentsLeft: 1,
+    });
 
     expect(stop(5_000, [shell, { ...subagent, status: "completed" }]).backgroundAgents).toBe(
       undefined,
     );
-    expect(reduceStatus(started, stop(5_000, [shell]))?.state).toBe("waiting");
+    const shellLeft = reduceStatus(started, stop(5_000, [shell]));
+    expect(shellLeft?.state).toBe("waiting");
+    expect(shellLeft?.agentsLeft).toBeUndefined();
 
-    // the subagent's finish wakes the session: a new turn, then the Stop that is your turn
-    const woken = reduceStatus(kept, { sessionId: SID, event: "UserPromptSubmit", at: 9_000 });
-    expect(reduceStatus(woken, stop(10_000, []))).toMatchObject({
-      state: "waiting",
-      turnMs: 1_000,
-    });
+    // the subagent's finish wakes the session: a new turn, then the Stop that is your turn again
+    const woken = reduceStatus(ended, { sessionId: SID, event: "UserPromptSubmit", at: 9_000 });
+    const again = reduceStatus(woken, stop(10_000, []));
+    expect(again).toMatchObject({ state: "waiting", turnMs: 1_000 });
+    expect(again?.agentsLeft).toBeUndefined();
   });
 
   it("a Stop cut at the byte cap has lost its background tasks, and ends the turn as it always did", () => {
@@ -658,6 +668,103 @@ describe("an ask while a background agent works", () => {
     expect(
       reduceStatus(two.s, { sessionId: SID, event: "PostToolUse", at: 5, agentId: "a2" }),
     ).toMatchObject({ state: "waiting", at: 2 });
+  });
+
+  it("the turn that ends on a question while the agent works is your turn, its result a wake-up (bg-agent capture)", () => {
+    const steps = replay(capture("bg-agent"));
+    expect(steps.slice(8).map(({ ev, s }) => `${who(ev)} -> ${s?.state}`)).toEqual([
+      "Stop main -> waiting",
+      "PostToolUse agent -> waiting",
+      "PostToolUse agent -> waiting",
+      "PostToolUse agent -> waiting",
+      "PostToolUse agent -> waiting",
+      "SubagentStop agent -> waiting",
+      // the agent's <task-notification>
+      "UserPromptSubmit main -> running",
+      "Stop main -> waiting",
+      "SessionEnd main -> undefined",
+    ]);
+    const asked = steps[8]?.s;
+    expect(asked).toMatchObject({
+      question: "You picked Red. Should I keep going?",
+      agentsLeft: 1,
+    });
+    expect(needsYou(asked)).toBe(true);
+    // the agent's events keep it fresh and change nothing else
+    expect(steps[13]?.s).toEqual({ ...asked, lastEventAt: steps[13]?.ev.at });
+    expect(steps[14]?.s).toMatchObject({ state: "running", woke: true });
+    // three seconds long, and told all the same
+    const result = steps[15]?.s;
+    expect(result).toMatchObject({ state: "waiting", woke: true, turnMs: 2_990 });
+    expect(result?.agentsLeft).toBeUndefined();
+  });
+
+  it("an agent's ask after the turn ended brings back that turn's end when answered (subagent-ask capture)", () => {
+    const events = capture("subagent-ask");
+    const steps = replay(events);
+    expect(steps.map(({ ev, s }) => `${who(ev)} -> ${s?.state}`)).toEqual([
+      "UserPromptSubmit main -> running",
+      "PostToolUse main -> running",
+      "SubagentStart agent -> running",
+      "PermissionRequest main -> permission",
+      "PostToolUse main -> running",
+      "Stop main -> waiting",
+      // the agent's Bash, a second after the turn ended
+      "PermissionRequest agent -> permission",
+      "PostToolUse agent -> waiting",
+      "PostToolUse agent -> waiting",
+      "PostToolUse agent -> waiting",
+      "SubagentStop agent -> waiting",
+      "UserPromptSubmit main -> running",
+      "Stop main -> waiting",
+      "SessionEnd main -> undefined",
+    ]);
+    const ended = steps[5]?.s as LiveStatus;
+    expect(ended).toMatchObject({ agentsLeft: 1 });
+    expect(steps[6]?.s).toMatchObject({ detail: "Bash", agentId: "a025d713d145fb1a0" });
+    expect(steps[6]?.s?.resume).toEqual(ended);
+    expect(steps[7]?.s).toEqual({ ...ended, lastEventAt: steps[7]?.ev.at });
+    // read before the agent asked: it comes back read
+    const read = replay(events.slice(6, 8), { ...ended, seen: true });
+    expect(read[1]?.s).toEqual({ ...ended, seen: true, lastEventAt: read[1]?.ev.at });
+    expect(steps[12]?.s).toMatchObject({ state: "waiting", woke: true });
+  });
+
+  it("a background command or agent ending starts a wake-up. a Monitor's event, a /loop and he do not", () => {
+    const prompt = (text: string) =>
+      parseStatusEvent(
+        { session_id: SID, hook_event_name: "UserPromptSubmit", prompt: text },
+        1,
+      ) as StatusEvent;
+    const turn = (ev: StatusEvent) => reduceStatus(undefined, ev)?.woke;
+    expect(
+      turn(
+        prompt(
+          '<task-notification>\n<task-id>bjtknaehh</task-id>\n<status>completed</status>\n<summary>Background command "sleeper" completed (exit code 0)</summary>\n</task-notification>',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      turn(
+        prompt(
+          '<task-notification>\n<task-id>br6y21j9k</task-id>\n<summary>Monitor event: "tick watcher"</summary>\n<event>Mon Oct 12 14:08:21 CDT 2026</event>\n</task-notification>',
+        ),
+      ),
+    ).toBeUndefined();
+    expect(turn(prompt("<<autonomous-loop-dynamic>>"))).toBeUndefined();
+    expect(turn(prompt("check the build"))).toBeUndefined();
+    // it rides the turn to its Stop, through an ask on the way, and goes with his next prompt
+    const { s, trail } = run([
+      { event: "UserPromptSubmit", at: 1, endedTask: "bjtknaehh" },
+      { event: "PermissionRequest", at: 2, toolName: "Bash" },
+      { event: "PostToolUse", at: 3, toolName: "Bash" },
+      { event: "Stop", at: 4, message: "merged" },
+    ]);
+    expect(trail).toEqual(["running", "permission", "running", "waiting"]);
+    expect(s).toMatchObject({ woke: true, turnMs: 3 });
+    expect(
+      reduceStatus(s, { sessionId: SID, event: "UserPromptSubmit", at: 5 })?.woke,
+    ).toBeUndefined();
   });
 
   it("a Stop or a prompt of the main thread replaces an agent's ask", () => {

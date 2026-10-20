@@ -23,7 +23,7 @@ import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
 import { type AppEnv, resolveAppEnv, resolveProjectsDir, userDataDirFor } from "./env.ts";
 import { chatRoots, type FreshChats, registerIpc } from "./ipc.ts";
-import { keepAwake, leftRunningCount, runningCount, watchingCount } from "./keepAwake.ts";
+import { keepAwake, leftRunningCount, runningCount, watchingCount, working } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
 import type { TrayView } from "./menuTemplate.ts";
@@ -38,7 +38,7 @@ import { DecisioningService, decisioningSetup } from "./services/decisioning.ts"
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
-import { LONG_TURN_MS, Notifier } from "./services/notify.ts";
+import { Notifier, toldTurn } from "./services/notify.ts";
 import { ProjectsService } from "./services/projects.ts";
 import { RecapService, Slots } from "./services/recaps.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
@@ -259,9 +259,9 @@ async function start(): Promise<void> {
           click: () => landOn(sessionId),
         });
       // a permission prompt and a failure are told at once. so is a turn too short to notify of
-      if (status.state !== "waiting" || (status.turnMs ?? 0) < LONG_TURN_MS) return note();
-      // a long turn's end waits a moment for its recap: what is asked of the person says more
-      // than the start of the last message
+      if (!toldTurn(status)) return note();
+      // a long turn's end, or a wake-up's, waits a moment for its recap: what is asked of the
+      // person says more than the start of the last message
       void recaps.soon(row).then((needs) => {
         const now = live.list().get(sessionId);
         // looked at, or moved on, while it waited
@@ -276,13 +276,14 @@ async function start(): Promise<void> {
   });
 
   /**
-   * what keeps the mac awake: the turns in flight, and the sessions between turns that left a
-   * command or a wake-up running. `watchers` is the ones the lists show, a minute in
+   * what keeps the mac awake: the turns in flight or ended with a background agent at work, and
+   * the sessions between turns that left a command or a wake-up running. `watchers` is the ones
+   * the lists show, a minute in
    */
-  const holding = () => ({
-    running: runningCount(live.list()),
-    watchers: watchingCount(live.tasks(), live.list(), Date.now()),
-    left: leftRunningCount(live.tasks(), live.list()),
+  const holding = (now = Date.now()) => ({
+    running: runningCount(live.list(), now),
+    watchers: watchingCount(live.tasks(), live.list(), now),
+    left: leftRunningCount(live.tasks(), live.list(), now),
   });
 
   // a background session keeps the environment it was dispatched with. Finder's is no good.
@@ -452,14 +453,17 @@ async function start(): Promise<void> {
     drawing = true;
     try {
       const listed = projects.listSessions(null);
+      const now = Date.now();
+      // by the status, as the counts are: a turn that ended with an agent at work is working
+      const busy = (id: string) => working(live.list().get(id), now);
       trayView = {
         inbox: projects.inbox(),
-        working: listed.filter((s) => s.live === "running"),
-        watching: listed.filter((s) => s.live !== "running" && s.tasks?.length),
-        ...holding(),
+        working: listed.filter((s) => busy(s.sessionId)),
+        watching: listed.filter((s) => !busy(s.sessionId) && s.tasks?.length),
+        ...holding(now),
         awakeSince: awake.since(),
         keepAwake: settings.keepAwake !== false,
-        now: Date.now(),
+        now,
       };
     } finally {
       drawing = false;
@@ -474,7 +478,11 @@ async function start(): Promise<void> {
   };
   // "for 12m" is only as fresh as the menu's last build
   const trayTick = setInterval(() => {
-    if (trayView?.running || trayView?.watchers) showTray();
+    if (!trayView?.running && !trayView?.watchers) return;
+    // a background agent that went quiet lets go of the mac with no event to say so
+    const { running, left } = holding();
+    awake.set(settings.keepAwake !== false && running + left > 0);
+    showTray();
   }, 60_000);
   trayTick.unref();
 

@@ -41,18 +41,26 @@ const FOLD_MS = 5_000;
 /** a collected notification can lose its click, and macOS does not promise `close` */
 const KEEP = 50;
 
+/**
+ * a finished turn worth telling: one over a minute, or one a background command or agent ending
+ * started. that one is seconds long, and it is the result of work the person handed off
+ */
+export function toldTurn(s: LiveStatus): boolean {
+  return s.state === "waiting" && (!!s.woke || (s.turnMs ?? 0) >= LONG_TURN_MS);
+}
+
 /** only what is worth interrupting someone for. a short turn they are probably watching is not */
 function liveBody(s: LiveStatus, needs?: string): string | null {
   if (s.state === "permission")
     return s.detail ? `Needs permission: ${s.detail}` : "Needs permission";
   if (s.state === "failed") return "Stopped on an API error";
-  if (s.state === "waiting" && (s.turnMs ?? 0) >= LONG_TURN_MS) {
-    const after = `Finished after ${formatDuration(s.turnMs ?? 0)}`;
-    // what is asked of the person, when a recap says. else the start of the last message
-    const says = needs ?? s.detail;
-    return says ? `${after}: ${says}` : after;
-  }
-  return null;
+  if (!toldTurn(s)) return null;
+  // what is asked of the person, when a recap says. else the start of the last message
+  const says = needs ?? s.detail;
+  // how long a wake-up took says nothing
+  if (s.woke) return says ?? "Your turn";
+  const after = `Finished after ${formatDuration(s.turnMs ?? 0)}`;
+  return says ? `${after}: ${says}` : after;
 }
 
 export class Notifier {
@@ -77,12 +85,13 @@ export class Notifier {
     this.all = all;
   }
 
-  /** permission, failed, and a turn over a minute finished */
+  /** permission, failed, and a finished turn worth telling (toldTurn) */
   live(status: LiveStatus, s: SessionNote): void {
     const body = liveBody(status, s.needs);
     if (!body || this.o.watching?.(s.sessionId)) return;
     const show = () => this.post(s.project, s.title ?? "Claude session", body, s.click);
-    if (status.state === "waiting") this.once(s.sessionId, show);
+    // a wake-up is never folded: two agents ending a minute apart are two results
+    if (status.state === "waiting" && !status.woke) this.once(s.sessionId, show);
     else show();
   }
 

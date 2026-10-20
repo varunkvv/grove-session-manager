@@ -6,12 +6,13 @@ import {
   runningCount,
   watchingCount,
 } from "../../src/main/keepAwake.ts";
+import { RUNNING_STALE_MS } from "../../src/main/services/live.ts";
 
 const status = (state: LiveStatus["state"]): LiveStatus => ({ state, at: 1, lastEventAt: 1 });
 
 describe("keeping the mac awake", () => {
   it("counts the turns in flight, and not a session that waits on a person", () => {
-    expect(runningCount(new Map())).toBe(0);
+    expect(runningCount(new Map(), 1)).toBe(0);
     expect(
       runningCount(
         new Map([
@@ -19,6 +20,7 @@ describe("keeping the mac awake", () => {
           ["b", status("permission")],
           ["c", status("failed")],
         ]),
+        1,
       ),
     ).toBe(0);
     expect(
@@ -28,6 +30,7 @@ describe("keeping the mac awake", () => {
           ["b", status("running")],
           ["c", status("running")],
         ]),
+        1,
       ),
     ).toBe(2);
   });
@@ -57,11 +60,38 @@ describe("keeping the mac awake", () => {
     // a second later the script is a minute old
     expect(watchingCount(tasks, statuses, NOW + 1)).toBe(3);
     expect(watchingCount(new Map(), statuses, NOW)).toBe(0);
-    expect(runningCount(statuses)).toBe(1);
+    expect(runningCount(statuses, NOW)).toBe(1);
     // the hold does not wait for the minute: a watcher started seconds before its turn ended
     // keeps the mac up from that Stop on, with no gap after the turn
-    expect(leftRunningCount(tasks, statuses)).toBe(3);
-    expect(leftRunningCount(new Map(), statuses)).toBe(0);
+    expect(leftRunningCount(tasks, statuses, NOW)).toBe(3);
+    expect(leftRunningCount(new Map(), statuses, NOW)).toBe(0);
+  });
+
+  it("counts a turn that ended with a background agent working, until the agent goes quiet", () => {
+    const NOW = 100 * 60_000;
+    const ended: LiveStatus = {
+      state: "waiting",
+      at: NOW - 10 * 60_000,
+      lastEventAt: NOW - 1_000,
+      agentsLeft: 1,
+    };
+    // it is a person's turn, and the agent's tool calls still come in
+    const statuses = new Map([["a", ended]]);
+    expect(runningCount(statuses, NOW)).toBe(1);
+    // with a wake-up left too it is counted once
+    const tasks = new Map<string, SessionTasks>([
+      ["a", { at: 0, tasks: [{ id: "t", kind: "schedule", description: "poll", since: 0 }] }],
+    ]);
+    expect(watchingCount(tasks, statuses, NOW)).toBe(0);
+    expect(leftRunningCount(tasks, statuses, NOW)).toBe(0);
+    // nothing from the agent for as long as a running session goes stale: a restart after it died
+    // must not hold the mac for days
+    const quiet = new Map([["a", { ...ended, lastEventAt: NOW - RUNNING_STALE_MS }]]);
+    expect(runningCount(quiet, NOW)).toBe(0);
+    expect(watchingCount(tasks, quiet, NOW)).toBe(1);
+    expect(leftRunningCount(tasks, quiet, NOW)).toBe(1);
+    // a turn that ended with no agent left never counted
+    expect(runningCount(new Map([["a", { ...ended, agentsLeft: undefined }]]), NOW)).toBe(0);
   });
 
   it("takes one assertion however often it is told, and gives that one back", () => {

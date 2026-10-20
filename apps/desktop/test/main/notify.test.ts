@@ -1,6 +1,11 @@
 import type { LiveStatus } from "@grove/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type Note, Notifier, type NotifyOptions } from "../../src/main/services/notify.ts";
+import {
+  type Note,
+  Notifier,
+  type NotifyOptions,
+  toldTurn,
+} from "../../src/main/services/notify.ts";
 import type { LandingTarget } from "../../src/shared/ipc.ts";
 
 interface Shown {
@@ -123,6 +128,52 @@ describe("one finished turn per session per two minutes", () => {
     focused = false;
     notifier.live(finished(), S1);
     expect(shown.map((s) => s.body)).toEqual(["Finished after 2m"]);
+  });
+});
+
+describe("a turn a background command or agent's end started", () => {
+  const woke = (turnMs: number, detail?: string) =>
+    status({ state: "waiting", turnMs, woke: true, ...(detail ? { detail } : {}) });
+
+  it("is told however short, with what it says and not how long it took", () => {
+    const { notifier, shown } = setup();
+    notifier.live(woke(3_000, "The agent finished: 12 call sites"), S1);
+    notifier.live(woke(3_000), { ...S1, sessionId: "s2" });
+    notifier.live(woke(3_000, "done"), { ...S1, sessionId: "s3", needs: "Say whether to merge." });
+    expect(shown.map((s) => s.body)).toEqual([
+      "The agent finished: 12 call sites",
+      "Your turn",
+      "Say whether to merge.",
+    ]);
+  });
+
+  it("two inside two minutes both notify, after a long handoff turn too", () => {
+    const { notifier, shown } = setup();
+    notifier.live(finished(90_000, "Launched the agent. Should I keep going?"), S1);
+    vi.advanceTimersByTime(30_000);
+    notifier.live(woke(3_000, "agent one is done"), S1);
+    vi.advanceTimersByTime(30_000);
+    notifier.live(woke(4_000, "agent two is done"), S1);
+    expect(shown.map((s) => s.body)).toEqual([
+      "Finished after 2m: Launched the agent. Should I keep going?",
+      "agent one is done",
+      "agent two is done",
+    ]);
+  });
+
+  it("a short turn he started still says nothing", () => {
+    const { notifier, shown } = setup();
+    notifier.live(finished(3_000, "ok"), S1);
+    expect(shown).toHaveLength(0);
+  });
+
+  it("is a finished turn worth telling, as a long one is", () => {
+    expect(toldTurn(woke(3_000))).toBe(true);
+    expect(toldTurn(finished(60_000))).toBe(true);
+    expect(toldTurn(finished(59_999))).toBe(false);
+    expect(toldTurn(status({ state: "waiting" }))).toBe(false);
+    expect(toldTurn(status({ state: "running", woke: true }))).toBe(false);
+    expect(toldTurn(status({ state: "permission", woke: true }))).toBe(false);
   });
 });
 

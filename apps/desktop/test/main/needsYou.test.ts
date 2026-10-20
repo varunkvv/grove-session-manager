@@ -1,4 +1,6 @@
-import { type LiveStatus, reduceStatus, type StatusEvent } from "@grove/core";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { type LiveStatus, parseStatusEvent, reduceStatus, type StatusEvent } from "@grove/core";
 import { describe, expect, it } from "vitest";
 import { entered } from "../../src/main/services/live.ts";
 
@@ -25,6 +27,24 @@ describe("what enters needs-you", () => {
         { event: "PostToolUse", at: 5, agentId: "a1" },
       ]),
     ).toEqual([false, true, true, false, false]);
+  });
+
+  it("a real agent's ask after the turn ended: the turn's end, the ask and the wake-up's end notify (subagent-ask capture)", () => {
+    const file = path.join(
+      import.meta.dirname,
+      "../../../../packages/core/test/fixtures/hooks/subagent-ask.json",
+    );
+    const events = (
+      JSON.parse(readFileSync(file, "utf8")) as Array<{ at: number; payload: unknown }>
+    ).map((e) => parseStatusEvent(e.payload, e.at) as StatusEvent);
+    // one drain per event
+    const each = told(events);
+    expect(events.filter((_, i) => each[i]).map((e) => `${e.event} ${e.toolName ?? ""}`)).toEqual([
+      "PermissionRequest AskUserQuestion",
+      "Stop ",
+      "PermissionRequest Bash",
+      "Stop ",
+    ]);
   });
 
   it("a new ask, a new turn's end and an error do. the same status again, or a seen one, do not", () => {
