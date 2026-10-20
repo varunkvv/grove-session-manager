@@ -18,8 +18,10 @@ export function sessionsRegistryDir(claudeConfigDir: string): string {
 export interface RegistryEntry {
   pid: number;
   sessionId: string;
-  /** `busy` and `idle` seen so far. an unknown value still proves the process is alive. */
+  /** `busy`, `idle` and `waiting` seen so far. an unknown value still proves the process is alive. */
   status: string;
+  /** what a `waiting` process waits on: "permission prompt", "input needed" */
+  waitingFor?: string;
   cwd?: string;
   name?: string;
   kind?: string;
@@ -30,7 +32,7 @@ export interface RegistryEntry {
   statusUpdatedAt?: number;
 }
 
-const STRINGS = ["cwd", "name", "kind", "entrypoint", "version"] as const;
+const STRINGS = ["cwd", "name", "kind", "entrypoint", "version", "waitingFor"] as const;
 const NUMBERS = ["startedAt", "updatedAt", "statusUpdatedAt"] as const;
 
 /** `pid`, `sessionId` and `status` are what an entry needs. everything else is a bonus. */
@@ -93,10 +95,20 @@ export async function readRegistry(
 }
 
 /**
+ * what a waiting process waits on that is the person's to answer: a tool's permission prompt and
+ * ExitPlanMode say "permission prompt", an AskUserQuestion "input needed" (claude 2.1.296)
+ */
+const ASKS: ReadonlySet<string> = new Set(["permission prompt", "input needed"]);
+
+const asking = (e: RegistryEntry): boolean =>
+  e.status === "waiting" && e.waitingFor !== undefined && ASKS.has(e.waitingFor);
+
+/**
  * the registry on top of what the hooks said. hook state always wins: it is the only source that
- * can tell a permission prompt from a tool call, and losing that would empty the "needs you" inbox.
- * so the registry may only do two things - fill in a session the hooks never covered, and retire a
- * `running` whose process is gone. an `idle` process adds nothing: nobody asked for anything.
+ * can tell which tool asks, and losing that would empty the "needs you" inbox. so the registry may
+ * only do two things - fill in a session the hooks never covered (busy is running, waiting on an
+ * ask is a permission), and retire a `running` whose process is gone. an `idle` process adds
+ * nothing: nobody asked for anything.
  */
 export function applyRegistry(
   statuses: Map<string, LiveStatus>,
@@ -107,36 +119,52 @@ export function applyRegistry(
   // session on the machine died. never clear anything on the strength of an empty directory.
   if (entries.length === 0) return false;
   const alive = new Set<string>();
-  const busy = new Map<string, RegistryEntry>();
+  /** what each session's process says that fills a session in: an ask, else busy */
+  const says = new Map<string, RegistryEntry>();
   for (const e of entries) {
     alive.add(e.sessionId);
-    if (e.status === "busy") busy.set(e.sessionId, e);
+    const had = says.get(e.sessionId);
+    if (asking(e) || (e.status === "busy" && !(had && asking(had)))) says.set(e.sessionId, e);
   }
   let changed = false;
   for (const [id, s] of statuses) {
     if (s.source === "registry") {
       // ours, and it says nothing the registry does not: re-derived on every pass
-      if (!busy.has(id)) {
-        statuses.delete(id);
-        changed = true;
-      }
+      const e = says.get(id);
+      const want = e && fromRegistry(e, s, now);
+      if (want === s) continue;
+      if (want) statuses.set(id, want);
+      else statuses.delete(id);
+      changed = true;
     } else if (s.state === "running" && !alive.has(id)) {
       statuses.delete(id);
       changed = true;
     }
   }
-  for (const [id, e] of busy) {
+  for (const [id, e] of says) {
     if (statuses.has(id)) continue;
-    const at = e.statusUpdatedAt ?? e.updatedAt ?? e.startedAt ?? now;
-    statuses.set(id, {
-      state: "running",
-      at: Math.min(at, now),
-      lastEventAt: now,
-      source: "registry",
-    });
+    statuses.set(id, fromRegistry(e, undefined, now));
     changed = true;
   }
   return changed;
+}
+
+/** a session no hook covers, from its process alone. the same read again is `was` itself */
+function fromRegistry(e: RegistryEntry, was: LiveStatus | undefined, now: number): LiveStatus {
+  const at = Math.min(e.statusUpdatedAt ?? e.updatedAt ?? e.startedAt ?? now, now);
+  if (asking(e)) {
+    // the same ask, read again, keeps whether someone looked: else a dismissed one comes back
+    if (was?.state === "permission" && was.at === at && was.detail === e.waitingFor) return was;
+    return {
+      state: "permission",
+      at,
+      lastEventAt: now,
+      ...(e.waitingFor ? { detail: e.waitingFor } : {}),
+      source: "registry",
+    };
+  }
+  if (was?.state === "running") return was;
+  return { state: "running", at, lastEventAt: now, source: "registry" };
 }
 
 /**

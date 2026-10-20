@@ -252,3 +252,70 @@ describe("an ask approved with no hook to say so", () => {
     expect([...statuses.values()]).toEqual([fromRegistry, fromAgents, ask()]);
   });
 });
+
+// probe8 and probe9 (claude 2.1.296, sdk 0.3.296, a folder with no hooks): a Bash ask and an
+// ExitPlanMode wait on "permission prompt", an AskUserQuestion on "input needed". each is stamped
+// when the ask opens and flips to busy at the answer
+describe("an ask from a session no hook covers", () => {
+  const S = SID.busy;
+  const waiting = (statusUpdatedAt: number, waitingFor = "permission prompt"): RegistryEntry => ({
+    pid: 1,
+    sessionId: S,
+    status: "waiting",
+    waitingFor,
+    statusUpdatedAt,
+  });
+
+  it("reads what the process waits for", () => {
+    expect(
+      parseRegistryEntry({ pid: 7, sessionId: S, status: "waiting", waitingFor: "input needed" }),
+    ).toEqual({ pid: 7, sessionId: S, status: "waiting", waitingFor: "input needed" });
+  });
+
+  it("is a permission while the registry says it waits on an ask, running at busy, gone at idle", () => {
+    const statuses = new Map<string, LiveStatus>();
+    expect(applyRegistry(statuses, [{ ...entry(S, "busy"), statusUpdatedAt: 600 }], 1000)).toBe(
+      true,
+    );
+    expect(applyRegistry(statuses, [waiting(6150)], 7000)).toBe(true);
+    expect(statuses.get(S)).toEqual({
+      state: "permission",
+      at: 6150,
+      lastEventAt: 7000,
+      detail: "permission prompt",
+      source: "registry",
+    });
+    expect(applyRegistry(statuses, [waiting(9000, "input needed")], 9500)).toBe(true);
+    expect(statuses.get(S)).toMatchObject({ detail: "input needed", at: 9000 });
+    expect(
+      applyRegistry(statuses, [{ ...entry(S, "busy"), statusUpdatedAt: 12_000 }], 12_500),
+    ).toBe(true);
+    expect(statuses.get(S)).toMatchObject({ state: "running", at: 12_000, source: "registry" });
+    expect(applyRegistry(statuses, [entry(S, "idle")], 20_000)).toBe(true);
+    expect(statuses.has(S)).toBe(false);
+    // a session that only ever waited is filled too
+    expect(applyRegistry(statuses, [waiting(21_000)], 21_500)).toBe(true);
+    expect(statuses.get(S)?.state).toBe("permission");
+  });
+
+  it("keeps whether someone looked while the same ask stands, and not past it", () => {
+    const statuses = new Map<string, LiveStatus>();
+    applyRegistry(statuses, [waiting(6150)], 7000);
+    statuses.set(S, { ...(statuses.get(S) as LiveStatus), seen: true });
+    expect(applyRegistry(statuses, [waiting(6150)], 17_000)).toBe(false);
+    expect(statuses.get(S)?.seen).toBe(true);
+    // the next ask is new
+    applyRegistry(statuses, [waiting(30_000)], 30_500);
+    expect(statuses.get(S)?.seen).toBeUndefined();
+  });
+
+  it("a hook status wins, and waiting on something else is no ask", () => {
+    const hooked = status({ state: "running" });
+    const statuses = new Map<string, LiveStatus>([[S, hooked]]);
+    expect(applyRegistry(statuses, [waiting(6150)], 7000)).toBe(false);
+    expect(statuses.get(S)).toBe(hooked);
+    const none = new Map<string, LiveStatus>();
+    expect(applyRegistry(none, [waiting(6150, "something new")], 7000)).toBe(false);
+    expect(none.size).toBe(0);
+  });
+});

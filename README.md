@@ -594,6 +594,11 @@ running pick the hooks up too - and later write the copy they loaded at startup 
 whatever was added since. So the app watches each project's settings file and puts its own entries back when that
 happens. Only the entries carrying its marker are touched.
 
+Claude Code's own session files (`~/.claude/sessions/<pid>.json`) fill in around the hooks. A session no hook covers
+(one started in a project's subfolder or working copy loads no project hooks) shows as working while its file says
+`busy`, and under Needs you while it says it waits on a permission prompt or a question. An approved permission prompt
+leaves Needs you when the file flips to `busy` at the approval, not when the command ends: no hook fires in between.
+
 While both title switches are on, the same files get one more hook, marked `# grove-title`, on `UserPromptSubmit` and
 `SessionStart`. It is not async: Claude Code only reads what a hook prints when it waits for it. It is shell builtins
 and one `cat` until there is a title to hand over, about 8ms more than starting a shell at all (18ms in all on a busy

@@ -60,6 +60,8 @@ function machine() {
     });
     services.push(live);
     await live.start();
+    // a watch only just made can miss a write: give it a moment, the 10s poll covers the rest
+    await new Promise((r) => setTimeout(r, 200));
     return live;
   };
   return { hook, register, start, needs, eventsDir };
@@ -88,5 +90,25 @@ describe("the registry in the live service", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(live.list().get(S)?.state).toBe("running");
     expect(m.needs).toEqual([]);
-  });
+  }, 20_000);
+
+  it("an ask from a session no hook covers is told once, and not on the first read", async () => {
+    const m = machine();
+    m.register({ status: "waiting", waitingFor: "permission prompt", statusUpdatedAt: Date.now() });
+    const live = await m.start();
+    // already waiting when grove started: in needs-you, not told
+    expect(live.list().get(S)).toMatchObject({ state: "permission", source: "registry" });
+    expect(m.needs).toEqual([]);
+    m.register({ status: "busy", statusUpdatedAt: Date.now() });
+    await until(() => live.list().get(S)?.state === "running");
+    expect(live.list().get(S)?.state).toBe("running");
+    const at = Date.now();
+    m.register({ status: "waiting", waitingFor: "input needed", statusUpdatedAt: at });
+    await until(() => m.needs.length > 0);
+    expect(m.needs).toMatchObject([{ state: "permission", detail: "input needed", at }]);
+    // read again, the same ask is not told again
+    m.register({ status: "waiting", waitingFor: "input needed", statusUpdatedAt: at, name: "x" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(m.needs).toHaveLength(1);
+  }, 40_000);
 });

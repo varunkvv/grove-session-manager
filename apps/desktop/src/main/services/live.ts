@@ -211,6 +211,8 @@ export class LiveService {
   private backgroundKey = "";
   /** the first word from the supervisor lands without a notification, like events from before start */
   private backgroundRead = false;
+  /** and the registry's: an ask open when grove started is in needs-you, untold */
+  private registryRead = false;
   /** sessions last seen running whose process went away. a quiet marker, never the inbox. */
   private interrupted = new Map<string, Interruption>();
   private readonly interruptedFile: string;
@@ -287,6 +289,7 @@ export class LiveService {
   /** the live processes, folded in under the hook state. see applyRegistry for who wins. */
   private async syncRegistry(): Promise<void> {
     const entries = await readRegistry(this.opts.registryDir).catch(() => []);
+    const shown = new Map(this.view());
     // an idle process changes no status, but a background agent of its can still be working
     const alive = new Set(entries.map((e) => e.sessionId));
     const moved = alive.size !== this.alive.size || [...alive].some((id) => !this.alive.has(id));
@@ -310,6 +313,9 @@ export class LiveService {
     if (applied || approved || moved || dropped.length || gone.length || back.length) {
       this.changed();
     }
+    // an ask from a session no hook covers
+    if (applied && this.registryRead) this.notifyEntered(shown);
+    this.registryRead = true;
     const background = entries
       .filter((e) => e.kind === "bg")
       .map((e) => `${e.sessionId}:${e.status}`)
