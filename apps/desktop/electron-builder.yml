@@ -10,12 +10,27 @@ files:
   # zed's node runs the proxy, and cannot read inside the asar. it ships in extraResources
   - "!out/acp-proxy/**"
   - package.json
+  # node-llama-cpp (judgment day odds' scorer) is the one dependency that ships as itself. its copy of
+  # llama.cpp's source and its project templates are for building one, which the app never does
+  - "!node_modules/node-llama-cpp/llama/gitRelease.bundle"
+  - "!node_modules/node-llama-cpp/templates/**"
 asar: true
+# a native addon and its dylibs cannot load from inside the asar. node-llama-cpp looks for them in
+# app.asar.unpacked by itself (its electron guide lists these globs)
+asarUnpack:
+  - node_modules/node-llama-cpp/bins/**
+  - node_modules/node-llama-cpp/llama/localBuilds/**
+  - node_modules/@node-llama-cpp/**
 # chromium ships ~50 locales. the app has one language.
 electronLanguages:
   - en
-# nothing native, and the workspace symlinks are already bundled away by esbuild
+# the one native addon, node-llama-cpp's, is a Node-API prebuilt (@node-llama-cpp/mac-arm64-metal):
+# it runs on electron's node as it is, so nothing is rebuilt. the workspace symlinks are bundled
+# away by esbuild
 npmRebuild: false
+# the scorer's first load has node-llama-cpp test its binary in a child process, which from a
+# utility process is child_process.fork and needs electron's RunAsNode fuse. it is on by default:
+# leave it on, and set no electronFuses here that turn it off
 extraResources:
   - from: ../../extension/dist
     to: extension

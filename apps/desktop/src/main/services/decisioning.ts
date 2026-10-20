@@ -231,7 +231,7 @@ export class DecisioningService {
   }
 
   async fetchModel(): Promise<void> {
-    if (this.download || this.ready) return;
+    if (this.download || this.ready || !this.o.supported) return;
     if (!this.o.url) {
       this.failed = "A test root downloads the model only from GROVE_MODEL_URL.";
       this.push();

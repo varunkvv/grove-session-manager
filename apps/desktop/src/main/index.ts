@@ -15,6 +15,7 @@ import {
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
+import type { FromScorer } from "../scorer/protocol.ts";
 import { DEFAULT_SUMMON_KEY, type MenuCommandId } from "../shared/ipc.ts";
 import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
@@ -525,6 +526,24 @@ async function start(): Promise<void> {
       summon: summonMain,
       /** decisioning's scorer: how many processes started, and whether one runs now */
       scorer: () => ({ spawned: scorerSpawns, running: decisioning.scorerRunning }),
+      /** the packaged app's check: the scorer's process starts and its native runtime loads. no model */
+      probeScorer: () =>
+        new Promise<FromScorer>((resolve) => {
+          const child = electron.utilityProcess.fork(path.join(outDir, "scorer", "index.cjs"));
+          const done = (m: FromScorer) => {
+            clearTimeout(timer);
+            child.kill();
+            resolve(m);
+          };
+          const timer = setTimeout(
+            () => done({ type: "probed", gpu: false, error: "no answer in 60s" }),
+            60_000,
+          );
+          child.on("message", (m: FromScorer) => {
+            if (m.type === "probed") done(m);
+          });
+          child.postMessage({ type: "probe" });
+        }),
     };
   }
 

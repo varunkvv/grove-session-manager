@@ -4,7 +4,7 @@ import path from "node:path";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
 import { makeFixture, writeSession } from "./helpers/fixture.ts";
-import { waitFor } from "./helpers/launchApp.ts";
+import { groveTest, waitFor } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 
 const APP = path.join(import.meta.dirname, "../dist/mac-arm64/Grove.app");
@@ -113,6 +113,43 @@ test("the packaged app runs grove chat's claude: the sdk is bundled, and spawns 
     await expect((chat as Page).getByTestId("panel-text")).toContainText("hello from the spike", {
       timeout: 20_000,
     });
+  } finally {
+    await app.close().catch(() => {});
+  }
+});
+
+test("the packaged app loads judgment day odds' native runtime in the scorer's own process", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  const app = await _electron.launch({
+    executablePath: EXECUTABLE,
+    env: {
+      HOME: fx.dir,
+      PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+      GROVE_ROOT: fx.root,
+      CLAUDE_CONFIG_DIR: fx.claudeDir,
+      GROVE_EDITOR_BIN: fx.fakeCode,
+      GROVE_OPEN_BIN: fx.fakeOpen,
+      GROVE_EXTENSIONS_DIR: fx.extensionsDir,
+      GROVE_FAKE_LOG: fx.execLog,
+    },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.getByTestId("app-ready").waitFor({ timeout: 45_000 });
+    // node-llama-cpp's addon and dylibs sit outside the asar, where it looks for them
+    const unpacked = path.join(APP, "Contents/Resources/app.asar.unpacked/node_modules");
+    expect(
+      existsSync(
+        path.join(
+          unpacked,
+          "@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/llama-addon.node",
+        ),
+      ),
+    ).toBe(true);
+    // the utility process starts from inside the asar and loads the runtime: no model, no download
+    const probe = await groveTest(app).probeScorer();
+    expect(probe.error).toBeUndefined();
+    expect(probe.gpu === "metal" || probe.gpu === false).toBe(true);
   } finally {
     await app.close().catch(() => {});
   }
