@@ -645,7 +645,13 @@ test("a refusal is a card that switches models or gives the prompt back, and a f
   const card = chat.getByTestId("ask-refusal");
   await expect(card).toContainText("Opus 5.5 turned this request down", { timeout: 15_000 });
   await expect(card.getByTestId("refusal-switch")).toHaveText("Switch to Sonnet 5");
+  // claude raises no hook for a dialog: grove chat puts it in needs-you itself, until it goes
+  const g = groveTest(electron);
+  const paused = async () =>
+    (await g.trayMenu()).some((i) => i.sublabel?.includes("Session paused") === true);
+  await expect.poll(paused, { timeout: 15_000 }).toBe(true);
   await card.getByTestId("refusal-edit").click();
+  await expect.poll(paused).toBe(false);
   await expect(chat.getByTestId("composer")).toHaveValue("try the migration");
   await waitFor(async () =>
     sentToClaude(s.chatLog).some(

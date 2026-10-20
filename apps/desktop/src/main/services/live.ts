@@ -181,6 +181,12 @@ export class LiveService {
   private readonly eventsDir: string;
   private readonly stateFile: string;
   private statuses = new Map<string, LiveStatus>();
+  /**
+   * by session id: a card grove chat draws that claude raises no hook for (a dialog, an MCP
+   * server's form), as an ask. laid over the hook status in everything this hands out, so no hook
+   * can end it, and what the hooks said meanwhile shows when it goes. never stored
+   */
+  private cards = new Map<string, LiveStatus>();
   /** by session id: what the subagent hooks said about each of its agents. never persisted. */
   private runs = new Map<string, Record<string, AgentRun>>();
   /**
@@ -255,7 +261,7 @@ export class LiveService {
     // before the first paint, so a session that died while the app was closed never shows as running
     await this.syncRegistry();
     await this.readTasks();
-    this.opts.onChange(this.statuses, this.runs, this.alive, this.left);
+    this.opts.onChange(this.view(), this.runs, this.alive, this.left);
     this.opts.onInterrupted?.(this.interrupted);
     try {
       this.watcher = watch(this.eventsDir, () => void this.drain(true));
@@ -350,7 +356,7 @@ export class LiveService {
   applyBackground(entries: ReadonlyMap<string, BackgroundEntry>): void {
     const notify = this.backgroundRead;
     this.backgroundRead = true;
-    const before = new Map(this.statuses);
+    const before = new Map(this.view());
     if (!applyBackground(this.statuses, entries, this.now())) return;
     this.changed();
     if (notify) this.notifyEntered(before);
@@ -378,7 +384,44 @@ export class LiveService {
   }
 
   list(): ReadonlyMap<string, LiveStatus> {
-    return this.statuses;
+    return this.view();
+  }
+
+  /** the hook statuses with grove chat's cards over them */
+  private view(): ReadonlyMap<string, LiveStatus> {
+    if (this.cards.size === 0) return this.statuses;
+    const out = new Map(this.statuses);
+    for (const [id, card] of this.cards) {
+      const under = this.statuses.get(id);
+      out.set(id, { ...card, lastEventAt: Math.max(card.lastEventAt, under?.lastEventAt ?? 0) });
+    }
+    return out;
+  }
+
+  /**
+   * grove chat drew a card claude raises no hook for, or its last one went (null). while one is up
+   * the session asks: needs-you, and a notification as a hook ask gets. a tool's ask never comes
+   * here, its PermissionRequest hook says it
+   */
+  card(sessionId: string, asks: string | null): void {
+    const was = this.cards.get(sessionId);
+    if (!was && asks === null) return;
+    const before = new Map(this.view());
+    if (asks === null) this.cards.delete(sessionId);
+    else if (was) this.cards.set(sessionId, { ...was, detail: asks });
+    else {
+      const now = this.now();
+      const card: LiveStatus = { state: "permission", at: now, lastEventAt: now, detail: asks };
+      // what it covers shows again when it goes. unchanged, that is not new (see entered)
+      const under = this.statuses.get(sessionId);
+      if (under) {
+        const { resume: _, ...covered } = under;
+        card.resume = covered;
+      }
+      this.cards.set(sessionId, card);
+    }
+    this.changed();
+    this.notifyEntered(before);
   }
 
   /** the subagent starts and stops the hooks reported, by session id */
@@ -441,6 +484,11 @@ export class LiveService {
   markSeen(sessionIds: Iterable<string>): void {
     let changed = false;
     for (const id of sessionIds) {
+      const card = this.cards.get(id);
+      if (card && needsYou(card)) {
+        this.cards.set(id, { ...card, seen: true });
+        changed = true;
+      }
       const s = this.statuses.get(id);
       if (s && needsYou(s)) {
         this.statuses.set(id, { ...s, seen: true });
@@ -517,7 +565,7 @@ export class LiveService {
   private async runDrain(notify: boolean): Promise<void> {
     const events = await drainStatusEvents(this.eventsDir);
     if (events.length === 0) return;
-    const before = new Map(this.statuses);
+    const before = new Map(this.view());
     for (const ev of events) {
       const prev = this.statuses.get(ev.sessionId);
       // the session ended mid-turn: a window closed on it. anything else it says means it lives.
@@ -546,7 +594,7 @@ export class LiveService {
   }
 
   private notifyEntered(before: ReadonlyMap<string, LiveStatus>): void {
-    for (const [id, s] of this.statuses) {
+    for (const [id, s] of this.view()) {
       if (entered(before.get(id), s)) this.opts.onNeedsYou(id, s);
     }
   }
@@ -564,7 +612,7 @@ export class LiveService {
   }
 
   private changed(): void {
-    this.opts.onChange(this.statuses, this.runs, this.alive, this.left);
+    this.opts.onChange(this.view(), this.runs, this.alive, this.left);
     this.opts.onInterrupted?.(this.interrupted);
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {

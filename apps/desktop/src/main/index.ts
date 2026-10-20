@@ -339,6 +339,8 @@ async function start(): Promise<void> {
     onStatus: (sessionId, status) => pusher.send("chat:host", { sessionId, status }),
     // on quit this runs before live.dispose(), which writes the flag out with the rest
     letGo: (ids) => live.letGo(ids),
+    // a dialog or an MCP server's form: no hook says it, so the host does
+    onCard: (id, asks) => live.card(id, asks),
   });
   /** sessions grove chat made, until their transcript is in the list */
   const fresh: FreshChats = new Map();

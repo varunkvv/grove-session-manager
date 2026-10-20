@@ -313,7 +313,29 @@ export interface ChatHostOptions {
    * session did not end, so what it waits on should still show after its SessionEnd
    */
   letGo?: (ids: string[]) => void;
+  /**
+   * a card claude raises no hook for (a dialog, an MCP server's form) opened: what the first one
+   * asks. null when the last one went, answered, taken back or with its claude. a tool's ask is
+   * not one: its PermissionRequest hook says it
+   */
+  onCard?: (id: string, asks: string | null) => void;
 }
+
+/** what a card no hook announces asks, as its own label says it. undefined for a tool's ask */
+function unhooked(a: ChatAsk): string | undefined {
+  if (a.kind === "elicit") return `${a.server} asks`;
+  if (a.kind === "refusal") return "Session paused";
+  if (a.kind === "auto-fallback") return a.title ?? "Auto mode";
+  return undefined;
+}
+
+const cardOf = (asks: readonly ChatAsk[]): string | null => {
+  for (const a of asks) {
+    const says = unhooked(a);
+    if (says) return says;
+  }
+  return null;
+};
 
 /** vs code's thinking budget (extension.js `M61`), sent for every model as it sends it */
 const THINKING_BUDGET = 31_999;
@@ -1641,9 +1663,13 @@ export class ChatHost {
   }
 
   private set(h: Hosted, patch: Partial<ChatStatus>): void {
+    const card = cardOf(h.status.asks);
     h.status = { ...h.status, ...patch };
     for (const w of h.windows) this.deliver(h, w, "grove:chat:status", h.status);
     this.o.onStatus?.(h.id, h.status);
+    // every way a card comes or goes passes here: its answer, its abort, its claude going
+    const now = cardOf(h.status.asks);
+    if (now !== card) this.o.onCard?.(h.id, now);
   }
 
   private setText(h: Hosted, text: string): void {

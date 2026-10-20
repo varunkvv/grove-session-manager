@@ -83,6 +83,8 @@ interface Setup {
   now: { at: number };
   /** every letGo the host made: the ids it was about to close */
   letGo: string[][];
+  /** every time the host said a card no hook announces opened (what it asks) or the last went (null) */
+  cards: Array<[string, string | null]>;
 }
 
 const hosts: ChatHost[] = [];
@@ -116,6 +118,7 @@ function setup(
   );
   const now = { at: Date.now() };
   const letGo: string[][] = [];
+  const cards: Array<[string, string | null]> = [];
   const host = new ChatHost({
     claudeBin: async () => {
       if (failFirst) {
@@ -139,6 +142,7 @@ function setup(
     claudeSettings: path.join(claudeDir, "settings.json"),
     ...(onReset ? { onReset } : {}),
     letGo: (ids) => letGo.push(ids),
+    onCard: (id, asks) => cards.push([id, asks]),
   });
   hosts.push(host);
   const sent: Array<[string, unknown]> = [];
@@ -161,6 +165,7 @@ function setup(
     window: { sent, isDestroyed: () => false, send: (c, p) => sent.push([c, p]) },
     now,
     letGo,
+    cards,
   };
 }
 
@@ -454,6 +459,8 @@ describe("grove chat's host", () => {
     s.host.answer(SESSION, p.id, { kind: "permission", allow: "no", message: "not now" });
     await turnEnded(s);
     expect(answers(s)[0]).toMatchObject({ behavior: "deny", message: "not now" });
+    // a tool's ask raises claude's own PermissionRequest hook: the host says nothing of it
+    expect(s.cards).toEqual([]);
   });
 
   it("outlives its window: a turn runs on with nobody looking, and an interrupt ends it", async () => {
@@ -795,6 +802,8 @@ describe("grove chat's host", () => {
     const s = setup(2, false, dir);
     await s.host.send(SESSION, s.where, HELLO);
     const card = await ask(s, "refusal");
+    // no hook says a dialog is up: the host does, for needs-you
+    expect(s.cards).toEqual([[SESSION, "Session paused"]]);
     expect(card).toMatchObject({
       model: "claude-opus-5-5",
       fallback: "claude-sonnet-5",
@@ -805,6 +814,10 @@ describe("grove chat's host", () => {
       "not one of its buttons",
     );
     s.host.answer(SESSION, card.id, { kind: "dialog", choice: "retry_fallback" });
+    expect(s.cards).toEqual([
+      [SESSION, "Session paused"],
+      [SESSION, null],
+    ]);
     await turnEnded(s);
     expect(answers(s)).toContainEqual({ behavior: "completed", result: "retry_fallback" });
     // declared at start, as vs code declares them
@@ -890,6 +903,7 @@ describe("grove chat's host", () => {
     const s = setup(2, false, dir);
     await s.host.send(SESSION, s.where, HELLO);
     const card = await ask(s, "elicit");
+    expect(s.cards).toEqual([[SESSION, "tickets asks"]]);
     expect(card.fields.map((f) => [f.key, f.type, f.required])).toEqual([
       ["board", "enum", true],
       ["points", "number", false],
@@ -900,11 +914,48 @@ describe("grove chat's host", () => {
       action: "accept",
       content: { board: "CDIT", points: 3, urgent: true, sneaky: "x" },
     });
+    expect(s.cards.at(-1)).toEqual([SESSION, null]);
     await turnEnded(s);
     expect(answers(s)).toContainEqual({
       action: "accept",
       content: { board: "CDIT", points: 3, urgent: true },
     });
+  });
+
+  it("a form still open when its claude goes is gone from needs-you with it", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean);
+    const at = lines.findIndex((l) => JSON.parse(l).msg?.type === "assistant");
+    lines.splice(
+      at,
+      0,
+      JSON.stringify({
+        t: JSON.parse(lines[at] as string).t,
+        dir: "out",
+        msg: {
+          type: "control_request",
+          request_id: "el-1",
+          request: {
+            subtype: "elicitation",
+            mcp_server_name: "linear",
+            message: "Sign in to Linear",
+            mode: "url",
+            url: "https://linear.app/oauth",
+          },
+        },
+      }),
+    );
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    await s.host.send(SESSION, s.where, HELLO);
+    await ask(s, "elicit");
+    expect(s.cards).toEqual([[SESSION, "linear asks"]]);
+    s.host.dispose();
+    await until(() => s.cards.length === 2, "the card to go");
+    expect(s.cards.at(-1)).toEqual([SESSION, null]);
   });
 
   it("knows a dialog by its payload, and leaves one it does not know to claude", () => {
