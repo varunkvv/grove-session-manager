@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isObject } from "../fsx.ts";
 import type { LiveStatus } from "../types.ts";
+import { answered } from "./liveStatus.ts";
 
 /**
  * every live Claude Code process writes `<claudeConfigDir>/sessions/<pid>.json` and keeps it
@@ -133,6 +134,29 @@ export function applyRegistry(
       lastEventAt: now,
       source: "registry",
     });
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * an ask approved with no hook to say so. claude's registry file says `waiting` while an ask is
+ * open and `busy` from the moment it is approved, and no hook fires until the tool ends: minutes
+ * for a build. a hook-made ask whose process went busy after the ask came in is answered. a busy
+ * older than the ask is not: the async hook can land after a fast approval, and that one waits for
+ * its PostToolUse as before. read after a registry read and after a drain, since either can come
+ * first
+ */
+export function applyApprovals(
+  statuses: Map<string, LiveStatus>,
+  entries: Iterable<RegistryEntry>,
+): boolean {
+  let changed = false;
+  for (const e of entries) {
+    const s = statuses.get(e.sessionId);
+    if (!s || s.source || s.state !== "permission" || e.status !== "busy") continue;
+    if (e.statusUpdatedAt === undefined || e.statusUpdatedAt <= s.at) continue;
+    statuses.set(e.sessionId, answered(s, { at: e.statusUpdatedAt }));
     changed = true;
   }
   return changed;

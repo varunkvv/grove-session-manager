@@ -1,6 +1,8 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { reduceStatus } from "../../src/sessions/liveStatus.ts";
 import {
+  applyApprovals,
   applyRegistry,
   isProcessAlive,
   parseRegistryEntry,
@@ -152,5 +154,101 @@ describe("the live session registry", () => {
 
   it("the directory sits next to projects/ in the config dir", () => {
     expect(sessionsRegistryDir("/Users/you/.claude")).toBe("/Users/you/.claude/sessions");
+  });
+});
+
+// probe8 (claude 2.1.296, sdk 0.3.296, a Bash ask approved after 3s): the ask at 6.15s and its
+// PermissionRequest hook file at 6.18s, the registry `waiting` from 6.15s, `busy` from the approval
+// at 9.15s, and no hook until PostToolUse at 15.5s
+describe("an ask approved with no hook to say so", () => {
+  const S = SID.busy;
+  const ask = (): LiveStatus => ({
+    state: "permission",
+    at: 6180,
+    lastEventAt: 6180,
+    turnStart: 600,
+    detail: "Bash",
+    target: "curl -s https://example.com",
+  });
+  const reg = (status: string, statusUpdatedAt: number): RegistryEntry => ({
+    pid: 1,
+    sessionId: S,
+    status,
+    statusUpdatedAt,
+  });
+
+  it("goes on as running once the registry says busy after the ask", () => {
+    const statuses = new Map([[S, ask()]]);
+    expect(applyApprovals(statuses, [reg("waiting", 6150)])).toBe(false);
+    expect(statuses.get(S)?.state).toBe("permission");
+    expect(applyApprovals(statuses, [reg("busy", 9150)])).toBe(true);
+    expect(statuses.get(S)).toEqual({
+      state: "running",
+      at: 9150,
+      lastEventAt: 9150,
+      turnStart: 600,
+    });
+  });
+
+  it("a busy from before the ask is no answer: a fast approval waits for its PostToolUse", () => {
+    const statuses = new Map([[S, ask()]]);
+    // the turn's own busy, before the registry flipped to waiting
+    expect(applyApprovals(statuses, [reg("busy", 600)])).toBe(false);
+    // approved before the async hook's file landed
+    expect(applyApprovals(statuses, [reg("busy", 6170)])).toBe(false);
+    expect(statuses.get(S)).toEqual(ask());
+  });
+
+  it("a registry read before the ask's event is drained clears it after the drain", () => {
+    const statuses = new Map<string, LiveStatus>([
+      [S, { state: "running", at: 600, lastEventAt: 600, turnStart: 600 }],
+    ]);
+    const read = [reg("busy", 9150)];
+    expect(applyApprovals(statuses, read)).toBe(false);
+    const late = reduceStatus(statuses.get(S), {
+      sessionId: S,
+      event: "PermissionRequest",
+      at: 6180,
+      toolName: "Bash",
+    });
+    statuses.set(S, late as LiveStatus);
+    expect(applyApprovals(statuses, read)).toBe(true);
+    expect(statuses.get(S)).toMatchObject({ state: "running", at: 9150 });
+  });
+
+  it("an agent's ask after the turn ended goes back to the turn's end", () => {
+    // probe8's background agent: the main Stop at 4.87s, its Bash ask at 5.32s, approved at 8.29s
+    const ended: LiveStatus = {
+      state: "waiting",
+      at: 4870,
+      lastEventAt: 4870,
+      turnStart: 610,
+      turnMs: 4260,
+      agentsLeft: 1,
+    };
+    const asking = reduceStatus(ended, {
+      sessionId: S,
+      event: "PermissionRequest",
+      at: 5320,
+      toolName: "Bash",
+      agentId: "a1",
+    }) as LiveStatus;
+    const statuses = new Map([[S, asking]]);
+    expect(applyApprovals(statuses, [reg("busy", 8290)])).toBe(true);
+    expect(statuses.get(S)).toEqual({ ...ended, lastEventAt: 8290 });
+  });
+
+  it("leaves alone what the registry or the supervisor said, and a session the read does not list", () => {
+    const fromRegistry = { ...ask(), source: "registry" as const };
+    const fromAgents = { ...ask(), source: "agents" as const };
+    const statuses = new Map<string, LiveStatus>([
+      [S, fromRegistry],
+      [SID.idle, fromAgents],
+      [SID.torn, ask()],
+    ]);
+    expect(
+      applyApprovals(statuses, [reg("busy", 9150), { ...reg("busy", 9150), sessionId: SID.idle }]),
+    ).toBe(false);
+    expect([...statuses.values()]).toEqual([fromRegistry, fromAgents, ask()]);
   });
 });

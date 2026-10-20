@@ -463,7 +463,7 @@ function leftRunning(payload: Record<string, unknown>): StatusEvent["tasks"] {
 
 function next(
   prev: LiveStatus | undefined,
-  ev: StatusEvent,
+  ev: Pick<StatusEvent, "at">,
   state: LiveState,
   extra: Partial<LiveStatus> = {},
 ): LiveStatus {
@@ -494,8 +494,11 @@ function ask(
   });
 }
 
-/** the ask is over: what it interrupted comes back as it was, else the turn runs on */
-function answered(prev: LiveStatus, ev: StatusEvent): LiveStatus {
+/**
+ * the ask is over: what it interrupted comes back as it was, else the turn runs on. a hook says so,
+ * or claude's session registry does at an approval (applyApprovals)
+ */
+export function answered(prev: LiveStatus, ev: Pick<StatusEvent, "at">): LiveStatus {
   if (!prev.resume) return next(prev, ev, "running");
   return { ...prev.resume, lastEventAt: Math.max(prev.lastEventAt, ev.at) };
 }

@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import {
   type AgentRun,
+  applyApprovals,
   applyBackground,
   applyRegistry,
   type BackgroundEntry,
@@ -294,6 +295,7 @@ export class LiveService {
     if (entries.length > 0) this.holders = new Map(entries.map((e) => [e.sessionId, e]));
     const before = new Map(this.statuses);
     const applied = applyRegistry(this.statuses, entries, this.now());
+    const approved = applyApprovals(this.statuses, entries);
     // running a moment ago and no process now: it did not end its turn, it lost its process
     const gone = vanished(before, this.statuses, alive);
     const back = [...alive].filter((id) => this.interrupted.has(id));
@@ -305,7 +307,7 @@ export class LiveService {
     const registry = entries.length > 0 || existsSync(this.opts.registryDir);
     const dropped = goneTasks(this.left, alive, registry, this.missing, this.now());
     for (const id of dropped) this.left.delete(id);
-    if (applied || moved || dropped.length > 0 || gone.length > 0 || back.length > 0) {
+    if (applied || approved || moved || dropped.length || gone.length || back.length) {
       this.changed();
     }
     const background = entries
@@ -587,6 +589,8 @@ export class LiveService {
       if (tasks) this.left.set(ev.sessionId, tasks);
       else this.left.delete(ev.sessionId);
     }
+    // an ask drained after the registry said it was approved
+    applyApprovals(this.statuses, this.holders.values());
     expireStatuses(this.statuses, this.now());
     await this.readTasks();
     this.changed();
