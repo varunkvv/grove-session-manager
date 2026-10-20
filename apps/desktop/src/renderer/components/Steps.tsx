@@ -1,7 +1,8 @@
-// grove chat's view of a turn's work: the thinking and the steps behind the answer, quiet and
-// folded until asked for. the answer stays the only full-weight text in a turn.
-import { formatDuration, type StepView, toolLabel } from "@grove/core/pure";
+// grove chat's view of a turn's work: the thinking and the steps between what it said, quiet and
+// folded until asked for. what it said is full-weight, in the turn, never in here.
+import { formatDuration, toolLabel } from "@grove/core/pure";
 import { useState } from "react";
+import type { WorkStep } from "../logic/views.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { Markdown } from "./Markdown.tsx";
 import { cx, Diff, Icon, Mono, Spinner } from "./ui.tsx";
@@ -46,16 +47,13 @@ export function Thought({ text, ms }: { text: string; ms?: number }) {
 /** the tools whose step opens what they changed */
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
-/** one row of the list: a tool and what it acted on, a thought, or what it said on the way */
-function Step({ step, going }: { step: StepView; going: boolean }) {
+/** one row of the list: a tool and what it acted on, or a thought */
+function Step({ step, going }: { step: WorkStep; going: boolean }) {
   const scope = useChatScope();
   /** an edit opened: what it changed, read when first opened. null: nothing to show */
   const [diff, setDiff] = useState<string[] | null>();
   const [open, setOpen] = useState(false);
   if (step.kind === "thinking") return <Thought text={step.text} ms={step.ms} />;
-  if (step.kind === "text") {
-    return <p className="selectable mt-1.5 line-clamp-3 text-sm text-fg-3">{step.text}</p>;
-  }
   // an agent's step opens the agent: its own transcript, beside the conversation. a workflow's
   // opens the list, where its run and its agents are. a finished edit opens its diff in place
   const agent =
@@ -114,7 +112,7 @@ export function StepList({
   before,
   going,
 }: {
-  steps: readonly StepView[];
+  steps: readonly WorkStep[];
   /** older steps of a long turn, not sent */
   before?: number;
   /** the turn is under way: a step with no time yet is running */
@@ -127,6 +125,45 @@ export function StepList({
         // biome-ignore lint/suspicious/noArrayIndexKey: a turn's steps only grow, in order
         <Step key={i} step={s} going={going} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * the work between two things it said, folded to how many steps, as the turn's work line is.
+ * thinking alone is its own Thought. `open`: how it starts, the work line's state
+ */
+export function StepFold({
+  steps,
+  before,
+  going,
+  open: start,
+}: {
+  steps: readonly WorkStep[];
+  before?: number;
+  going: boolean;
+  open: boolean;
+}) {
+  const [open, setOpen] = useState(start);
+  const tools = steps.filter((s) => s.kind === "tool").length;
+  if (!tools) {
+    return steps.map((s, i) =>
+      // biome-ignore lint/suspicious/noArrayIndexKey: a turn's steps only grow, in order
+      s.kind === "thinking" ? <Thought key={i} text={s.text} ms={s.ms} /> : null,
+    );
+  }
+  return (
+    <div className="mt-1.5" data-testid="step-fold">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="fade inline-flex items-center gap-1.5 rounded-sm text-sm text-fg-4 hover:text-fg-2"
+      >
+        <Fold open={open} />
+        {tools === 1 ? "1 step" : `${tools} steps`}
+      </button>
+      {open && <StepList steps={steps} before={before} going={going} />}
     </div>
   );
 }

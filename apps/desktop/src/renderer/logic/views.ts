@@ -1,6 +1,12 @@
 // what the screens compute from main's views. pure: every fact here was derived in main, this is
 // only filtering, order and words.
-import { formatDuration, type InboxKind, type TurnView, tokenize } from "@grove/core/pure";
+import {
+  formatDuration,
+  type InboxKind,
+  type StepView,
+  type TurnView,
+  tokenize,
+} from "@grove/core/pure";
 import type {
   InboxRowView,
   InboxView,
@@ -250,6 +256,28 @@ export function startBlocked(project: Pick<ProjectView, "root" | "rootExists">):
 }
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** a step of a turn's work: anything but what it said */
+export type WorkStep = Exclude<StepView, { kind: "text" }>;
+
+/**
+ * a turn's steps cut at what it said, as the cli and vs code read it: each text after the work
+ * that led to it, then the work since the last one. one part: it said nothing on the way
+ */
+export function turnParts(
+  steps: readonly StepView[] | undefined,
+): Array<{ work: WorkStep[]; text?: string }> {
+  const parts: Array<{ work: WorkStep[]; text?: string }> = [{ work: [] }];
+  for (const s of steps ?? []) {
+    const part = parts[parts.length - 1] as { work: WorkStep[]; text?: string };
+    if (s.kind !== "text") part.work.push(s);
+    else {
+      part.text = s.text;
+      parts.push({ work: [] });
+    }
+  }
+  return parts;
+}
 
 /** `12 steps · 3 files edited · 4m`: a turn's work in one line. nothing for a turn that only talked */
 export function workLine(t: Pick<TurnView, "tools" | "files" | "agents" | "ms">): string {

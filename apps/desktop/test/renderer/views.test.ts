@@ -12,6 +12,7 @@ import {
   startBlocked,
   tasksLine,
   tasksSince,
+  turnParts,
   workLine,
 } from "../../src/renderer/logic/views.ts";
 import type {
@@ -374,5 +375,29 @@ describe("a turn's work, in one line", () => {
   });
   it("says nothing of a turn that only talked", () => {
     expect(work({ ms: 9000 })).toBe("");
+  });
+});
+
+describe("a turn read in order", () => {
+  const tool = (id: string) => ({ kind: "tool" as const, id, name: "Bash", target: id });
+  const said = (text: string) => ({ kind: "text" as const, text });
+  it("cuts the work at each thing it said, so every text sits after the steps that led to it", () => {
+    expect(
+      turnParts([
+        said("outline up: https://claude.ai/code/artifact/x"),
+        tool("a"),
+        tool("b"),
+        said("the stack section is in"),
+        tool("c"),
+      ]),
+    ).toEqual([
+      { work: [], text: "outline up: https://claude.ai/code/artifact/x" },
+      { work: [tool("a"), tool("b")], text: "the stack section is in" },
+      { work: [tool("c")] },
+    ]);
+  });
+  it("is one part of work for a turn that said nothing on the way", () => {
+    expect(turnParts([tool("a"), tool("b")])).toEqual([{ work: [tool("a"), tool("b")] }]);
+    expect(turnParts(undefined)).toEqual([{ work: [] }]);
   });
 });

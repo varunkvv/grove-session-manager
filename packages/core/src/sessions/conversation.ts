@@ -909,7 +909,7 @@ export function conversationView(
   state: ConversationState,
   /**
    * `textMax`: what a message keeps, every turn's. a chat window reads them whole. `chat`: what
-   * only a chat window draws - the files a prompt came with, the steps, the thinking. `turns`: how
+   * only a chat window draws - the files a prompt came with, the tools, the thinking. `turns`: how
    * many of the last turns, when not VIEW_TURNS (a chat window's "Show older")
    */
   opts: { textMax?: number; chat?: boolean; turns?: number } = {},
