@@ -30,6 +30,17 @@ Keep in mind:
   prompts again
 - with the switch off nothing downloads, nothing runs, and the Usage screen is as it was
 
+Fixed since 0.23.41:
+
+- a question or permission prompt stays in needs you while a background agent works. before, the agent's next step
+  cleared it within seconds, so a notification could land with no row behind it
+- a turn that ends while a background agent runs is your turn, a handoff to a long task included. before, it read as
+  still working, so a question asked there never reached needs you
+- you are told when a background agent's or command's result comes back, however short that last turn is. two results
+  inside two minutes are two notifications
+- a permission prompt from a background agent after the turn ended goes back to that turn's end once you answer it,
+  with no second notification
+
 ## 0.22
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.22 makes what you said easy to tell from
