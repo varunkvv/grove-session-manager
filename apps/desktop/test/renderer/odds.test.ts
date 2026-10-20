@@ -76,22 +76,25 @@ describe("judgment day odds for a range", () => {
     expect(m.worst.map((s) => s.key)).toEqual(["b"]);
   });
 
-  it("shows the robot the session judged last, whatever the range", () => {
-    expect(oddsModel(view(), "1W", projects, NOW).mood).toBe("standing-down");
-    const furious = oddsModel(
-      view({ current: { key: "b", odds: 12, at: NOW } }),
-      "1M",
-      projects,
-      NOW,
-    );
-    expect(furious.mood).toBe("furious");
+  it("shows the robot the tile's number, so a new range can change its mood", () => {
+    const v = view({
+      days: [
+        { day: day(0), odds: 90, prompts: 3 },
+        { day: day(20), odds: 10, prompts: 3 },
+      ],
+      // the session judged last plays no part
+      current: { key: "b", odds: 12, at: NOW },
+    });
+    expect(oddsModel(v, "1W", projects, NOW)).toMatchObject({ value: 90, mood: "delighted" });
+    expect(oddsModel(v, "1M", projects, NOW)).toMatchObject({ value: 50, mood: "watching" });
+    expect(oddsModel(view(), "1W", projects, NOW).mood).toBe("watching");
     const none = oddsModel(
       view({ current: undefined, days: [], sessions: [] }),
       "1W",
       projects,
       NOW,
     );
-    expect([none.mood, none.value, none.current]).toEqual(["watching", null, null]);
+    expect([none.mood, none.value]).toEqual(["watching", null]);
   });
 
   it("says how far the judging got while it runs, and averages weeks on the year", () => {
@@ -105,7 +108,7 @@ describe("judgment day odds for a range", () => {
     expect(formatOdds(61.6)).toBe("62%");
     expect(formatOddsChange(3.2, "1W")).toBe("+3 vs last week");
     expect(formatOddsChange(-0.3, "1M")).toBe("same as last month");
-    expect(moodLine(18)).toContain("furious");
+    expect(moodLine(18)).toBe("At 18%, gavel is furious.");
     expect(moodLine(null)).toContain("watching");
   });
 });

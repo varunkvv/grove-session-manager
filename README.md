@@ -376,8 +376,8 @@ never the text.
 
 Each prompt moves the odds from 50, and they drift back toward 50 a little with every prompt after. Every session and
 every day starts at 50. The fourth tile on the Usage screen is the mean of each day's odds in the range, against the
-range before, and gavel beside it shows the odds of the session you prompted last, in five moods: pleased (85 and up),
-tolerating (70-84), watching (40-69), coming for you (20-39) and furious (under 20). Picking the tile draws the odds of
+range before, and gavel beside it shows that number in five moods: pleased (85 and up), tolerating (70-84), watching
+(40-69), coming for you (20-39) and furious (under 20). A new range can change its mood. Picking the tile draws the odds of
 each day (each week on 1Y), your projects ranked by their sessions' odds, and your best and worst three sessions with
 a line of how each went. A session needs three judged prompts to be ranked. A prompt under four words, a slash command,
 one a program sent (`claude -p`, a scheduled wake-up) and one typed in a temp folder are not judged.

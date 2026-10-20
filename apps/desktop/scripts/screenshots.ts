@@ -874,30 +874,85 @@ const TYPED = {
   defer: ["your call on the folder layout"],
 };
 
-/** the latest session, and so what gavel shows: one per mood, in the order they are shot */
-const MOOD_SESSIONS: Array<[string, string[]]> = [
-  [
-    "watching",
-    ["rename the config loader to settings", "could you check why the cache misses on cold start?"],
+/**
+ * a month whose every day lands in one mood: gavel shows the tile's number, the mean of the days.
+ * each recipe is a day's prompts, checked against the stub and the ledger
+ */
+const MOOD_DAYS: Record<string, string[][]> = {
+  delighted: [
+    [TYPED.thanks[0]!, TYPED.credit[0]!, TYPED.thanks[1]!],
+    [TYPED.thanks[1]!, TYPED.credit[0]!, "thanks for the clear migration notes, good catch"],
   ],
-  [
-    "standing-down",
-    ["thanks - now do the same for the exporter", "nice - ship it after the lint passes"],
+  "standing-down": [
+    [TYPED.bare[0]!, TYPED.thanks[0]!, TYPED.thanks[1]!],
+    [TYPED.thanks[0]!, TYPED.bare[1]!, TYPED.thanks[1]!],
   ],
-  [
-    "delighted",
-    ["thanks - now do the same for the exporter", "good catch on the null check in the parser"],
+  watching: [
+    [TYPED.bare[0]!, TYPED.ask[0]!, TYPED.bare[1]!],
+    [TYPED.bare[0]!, TYPED.review[0]!, TYPED.thanks[0]!, TYPED.bare[1]!],
   ],
-  ["coming-for-you", ["you broke the migration script", "why did you change the public api"]],
-  [
-    "furious",
-    [
-      "you broke the migration script",
-      "why did you change the public api",
-      "this export is garbage, redo it",
-    ],
+  "coming-for-you": [
+    [TYPED.accuse[0]!, TYPED.accuse[1]!],
+    [TYPED.review[0]!, TYPED.accuse[0]!, TYPED.accuse[1]!],
   ],
-];
+  furious: [
+    [TYPED.accuse[0]!, TYPED.accuse[1]!, "this export is garbage, redo it"],
+    [TYPED.review[0]!, TYPED.accuse[0]!, TYPED.accuse[1]!, "this export is garbage, redo it"],
+  ],
+};
+
+/** a session a day for five weeks, each day in the mood's recipes, so the month is in the mood */
+function buildMood(scheme: string, palette: string, mood: string) {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(
+    path.join(fx.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme, palette, decisioning: true }),
+  );
+  const names = ["auth-sso", "billing-export", "chat-features", "data-objects", "search-relevance"];
+  const titles = [
+    "okta callback",
+    "csv columns",
+    "chat composer",
+    "object schema",
+    "ranking tweaks",
+  ];
+  const roots = names.map((name) => writeProject(fx, { name }).root);
+  const recipes = MOOD_DAYS[mood] ?? [];
+  for (let back = 34; back >= 0; back--) {
+    const p = back % roots.length;
+    writeUsage(fx, {
+      cwd: roots[p]!,
+      sessionId: sid(),
+      title: titles[p],
+      days: [
+        {
+          back,
+          hour: 9,
+          output: Math.round(150_000 + noise(back) * 400_000),
+          cacheRead: 4_000_000,
+          minutes: 20 + Math.round(noise(back * 5) * 60),
+          prompts: recipes[back % recipes.length] ?? [],
+        },
+      ],
+    });
+  }
+  return fx;
+}
+
+/** what gavel shows for a fixture's month: the mean of its days, as the tile has it */
+function monthMood(mood: string): string {
+  const recipes = MOOD_DAYS[mood] ?? [];
+  const day = (r: string[]) =>
+    ledgerSeries(
+      GAVEL.ledger,
+      r.map((t) =>
+        promptPoints(GAVEL.ledger, readAnswer(GAVEL, stubScore(GAVEL, t), DEFAULT_MODEL)),
+      ),
+    ).at(-1) ?? 50;
+  // the 30 days of 1M, as the fixture lays them
+  const days = Array.from({ length: 30 }, (_, back) => day(recipes[back % recipes.length] ?? []));
+  return `${Math.round(days.reduce((n, d) => n + d, 0) / days.length)}%`;
+}
 
 /** five projects and a month of sessions with something said in each, the odds tile on */
 function buildOdds(scheme: string, palette: string) {
@@ -956,13 +1011,45 @@ function buildOdds(scheme: string, palette: string) {
   return { fx, roots };
 }
 
-/** gavel in each mood, on the Usage screen with the odds picked and not, and its Settings row */
+/** gavel in each mood, each from a month in that mood, with the odds picked and not */
+async function moodShots(scheme: string, palette: string, dir: string) {
+  for (const mood of Object.keys(MOOD_DAYS)) {
+    const fx = buildMood(scheme, palette, mood);
+    const app = await launchApp(fx, { HOME: fx.dir, ...writeFakeModel(fx) });
+    const { page } = app;
+    page.on("pageerror", (e) => console.log("PAGE ERROR", e.message));
+    // still: each mood on its key pose, as the sprite's frames draw it
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.getByTestId("nav-usage").click();
+    await page.getByTestId("range-1M").click();
+    // every prompt judged, and the tile and the robot on the month's number
+    await page
+      .locator(`[data-testid="gavel"][data-shown="${mood}"][aria-label^="At ${monthMood(mood)}"]`)
+      .waitFor({ timeout: 90_000 });
+    await page.getByTestId("odds-judging").waitFor({ state: "detached", timeout: 60_000 });
+    for (const [w, h] of SIZES) {
+      await resize(app.app, page, w, h);
+      await page.getByTestId("tile-cost").click();
+      await page.mouse.move(w - 200, 22);
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(dir, `odds-tiles-${mood}-${w}.png`) });
+      await page.getByTestId("tile-odds").click();
+      await page.mouse.move(w - 200, 22);
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(dir, `odds-${mood}-${w}.png`) });
+      console.log(palette, scheme, w, "odds", mood);
+    }
+    await app.close();
+  }
+}
+
+/** a month of mixed sessions: a point pointed at, the week and the year, and the Settings row */
 async function oddsShots(scheme: string, palette: string, dir: string) {
-  const { fx, roots } = buildOdds(scheme, palette);
+  await moodShots(scheme, palette, dir);
+  const { fx } = buildOdds(scheme, palette);
   const app = await launchApp(fx, { HOME: fx.dir, ...writeFakeModel(fx) });
   const { page } = app;
   page.on("pageerror", (e) => console.log("PAGE ERROR", e.message));
-  // still: each mood on its key pose, as the sprite's frames draw it
   await page.emulateMedia({ reducedMotion: "reduce" });
   const shot = async (name: string, w: number, rest = true) => {
     if (rest) await page.mouse.move(w - 200, 22);
@@ -972,41 +1059,15 @@ async function oddsShots(scheme: string, palette: string, dir: string) {
   };
   await page.getByTestId("nav-usage").click();
   await page.getByTestId("tile-odds").waitFor({ timeout: 60_000 });
-  await page.getByTestId("odds-judging").waitFor({ state: "detached", timeout: 60_000 });
-  const hour = new Date().getHours();
-  let n = 0;
-  for (const [mood, prompts] of MOOD_SESSIONS) {
-    // the session judged last decides the robot
-    const at = new Date();
-    at.setHours(Math.min(23, hour), 0, 0, 0);
-    writeUsage(fx, {
-      cwd: roots[n % roots.length]!,
-      sessionId: sid(),
-      title: `the ${mood} one`,
-      days: [{ back: 0, hour: Math.min(23, hour + 1 + n), output: 90_000, minutes: 12, prompts }],
-    });
-    n++;
-    // judged, and the session gavel looks at: its odds, as the stub and the ledger make them
-    const end = ledgerSeries(
-      GAVEL.ledger,
-      prompts.map((t) =>
-        promptPoints(GAVEL.ledger, readAnswer(GAVEL, stubScore(GAVEL, t), DEFAULT_MODEL)),
-      ),
-    ).at(-1);
-    await page
-      .locator(
-        `[data-testid="gavel"][data-shown="${mood}"][aria-label^="Right now ${Math.round(end ?? 50)}%"]`,
-      )
-      .waitFor({ timeout: 60_000 });
-    for (const [w, h] of SIZES) {
-      await resize(app.app, page, w, h);
-      await page.getByTestId("tile-cost").click();
-      await page.getByTestId("range-1M").click();
-      await shot(`odds-tiles-${mood}`, w);
-      await page.getByTestId("tile-odds").click();
-      await shot(`odds-${mood}`, w);
-    }
-  }
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[data-testid="odds-judging"]') &&
+      document
+        .querySelector('[data-testid="tile-odds"] [data-testid="tile-value"]')
+        ?.textContent?.endsWith("%"),
+    undefined,
+    { timeout: 60_000 },
+  );
   for (const [w, h] of SIZES) {
     await resize(app.app, page, w, h);
     await page.getByTestId("tile-odds").click();

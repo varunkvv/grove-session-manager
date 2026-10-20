@@ -629,7 +629,7 @@ export function Usage() {
                 {tiles}
                 <StatTile
                   label={ODDS_WORDS.label}
-                  hint={`${ODDS_WORDS.hint} ${moodLine(judged.current)}`}
+                  hint={`${ODDS_WORDS.hint} ${moodLine(judged.value)}`}
                   value={judged.value === null ? "-" : formatOdds(judged.value)}
                   note={
                     judged.change === undefined ? undefined : formatOddsChange(judged.change, range)
@@ -637,7 +637,7 @@ export function Usage() {
                   selected={showOdds}
                   onSelect={() => setPicked("odds")}
                   testId="tile-odds"
-                  aside={<Gavel mood={judged.mood} title={moodLine(judged.current)} />}
+                  aside={<Gavel mood={judged.mood} title={moodLine(judged.value)} />}
                 />
               </div>
             ) : (

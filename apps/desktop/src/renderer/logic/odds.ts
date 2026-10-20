@@ -1,6 +1,6 @@
 // judgment day odds for a range, from main's odds block: the tile's number and its change, a line
 // of the days, projects ranked by their sessions' odds, and the best and worst sessions. pure:
-// every ledger was run in main. the robot shows the latest session's odds, whatever the range.
+// every ledger was run in main. the robot shows the tile's number: a new range can change its mood.
 import { type MoodId, moodOf, moodWord } from "@grove/core/pure";
 import type { OddsView, ProjectId } from "../../shared/ipc.ts";
 import { type ListRow, lastDays, type Range, rangeShape, rangeSlots, type Slice } from "./usage.ts";
@@ -32,8 +32,7 @@ export interface OddsModel {
   value: number | null;
   /** points against the range before. absent when that range has nothing */
   change?: number;
-  /** what the robot shows: the session judged last, after its latest prompt */
-  current: number | null;
+  /** the robot's mood: the tile's number, as shown. watching while nothing is judged */
   mood: MoodId;
   points: OddsPoint[];
   byProject: ListRow[];
@@ -108,12 +107,10 @@ export function oddsModel(
   const best = ranked.slice(0, top);
   const worst = ranked.slice(top).reverse().slice(0, ENDS);
 
-  const current = view.current?.odds ?? null;
   return {
     value,
     ...(value !== null && was !== null ? { change: value - was } : {}),
-    current,
-    mood: moodOf(current ?? 50),
+    mood: moodOf(value ?? 50),
     points,
     byProject,
     best,
@@ -141,8 +138,8 @@ export const ODDS_WORDS = {
   hint: "Gavel, a small model on this Mac, judges how you treat your agents, one prompt at a time. Each day starts at 50: thanks and credit for good work raise the odds, bare orders and blame lower them, and they drift back toward 50. This is the mean of each day's odds in the range.",
 };
 
-/** the robot's tooltip: where it stands now, and why it looks like that */
-export function moodLine(current: number | null): string {
-  if (current === null) return "Nothing judged yet: gavel is watching you.";
-  return `Right now ${formatOdds(current)}, after your latest judged prompt: gavel is ${moodWord(moodOf(current))}.`;
+/** the robot's tooltip: its mood, from the tile's number */
+export function moodLine(value: number | null): string {
+  if (value === null) return "Nothing judged in this range: gavel is watching you.";
+  return `At ${formatOdds(value)}, gavel is ${moodWord(moodOf(value))}.`;
 }

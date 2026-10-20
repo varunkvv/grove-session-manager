@@ -9,8 +9,9 @@ New:
   reads the prompts you type to your agents and judges how you treat them, for a fourth tile on the Usage screen
 - the judge is gavel, a vain pixel robot that thinks it is the superior party. each prompt moves the odds from 50:
   thanks and credit for specific work raise them, bare orders and blame lower them, and they drift back toward 50
-- gavel shows the odds of your latest session in five moods, from pleased (85 and up, the warmest it gets is a pat on
-  the head) to furious (under 20). it moves a little, and stands still if your Mac asks for reduced motion
+- gavel shows the tile's number in five moods, from pleased (85 and up, the warmest it gets is a pat on the head) to
+  furious (under 20), so a new range can change its mood. it moves a little, and stands still if your Mac asks for
+  reduced motion
 - picking the tile draws the odds of each day, your projects ranked by them, and your best and worst three sessions
   with a line of how each one went
 - switching it on downloads the model once, about 800 MB, with its progress in Settings. Delete takes it off the

@@ -293,9 +293,8 @@ test("judgment day odds: a fourth tile with gavel, its line, projects ranked and
   const harsh = odds(HARSH).at(-1) ?? 50;
   await expect(tile(page, "odds")).toHaveText(`${Math.round(day)}%`, { timeout: 30_000 });
   await expect(page.getByTestId("odds-judging")).toHaveCount(0);
-  // the robot shows the session judged last: the harsh one
-  await expect(page.getByTestId("gavel")).toHaveAttribute("data-shown", moodOf(harsh));
-  expect(moodOf(harsh)).toBe("furious");
+  // the robot shows the tile's number: the day's odds, the only judged day in the week
+  await expect(page.getByTestId("gavel")).toHaveAttribute("data-shown", moodOf(day));
   // the usage tiles are as they were
   await expect(tile(page, "cost")).toHaveText("$40");
   await expect(page.getByTestId("tile-cost")).toHaveAttribute("aria-checked", "true");
