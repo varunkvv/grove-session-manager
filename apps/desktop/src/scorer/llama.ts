@@ -2,7 +2,7 @@
 // onejev.ts), tokenized, and each question's letter logits are read off one sequence. the state is
 // evaluated once and checkpointed, and every question is read from that checkpoint. the constant
 // head (system prompt + rubric context) is checkpointed once for all prompts.
-// port of the bench's lib/onejev.mjs and lib/readouts.mjs (artifacts/judgment-day/model/bench).
+// port of the model bench's lib/onejev.mjs and lib/readouts.mjs, which held it to qev serve.
 import {
   branchPlan,
   foldBranches,
