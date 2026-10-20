@@ -328,6 +328,9 @@ function DecisioningModel({ draftOn, savedOn }: { draftOn: boolean; savedOn: boo
           </Button>
         )}
       </div>
+      <p className="text-meta text-fg-4">
+        The model every decisioning feature shares. It downloads when one of them is on.
+      </p>
       {m.state === "downloading" && (
         <ProgressBar
           value={m.got ?? 0}
@@ -589,10 +592,10 @@ export function SettingsDialog() {
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 text-sm text-fg-2">Judgment day odds (beta)</span>
             <Switch
-              checked={draft.decisioning === true}
-              onChange={(v) => setDraft({ ...draft, decisioning: v })}
+              checked={draft.judgmentDayOdds === true}
+              onChange={(v) => setDraft({ ...draft, judgmentDayOdds: v })}
               label="Judgment day odds (beta)"
-              testId="setting-decisioning"
+              testId="setting-judgment-day-odds"
               disabled={decisioning?.supported === false}
             />
           </div>
@@ -602,8 +605,8 @@ export function SettingsDialog() {
             scores, never what you typed. Judging the backlog waits for power.
           </span>
           <DecisioningModel
-            draftOn={draft.decisioning === true}
-            savedOn={settings?.decisioning === true}
+            draftOn={draft.judgmentDayOdds === true}
+            savedOn={settings?.judgmentDayOdds === true}
           />
         </div>
         {error && <p className="text-danger">{error}</p>}

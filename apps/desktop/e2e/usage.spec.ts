@@ -266,7 +266,10 @@ function judged(o: { on?: boolean; model?: boolean } = {}): {
   env: Record<string, string>;
 } {
   fx = makeFixture({ withCompanion: true });
-  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ decisioning: o.on ?? true }));
+  writeFileSync(
+    path.join(fx.root, "settings.json"),
+    JSON.stringify({ judgmentDayOdds: o.on ?? true }),
+  );
   const auth = writeProject(fx, { name: "auth-sso" });
   const billing = writeProject(fx, { name: "billing" });
   writeUsage(fx, {
@@ -348,7 +351,7 @@ test("judgment day odds come and go with the switch: off, on, off again", async 
       await page.keyboard.press("Meta+,");
       await expect(page.getByTestId("settings-dialog")).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 15_000 });
-    const sw = page.getByTestId("setting-decisioning");
+    const sw = page.getByTestId("setting-judgment-day-odds");
     await expect(sw).toHaveAttribute("aria-checked", String(!to));
     await sw.click();
     await page.getByTestId("save-settings").click();

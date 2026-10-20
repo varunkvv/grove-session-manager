@@ -34,13 +34,18 @@ export interface Settings {
   /** with grove chat on, the key that brings grove forward from anywhere. "none" is none */
   summonKey?: string;
   /**
-   * decisioning (beta): a local model judges the person's own prompts, on this mac only, for the
-   * Usage screen's judgment day odds. off unless true
+   * judgment day odds (beta), a decisioning feature: a local model judges the person's own prompts,
+   * on this mac only, for the Usage screen. off unless true. each decisioning feature has its own
+   * switch, and the model they share comes down when any of them is on (`wantsModel`)
    */
-  decisioning?: boolean;
+  judgmentDayOdds?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
+
+/** a decisioning feature is on: the local model they share is downloaded and kept */
+export const wantsModel = (s: Pick<Settings, "judgmentDayOdds">): boolean =>
+  s.judgmentDayOdds === true;
 
 export function settingsFilePath(appRoot: string): string {
   return path.join(appRoot, "settings.json");
@@ -75,7 +80,7 @@ function clean(raw: unknown): Settings {
     "renameSessions",
     "keepAwake",
     "chat",
-    "decisioning",
+    "judgmentDayOdds",
   ] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
   }

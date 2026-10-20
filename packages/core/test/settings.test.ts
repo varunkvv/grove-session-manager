@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { loadSettings, saveSettings, settingsFilePath } from "../src/settings.ts";
+import { loadSettings, saveSettings, settingsFilePath, wantsModel } from "../src/settings.ts";
 import { makeSandbox } from "./helpers/transcript.ts";
 
 describe("settings", () => {
@@ -24,6 +24,17 @@ describe("settings", () => {
     expect((await loadSettings(app)).chat).toBeUndefined();
     expect((await saveSettings(app, { chat: true })).chat).toBe(true);
     expect((await loadSettings(app)).chat).toBe(true);
+  });
+
+  it("judgment day odds has its own switch, off unless true, and it is what wants the model", async () => {
+    const root = makeSandbox();
+    writeFileSync(settingsFilePath(root), JSON.stringify({ judgmentDayOdds: "yes" }));
+    const off = await loadSettings(root);
+    expect(off.judgmentDayOdds).toBeUndefined();
+    expect(wantsModel(off)).toBe(false);
+    const on = await saveSettings(root, { judgmentDayOdds: true });
+    expect(on.judgmentDayOdds).toBe(true);
+    expect(wantsModel(on)).toBe(true);
   });
 
   it("the palette is one of the three, absent for anything else", async () => {

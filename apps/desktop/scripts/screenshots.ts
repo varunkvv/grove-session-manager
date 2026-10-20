@@ -906,7 +906,7 @@ function buildMood(scheme: string, palette: string, mood: string) {
   const fx = makeFixture({ withCompanion: true });
   writeFileSync(
     path.join(fx.root, "settings.json"),
-    JSON.stringify({ editor: "vscode", appearance: scheme, palette, decisioning: true }),
+    JSON.stringify({ editor: "vscode", appearance: scheme, palette, judgmentDayOdds: true }),
   );
   const names = ["auth-sso", "billing-export", "chat-features", "data-objects", "search-relevance"];
   const titles = [
@@ -959,7 +959,7 @@ function buildOdds(scheme: string, palette: string) {
   const fx = makeFixture({ withCompanion: true });
   writeFileSync(
     path.join(fx.root, "settings.json"),
-    JSON.stringify({ editor: "vscode", appearance: scheme, palette, decisioning: true }),
+    JSON.stringify({ editor: "vscode", appearance: scheme, palette, judgmentDayOdds: true }),
   );
   const names = ["auth-sso", "billing-export", "chat-features", "data-objects", "search-relevance"];
   const roots = names.map((name) => writeProject(fx, { name }).root);

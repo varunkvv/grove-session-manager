@@ -26,6 +26,7 @@ import {
   type Settings,
   saveSettings,
   type TimelineState,
+  wantsModel,
   workspaceFolders,
   ZED_AGENT_LINK,
   ZED_AGENT_LINK_DELAY_MS,
@@ -625,8 +626,8 @@ function buildHandlers(deps: Deps): Handlers {
     },
 
     async downloadModel() {
-      if (deps.settings().decisioning !== true) {
-        throw new AppError("decisioning-off", "Decisioning is switched off.");
+      if (!wantsModel(deps.settings())) {
+        throw new AppError("decisioning-off", "No feature that needs the model is switched on.");
       }
       void deps.decisioning.fetchModel();
     },

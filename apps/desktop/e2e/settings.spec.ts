@@ -70,7 +70,7 @@ test("decisioning: the switch downloads its model with progress, and Delete take
     const { page } = app;
     const row = page.getByTestId("decisioning-model");
     await page.keyboard.press("Meta+,");
-    const sw = page.getByTestId("setting-decisioning");
+    const sw = page.getByTestId("setting-judgment-day-odds");
     await expect(sw).toHaveAttribute("aria-checked", "false");
     // off, with nothing on disk: no row
     await expect(row).toHaveCount(0);
@@ -97,9 +97,9 @@ test("decisioning: the switch downloads its model with progress, and Delete take
     expect(existsSync(weights)).toBe(false);
     await expect(page.getByTestId("decisioning-download")).toBeVisible();
     await page.getByTestId("save-settings").click();
-    expect(JSON.parse(readFileSync(path.join(fx.root, "settings.json"), "utf8")).decisioning).toBe(
-      true,
-    );
+    expect(
+      JSON.parse(readFileSync(path.join(fx.root, "settings.json"), "utf8")).judgmentDayOdds,
+    ).toBe(true);
   } finally {
     server.close();
   }

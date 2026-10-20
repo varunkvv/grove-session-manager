@@ -163,8 +163,8 @@ export interface AppSettings {
   chat?: boolean;
   /** with grove chat on, the key that brings grove forward from anywhere. "none", or absent for the default */
   summonKey?: string;
-  /** decisioning (beta): a local model judges your own prompts, on this mac. off unless switched on. */
-  decisioning?: boolean;
+  /** judgment day odds (beta): a local model judges your own prompts, on this mac. off unless switched on. */
+  judgmentDayOdds?: boolean;
 }
 
 /**
@@ -425,7 +425,7 @@ export interface OddsView {
 
 /** decisioning's model and its work, for the Settings row and the Usage screen */
 export interface DecisioningStatus {
-  /** the setting */
+  /** a feature that needs the model is on */
   on: boolean;
   /** macOS 14 or later, and the memory the model asks for */
   supported: boolean;

@@ -13,6 +13,7 @@ import {
   resolveEditor,
   type Settings,
   sessionsRegistryDir,
+  wantsModel,
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
@@ -422,7 +423,7 @@ async function start(): Promise<void> {
   const decisioning = new DecisioningService({
     ...decided,
     rubric: GAVEL,
-    enabled: () => settings.decisioning === true,
+    enabled: () => wantsModel(settings),
     transcripts: () => sessions.transcripts(),
     onBattery: () =>
       appEnv.customRoot
@@ -612,7 +613,7 @@ async function start(): Promise<void> {
       const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
       const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
       const chatMoved = (s.chat === true) !== (settings.chat === true);
-      const decisioningMoved = (s.decisioning === true) !== (settings.decisioning === true);
+      const decisioningMoved = wantsModel(s) !== wantsModel(settings);
       const lookMoved = s.appearance !== settings.appearance || s.palette !== settings.palette;
       settings = s;
       if (menuMoved) menu(resolveEditor(s).label);
@@ -625,7 +626,7 @@ async function start(): Promise<void> {
         // a palette alone moves no nativeTheme, so nothing else repaints the frame
         win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors, s.palette));
       }
-      if (decisioningMoved) decisioning.switched(s.decisioning === true);
+      if (decisioningMoved) decisioning.switched(wantsModel(s));
       if (recapsMoved) projects.recapsSwitched();
       if (recapsMoved || renamesMoved) {
         sessions.retitle();
