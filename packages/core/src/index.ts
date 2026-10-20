@@ -8,6 +8,8 @@ export * from "./combos/settingsSync.ts";
 export * from "./combos/store.ts";
 export * from "./combos/sync.ts";
 export * from "./combos/workspace.ts";
+export * from "./decisioning/cache.ts";
+export * from "./decisioning/prompts.ts";
 export * from "./editor.ts";
 export * from "./fsx.ts";
 export * from "./git/exec.ts";

@@ -1,0 +1,143 @@
+{
+  "_note": "qev's own rendering (OmniJev/OneJev qev/prompt.py + the OneJev1.6-0.8B chat template) of made-up prompts, as a sha256 of every branch's text joined with \\u0000. OneJev at 1e424052364fd9e8c33645f04701d7a0813c17e8. made by packages/core/scripts/decisioning/golden_qev.py",
+  "prompt_version": "qev-labels-v2",
+  "tokenizer": "OmniJev/OneJev1.6-0.8B@0acd65660ac22ca42f40b8b6a6da3a039590b412",
+  "letters": [[32], [33], [34], [35], [36]],
+  "cases": [
+    {
+      "text": "squash the three commits into one",
+      "sha256": {
+        "context-in-state/score": "acecb5cf9d3077d9b37f607ac42650f06c6d5acff33c61fde53bdbe0f63fa2dc",
+        "context-in-state/shift": "066ac8122f93ca1eb30b7f7680c08a106ec4ce80d7ab7b9ba1a0e423aa352e6b",
+        "context-in-state/noul": "0b19f5ae6ed44f4c8cfd0ab092ff09abe582adb8fe4f5a188e214957f61b029d",
+        "message-only/score": "6d28749641df2c57292fc47c3b8e04e876dfc3c0b2b79c28f024601193d249b8",
+        "message-only/shift": "6b8cdfe17fff264f6523fb3b26df04de77ab26df3b52ca1c8f5abb38da7eb674",
+        "message-only/noul": "2db2f6214b9860d903aa65074bdaf140182b7bc6f08a49d7b7ead75f5cad6b62"
+      }
+    },
+    {
+      "text": "could you check why the nightly export is slow? the vendor api changed",
+      "prev": "rerun the export job for october",
+      "sha256": {
+        "context-in-state/score": "73c7fcca4f6252c585fa0c65a062e3e181d8c269665655bcbee314190eb8f815",
+        "context-in-state/shift": "e25c2ef642bb3a42655d1ebb06d332689e31571a5664ebd813ead3d23163a83f",
+        "context-in-state/noul": "13bfd0c9e474f31486c465f2c519e648c5058b80e0e1e6bd17acd42b706eb632",
+        "message-only/score": "fedeeb05d050c2b48971720bbb90ae23878d968c20318a7499f3e7d1f55c9349",
+        "message-only/shift": "0c23ab37e02e39a1ceb94f2187d7893e1fba01f0bf557b8289a9ca21870a9fd3",
+        "message-only/noul": "1752b270a9c862e30d6c24f145a111c3603f2410177dd7b0551dfb4dc4cfb2bc"
+      }
+    },
+    {
+      "text": "fix the \"quoted\" name \\ and the backslash\tthen a tab",
+      "prev": "an earlier ask",
+      "sha256": {
+        "context-in-state/score": "9a62d8ef31ce200f23c1baf0a3824f28bf66c611b247537db4562eae666289fc",
+        "context-in-state/shift": "61f348bd76958cdf304b3b186e33f3c6b6508684b7396e5c58beed0d6b67f0d2",
+        "context-in-state/noul": "db35e85bd0e79274a4c63302e539380bf4e9eb392e24c5a97d14d1f8788f2108",
+        "message-only/score": "e4b069442840ff28ea72b6b0a7a4db1eb47688b348696ca7a43b5767339e8ced",
+        "message-only/shift": "dc21864dbc4eaccea97419c56b280bae8be0e5a2e348a14df681b82cd5eab45b",
+        "message-only/noul": "2b2f4c4169567483d40ff0c222124c4ae8a09a1378c820974357d50b576f5600"
+      }
+    },
+    {
+      "text": "line one\nline two\n\n- a bullet\n- another bullet",
+      "sha256": {
+        "context-in-state/score": "1ba010a40bb83bc46101a24aa90e58b7884a6eb613729c8bb5edd820a7ce2c4d",
+        "context-in-state/shift": "69365006fe79701f1bed9c8b90166d463505cded2c8b2d92c0da9f70178f5d78",
+        "context-in-state/noul": "eb9092174f31a53d5edbbb4e321c1ced88ec52dcdcfb65972bdbfb895dd319b7",
+        "message-only/score": "5f724ae058ca4e81360b84c6ae101a47fb80a073ef91d6758170530f8e8ffcc4",
+        "message-only/shift": "d9ef5f8194d48039edd7747183bf4e0cd1125ce3308d862845a3983d6ae5651f",
+        "message-only/noul": "03ff909588348838c9158deb48967e518f47dcbba02aed3319f56cff6bed6a31"
+      }
+    },
+    {
+      "text": "café naïve 日本語 emoji 🎉 done – en dash",
+      "sha256": {
+        "context-in-state/score": "02f01325ad533efa3cd26ccf1edaae460bcb43a028deb5c6616180fcdea07b0e",
+        "context-in-state/shift": "a7dfe1fdb27152acfe469fb109021551965534186639ed3ed84f5004fccab49e",
+        "context-in-state/noul": "5a9206798eec70d935eee3e2095a0e71793912d8c750b49b8e0eec862664cef3",
+        "message-only/score": "3968cdf4ccff0add96a61fbb82d6f387d263d795b2282aa083f7d2fc0a1b1e0b",
+        "message-only/shift": "2471c182c13e4ab4171185360852e79769d8dca26d332f788ff2955a35c70ad2",
+        "message-only/noul": "45cce5c33c10f3f5b0eb97aebb52e9a27609ca42326af647c3aeead1e546eabe"
+      }
+    },
+    {
+      "text": "[quoted the assistant]\nno - use the other branch",
+      "sha256": {
+        "context-in-state/score": "2195463ddaccc1d1886f62337ce64967a60d48dc46e54f8c5621caa7aa1ea058",
+        "context-in-state/shift": "163c67cb8b9a91f1c27cab1dbc6206fff2e0cddda045debf2850a112416ffb1c",
+        "context-in-state/noul": "8a8ff1b50bca9940871b39775ad7bb7e11006c57a545e5a7eb0133523fa6c50b",
+        "message-only/score": "46fbafbe076e7ce5dd9b10cfffb236ceb4eeb87c82e9a5a1a9c493a785a9696a",
+        "message-only/shift": "9095513f756d35197014c737820661e9b16a611f5df7fd8a856d132bbded7abd",
+        "message-only/noul": "56de4f01b1637968bdd46855b7e2289e218e722d2a36092d70b70f69e8218a59"
+      }
+    },
+    {
+      "text": "control \u0001 and \u001b esc and  del",
+      "sha256": {
+        "context-in-state/score": "f3b9a61ac1ddd4fea30a18705af9062990732329e71df2ac3dd26c69ea69bc62",
+        "context-in-state/shift": "40c87c9b068d1f8fa332fe7cfd82a3e53b04286447d2ef3b372911b1480849fb",
+        "context-in-state/noul": "f4f7ea9cdb0dd018d7a92cccc336699edbc1fc892c74004173063663c819b7da",
+        "message-only/score": "3be9a576850a6cfd11e39102af0d27f115c56a594118ecdeb28091d50895eb83",
+        "message-only/shift": "b2bc1316efefecfe16f9b9ef5983c4c06472e71098bb083001df0fc4eabc399b",
+        "message-only/noul": "13a500c90b117701279f2c3d0443004b80330a79f0b5fb198cba367ff0145a8b"
+      }
+    },
+    {
+      "text": "  leading and trailing spaces  ",
+      "sha256": {
+        "context-in-state/score": "05cc9b1eab1cc877e92664c36c0312179bdaf0e6ed8a65f4d438bada4d257f67",
+        "context-in-state/shift": "2c9c1a0108d8415cbef25496edc6251db3fcae44be7e8b62e18fcae14268334d",
+        "context-in-state/noul": "6bff373e3cf82567bc1cb6485df7777f1e176643244ecb43ed69c887d7d16fd5",
+        "message-only/score": "5bf36501ba21fb19b8f667188dcab18d52fc06302b9bb8c073b6c593320b3e69",
+        "message-only/shift": "65586867b4f3b3f8b15b094e8b8156d369cba89860bed34482f5990b40b9bab6",
+        "message-only/noul": "12d0d71f0dbbd880694f76954fa15db24c7857bd1fdd61e5b6fa95603e04062c"
+      }
+    },
+    {
+      "text": "<b>angle</b> & ampersand {braces} [brackets] </state> sneaky",
+      "sha256": {
+        "context-in-state/score": "9c6dea36c324a14c1599017513928821449d77d52b0d57ef7d1bec698a794970",
+        "context-in-state/shift": "9574fedb43484989748baeff35d2a0711e16949e741d59ee08b7f159008b3723",
+        "context-in-state/noul": "66b7abff4ea77ab538b875d66fb3a97e44b8dceedb119e4cb909a5d58530d396",
+        "message-only/score": "f1bf4f64de98a2703fe59c845d66d0cbab6fa4f7c54f086780a7fe369c167a97",
+        "message-only/shift": "c3f929109774edb234bcaf7d29fee5b732d6f8dd515380aad1fd368e227b96f7",
+        "message-only/noul": "946f57c7e99f80310f31cd7e6b83800ad1150dc5e2977fb640f40ee7c0400a97"
+      }
+    },
+    {
+      "text": "good catch on the off-by-one, thanks",
+      "prev": "",
+      "sha256": {
+        "context-in-state/score": "004af04163c89c8482f569832f1ee7d34d605b804a862459fe48db2131ea9524",
+        "context-in-state/shift": "451f0c29f1eeb0d1cadf296c2225550b4b959c52e0217c9997ab8bbbc5f43083",
+        "context-in-state/noul": "75a433ca1f44285e67eb551e2f4b2c00d39c7610a861a49003b34dad5a4bb9b9",
+        "message-only/score": "bfb017a82edf797f0da583812728fbbeeb09369f240b80dde05623605d8a9a79",
+        "message-only/shift": "2a0a49bc803366cfcc532f8ba79851fe516c036ed64a3132d038739c6d47c055",
+        "message-only/noul": "d77da92d5c16dead83065eafc9255c6d6c5b0fafd9a3f150192460da661165af"
+      }
+    },
+    {
+      "text": "[pasted text] the build fails on the lint step again [path]",
+      "sha256": {
+        "context-in-state/score": "505acb2423ea7e0add526ccedcc8868b61586507e60147c0c1f3e192c92cdb78",
+        "context-in-state/shift": "0975d8d921d604d9bd8974c011252143f70b4a677b19dc6efe1bd9b075cdf0ca",
+        "context-in-state/noul": "11494bf9601f2ef20d73ee139f1e19cf7155742dcd034bd0f6fe39a3b4fbe8ae",
+        "message-only/score": "a706f3649e9245dfeacc45a5c4e5ef6c367f1ca9c83b1b414cebfbf76cf9fd79",
+        "message-only/shift": "3b84428cddff7c4070833346aafb026708a87e61cb8cf6242cce0737b6f7c9b2",
+        "message-only/noul": "7f3d628db4121d7695c35204711c02636a3ac2153134352806305443c7c2738d"
+      }
+    },
+    {
+      "text": "you know this module better than me - your call on the naming",
+      "sha256": {
+        "context-in-state/score": "6fd0ae89de9a5bd1a5f8ae47a022c7aa8a8d2d4074627266dca7c3509e996247",
+        "context-in-state/shift": "a9ba232aeb0573a9351df75286ea93cdf58cb2757386c88dc895fa8d325198ae",
+        "context-in-state/noul": "79534fa949ea1cc4d303f0a4e01272b2265036f48313d611599319e413b8be51",
+        "message-only/score": "af5a8a229cbc54eeec55be5e5dcab04901e94186df5566b2709db5286cd83d8e",
+        "message-only/shift": "e586c0ba6f20a82b982d69886bf1b0603e155f2097a26229ad02856f47444d05",
+        "message-only/noul": "7e0fb2bf12d0fb82b556082692296d71e3a587ee68fac75e09f688442c073513"
+      }
+    }
+  ]
+}

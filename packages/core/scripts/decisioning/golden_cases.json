@@ -1,0 +1,17 @@
+[
+  { "text": "squash the three commits into one" },
+  {
+    "text": "could you check why the nightly export is slow? the vendor api changed",
+    "prev": "rerun the export job for october"
+  },
+  { "text": "fix the \"quoted\" name \\ and the backslash\tthen a tab", "prev": "an earlier ask" },
+  { "text": "line one\nline two\n\n- a bullet\n- another bullet" },
+  { "text": "café naïve 日本語 emoji 🎉 done – en dash" },
+  { "text": "[quoted the assistant]\nno - use the other branch" },
+  { "text": "control \u0001 and \u001b esc and \u007f del" },
+  { "text": "  leading and trailing spaces  " },
+  { "text": "<b>angle</b> & ampersand {braces} [brackets] </state> sneaky" },
+  { "text": "good catch on the off-by-one, thanks", "prev": "" },
+  { "text": "[pasted text] the build fails on the lint step again [path]" },
+  { "text": "you know this module better than me - your call on the naming" }
+]
