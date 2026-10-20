@@ -103,8 +103,8 @@ describe("judgment day odds for a range", () => {
 
   it("words", () => {
     expect(formatOdds(61.6)).toBe("62%");
-    expect(formatOddsChange(3.2, "the week before")).toBe("+3 vs the week before");
-    expect(formatOddsChange(-0.3, "the week before")).toBe("same as the week before");
+    expect(formatOddsChange(3.2, "1W")).toBe("+3 vs last week");
+    expect(formatOddsChange(-0.3, "1M")).toBe("same as last month");
     expect(moodLine(18)).toContain("furious");
     expect(moodLine(null)).toContain("watching");
   });

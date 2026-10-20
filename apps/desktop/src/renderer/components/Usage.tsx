@@ -632,9 +632,7 @@ export function Usage() {
                   hint={`${ODDS_WORDS.hint} ${moodLine(judged.current)}`}
                   value={judged.value === null ? "-" : formatOdds(judged.value)}
                   note={
-                    judged.change === undefined
-                      ? undefined
-                      : formatOddsChange(judged.change, model.before)
+                    judged.change === undefined ? undefined : formatOddsChange(judged.change, range)
                   }
                   selected={showOdds}
                   onSelect={() => setPicked("odds")}

@@ -127,10 +127,13 @@ export function oddsModel(
 /** `62%`: odds are shown whole */
 export const formatOdds = (odds: number): string => `${Math.round(odds)}%`;
 
-/** `+3 vs the week before`, in points. rounded to nothing, it says so */
-export function formatOddsChange(change: number, before: string): string {
+/** the range before, said short: the odds tile's words share their row with gavel */
+const LAST: Record<Range, string> = { "1W": "last week", "1M": "last month", "1Y": "last year" };
+
+/** `+3 vs last week`, in points. rounded to nothing, it says so */
+export function formatOddsChange(change: number, range: Range): string {
   const n = Math.round(change);
-  return n === 0 ? `same as ${before}` : `${n > 0 ? "+" : ""}${n} vs ${before}`;
+  return n === 0 ? `same as ${LAST[range]}` : `${n > 0 ? "+" : ""}${n} vs ${LAST[range]}`;
 }
 
 export const ODDS_WORDS = {
