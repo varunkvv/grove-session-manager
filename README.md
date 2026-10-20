@@ -94,8 +94,9 @@ long task. Flip it from `⌘K` (**Run long work in the conversation** / **in the
 It is a default by instruction, not an enforcement: Claude still decides what counts as long.
 
 A turn that ends while a background subagent it started is still working is your turn: what it ended on (often a
-question) is under Needs you. The subagent keeps the Mac awake while its tool calls keep coming in. When it finishes,
-its result starts a short turn of its own, and that turn's end notifies however short it was.
+question) is under Needs you. The subagent keeps the Mac awake while its tool calls keep coming in, and once you have
+answered or dismissed that row the session is under Working while it does. When it finishes, its result starts a short
+turn of its own. The question stays under Needs you through that turn, and the turn's end notifies however short it was.
 
 ### Archiving and deleting a project
 
@@ -175,10 +176,15 @@ Once a session has a [recap](#recaps), the line under Your turn, Failed and Stop
 do. A Needs permission row keeps the tool: that is exact, and it is what you answer.
 
 Each state keeps one colour everywhere: orange for permission, the accent for your turn, red for failed and stopped,
-green for working and for watching. Working is a dot that pulses, watching a ring that does not. **Dismiss** takes a
-row out of Needs you. Opening the session in the editor does the same for Needs
-permission, Your turn and Failed, which come back on that session's next event. A Stopped row stays until it is
-dismissed, the session runs again, or a week has passed. A dismissed session is still listed, under the day it last
+green for working and for watching. Working is a dot that pulses, watching a ring that does not. A Needs permission,
+Your turn or Failed row stays until you answer it or **Dismiss** it. Answering is a prompt you send (in a chat window,
+the editor or the terminal), an answer to a card in a chat window, or approving or denying a permission anywhere.
+Opening the session, landing on it from a notification, or its chat window having the keyboard does not take it out.
+Nor does Claude starting a turn of its own: a background command or agent ending, a Monitor event, a cron or a `/loop`
+firing. Its row stays under Needs you with the working dot beside what it is at, and that turn's end takes its place.
+Closing the session's editor tab or terminal does not take it out either, and it does not age out. A dismissed row
+comes back on what that session needs next. A Stopped row stays until it is dismissed, the session runs again, or a
+week has passed. A dismissed session is still listed, under the day it last
 moved, and the panel goes on to the next row that needs you.
 
 A click on a project shows **its sessions**, all of them, in the same groups. A row has the title, the state, the
@@ -418,7 +424,8 @@ Nothing notifies about what the focused window already shows: on All sessions th
 sessions that project. What stopped while Grove was closed shows under Needs you and does not notify.
 
 A click opens the window on that session with its panel open: its row under Needs you in All sessions when it has
-one, else its row in its project's sessions. A session that is in neither, or in no project, opens in the editor. The
+one, else its row in its project's sessions. With grove chat on it opens the session's chat window, in front. A session
+that is in neither, or in no project, opens in the editor. Landing on a session does not take it out of Needs you. The
 dock badge carries the same count as the menu bar. **Notifications** in Settings switches them off.
 
 A notification plays a short chime of Grove's own. macOS decides whether it sounds: System Settings, Notifications,
@@ -437,9 +444,10 @@ schedules a new one each time.
   that turn's end, so the hold has no gap between the turn and the row
 - a subagent is not a task here: a turn that waits on one is still Working
 
-A session with a task that counts is **Watching** once its turn has ended and its row is dismissed or opened. Until
+A session with a task that counts is **Watching** once its turn has ended and its row is answered or dismissed. Until
 then its row is under Needs you like any finished turn, and its panel already lists the tasks. Each wake-up of a
-`/loop` and each Monitor event is a turn, so such a session comes back under Needs you every time one ends.
+`/loop` and each Monitor event is a turn of Claude's own: what was under Needs you stays there while it runs, and its
+end is what the row says next.
 
 The line of status under a task is the last line the command wrote, read from the file Claude Code keeps its output
 in (`/tmp/claude-<uid>/<project folder>/<session id>/tasks/<task id>.output`), every ten seconds. That path is
@@ -625,7 +633,8 @@ are dropped. Sessions that went away mid-turn while it was closed are Stopped ro
 without a notification. What you dismissed is in `reviewed.json`.
 
 Closing VS Code ends the sessions in its tabs. One that was between turns shows as `Closed`, and opening it resumes
-it. One that was mid-turn is Stopped.
+it. If what it ended on still needed you, its row stays under Needs you until you answer or dismiss it. One that was
+mid-turn is Stopped.
 
 A reboot stops everything, background sessions included. Sessions that were mid-turn come back as Stopped rows, and
 that marker is kept for a week. Grove never restarts an agent on its own.
