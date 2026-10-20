@@ -82,12 +82,18 @@ export async function saveScores(dir: string, rubric: Rubric, file: ScoreFile): 
   await writeFileAtomic(path.join(dir, scoresFileName(rubric)), JSON.stringify(file));
 }
 
-/** the files an older rubric or schema left behind */
+/**
+ * the files an older version of THIS rubric or schema left behind. another task's file, or one a
+ * newer grove wrote, is never this one's to delete
+ */
 export async function sweepOldScores(dir: string, rubric: Rubric): Promise<void> {
   const keep = scoresFileName(rubric);
+  const id = rubric.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // `<id>-v<version>`: a version has no dash, so `gavel-pro-v1` is not one of gavel's
+  const mine = new RegExp(`^scores\\.${id}-v[^-]*\\.v\\d+\\.json$`);
   try {
     for (const name of await readdir(dir)) {
-      if (/^scores\..+\.v\d+\.json$/.test(name) && name !== keep) {
+      if (mine.test(name) && name !== keep) {
         await unlink(path.join(dir, name)).catch(() => {});
       }
     }

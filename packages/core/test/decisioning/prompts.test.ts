@@ -173,9 +173,18 @@ describe("the score cache", () => {
     expect(other.scores).toEqual({});
     expect(other.files["/t/a.jsonl"]).toEqual(state);
 
+    // an older gavel goes. another task's file, and a newer schema of it, are not gavel's to delete
     writeFileSync(path.join(dir, "scores.gavel-v3.v1.json"), "{}");
+    writeFileSync(path.join(dir, "scores.routing-v1.v1.json"), "{}");
+    writeFileSync(path.join(dir, "scores.gavelish-v1.v1.json"), "{}");
+    writeFileSync(path.join(dir, "scores.gavel-pro-v1.v1.json"), "{}");
     await sweepOldScores(dir, GAVEL);
-    expect((await import("node:fs")).readdirSync(dir)).toEqual(["scores.gavel-v3.1.v1.json"]);
+    expect((await import("node:fs")).readdirSync(dir).sort()).toEqual([
+      "scores.gavel-pro-v1.v1.json",
+      "scores.gavel-v3.1.v1.json",
+      "scores.gavelish-v1.v1.json",
+      "scores.routing-v1.v1.json",
+    ]);
   });
 
   it("is nothing when it cannot be read", async () => {
