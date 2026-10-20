@@ -351,8 +351,6 @@ async function start(): Promise<void> {
     palette: () => settings.palette,
     attach: (id, contents) => chat.attach(id, contents),
     detach: (id, contents) => chat.detach(id, contents),
-    // looking at it in its own window is landing on it
-    focused: (id) => live.markSeen([id]),
     fixedSize: !!appEnv.customRoot,
     stateFile: path.join(electron.app.getPath("userData"), "chat-window-state.json"),
   });

@@ -15,8 +15,6 @@ export interface ChatWindowsOptions {
   /** a window took a session, or let it go: the host pushes to it, or stops */
   attach: (sessionId: string, contents: WebContents) => void;
   detach: (sessionId: string, contents: WebContents) => void;
-  /** a chat window came to the front: the person is looking at that session */
-  focused?: (sessionId: string) => void;
   /** a test root's window keeps the size it asks for, as the main window does */
   fixedSize?: boolean;
   /** where the size the person last gave a chat window is kept */
@@ -84,13 +82,8 @@ export class ChatWindows {
     this.bySession.set(sessionId, win);
     this.byContents.set(win.webContents.id, sessionId);
     this.o.attach(sessionId, win.webContents);
-    const contentsId = win.webContents.id;
-    win.on("focus", () => {
-      this.front(win);
-      // the session it shows now: /clear moves a window to a new one
-      const id = this.byContents.get(contentsId);
-      if (id) this.o.focused?.(id);
-    });
+    // looked at last, first in ⌘K's list. looking marks nothing seen: only a reply or a dismiss does
+    win.on("focus", () => this.front(win));
     this.front(win);
     // a spare's page is up and waiting: it asks which session it is for. a new one asks on load
     win.webContents.send("grove:chat:open", {});

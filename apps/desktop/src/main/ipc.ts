@@ -410,8 +410,8 @@ function buildHandlers(deps: Deps): Handlers {
         return { message: elsewhere };
       }
       if (runtime === "background") await releaseBackground(deps, row);
-      // landing on a session is looking at it. its chat window, if it had one, is not where it is
-      deps.live.markSeen([row.sessionId]);
+      // its chat window, if it had one, is not where it is. opening it is not a reply: it still
+      // needs the person until they answer it there or dismiss it
       deps.chatWindows.close(row.sessionId);
       const missing = {
         message: `${label} opened without landing: Grove is not set up there.`,
@@ -452,7 +452,6 @@ function buildHandlers(deps: Deps): Handlers {
             ? { agents: true as const }
             : undefined;
       deps.chatWindows.open(row.sessionId, pane);
-      deps.live.markSeen([row.sessionId]);
     },
 
     async sessionHost(key) {

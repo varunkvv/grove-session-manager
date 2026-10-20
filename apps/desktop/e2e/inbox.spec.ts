@@ -363,13 +363,14 @@ test("a double-click opens the row's session in the editor, once, wherever the p
   await page.waitForTimeout(500);
   expect(code()).toHaveLength(5);
 
-  // opening a session that waited on him is looking at it: its row leaves, and the panel moves on
-  const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
-  const was = order.indexOf((await row(page, "turn").getAttribute("id")) as string);
+  // opening a session that waited on him is not answering it: its row stays until he replies there
+  // or dismisses it, and the panel is on it
   await row(page, "turn").dblclick({ position: { x: 200, y: 12 } });
   await expect.poll(() => code().length).toBe(6);
-  await expect(row(page, "turn")).toHaveCount(0);
-  await expect(openRow(page)).toHaveAttribute("id", order[was + 1] as string);
+  await page.waitForTimeout(500);
+  await expect(row(page, "turn")).toHaveCount(1);
+  await expect(rows(page)).toHaveCount(4);
+  await expect(panel(page)).toHaveAttribute("data-id", SID.turn);
 });
 
 test("the panel's own buttons: Dismiss hands it to the row that took the place, and the last row closes it", async () => {
