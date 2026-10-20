@@ -14,17 +14,20 @@ New:
   reduced motion
 - picking the tile draws the odds of each day, your projects ranked by them, and your best and worst three sessions
   with a line of how each one went
-- switching it on downloads the model once, about 800 MB, with its progress in Settings. Delete takes it off the
+- switching it on downloads the model once, about 2.7 GB, with its progress in Settings. Delete takes it off the
   disk at once. switching it off stops the judging and hides the tile. the model stays until you delete it
 
 Keep in mind:
 
 - nothing leaves the Mac. the one request is the model's download, a fixed file pinned to one version and checked
   against its hash. Grove keeps a score per prompt, never what you typed
-- it needs macOS 14 or later. the model runs in a process of its own, and the backlog of older prompts is judged only
-  on AC power: a few minutes on a recent Mac, closer to an hour on an M1. new prompts are judged as they land
-- the model is a first pick, and it reads tone roughly: one prompt's verdict can be off. a day or a session is where
-  the number means something. a better model can replace it in a later version, and that judges your prompts again
+- it needs macOS 14 or later and a Mac with 16 GB of memory or more. below that the switch stays off and Settings
+  says why. the model runs in a process of its own and holds about 3.5 GB while it judges
+- new prompts are judged as they land. the backlog of older ones is judged only on AC power: about 40 minutes for
+  1,700 prompts on an M4 Max, longer on an older Mac
+- it reads tone well enough to order your sessions and days, but one prompt's verdict can be off. a day or a session
+  is where the number means something. a better model can replace it in a later version, and that judges your
+  prompts again
 - with the switch off nothing downloads, nothing runs, and the Usage screen is as it was
 
 ## 0.22

@@ -382,17 +382,21 @@ each day (each week on 1Y), your projects ranked by their sessions' odds, and yo
 a line of how each went. A session needs three judged prompts to be ranked. A prompt under four words, a slash command,
 one a program sent (`claude -p`, a scheduled wake-up) and one typed in a temp folder are not judged.
 
-Switching it on downloads the model once: OneJev 1.6 0.8B at Q8_0, 812 MB, from Hugging Face, pinned to one revision
-and kept only if it hashes to the pinned sha256. A download that stops carries on where it stopped. Settings shows its
+Switching it on downloads the model once: OneJev 1.6 4B at Q4_K_M, about 2.7 GB, from Hugging Face, pinned to one
+revision and kept only if it hashes to the pinned sha256. A download that stops carries on where it stopped. Settings shows its
 progress and a **Delete** that acts at once, outside Save. Switched off, nothing is downloaded or judged and the tile
 is gone. The model stays on disk until you delete it. It runs in a process of its own (llama.cpp through
 node-llama-cpp, on the GPU), started when there is something to judge and stopped two minutes after. New prompts are
-judged as they land. The backlog of older ones waits for AC power, and for the first usage count to finish. It needs
-macOS 14 or later.
+judged as they land, about a second and a half each on an M4 Max, with about 3.5 GB in memory while it judges. The
+backlog of older ones waits for AC power, and for the first usage count to finish: about 40 minutes for 1,700 prompts
+on an M4 Max, longer on an older Mac. It needs macOS 14 or later and a Mac with 16 GB of memory or more. Below that the
+switch stays off, and Settings says why.
 
-The model is a placeholder that reads tone roughly. On a benchmark against Claude's own labels of real prompts it did
-not clear the bar the next version aims for, so one prompt's verdict can be wrong, and a day or a session is where the
-number means anything. A model change judges every prompt again.
+The model was picked on 1,677 real prompts labelled by Claude and checked by their author, with a calibration and the
+"borderline goes harsher" rule fit there and checked on sessions it was not fit on: the order of sessions by their odds
+agrees with the labels at a Spearman of 0.76, a session's odds land a median 2.8 points from the labels' own, and a
+plain prompt is read as an offence 0.08% of the time. One prompt's verdict can still be off: a day or a session is
+where the number means something. A model change judges every prompt again.
 
 ## Notifications
 
@@ -551,7 +555,7 @@ edited. The workspace file and the references are written when the project is op
 ~/Library/Sounds/
   Grove.wav         the notification chime, about 40KB. written at launch, and again whenever it differs from Grove's own
 ~/Library/Application Support/Grove/models/
-                    judgment day odds' model, 812 MB, once you switch it on. a dev build shares it. Delete removes it
+                    judgment day odds' model, 2.7 GB, once you switch it on. a dev build shares it. Delete removes it
 ```
 
 What you dismissed is a decision, not a cache, so it sits beside `combos.json` and not in `.grove/`. Entries the app

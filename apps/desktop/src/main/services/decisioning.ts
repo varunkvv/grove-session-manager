@@ -93,10 +93,12 @@ export function unsupportedWhy(o: {
   systemVersion: string;
   totalMemory: number;
   model: Pick<ModelEntry, "minMemoryGB">;
+  /** the real model loads. a test root's keyword stub needs no memory to speak of */
+  loads: boolean;
 }): string | undefined {
   if (!macosSupported(o.platform, o.systemVersion)) return "Needs macOS 14 or later.";
-  // GiB, as a mac's memory is sold: an 8 GB mac reports 8 x 1024^3
-  if (o.totalMemory < o.model.minMemoryGB * 1024 ** 3) {
+  // GiB, as a mac's memory is sold: a 16 GB mac reports 16 x 1024^3
+  if (o.loads && o.totalMemory < o.model.minMemoryGB * 1024 ** 3) {
     return `Needs a Mac with ${o.model.minMemoryGB} GB of memory or more.`;
   }
   return undefined;
@@ -130,10 +132,11 @@ export function decisioningSetup(o: {
   | "unsupported"
   | "ignore"
 > {
-  const why = unsupportedWhy({ ...o, model: o.model });
   const test = o.customRoot;
   const size = Number(o.env.GROVE_MODEL_SIZE);
   const stand = test && o.env.GROVE_MODEL_SHA256 && size > 0;
+  const mode = test && o.env.GROVE_SCORER !== "llama" ? "stub" : "llama";
+  const why = unsupportedWhy({ ...o, model: o.model, loads: mode === "llama" });
   return {
     stateDir: path.join(o.stateDir, "decisioning"),
     // appData, not userData: a dev build shares the one download with the installed app
@@ -143,7 +146,7 @@ export function decisioningSetup(o: {
     ...((test ? o.env.GROVE_MODEL_URL : o.url)
       ? { url: test ? o.env.GROVE_MODEL_URL : o.url }
       : {}),
-    mode: test && o.env.GROVE_SCORER !== "llama" ? "stub" : "llama",
+    mode,
     supported: why === undefined,
     ...(why ? { unsupported: why } : {}),
     ...(test ? { ignore: () => false } : {}),

@@ -501,6 +501,22 @@ describe("decisioning", () => {
     const old = decisioningSetup({ ...base, env: {}, customRoot: false, systemVersion: "13.6" });
     expect(old.unsupported).toBe("Needs macOS 14 or later.");
     expect(real.supported).toBe(true);
+    // the model asks for 16 GB: an 8 GB mac cannot switch it on, and is told why
+    const eight = decisioningSetup({
+      ...base,
+      env: {},
+      customRoot: false,
+      totalMemory: 8 * 1024 ** 3,
+    });
+    expect([eight.supported, eight.unsupported]).toEqual([
+      false,
+      "Needs a Mac with 16 GB of memory or more.",
+    ]);
+    // a test root's stub loads no model: an 8 GB CI runner still runs the e2e
+    expect(
+      decisioningSetup({ ...base, env: {}, customRoot: true, totalMemory: 8 * 1024 ** 3 })
+        .supported,
+    ).toBe(true);
   });
 
   it("says when the scorer will not run, and does not try again for a minute", async () => {
