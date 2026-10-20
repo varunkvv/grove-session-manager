@@ -33,6 +33,11 @@ export interface Settings {
   chat?: boolean;
   /** with grove chat on, the key that brings grove forward from anywhere. "none" is none */
   summonKey?: string;
+  /**
+   * decisioning (beta): a local model judges the person's own prompts, on this mac only, for the
+   * Usage screen's judgment day odds. off unless true
+   */
+  decisioning?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -70,6 +75,7 @@ function clean(raw: unknown): Settings {
     "renameSessions",
     "keepAwake",
     "chat",
+    "decisioning",
   ] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
   }
