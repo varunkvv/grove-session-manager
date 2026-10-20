@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
-import { makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
+import { hookEvent, makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
 import { groveTest, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { liveSession, writeProject } from "./helpers/project.ts";
 
@@ -1421,12 +1421,30 @@ test("what claude says along the way shows: a command's output, a tool it turned
   ).not.toHaveAttribute("data-runtime", "grove");
 });
 
-test("a notification click lands in the session's chat window", async () => {
+test("a notification click lands in the session's chat window, in front, and it still needs him", async () => {
   const s = seed(true);
+  hookEvent(s.fx, SID, "Stop", { last_assistant_message: "Ship it, or wait for review?" });
   const { app: electron } = await launch(s);
-  await groveTest(electron).reveal(SID);
+  const g = groveTest(electron);
+  await expect.poll(() => g.trayTitle(), { timeout: 15_000 }).toBe("1");
+  await g.reveal(SID);
   const chat = await chatWindow(electron, SID);
   await expect(chat.locator("h1")).toHaveText(TITLE);
+  // which window has the keyboard, as electron has it: a page's own hasFocus() is emulated here
+  const front = () =>
+    electron.evaluate(({ BrowserWindow }) => {
+      const url = BrowserWindow.getFocusedWindow()?.webContents.getURL();
+      return url === undefined ? "none" : url.includes("#/chat") ? "chat" : "main";
+    });
+  await expect.poll(front).toBe("chat");
+  // macOS reopening grove for the same click: the chat window stays in front of the main one
+  await electron.evaluate(({ app: a }) => {
+    a.emit("activate", {}, true);
+  });
+  await chat.waitForTimeout(300);
+  expect(await front()).toBe("chat");
+  // landing on it, and its window's focus, are not a reply
+  expect(await g.trayTitle()).toBe("1");
   expect(readExecLog(s.fx)).toEqual([]);
 });
 

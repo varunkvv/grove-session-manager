@@ -70,6 +70,10 @@ registerAppScheme();
 electron.app.enableSandbox();
 
 let win: BrowserWindow | null = null;
+/** the chat window a notification or tray click just opened, and when */
+let landed: { sessionId: string; at: number } | null = null;
+/** how long after a landing an `activate` is taken to be the same click's */
+const LANDED_MS = 2000;
 // a tray with no reference is collected and disappears
 let tray: Tray | null = null;
 let quitting = false;
@@ -212,11 +216,14 @@ async function start(): Promise<void> {
   });
   /**
    * a click on a notification about a session: its row, with its panel open. a session in no
-   * project has no screen in grove, so it opens in the editor
+   * project has no screen in grove, so it opens in the editor. landing marks nothing seen
    */
   const landOn = (sessionId: string) => {
     // grove chat: the session's own window, which is where it is talked to
-    if (settings.chat === true && sessions.byId(sessionId)[0]) return chatWindows.open(sessionId);
+    if (settings.chat === true && sessions.byId(sessionId)[0]) {
+      landed = { sessionId, at: Date.now() };
+      return chatWindows.open(sessionId);
+    }
     const target = projects.landing(sessionId);
     if (target) return void reveals.land(target);
     const session = sessions.byId(sessionId)[0];
@@ -738,7 +745,17 @@ async function start(): Promise<void> {
   electron.app.on("web-contents-created", (_event, contents) => {
     lockDown(contents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
   });
-  electron.app.on("activate", showMain);
+  // the dock icon, and macOS reopening grove. a notification click can do that too, right after it
+  // opened the session's chat window: that window stays in front, not the main one over it
+  electron.app.on("activate", () => {
+    const l = landed;
+    landed = null;
+    if (l && Date.now() - l.at < LANDED_MS && chatWindows.has(l.sessionId)) {
+      chatWindows.open(l.sessionId);
+      return;
+    }
+    showMain();
+  });
   // only while quitting now: the close button hides the window
   electron.app.on("window-all-closed", () => electron.app.quit());
   electron.app.on("before-quit", (e) => {
