@@ -41,6 +41,11 @@ Fixed since 0.23.41:
 - a permission prompt from a background agent after the turn ended goes back to that turn's end once you answer it,
   with no second notification
 
+Fixed since 0.23.42:
+
+- an MCP server's form or sign-in page in a chat window, and a paused session's dialog, are in needs you and notify
+  like a permission prompt. before, only the chat window showed them
+
 ## 0.22
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.22 makes what you said easy to tell from
