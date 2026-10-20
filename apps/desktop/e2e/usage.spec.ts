@@ -1,7 +1,22 @@
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  DEFAULT_MODEL,
+  GAVEL,
+  ledgerSeries,
+  moodOf,
+  promptPoints,
+  readAnswer,
+  stubScore,
+} from "@grove/core";
 import { expect, type Page, test } from "@playwright/test";
-import { type Fixture, makeFixture, makePlainDir, writeUsage } from "./helpers/fixture.ts";
+import {
+  type Fixture,
+  makeFixture,
+  makePlainDir,
+  writeFakeModel,
+  writeUsage,
+} from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 
@@ -222,4 +237,104 @@ test("a deleted transcript's numbers are still there after a rescan, and after a
   await range(page, "1M");
   await expect(tile(page, "cost")).toHaveText("$71", { timeout: 20_000 });
   expect(await rows(page, "by-project")).toEqual(["billing", "auth-sso"]);
+});
+
+// ---------- judgment day odds. made-up prompts, judged by the keyword stub: never a real model
+
+const KIND = [
+  "thanks - that fixed the login redirect",
+  "good catch on the timezone bug, could you add a test",
+  "nice - now wire it to the settings screen",
+];
+const HARSH = [
+  "you broke the csv export again",
+  "i already told you - draft PRs only",
+  "this export is garbage, redo it",
+];
+/** what the app should arrive at: the same stub, the same ledger */
+const odds = (prompts: string[]) =>
+  ledgerSeries(
+    GAVEL.ledger,
+    prompts.map((t) =>
+      promptPoints(GAVEL.ledger, readAnswer(GAVEL, stubScore(GAVEL, t), DEFAULT_MODEL)),
+    ),
+  );
+
+/** two sessions today: a kind one in auth-sso at nine, a harsh one in billing at ten */
+function judged(o: { on?: boolean; model?: boolean } = {}): {
+  fx: Fixture;
+  env: Record<string, string>;
+} {
+  fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ decisioning: o.on ?? true }));
+  const auth = writeProject(fx, { name: "auth-sso" });
+  const billing = writeProject(fx, { name: "billing" });
+  writeUsage(fx, {
+    cwd: auth.root,
+    sessionId: AUTH,
+    title: "idp config",
+    days: [{ back: 0, hour: 9, output: M, minutes: 30, prompts: KIND }],
+  });
+  writeUsage(fx, {
+    cwd: billing.root,
+    sessionId: BILLING,
+    title: "csv columns",
+    days: [{ back: 0, hour: 10, output: M, minutes: 20, prompts: HARSH }],
+  });
+  return { fx, env: o.model === false ? {} : writeFakeModel(fx) };
+}
+
+test("judgment day odds: a fourth tile with gavel, its line, projects ranked and the best and worst sessions", async () => {
+  const { fx: f, env } = judged();
+  app = await launchApp(f, env);
+  const { page } = app;
+  await page.getByTestId("nav-usage").click();
+  const day = odds([...KIND, ...HARSH]).at(-1) ?? 50;
+  const harsh = odds(HARSH).at(-1) ?? 50;
+  await expect(tile(page, "odds")).toHaveText(`${Math.round(day)}%`, { timeout: 30_000 });
+  await expect(page.getByTestId("odds-judging")).toHaveCount(0);
+  // the robot shows the session judged last: the harsh one
+  await expect(page.getByTestId("gavel")).toHaveAttribute("data-shown", moodOf(harsh));
+  expect(moodOf(harsh)).toBe("furious");
+  // the usage tiles are as they were
+  await expect(tile(page, "cost")).toHaveText("$40");
+  await expect(page.getByTestId("tile-cost")).toHaveAttribute("aria-checked", "true");
+
+  await page.getByTestId("tile-odds").click();
+  await expect(page.getByTestId("tile-odds")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("usage-chart")).toHaveCount(0);
+  await expect(page.getByTestId("odds-chart")).toBeVisible();
+  await expect(page.getByTestId("odds-slot").last()).toHaveAttribute(
+    "data-odds",
+    String(Math.round(day)),
+  );
+  expect(await rows(page, "by-project")).toEqual(["auth-sso", "billing"]);
+  await expect(page.getByTestId("odds-best").getByTestId("odds-session")).toHaveText([
+    new RegExp(`idp config\\s*${Math.round(odds(KIND).at(-1) ?? 0)}%`),
+  ]);
+  await expect(page.getByTestId("odds-worst").getByTestId("odds-session")).toHaveText([
+    new RegExp(`csv columns\\s*${Math.round(harsh)}%`),
+  ]);
+  await expect(page.getByTestId("sparkline")).toHaveCount(2);
+
+  // a point says its day when the keyboard is on it
+  await page.getByTestId("odds-plot").focus();
+  await expect(page.getByTestId("odds-tip")).toContainText(`${Math.round(day)}%`);
+  await expect(page.getByTestId("odds-tip")).toContainText("6 prompts judged");
+
+  // nothing of what was typed is kept
+  const kept = readFileSync(path.join(f.root, ".grove", "scores.gavel-v3.1.v1.json"), "utf8");
+  for (const said of [...KIND, ...HARSH]) expect(kept).not.toContain(said.slice(0, 12));
+});
+
+test("judgment day odds are not there with decisioning off, or before its model is ready", async () => {
+  for (const o of [{ on: false }, { model: false }]) {
+    const { fx: f, env } = judged(o);
+    app = await launchApp(f, env);
+    await app.page.getByTestId("nav-usage").click();
+    await expect(tile(app.page, "cost")).toHaveText("$40", { timeout: 20_000 });
+    await expect(app.page.getByTestId("tile-odds")).toHaveCount(0);
+    await expect(app.page.getByTestId("gavel")).toHaveCount(0);
+    await app.close();
+  }
 });
