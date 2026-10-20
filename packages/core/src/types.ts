@@ -276,7 +276,13 @@ export interface LiveStatus {
    * ended, or the main thread's own ask. one level, never nested
    */
   resume?: LiveStatus;
-  /** someone already looked. a new event clears it. */
+  /**
+   * what needed the person when claude started a turn of its own (a background task's end, a
+   * Monitor's event, a cron or a /loop firing): still theirs to answer, so the session stays in
+   * needs-you while it works. only on a running status, never nested. their reply or a dismiss ends it
+   */
+  kept?: LiveStatus;
+  /** the person replied or dismissed it. a new event clears it. */
   seen?: boolean;
   /** grove ended this process itself (a quit, the reaper): its SessionEnd is not the session ending */
   letGo?: true;

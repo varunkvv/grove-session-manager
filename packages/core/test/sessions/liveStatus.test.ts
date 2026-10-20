@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   drainStatusEvents,
   EVENT_MAX_BYTES,
+  firedBy,
   lastParagraph,
   liveTasks,
   needsYou,
@@ -24,6 +25,7 @@ import {
   watchStatusHooks,
   withStatusHooks,
 } from "../../src/sessions/liveStatus.ts";
+import { needing } from "../../src/sessions/needsYou.ts";
 import type { LiveStatus, SessionTasks } from "../../src/types.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
@@ -197,13 +199,15 @@ describe("session status from hook events", () => {
       state: "failed",
       detail: "overloaded",
     });
+    // a turn's end nobody answered outlives its session: see "needs-you leaves only on a reply"
     expect(
       run([
-        { event: "Stop", at: 1 },
+        { event: "UserPromptSubmit", at: 1 },
         { event: "SessionEnd", at: 2 },
       ]).s,
     ).toBeUndefined();
     const seen: LiveStatus = { state: "waiting", at: 1, lastEventAt: 1, seen: true };
+    expect(reduceStatus(seen, { sessionId: SID, event: "SessionEnd", at: 2 })).toBeUndefined();
     expect(needsYou(seen)).toBe(false);
     expect(needsYou(reduceStatus(seen, { sessionId: SID, event: "Stop", at: 5 }))).toBe(true);
     expect(needsYou({ state: "running", at: 1, lastEventAt: 1 })).toBe(false);
@@ -682,7 +686,8 @@ describe("an ask while a background agent works", () => {
       // the agent's <task-notification>
       "UserPromptSubmit main -> running",
       "Stop main -> waiting",
-      "SessionEnd main -> undefined",
+      // nobody answered it: it outlives the session
+      "SessionEnd main -> waiting",
     ]);
     const asked = steps[8]?.s;
     expect(asked).toMatchObject({
@@ -693,6 +698,9 @@ describe("an ask while a background agent works", () => {
     // the agent's events keep it fresh and change nothing else
     expect(steps[13]?.s).toEqual({ ...asked, lastEventAt: steps[13]?.ev.at });
     expect(steps[14]?.s).toMatchObject({ state: "running", woke: true });
+    // claude's own turn: the question he has not answered is still his
+    expect(steps[14]?.s?.kept).toEqual(steps[13]?.s);
+    expect(needsYou(steps[14]?.s)).toBe(true);
     // three seconds long, and told all the same
     const result = steps[15]?.s;
     expect(result).toMatchObject({ state: "waiting", woke: true, turnMs: 2_990 });
@@ -717,7 +725,7 @@ describe("an ask while a background agent works", () => {
       "SubagentStop agent -> waiting",
       "UserPromptSubmit main -> running",
       "Stop main -> waiting",
-      "SessionEnd main -> undefined",
+      "SessionEnd main -> waiting",
     ]);
     const ended = steps[5]?.s as LiveStatus;
     expect(ended).toMatchObject({ agentsLeft: 1 });
@@ -728,6 +736,9 @@ describe("an ask while a background agent works", () => {
     const read = replay(events.slice(6, 8), { ...ended, seen: true });
     expect(read[1]?.s).toEqual({ ...ended, seen: true, lastEventAt: read[1]?.ev.at });
     expect(steps[12]?.s).toMatchObject({ state: "waiting", woke: true });
+    // the wake-up kept the turn's end until its own Stop stood in its place
+    expect(steps[11]?.s?.kept).toEqual(steps[10]?.s);
+    expect(steps[12]?.s?.kept).toBeUndefined();
   });
 
   it("a background command or agent ending starts a wake-up. a Monitor's event, a /loop and he do not", () => {
@@ -986,5 +997,132 @@ describe("what a session left running", () => {
     expect(liveTasks(t, 5_000 + TASK_MIN_MS - 1).map((x) => x.id)).toEqual(["73e8c792"]);
     expect(liveTasks(t, 5_000 + TASK_MIN_MS).map((x) => x.id)).toEqual(["bjtknaehh", "73e8c792"]);
     expect(liveTasks(undefined, 5_000)).toEqual([]);
+  });
+});
+
+/** a UserPromptSubmit as claude 2.1.296 sends it: no `source` (probed 2026-10-20) */
+const submit = (prompt: string, at: number, extra: Record<string, unknown> = {}) =>
+  parseStatusEvent(
+    { session_id: SID, hook_event_name: "UserPromptSubmit", prompt, prompt_id: "p", ...extra },
+    at,
+  ) as StatusEvent;
+
+const BG_DONE =
+  '<task-notification>\n<task-id>bpkrrp69r</task-id>\n<tool-use-id>toolu_01</tool-use-id>\n<status>completed</status>\n<summary>Background command "sleep 8" completed (exit code 0)</summary>\n</task-notification>';
+const MONITOR =
+  '<task-notification>\n<task-id>bjl4z7mrj</task-id>\n<summary>Monitor event: "tick watch"</summary>\n<event>tick-one</event>\n</task-notification>';
+
+describe("needs-you leaves only on a reply", () => {
+  const ended: LiveStatus = {
+    state: "waiting",
+    at: 10,
+    lastEventAt: 10,
+    detail: "Should I keep going?",
+    question: "Should I keep going?",
+  };
+  const on = (
+    prev: LiveStatus | undefined,
+    ev: Partial<StatusEvent> & { event: string; at: number },
+  ) => reduceStatus(prev, { sessionId: SID, ...ev });
+
+  it("a turn claude starts itself runs, and keeps what needed him", () => {
+    for (const ev of [submit(BG_DONE, 20), submit(MONITOR, 20)]) {
+      expect(ev.own).toBe(true);
+      const s = reduceStatus(ended, ev);
+      expect(s).toMatchObject({ state: "running", kept: ended });
+      expect(needing(s)).toEqual(ended);
+    }
+    // a tool call after the turn ended, with no prompt: claude woke itself
+    expect(on(ended, { event: "PostToolUse", at: 20, toolName: "Bash" })).toMatchObject({
+      state: "running",
+      kept: ended,
+    });
+    // a failed turn is kept the same way
+    const failed: LiveStatus = { state: "failed", at: 10, lastEventAt: 10, detail: "overloaded" };
+    expect(reduceStatus(failed, submit(MONITOR, 20))?.kept).toEqual(failed);
+  });
+
+  it("his prompt answers it. claude's own turn's end stands in its place", () => {
+    const woke = reduceStatus(ended, submit(BG_DONE, 20));
+    // the turn's tools and asks' ends carry it
+    const working = on(woke, { event: "PostToolUse", at: 21, toolName: "Read" });
+    expect(working?.kept).toEqual(ended);
+    // his prompt: no
+    expect(reduceStatus(working, submit("yes go ahead", 22))?.kept).toBeUndefined();
+    expect(needsYou(reduceStatus(working, submit("yes go ahead", 22)))).toBe(false);
+    // the wake-up's own end, a fresh one
+    const next = on(working, { event: "Stop", at: 30, message: "done: 3 PRs open" });
+    expect(next).toMatchObject({ state: "waiting", at: 30, woke: true });
+    expect(next?.kept).toBeUndefined();
+    // a main-thread ask during it: new, and his answer to it is a reply
+    const asked = on(working, { event: "PermissionRequest", at: 23, toolName: "Bash" });
+    expect(asked?.kept).toBeUndefined();
+    expect(needsYou(on(asked, { event: "PostToolUse", at: 24, toolName: "Bash" }))).toBe(false);
+  });
+
+  it("the hook's source, when claude sends one, decides. one it does not know is his", () => {
+    const own = ["system", "loop_wakeup", "schedule_wakeup", "poll_event"];
+    for (const source of own) expect(submit("check the build", 1, { source }).own).toBe(true);
+    for (const source of ["user", "sdk", "something-new"]) {
+      expect(submit(BG_DONE, 1, { source }).own).toBeUndefined();
+    }
+    expect(submit("check the build", 1).own).toBeUndefined();
+    // a payload cut at the byte cap keeps it
+    expect(
+      parseTruncatedEvent(
+        `{"session_id":"${SID}","hook_event_name":"UserPromptSubmit","source":"system","prompt":"aaaa`,
+      ).source,
+    ).toBe("system");
+  });
+
+  it("a cron or a /loop firing is its schedule's prompt, as its last Stop listed it", () => {
+    const tasks = (description: string): SessionTasks => ({
+      at: 1,
+      tasks: [{ id: "c1", kind: "schedule", description, since: 1 }],
+    });
+    // CronCreate and /loop 1m with a prompt fire it as written
+    expect(firedBy(tasks("say: cron fired"), "say: cron fired")).toBe(true);
+    // a dynamic /loop schedules and fires its own command
+    const loop = "/loop check whether the file exists and say yes or no";
+    expect(firedBy(tasks(loop), loop)).toBe(true);
+    // a /loop with no prompt: claude's autonomous check, first and every tick after
+    for (const marker of ["<<autonomous-loop>>", "<<autonomous-loop-dynamic>>"]) {
+      expect(firedBy(tasks(marker), "# Autonomous loop check\n\nYou're being invoked")).toBe(true);
+      expect(firedBy(tasks(marker), "# Autonomous loop tick\n\nRun the autonomous check")).toBe(
+        true,
+      );
+    }
+    expect(firedBy(tasks("say: cron fired"), "say: cron fired please")).toBe(false);
+    expect(firedBy(tasks("<<autonomous-loop>>"), "check the build")).toBe(false);
+    expect(firedBy(undefined, "say: cron fired")).toBe(false);
+    const command: SessionTasks = {
+      at: 1,
+      tasks: [{ id: "b1", kind: "command", description: "say: cron fired", since: 1 }],
+    };
+    expect(firedBy(command, "say: cron fired")).toBe(false);
+  });
+
+  it("an agent asking on claude's own turn, and going, gives back what was kept", () => {
+    const woke = reduceStatus(ended, submit(BG_DONE, 20));
+    const asked = on(woke, { event: "PermissionRequest", at: 21, toolName: "Bash", agentId: "a1" });
+    expect(asked).toMatchObject({ state: "permission", agentId: "a1" });
+    expect(asked?.resume).toEqual(woke);
+    for (const end of [
+      { event: "SubagentStop", at: 22, agentId: "a1" },
+      { event: "PostToolUse", at: 22, agentId: "a1" },
+    ]) {
+      expect(on(asked, end)).toMatchObject({ state: "running", kept: ended });
+    }
+  });
+
+  it("the end of a session keeps what needs him, and only that", () => {
+    const end = (prev: LiveStatus) => on(prev, { event: "SessionEnd", at: 50 });
+    expect(end(ended)).toEqual(ended);
+    // mid-way through claude's own turn: what it kept
+    expect(end(reduceStatus(ended, submit(BG_DONE, 20)) as LiveStatus)).toEqual(ended);
+    const ask: LiveStatus = { state: "permission", at: 10, lastEventAt: 10, detail: "Bash" };
+    expect(end(ask)).toEqual(ask);
+    expect(end({ ...ended, seen: true })).toBeUndefined();
+    expect(end({ state: "running", at: 10, lastEventAt: 10 })).toBeUndefined();
   });
 });

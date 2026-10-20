@@ -16,6 +16,7 @@ import type {
   SessionTasks,
   Warning,
 } from "../types.ts";
+import { needing } from "./needsYou.ts";
 import { toolTarget } from "./timeline.ts";
 
 export { needsYou } from "./needsYou.ts";
@@ -326,6 +327,13 @@ export interface StatusEvent {
   tasks?: Array<Omit<SessionTask, "since">>;
   /** the background command whose end started this turn */
   endedTask?: string;
+  /**
+   * claude started this turn itself, the person did not: a background task's end, a Monitor's
+   * event, a cron or a /loop firing. see ownTurn
+   */
+  own?: true;
+  /** what a UserPromptSubmit says was submitted. a cron's fire is its prompt as written (firedBy) */
+  prompt?: string;
   /** the folder the session's transcript is in */
   slug?: string;
 }
@@ -348,6 +356,7 @@ export function parseTruncatedEvent(text: string): Record<string, unknown> {
   for (const key of [
     "session_id",
     "hook_event_name",
+    "source",
     "tool_name",
     "notification_type",
     "agent_id",
@@ -418,9 +427,47 @@ export function parseStatusEvent(payload: unknown, at: number): StatusEvent | nu
     const ended = /<task-id>([^<]+)<\/task-id>/.exec(prompt)?.[1];
     if (ended) ev.endedTask = ended;
   }
+  if (prompt) ev.prompt = prompt;
+  if (event === "UserPromptSubmit" && ownTurn(str(payload.source), prompt)) ev.own = true;
   const transcript = str(payload.transcript_path);
   if (transcript) ev.slug = path.basename(path.dirname(transcript));
   return ev;
+}
+
+/**
+ * who started a turn, by what its UserPromptSubmit says. the hook's `source` names it once claude
+ * sends one (2.1.296 does not): `user` (the terminal) and `sdk` (grove chat, the editor) are the
+ * person, the rest is claude's own. with none, a background task's end and a Monitor's event come
+ * as a `<task-notification>`. a cron or a /loop firing is told by firedBy. anything else is the person
+ */
+const OWN_SOURCES: ReadonlySet<string> = new Set([
+  "system",
+  "loop_wakeup",
+  "schedule_wakeup",
+  "poll_event",
+]);
+
+function ownTurn(source: string | undefined, prompt: string | undefined): boolean {
+  if (source) return OWN_SOURCES.has(source);
+  return !!prompt?.startsWith("<task-notification>");
+}
+
+/** what a /loop with no prompt of its own schedules: a marker, not words */
+const LOOP_MARK = /^<<autonomous-loop(-dynamic)?>>$/;
+
+/**
+ * the prompt is one of the session's schedules firing: a cron fires its prompt as written, and a
+ * /loop wake-up with no prompt of its own fires claude's autonomous loop check. `tasks` is what
+ * its last Stop left running
+ */
+export function firedBy(tasks: SessionTasks | undefined, prompt: string | undefined): boolean {
+  if (!tasks || !prompt) return false;
+  return tasks.tasks.some(
+    (t) =>
+      t.kind === "schedule" &&
+      (t.description === prompt ||
+        (LOOP_MARK.test(t.description) && prompt.startsWith("# Autonomous loop"))),
+  );
 }
 
 /**
@@ -472,6 +519,27 @@ function next(
   if (turnStart !== undefined) out.turnStart = turnStart;
   // a wake-up stays one through its turn's asks and tools, to the Stop
   if (prev?.woke) out.woke = true;
+  // what needed the person stays through claude's own turn. a new ask, a failure or the turn's
+  // end is a fresh one that needs them, and stands in its place
+  if (prev?.kept && state === "running") out.kept = prev.kept;
+  return out;
+}
+
+/**
+ * claude starts a turn of its own: it runs, and what needed the person before still does. one
+ * level: a kept one is the status as it was, without what it kept or resumes
+ */
+function ownRun(
+  prev: LiveStatus | undefined,
+  ev: Pick<StatusEvent, "at">,
+  extra: Partial<LiveStatus> = {},
+): LiveStatus {
+  const needs = needing(prev);
+  const out = next(undefined, ev, "running", extra);
+  if (needs) {
+    const { kept: _, resume: __, letGo: ___, ...was } = needs;
+    out.kept = was;
+  }
   return out;
 }
 
@@ -485,7 +553,12 @@ function ask(
   ev: StatusEvent,
   extra: Partial<LiveStatus>,
 ): LiveStatus {
-  const kept = ev.agentId && prev && prev.state !== "running" ? (prev.resume ?? prev) : undefined;
+  // a running turn is kept too while it keeps what needed the person: else an agent asking on a
+  // turn claude started itself, and then going, would lose that
+  const kept =
+    ev.agentId && prev && (prev.state !== "running" || prev.kept)
+      ? (prev.resume ?? prev)
+      : undefined;
   return next(prev, ev, "permission", {
     ...extra,
     // a subagent asking: the notification can land on it, not only on its session
@@ -511,13 +584,13 @@ export function reduceStatus(
   // heartbeats from a background agent keep a running session fresh, and nothing else
   const touched = prev ? { ...prev, lastEventAt: Math.max(prev.lastEventAt, ev.at) } : prev;
   switch (ev.event) {
-    case "UserPromptSubmit":
+    case "UserPromptSubmit": {
       // a background command or agent that ended wakes the session. what that turn ends on is the
       // result of work the person handed off
-      return next(undefined, ev, "running", {
-        turnStart: ev.at,
-        ...(ev.endedTask ? { woke: true } : {}),
-      });
+      const extra = { turnStart: ev.at, ...(ev.endedTask ? { woke: true as const } : {}) };
+      // the person's prompt answers what needed them. claude's own turn does not
+      return ev.own ? ownRun(prev, ev, extra) : next(undefined, ev, "running", extra);
+    }
     case "PermissionRequest":
       return ask(prev, ev, {
         ...(ev.toolName ? { detail: ev.toolName } : {}),
@@ -531,9 +604,8 @@ export function reduceStatus(
       }
       if (ev.agentId) return touched;
       // after a turn ended, a tool call means a new turn started without a prompt - a background
-      // task finishing wakes the conversation up on its own
-      if (prev?.state === "waiting" || prev?.state === "failed")
-        return next(undefined, ev, "running");
+      // task finishing wakes the conversation up on its own. claude's turn, not the person's reply
+      if (prev?.state === "waiting" || prev?.state === "failed") return ownRun(prev, ev);
       return next(prev, ev, "running");
     case "Notification":
       if (
@@ -563,8 +635,14 @@ export function reduceStatus(
     }
     case "StopFailure":
       return next(undefined, ev, "failed", ev.message ? { detail: ev.message } : {});
-    case "SessionEnd":
-      return undefined;
+    case "SessionEnd": {
+      // the editor tab or the terminal closed, /exit, a crash: what needed the person still does,
+      // until they dismiss it. anything else ends with the session
+      const needs = needing(prev);
+      if (!needs) return undefined;
+      const { kept: _, letGo: __, ...was } = needs;
+      return was;
+    }
     // a subagent starting or finishing is not the session starting or finishing. SubagentStop even
     // carries the agent's closing message, which must never read as the session's own.
     case "SubagentStart":

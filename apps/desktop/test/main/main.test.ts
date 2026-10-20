@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Combo, ComboFolder, FolderOutcome, FolderStatus } from "@grove/core";
+import type { Combo, ComboFolder, FolderOutcome, FolderStatus, LiveStatus } from "@grove/core";
 import { describe, expect, it, vi } from "vitest";
 import { resolveAssetPath } from "../../src/main/assets.ts";
 import { resolveAppEnv, userDataDirFor } from "../../src/main/env.ts";
@@ -502,16 +502,24 @@ describe("the bundled companion extension", () => {
 });
 
 describe("live status", () => {
-  it("a quiet running session and a days-old waiting one age out, a fresh one stays", () => {
+  it("a quiet running session and a days-old dismissed one age out. one he never answered and a fresh one stay", () => {
     const now = 10 * WAITING_EXPIRY_MS;
-    const m = new Map([
-      ["gone", { state: "running" as const, at: 0, lastEventAt: now - RUNNING_STALE_MS - 1 }],
-      ["busy", { state: "running" as const, at: 0, lastEventAt: now - 1000 }],
-      ["old", { state: "waiting" as const, at: now - WAITING_EXPIRY_MS - 1, lastEventAt: 0 }],
-      ["new", { state: "permission" as const, at: now - 1000, lastEventAt: now - 1000 }],
+    const old = now - WAITING_EXPIRY_MS - 1;
+    const unread: LiveStatus = { state: "waiting", at: old, lastEventAt: 0 };
+    const m = new Map<string, LiveStatus>([
+      ["gone", { state: "running", at: 0, lastEventAt: now - RUNNING_STALE_MS - 1 }],
+      ["busy", { state: "running", at: 0, lastEventAt: now - 1000 }],
+      ["old", { state: "waiting", at: old, lastEventAt: 0, seen: true }],
+      ["unread", unread],
+      ["new", { state: "permission", at: now - 1000, lastEventAt: now - 1000 }],
+      // claude's own turn gone quiet: what it kept for him is what is left
+      ["woke", { state: "running", at: 0, lastEventAt: now - RUNNING_STALE_MS - 1, kept: unread }],
     ]);
-    expect(expireStatuses(m, now)).toBe(true);
-    expect([...m.keys()]).toEqual(["busy", "new"]);
+    const stale: string[] = [];
+    expect(expireStatuses(m, now, (id) => stale.push(id))).toBe(true);
+    expect([...m.keys()]).toEqual(["busy", "unread", "new", "woke"]);
+    expect(m.get("woke")).toEqual(unread);
+    expect(stale).toEqual(["gone", "woke"]);
     expect(expireStatuses(m, now)).toBe(false);
   });
 

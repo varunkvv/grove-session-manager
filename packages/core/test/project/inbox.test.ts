@@ -51,6 +51,14 @@ describe("the inbox", () => {
     ]);
   });
 
+  it("a session working on a turn claude started itself keeps the row of what it kept", () => {
+    const ended = live("waiting", 4, { detail: "Done.", question: "Open the PR now?" });
+    const rows = inbox([session("woke", { live: live("running", 6, { kept: ended }) })]);
+    expect(rows.map((r) => [r.id, r.kind, r.at, r.summary, r.reviewKeys])).toEqual([
+      ["woke", "turn", ms(4), "Open the PR now?", ["seen:woke"]],
+    ]);
+  });
+
   it("says what it can when a status carries little", () => {
     const rows = inbox([
       session("a", { live: live("permission", 1) }),

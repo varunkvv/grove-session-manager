@@ -9,9 +9,11 @@ import {
   type BackgroundEntry,
   type Disposable,
   drainStatusEvents,
+  firedBy,
   isObject,
   type LiveStatus,
   liveTasks,
+  needing,
   needsYou,
   type RegistryEntry,
   readJsonGuarded,
@@ -98,13 +100,16 @@ export function expireStatuses(
     // a registry entry is a live process, not a guess with a shelf life. it goes when the pid does.
     // the supervisor's word goes when the supervisor says otherwise.
     if (s.source) continue;
+    // one that needs the person waits for them however long it takes. a dismissed one goes
     const stale =
       s.state === "running"
         ? now - s.lastEventAt > RUNNING_STALE_MS
-        : now - s.at > WAITING_EXPIRY_MS;
+        : now - s.at > WAITING_EXPIRY_MS && !needsYou(s);
     if (stale) {
       if (s.state === "running") onStale?.(id);
-      statuses.delete(id);
+      // a turn claude started itself, gone quiet: what it kept for the person is still theirs
+      if (s.kept) statuses.set(id, s.kept);
+      else statuses.delete(id);
       changed = true;
     }
   }
@@ -139,12 +144,29 @@ export function goneTasks(
   return gone;
 }
 
-/** a session just started needing someone */
+/**
+ * a session just started needing someone. what needs them is compared (see needing): one kept
+ * through claude's own turn, or back from it, is not new
+ */
 export function entered(was: LiveStatus | undefined, s: LiveStatus | undefined): boolean {
-  if (!s || !needsYou(s)) return false;
+  const now = needing(s);
+  if (!now) return false;
   // what an agent's ask interrupted, back now that the ask is over, is not new
-  if (was?.resume?.state === s.state && was.resume.at === s.at) return false;
-  return !needsYou(was) || was?.state !== s.state || was.at !== s.at;
+  const back = needing(was?.resume);
+  if (back?.state === now.state && back.at === now.at) return false;
+  const before = needing(was);
+  return !before || before.state !== now.state || before.at !== now.at;
+}
+
+/**
+ * a status the person replied to or dismissed: nothing in its row needs them any more. a running
+ * turn drops what it kept and runs on. an agent's ask is seen with what it interrupted, so that does
+ * not come back when the ask ends
+ */
+export function answeredAll(s: LiveStatus): LiveStatus {
+  const { kept, ...rest } = s;
+  if (kept) return rest;
+  return { ...rest, seen: true, ...(rest.resume ? { resume: answeredAll(rest.resume) } : {}) };
 }
 
 /**
@@ -489,6 +511,10 @@ export class LiveService {
     if (changed) this.changed();
   }
 
+  /**
+   * the person replied in the session (grove chat's send or an answer to a card) or dismissed its
+   * row. only that: looking at it, landing on it from a notification, its window's focus are not
+   */
   markSeen(sessionIds: Iterable<string>): void {
     let changed = false;
     for (const id of sessionIds) {
@@ -499,7 +525,7 @@ export class LiveService {
       }
       const s = this.statuses.get(id);
       if (s && needsYou(s)) {
-        this.statuses.set(id, { ...s, seen: true });
+        this.statuses.set(id, answeredAll(s));
         changed = true;
       }
     }
@@ -579,7 +605,14 @@ export class LiveService {
       // the session ended mid-turn: a window closed on it. anything else it says means it lives.
       if (ev.event === "SessionEnd" && prev?.state === "running") this.interrupt([ev.sessionId]);
       else if (ev.event !== "SessionEnd") this.resume([ev.sessionId]);
-      let next = reduceStatus(prev, ev);
+      // a cron or a /loop firing is told by what the session's last Stop left scheduled
+      const own =
+        ev.event === "UserPromptSubmit" &&
+        !ev.own &&
+        firedBy(this.left.get(ev.sessionId), ev.prompt)
+          ? { ...ev, own: true as const }
+          : ev;
+      let next = reduceStatus(prev, own);
       // grove closed it itself (letGo): what it waited on stands. the flag goes with this one
       // SessionEnd, so a close of its own later still ends it
       if (ev.event === "SessionEnd" && prev?.letGo) {
@@ -605,7 +638,8 @@ export class LiveService {
 
   private notifyEntered(before: ReadonlyMap<string, LiveStatus>): void {
     for (const [id, s] of this.view()) {
-      if (entered(before.get(id), s)) this.opts.onNeedsYou(id, s);
+      const needs = needing(s);
+      if (needs && entered(before.get(id), s)) this.opts.onNeedsYou(id, needs);
     }
   }
 

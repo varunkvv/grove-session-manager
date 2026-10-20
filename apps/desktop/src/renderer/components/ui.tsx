@@ -776,23 +776,32 @@ export function StateLabel({
   state,
   within,
   className,
+  working,
 }: {
   state: SessionState;
   within: keyof typeof WORD;
   className?: string;
+  /** it needs him and works all the same, on a turn claude started itself */
+  working?: boolean;
 }) {
   const s = STATES[state];
   return (
     <span
       data-testid="state"
       data-state={state}
-      title={s.word}
+      title={working ? `${s.word} · Working` : s.word}
       className={cx(
         "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium",
         s.tone,
         className,
       )}
     >
+      {working && state !== "working" && (
+        <span
+          data-testid="state-working"
+          className="live-pulse size-1.5 shrink-0 rounded-full bg-hue-green"
+        />
+      )}
       <span className={cx("flex size-3 items-center justify-center", s.mark)}>
         {state === "working" ? (
           // a running session breathes

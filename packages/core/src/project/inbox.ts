@@ -1,6 +1,6 @@
 // the inbox: the sessions that need the person, one row each.
 // pure: built in main, and importable by the renderer through @grove/core/pure.
-import { needsYou } from "../sessions/needsYou.ts";
+import { needing } from "../sessions/needsYou.ts";
 import { squash } from "../transcript/title.ts";
 import type { LiveStatus } from "../types.ts";
 import type { SessionFacts } from "./derive.ts";
@@ -61,7 +61,8 @@ export function buildInbox(i: InboxInput): InboxRow[] {
     const key = stop && `stopped:${f.sessionId}@${stop.at ?? "failed"}`;
     // a mark hides the stop it was made for. the next one has another time, so it shows
     const stopped = key && !i.reviewed.has(key) ? key : undefined;
-    const live = needsYou(f.live) ? f.live : undefined;
+    // what needs the person, also while claude works on a turn of its own
+    const live = needing(f.live);
     // its process is gone, which is the last word on it, whatever its status said before
     const what: Pick<InboxRow, "kind" | "at" | "summary"> | undefined = stopped
       ? {

@@ -29,6 +29,7 @@ export function InboxRow({
   open,
   tokens,
   snippet,
+  working,
   onClick,
 }: {
   row: InboxRowView;
@@ -39,6 +40,8 @@ export function InboxRow({
   tokens: readonly string[];
   /** a search found it by what was said in it: that takes the second line while it is typed */
   snippet?: string;
+  /** it works on a turn claude started itself, and still needs him */
+  working?: boolean;
   onClick: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
@@ -75,7 +78,7 @@ export function InboxRow({
         <span className="min-w-0 flex-1 truncate font-medium text-fg" title={row.title}>
           <Highlighted text={row.title} tokens={tokens} />
         </span>
-        <StateLabel state={row.kind} within="list" className="@xl:w-[128px]" />
+        <StateLabel state={row.kind} within="list" className="@xl:w-[128px]" working={working} />
         {/* the buttons take its place under the mouse and on the keyboard's row */}
         <span className="flex shrink-0 items-center gap-3 group-hover:hidden group-data-[active]:hidden">
           {/* where it is gives way to the title as the list narrows: first where it runs, then

@@ -107,8 +107,8 @@ const asking = (e: RegistryEntry): boolean =>
  * the registry on top of what the hooks said. hook state always wins: it is the only source that
  * can tell which tool asks, and losing that would empty the "needs you" inbox. so the registry may
  * only do two things - fill in a session the hooks never covered (busy is running, waiting on an
- * ask is a permission), and retire a `running` whose process is gone. an `idle` process adds
- * nothing: nobody asked for anything.
+ * ask is a permission), and retire a `running` whose process is gone, back to what it kept for the
+ * person if anything. an `idle` process adds nothing: nobody asked for anything.
  */
 export function applyRegistry(
   statuses: Map<string, LiveStatus>,
@@ -137,7 +137,9 @@ export function applyRegistry(
       else statuses.delete(id);
       changed = true;
     } else if (s.state === "running" && !alive.has(id)) {
-      statuses.delete(id);
+      // its process is gone. what claude's own turn kept for the person still needs them
+      if (s.kept) statuses.set(id, s.kept);
+      else statuses.delete(id);
       changed = true;
     }
   }

@@ -176,7 +176,8 @@ describe("the interrupted fact survives a restart", () => {
     m.event(SID.other, "SessionEnd");
     const { live, seen } = await m.start();
     expect([...seen().keys()]).toEqual([SID.cut]);
-    expect(live.list().has(SID.other)).toBe(false);
+    // its turn's end, which nobody answered, still needs him
+    expect(live.list().get(SID.other)?.state).toBe("waiting");
   });
 
   it("a session grove closed itself keeps what it waited on, once, and mid-turn is still cut off", async () => {
@@ -195,6 +196,8 @@ describe("the interrupted fact survives a restart", () => {
     expect(second.live.list().get(SID.cut)?.letGo).toBeUndefined();
     expect(second.live.list().has(SID.other)).toBe(false);
     expect([...second.seen().keys()]).toEqual([SID.other]);
+    // dismissed, so nothing about it needs him any more
+    second.live.markSeen([SID.cut]);
     await m.stop(second.live);
     // a close of its own later still ends it
     m.event(SID.cut, "SessionEnd");

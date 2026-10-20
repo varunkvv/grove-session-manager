@@ -148,7 +148,15 @@ function SessionRow({
         <span className="min-w-0 flex-1 truncate text-fg" title={hit.title}>
           <Highlighted text={hit.title} tokens={tokens} />
         </span>
-        {state && <StateLabel state={state} within="list" className="@xl:w-[128px]" />}
+        {state && (
+          <StateLabel
+            state={state}
+            within="list"
+            className="@xl:w-[128px]"
+            // it needs him and works on a turn of claude's own: still his, and moving
+            working={!!item.row && hit.live === "running"}
+          />
+        )}
         {/* where it is gives way to the title as the list narrows. the home screen says which
             project, in the cells of a row that needs him, and a project's own screen the branch */}
         {home ? (
@@ -399,7 +407,13 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
                 };
                 // on the home screen a session that needs him is the inbox's row, with what it asks
                 return scope === null && i.row ? (
-                  <InboxRow key={id} row={i.row} snippet={i.snippet} {...row} />
+                  <InboxRow
+                    key={id}
+                    row={i.row}
+                    snippet={i.snippet}
+                    working={i.hit.live === "running"}
+                    {...row}
+                  />
                 ) : (
                   <SessionRow key={id} item={i} screen={screen} {...row} />
                 );

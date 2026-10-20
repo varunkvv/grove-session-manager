@@ -111,6 +111,15 @@ describe("the live session registry", () => {
     expect(statuses.get(SID.torn)).toMatchObject({ state: "permission" });
   });
 
+  it("a turn claude started itself whose process is gone goes back to what it kept", () => {
+    const ended = status({ state: "waiting", question: "Should I keep going?" });
+    const statuses = new Map<string, LiveStatus>([
+      [SID.dead, status({ state: "running", at: 2000, kept: ended })],
+    ]);
+    expect(applyRegistry(statuses, [entry(SID.busy, "busy")], 5000)).toBe(true);
+    expect(statuses.get(SID.dead)).toEqual(ended);
+  });
+
   it("an empty read is a missing registry, not a machine with no sessions", () => {
     const statuses = new Map<string, LiveStatus>([[SID.busy, status({ state: "running" })]]);
     expect(applyRegistry(statuses, [], 5000)).toBe(false);

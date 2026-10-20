@@ -6,6 +6,7 @@ import {
   GAVEL,
   loadSettings,
   modelUrl,
+  needing,
   pendingTitlesDir,
   projectIdOf,
   recordPrefixes,
@@ -263,9 +264,9 @@ async function start(): Promise<void> {
       // a long turn's end, or a wake-up's, waits a moment for its recap: what is asked of the
       // person says more than the start of the last message
       void recaps.soon(row).then((needs) => {
-        const now = live.list().get(sessionId);
-        // looked at, or moved on, while it waited
-        if (now?.at === status.at && !now.seen) note(needs);
+        // answered, dismissed or moved on while it waited. one claude's own turn keeps is still it
+        const now = needing(live.list().get(sessionId));
+        if (now?.state === status.state && now.at === status.at) note(needs);
       });
     },
     onBackgroundMoved: () => void background.read(),

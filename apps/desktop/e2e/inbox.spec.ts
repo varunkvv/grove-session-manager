@@ -572,3 +572,23 @@ test("a notification click lands on the session with its panel open, wherever it
   await expect.poll(() => code().length).toBe(1);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "sessions");
 });
+
+test("a turn claude starts itself keeps the row in Needs you, working, and his own prompt answers it", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await ready(page);
+  const g = groveTest(app.app);
+  await expect(row(page, "turn").getByTestId("state-working")).toHaveCount(0);
+  // a background command it left ends, and claude works on: the question is still his
+  hookEvent(fx, SID.turn, "UserPromptSubmit", {
+    prompt:
+      "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command done</summary>\n</task-notification>",
+  });
+  await expect(row(page, "turn").getByTestId("state-working")).toHaveCount(1);
+  await expect(rows(page)).toHaveCount(4);
+  expect(await g.trayTitle()).toBe("4");
+  // he answers it from the editor
+  hookEvent(fx, SID.turn, "UserPromptSubmit", { prompt: "a dev tenant" });
+  await ready(page, 3);
+  await expect(row(page, "turn")).toHaveCount(0);
+});
