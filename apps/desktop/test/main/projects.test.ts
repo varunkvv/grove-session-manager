@@ -718,6 +718,30 @@ describe("projects and sessions", () => {
     }
   });
 
+  it("a turn over with its agents still at work is working, as the menu bar has it, until they go quiet", () => {
+    const t = setup();
+    t.project("chat");
+    const inside = { comboName: "chat", comboRelation: "inside" } as const;
+    const now = Date.now();
+    // he read it, so it needs nothing: the agents' events are fresh
+    const agents = (at: number) =>
+      live("waiting", now - 5000, { agentsLeft: 2, seen: true, lastEventAt: at });
+    t.session("s-agents", {
+      ...inside,
+      lastPrompt: "three agents on it",
+      live: agents(now - 1000),
+    });
+    t.session("s-quiet", { ...inside, lastPrompt: "long gone", live: agents(now - 46 * 60_000) });
+    const by = Object.fromEntries(t.svc.listSessions("chat").map((h) => [h.sessionId, h]));
+    // a subfolder's session is listed while it works, and says so
+    expect(by["s-agents"]).toMatchObject({
+      live: "running",
+      doing: "three agents on it",
+      since: now - 5000,
+    });
+    expect(by["s-quiet"]).toBeUndefined();
+  });
+
   it("says the lists changed when what a row shows moved, not on every line an agent writes", () => {
     const t = setup();
     t.project("chat");

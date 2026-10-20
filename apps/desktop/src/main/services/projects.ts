@@ -29,6 +29,7 @@ import type {
   TaskView,
 } from "../../shared/ipc.ts";
 import { AppError } from "../errors.ts";
+import { working } from "../keepAwake.ts";
 import type { ChatHost } from "./chat.ts";
 import type { ComboService } from "./combos.ts";
 import type { Interruption } from "./interrupted.ts";
@@ -449,7 +450,7 @@ export class ProjectsService {
     // archiving is about noise, never about muting: one that needs the person, runs or has left
     // something running still shows
     const quiet = (r: SessionRow) =>
-      !needs.has(r.sessionId) && r.live?.state !== "running" && !watching(r);
+      !needs.has(r.sessionId) && !working(r.live, Date.now()) && !watching(r);
     const hidden = (r: SessionRow) =>
       scope === null && !putAway && index.archived.has(r.comboName ?? "") && quiet(r);
     return [...index.rows.values()].filter(
@@ -478,8 +479,9 @@ export class ProjectsService {
 
   private hit(row: SessionRow, index: Index, snippet?: string): SessionHit {
     const prompts = new Set([row.firstPrompt, row.lastPrompt].flatMap((p) => p ?? []));
-    // the hooks name no tool for a running session: what it was last asked is what it is doing
-    const running = row.live?.state === "running" ? row.live : undefined;
+    // the hooks name no tool for a running session: what it was last asked is what it is doing.
+    // working as the menu bar has it: a turn over with its agents still at work counts
+    const running = working(row.live, Date.now()) ? row.live : undefined;
     const asked = row.lastPrompt ?? row.firstPrompt;
     const tasks = liveTasks(row.tasks, Date.now()).map((t) =>
       taskView(t, this.o.live.taskLine(t.id)),
@@ -488,7 +490,7 @@ export class ProjectsService {
       ...this.ref(row, index),
       project: projectOf(row, index),
       activityMs: row.activityMs,
-      live: row.live?.state,
+      live: running ? "running" : row.live?.state,
       prompt: [...prompts].map((p) => squash(p, 160)).join("\n") || undefined,
       doing: running && asked ? squash(asked, 200) : undefined,
       // a status the process registry gave has no turn: it has been busy since `at`
@@ -542,7 +544,7 @@ const watching = (row: SessionRow): boolean => liveTasks(row.tasks, Date.now()).
  */
 const listed = (row: SessionRow, needsYou: boolean, inProject: boolean): boolean =>
   needsYou ||
-  row.live?.state === "running" ||
+  working(row.live, Date.now()) ||
   watching(row) ||
   (inProject ? row.comboRelation === "root" : !row.entrypoint?.startsWith("sdk"));
 
