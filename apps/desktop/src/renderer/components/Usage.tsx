@@ -1,6 +1,15 @@
 import { type CSSProperties, type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import type { UsageView } from "../../shared/ipc.ts";
 import {
+  formatOdds,
+  formatOddsChange,
+  moodLine,
+  ODDS_WORDS,
+  type OddsModel,
+  oddsModel,
+  type SessionLine,
+} from "../logic/odds.ts";
+import {
   type Bar,
   formatChange,
   formatShare,
@@ -16,7 +25,16 @@ import {
   usageModel,
 } from "../logic/usage.ts";
 import { useStore } from "../state/store.ts";
-import { cx, Segmented, SliceFill, SliceMark, StatTile } from "./ui.tsx";
+import {
+  cx,
+  Gavel,
+  OddsLine,
+  Segmented,
+  SliceFill,
+  SliceMark,
+  Sparkline,
+  StatTile,
+} from "./ui.tsx";
 
 /** main is asked again at most this often, however fast the sessions move */
 const ASK_EVERY_MS = 3000;
@@ -42,14 +60,18 @@ function useUsage(): UsageView | null {
       const next = await window.grove.usage().catch(() => null);
       if (!open || !next) return;
       setView(next);
-      if (next.counted < next.total) soon();
+      // the first count, and the judging of every prompt so far, are each a while
+      if (next.counted < next.total || (next.odds && next.odds.scored < next.odds.prompts)) soon();
     };
     void ask();
     const off = window.grove.on("sessions:changed", soon);
+    // judged prompts move the odds, and the switch or the model can take the tile away
+    const offJudged = window.grove.on("decisioning:status", soon);
     const tick = setInterval(soon, 30_000);
     return () => {
       open = false;
       off();
+      offJudged();
       clearInterval(tick);
       clearTimeout(timer);
     };
@@ -269,12 +291,12 @@ const LIST_BAR = "h-1.5 rounded-full transition-[width] duration-200 motion-redu
 function Breakdown({
   title,
   rows,
-  metric,
+  format,
   testId,
 }: {
   title: string;
   rows: ListRow[];
-  metric: Metric;
+  format: (n: number) => string;
   testId: string;
 }) {
   return (
@@ -303,12 +325,197 @@ function Breakdown({
               )}
             </span>
             <span className="w-16 shrink-0 text-right tabular-nums text-fg-2">
-              {formatValue(r.value, metric)}
+              {format(r.value)}
             </span>
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+/** a session's row: its project, its title, its ledger as a line, and where it ended */
+function SessionRow({ s }: { s: SessionLine }) {
+  return (
+    <li className="flex items-center gap-2" data-testid="odds-session" data-key={s.key}>
+      <SliceMark slice={s.slice} />
+      <span className="min-w-0 flex-1 truncate text-fg-2" title={s.title}>
+        {s.title}
+      </span>
+      <Sparkline series={s.series} slice={s.slice} />
+      <span className="w-10 shrink-0 text-right tabular-nums text-fg-2">{formatOdds(s.odds)}</span>
+    </li>
+  );
+}
+
+/** the best and worst sessions of the range: where each ended, and how it got there */
+function BySession({ model }: { model: OddsModel }) {
+  return (
+    <section className="min-w-0 flex-1" data-testid="by-session">
+      <h2 className="mb-2 text-sm font-medium text-fg-3">By session</h2>
+      {model.best.length === 0 ? (
+        <p className="text-sm text-fg-4" data-testid="by-session-none">
+          No session in this range has three judged prompts yet
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <h3 className="mb-1 text-meta text-fg-4">Best</h3>
+            <ul className="space-y-1.5" data-testid="odds-best">
+              {model.best.map((s) => (
+                <SessionRow key={s.key} s={s} />
+              ))}
+            </ul>
+          </div>
+          {model.worst.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-meta text-fg-4">Worst</h3>
+              <ul className="space-y-1.5" data-testid="odds-worst">
+                {model.worst.map((s) => (
+                  <SessionRow key={s.key} s={s} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const ODDS_TICKS = [0, 50, 100];
+
+/**
+ * the odds of each day (each week on the year) as a line, with a quiet line at 50, where every
+ * day starts. one stop for Tab, and the arrows walk the points like the bars. a table for a
+ * screen reader
+ */
+function OddsChart({ model, range }: { model: OddsModel; range: Range }) {
+  const [hot, setHot] = useState<number | null>(null);
+  const { points } = model;
+  const at = hot !== null && hot < points.length ? hot : null;
+  const active = at !== null ? points[at] : undefined;
+  const onKey = (e: KeyboardEvent) => {
+    const last = points.length - 1;
+    const to = {
+      ArrowLeft: Math.max(0, (at ?? points.length) - 1),
+      ArrowRight: Math.min(last, (at ?? -1) + 1),
+      Home: 0,
+      End: last,
+    }[e.key];
+    if (to !== undefined) {
+      e.preventDefault();
+      setHot(to);
+    } else if (e.key === "Escape" && at !== null) {
+      e.stopPropagation();
+      setHot(null);
+    }
+  };
+  const per = range === "1Y" ? "week" : "day";
+  return (
+    <figure className="mt-6" data-testid="odds-chart" data-range={range}>
+      <div className="flex">
+        <div className="relative w-14 shrink-0" aria-hidden="true">
+          {ODDS_TICKS.map((t) => (
+            <span
+              key={t}
+              className="absolute right-2 translate-y-1/2 text-meta tabular-nums text-fg-4"
+              style={{ bottom: `${t}%` }}
+            >
+              {t}%
+            </span>
+          ))}
+        </div>
+        <div
+          role="group"
+          aria-label={`Judgment day odds per ${per}. Left and right arrows read each ${per}.`}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: one stop for the whole chart, the arrows walk its points
+          tabIndex={0}
+          className="relative h-[220px] min-w-0 flex-1 rounded-sm"
+          data-testid="odds-plot"
+          data-plot
+          onKeyDown={onKey}
+          onFocus={() => setHot((h) => h ?? points.length - 1)}
+          onBlur={() => setHot(null)}
+          onPointerLeave={() => setHot(null)}
+        >
+          {ODDS_TICKS.map((t) => (
+            <div
+              key={t}
+              className={cx(
+                "absolute inset-x-0 border-t",
+                t === 0
+                  ? "border-line-strong"
+                  : t === 50
+                    ? "border-dashed border-line-strong"
+                    : "border-line",
+              )}
+              style={{ bottom: `${t}%` }}
+            />
+          ))}
+          <div className="absolute inset-0 flex">
+            {points.map((p, i) => (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: counted from today, like the bars
+                key={points.length - 1 - i}
+                className={cx("h-full min-w-0 flex-1", at === i && "bg-raised")}
+                data-testid="odds-slot"
+                data-odds={p.odds === null ? undefined : Math.round(p.odds)}
+                onPointerEnter={() => setHot(i)}
+              />
+            ))}
+          </div>
+          <OddsLine points={points.map((p) => p.odds)} hot={at} />
+          {active && at !== null && (
+            <div
+              role="status"
+              data-testid="odds-tip"
+              className="overlay-shadow pointer-events-none absolute top-0 z-10 w-max min-w-[130px] rounded-md bg-overlay px-3 py-2"
+              style={
+                at < points.length / 2
+                  ? { left: `calc(${((at + 1) / points.length) * 100}% + 4px)` }
+                  : { right: `calc(${((points.length - at) / points.length) * 100}% + 4px)` }
+              }
+            >
+              <div className="text-meta text-fg-3">{active.label}</div>
+              <div className="font-semibold tabular-nums text-fg">
+                {active.odds === null ? "Nothing judged" : formatOdds(active.odds)}
+              </div>
+              {active.prompts > 0 && (
+                <div className="text-sm tabular-nums text-fg-3">
+                  {active.prompts} {active.prompts === 1 ? "prompt" : "prompts"} judged
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="ml-14 flex pt-1.5" aria-hidden="true">
+        {points.map((p, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: counted from today, like the point over it
+            key={points.length - 1 - i}
+            className={cx(
+              "flex h-4 min-w-0 flex-1",
+              i === points.length - 1 && points.length > 7 ? "justify-end" : "justify-center",
+            )}
+          >
+            <span className="whitespace-nowrap text-meta text-fg-4">{p.tick}</span>
+          </div>
+        ))}
+      </div>
+      <table className="sr-only">
+        <caption>Judgment day odds per {per}</caption>
+        <tbody>
+          {points.map((p) => (
+            <tr key={p.label}>
+              <th scope="row">{p.label}</th>
+              <td>{p.odds === null ? "nothing judged" : formatOdds(p.odds)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </figure>
   );
 }
 
@@ -336,7 +543,8 @@ function Extra({
 /**
  * what the machine's agents used: three numbers for a range, and the one picked drawn as bars by
  * project. every transcript Claude Code has kept counts, and so does every one it has deleted
- * since grove first read it. nothing on this screen is shown anywhere else in the app
+ * since grove first read it. with decisioning on and its model ready, a fourth: judgment day odds,
+ * with gavel. nothing on this screen is shown anywhere else in the app
  */
 export function Usage() {
   const view = useUsage();
@@ -344,21 +552,58 @@ export function Usage() {
   // the range ends today: a new day is a new last bar
   const today = useStore((s) => new Date(s.now).toDateString());
   const [range, setRange] = useState<Range>("1W");
-  const [metric, setMetric] = useState<Metric>("cost");
+  const [picked, setPicked] = useState<Metric | "odds">("cost");
+  // the tile goes when the switch does: what it drew goes with it
+  const odds = view?.odds;
+  const metric: Metric = picked === "odds" ? "cost" : picked;
+  const showOdds = picked === "odds" && !!odds;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `today` is when to count the days again
   const model = useMemo(
     () => view && usageModel(view, range, metric, projects, Date.now()),
     [view, range, metric, projects, today],
   );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `today` is when to count the days again
+  const judged = useMemo(
+    () => odds && oddsModel(odds, range, projects, Date.now()),
+    [odds, range, projects, today],
+  );
+
+  const tiles =
+    model &&
+    METRICS.map((m) => {
+      const tile = model.tiles[m];
+      return (
+        <StatTile
+          key={m}
+          label={METRIC_WORDS[m].label}
+          hint={METRIC_WORDS[m].hint}
+          value={formatValue(tile.total, m)}
+          note={
+            tile.change === undefined
+              ? undefined
+              : `${formatChange(tile.change)} vs ${model.before}`
+          }
+          selected={!showOdds && m === metric}
+          onSelect={() => setPicked(m)}
+          testId={`tile-${m}`}
+        />
+      );
+    });
 
   return (
     <div className="h-full overflow-y-auto [scrollbar-gutter:stable]" data-testid="usage">
-      <div className="mx-auto max-w-[920px] px-6 pt-8 pb-16">
+      <div className="@container mx-auto max-w-[920px] px-6 pt-8 pb-16">
         <div className="flex items-center gap-3">
           <h1 className="text-title font-semibold">Usage</h1>
           {view && view.counted < view.total && (
             <span className="text-sm tabular-nums text-fg-4" data-testid="usage-counting">
               Counting {view.counted} of {view.total} sessions
+            </span>
+          )}
+          {judged?.judging && (
+            <span className="text-sm tabular-nums text-fg-4" data-testid="odds-judging">
+              Judging {judged.judging.scored.toLocaleString("en-US")} of{" "}
+              {judged.judging.prompts.toLocaleString("en-US")} prompts
             </span>
           )}
           <span className="ml-auto" />
@@ -372,34 +617,70 @@ export function Usage() {
         </div>
         {model && (
           <>
-            <div role="radiogroup" aria-label="What the chart measures" className="mt-5 flex gap-3">
-              {METRICS.map((m) => {
-                const tile = model.tiles[m];
-                return (
-                  <StatTile
-                    key={m}
-                    label={METRIC_WORDS[m].label}
-                    hint={METRIC_WORDS[m].hint}
-                    value={formatValue(tile.total, m)}
-                    note={
-                      tile.change === undefined
-                        ? undefined
-                        : `${formatChange(tile.change)} vs ${model.before}`
-                    }
-                    selected={m === metric}
-                    onSelect={() => setMetric(m)}
-                    testId={`tile-${m}`}
-                  />
-                );
-              })}
-            </div>
-            {model.unpriced > 0 && (
+            {judged && model ? (
+              // four: two by two where the window is narrow, the odds a little wider when in a row,
+              // so its words keep clear of gavel
+              <div
+                role="radiogroup"
+                aria-label="What the chart measures"
+                className="mt-5 grid grid-cols-2 gap-3 @3xl:grid-cols-[1fr_1fr_1fr_1.35fr]"
+                data-testid="usage-tiles"
+              >
+                {tiles}
+                <StatTile
+                  label={ODDS_WORDS.label}
+                  hint={`${ODDS_WORDS.hint} ${moodLine(judged.current)}`}
+                  value={judged.value === null ? "-" : formatOdds(judged.value)}
+                  note={
+                    judged.change === undefined
+                      ? undefined
+                      : formatOddsChange(judged.change, model.before)
+                  }
+                  selected={showOdds}
+                  onSelect={() => setPicked("odds")}
+                  testId="tile-odds"
+                  aside={<Gavel mood={judged.mood} title={moodLine(judged.current)} />}
+                />
+              </div>
+            ) : (
+              <div
+                role="radiogroup"
+                aria-label="What the chart measures"
+                className="mt-5 flex gap-3"
+                data-testid="usage-tiles"
+              >
+                {tiles}
+              </div>
+            )}
+            {model.unpriced > 0 && !showOdds && (
               <p className="mt-2 text-sm text-fg-4" data-testid="usage-unpriced">
                 {formatValue(model.unpriced, "tokens")} tokens on models with no known price are not
                 in the cost.
               </p>
             )}
-            {model.empty ? (
+            {showOdds && judged ? (
+              judged.value === null ? (
+                <p
+                  className="mt-6 flex h-[242px] items-center justify-center text-fg-4"
+                  data-testid="odds-empty"
+                >
+                  Nothing judged in this range
+                </p>
+              ) : (
+                <>
+                  <OddsChart model={judged} range={range} />
+                  <div className="mt-8 flex flex-col gap-8 min-[1000px]:flex-row min-[1000px]:gap-10">
+                    <Breakdown
+                      title="By project"
+                      rows={judged.byProject}
+                      format={formatOdds}
+                      testId="by-project"
+                    />
+                    <BySession model={judged} />
+                  </div>
+                </>
+              )
+            ) : model.empty ? (
               <p
                 className="mt-6 flex h-[242px] items-center justify-center text-fg-4"
                 data-testid="usage-empty"
@@ -413,56 +694,56 @@ export function Usage() {
                   <Breakdown
                     title="By project"
                     rows={model.byProject}
-                    metric={metric}
+                    format={(n) => formatValue(n, metric)}
                     testId="by-project"
                   />
                   <Breakdown
                     title="By model"
                     rows={model.byModel}
-                    metric={metric}
+                    format={(n) => formatValue(n, metric)}
                     testId="by-model"
                   />
                 </div>
-                <dl
-                  className="mt-8 flex flex-wrap gap-x-6 gap-y-1 border-t border-line pt-4 text-sm"
-                  data-testid="usage-extras"
-                >
-                  <Extra
-                    testId="extra-sessions"
-                    label="Sessions"
-                    value={String(model.extras.sessions)}
-                  />
-                  <Extra
-                    testId="extra-subagents"
-                    label="Subagents"
-                    value={String(model.extras.subagents)}
-                  />
-                  <Extra
-                    testId="extra-cache"
-                    label="Cache hit rate"
-                    value={
-                      model.extras.cacheHit === null ? "-" : formatShare(model.extras.cacheHit)
-                    }
-                    hint="Cache read tokens over every input token"
-                  />
-                  <Extra
-                    testId="extra-peak"
-                    label="Peak agents at once"
-                    value={String(model.extras.peak)}
-                    hint={
-                      model.extras.peakDay
-                        ? `The most agents working within the same five minutes, subagents counted: ${model.extras.peakDay}`
-                        : undefined
-                    }
-                  />
-                  <Extra
-                    testId="extra-longest"
-                    label="Longest run"
-                    value={model.extras.longest > 0 ? formatTime(model.extras.longest) : "-"}
-                    hint="The longest single turn: from one of your prompts to the last thing the agent did before your next, as working time"
-                  />
-                </dl>
               </>
+            )}
+            {!model.empty && (
+              <dl
+                className="mt-8 flex flex-wrap gap-x-6 gap-y-1 border-t border-line pt-4 text-sm"
+                data-testid="usage-extras"
+              >
+                <Extra
+                  testId="extra-sessions"
+                  label="Sessions"
+                  value={String(model.extras.sessions)}
+                />
+                <Extra
+                  testId="extra-subagents"
+                  label="Subagents"
+                  value={String(model.extras.subagents)}
+                />
+                <Extra
+                  testId="extra-cache"
+                  label="Cache hit rate"
+                  value={model.extras.cacheHit === null ? "-" : formatShare(model.extras.cacheHit)}
+                  hint="Cache read tokens over every input token"
+                />
+                <Extra
+                  testId="extra-peak"
+                  label="Peak agents at once"
+                  value={String(model.extras.peak)}
+                  hint={
+                    model.extras.peakDay
+                      ? `The most agents working within the same five minutes, subagents counted: ${model.extras.peakDay}`
+                      : undefined
+                  }
+                />
+                <Extra
+                  testId="extra-longest"
+                  label="Longest run"
+                  value={model.extras.longest > 0 ? formatTime(model.extras.longest) : "-"}
+                  hint="The longest single turn: from one of your prompts to the last thing the agent did before your next, as working time"
+                />
+              </dl>
             )}
           </>
         )}

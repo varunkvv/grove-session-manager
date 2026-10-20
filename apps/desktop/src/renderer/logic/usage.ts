@@ -85,7 +85,7 @@ export function metricOf(c: UsageCell, metric: Metric): number {
 }
 
 /** the last `n` local days ending today, oldest first. by the calendar: a day is not always 24h */
-function lastDays(now: number, n: number, skip = 0): string[] {
+export function lastDays(now: number, n: number, skip = 0): string[] {
   const out: string[] = [];
   for (let back = skip + n - 1; back >= skip; back--) {
     const d = new Date(now);
@@ -162,6 +162,45 @@ const shares = (rows: Array<Omit<ListRow, "share">>): ListRow[] => {
   return rows.map((r) => ({ ...r, share: top > 0 ? r.value / top : 0 }));
 };
 
+/** a bar of the range: its days, what its tooltip calls it, and its label on the axis if it has one */
+export interface RangeSlot {
+  days: string[];
+  label: string;
+  tick?: string;
+}
+
+/** the range's bars, oldest first: a day each, or on the year a week each */
+export function rangeSlots(range: Range, now: number): RangeSlot[] {
+  const { days: span, per } = SHAPE[range];
+  const dayList = lastDays(now, span);
+  const count = dayList.length / per;
+  const out: RangeSlot[] = [];
+  for (let i = 0; i < dayList.length; i += per) {
+    const chunk = dayList.slice(i, i + per);
+    const first = chunk[0] ?? "";
+    const last = chunk.at(-1) ?? first;
+    const n = out.length;
+    let tick: string | undefined;
+    if (range === "1W") tick = words(first, { weekday: "short" });
+    // a date a week, counted back from today
+    else if (range === "1M") tick = (count - 1 - n) % 7 === 0 ? monthDay(first) : undefined;
+    // a month where it starts
+    else if (chunk.some((d) => d.endsWith("-01"))) tick = words(last, { month: "short" });
+    out.push({
+      days: chunk,
+      label:
+        per === 1
+          ? words(first, { weekday: "short", month: "short", day: "numeric" })
+          : `${monthDay(first)} - ${monthDay(last)}`,
+      ...(tick ? { tick } : {}),
+    });
+  }
+  return out;
+}
+
+/** what a range covers, and what the one before it is called */
+export const rangeShape = (range: Range): { days: number; before: string } => SHAPE[range];
+
 export function usageModel(
   view: UsageView,
   range: Range,
@@ -170,7 +209,7 @@ export function usageModel(
   projects: ReadonlyArray<{ id: ProjectId; name: string }>,
   now: number,
 ): UsageModel {
-  const { days: span, per, before } = SHAPE[range];
+  const { days: span, before } = SHAPE[range];
   const byDay = new Map(view.days.map((d) => [d.day, d]));
   const pick = (days: string[]) => days.flatMap((d) => byDay.get(d) ?? []);
   const dayList = lastDays(now, span);
@@ -218,10 +257,7 @@ export function usageModel(
   ];
 
   const bars: Bar[] = [];
-  for (let i = 0; i < dayList.length; i += per) {
-    const chunk = dayList.slice(i, i + per);
-    const first = chunk[0] ?? "";
-    const last = chunk.at(-1) ?? first;
+  for (const { days: chunk, label, tick } of rangeSlots(range, now)) {
     const by = new Map<string, { slice: Slice; key: string; value: number }>();
     for (const d of pick(chunk)) {
       for (const p of d.projects) {
@@ -238,19 +274,8 @@ export function usageModel(
       }
     }
     const segments = order.flatMap((k) => by.get(k) ?? []).filter((s) => s.value > 0);
-    const n = bars.length;
-    const count = dayList.length / per;
-    let tick: string | undefined;
-    if (range === "1W") tick = words(first, { weekday: "short" });
-    // a date a week, counted back from today
-    else if (range === "1M") tick = (count - 1 - n) % 7 === 0 ? monthDay(first) : undefined;
-    // a month where it starts
-    else if (chunk.some((d) => d.endsWith("-01"))) tick = words(last, { month: "short" });
     bars.push({
-      label:
-        per === 1
-          ? words(first, { weekday: "short", month: "short", day: "numeric" })
-          : `${monthDay(first)} - ${monthDay(last)}`,
+      label,
       ...(tick ? { tick } : {}),
       total: segments.reduce((k, s) => k + s.value, 0),
       segments,
