@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MODEL, MODELS, modelUrl, scorerKey } from "../../src/decisioning/models.ts";
 import {
@@ -30,6 +31,28 @@ describe("the rubric as shipped", () => {
     );
     expect(L.keep).toBe(0.86);
     expect(L.weights.gratitude?.[2]).toBe(14);
+  });
+});
+
+/**
+ * what the model reads of the rubric, per version: its context, the judge hint and the questions.
+ * cached answers are kept per version, so new text under an old version would reuse answers to
+ * the old text. the ledger is not in it: it applies when the answers are read, and needs no rescore
+ */
+const PROMPT_TEXT: Record<string, string> = {
+  "v3.1": "bf2b0d09c55bb07212446e8ff021bc459448cad249c79f5a113b57eb9c63e001",
+};
+
+describe("the rubric's version", () => {
+  it("changes whenever the text the model reads does", () => {
+    const { context, judge_hint, questions } = GAVEL;
+    const sha = createHash("sha256")
+      .update(JSON.stringify({ context, judge_hint, questions }))
+      .digest("hex");
+    expect(
+      sha,
+      `the rubric's prompt text changed: bump "version" in gavel.rubric.json, so it is judged again, and record ${sha} for the new version here`,
+    ).toBe(PROMPT_TEXT[GAVEL.version]);
   });
 });
 
