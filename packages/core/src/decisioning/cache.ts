@@ -1,7 +1,7 @@
 // what the judge said, kept in grove's state dir: per transcript how far it was read and the
 // prompts in it (ids, times and hashes), and per prompt the model's probabilities. NEVER the text
 // of a prompt. its own file: the editor extension rewrites the session index without it.
-import { readdir, unlink } from "node:fs/promises";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { isObject, readJsonGuarded, writeFileAtomic } from "../fsx.ts";
 import type { FileState } from "./prompts.ts";
@@ -79,6 +79,7 @@ export async function loadScores(dir: string, rubric: Rubric, scorer: string): P
 }
 
 export async function saveScores(dir: string, rubric: Rubric, file: ScoreFile): Promise<void> {
+  await mkdir(dir, { recursive: true });
   await writeFileAtomic(path.join(dir, scoresFileName(rubric)), JSON.stringify(file));
 }
 

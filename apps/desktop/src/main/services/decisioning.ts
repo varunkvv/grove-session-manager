@@ -51,7 +51,7 @@ const SAVE_MS = 2000;
 const RETRY_MS = 60_000;
 
 export interface DecisioningOptions {
-  /** the score cache's folder: grove's state dir */
+  /** the score cache's folder: `decisioning/` in grove's state dir, one file per task */
   stateDir: string;
   /** where the weights go */
   modelsDir: string;
@@ -135,7 +135,7 @@ export function decisioningSetup(o: {
   const size = Number(o.env.GROVE_MODEL_SIZE);
   const stand = test && o.env.GROVE_MODEL_SHA256 && size > 0;
   return {
-    stateDir: o.stateDir,
+    stateDir: path.join(o.stateDir, "decisioning"),
     // appData, not userData: a dev build shares the one download with the installed app
     modelsDir: test ? path.join(o.stateDir, "models") : path.join(o.appData, "Grove", "models"),
     model: o.model,

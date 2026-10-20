@@ -545,7 +545,8 @@ edited. The workspace file and the references are written when the project is op
     titles/pending/ a title waiting for its session's next prompt, one small file each
     session-index.v1.json  the sessions as last read, with each one's usage by day. rebuilt from the transcripts
     usage-retired.json  the usage of sessions whose transcript is gone. this one cannot be rebuilt
-    scores.gavel-v3.1.v1.json  judgment day odds: per prompt its id, time, a hash and the model's answer. never the text
+    decisioning/    what the local model said, a file per task
+      scores.gavel-v3.1.v1.json  judgment day odds: per prompt its id, time, a hash and the model's answer. never the text
     acp.log         what Claude (with Grove) did in Zed: each request and each landing, never what was said. emptied past 1MB
 ~/Library/Sounds/
   Grove.wav         the notification chime, about 40KB. written at launch, and again whenever it differs from Grove's own

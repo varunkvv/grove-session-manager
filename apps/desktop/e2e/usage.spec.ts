@@ -326,7 +326,7 @@ test("judgment day odds: a fourth tile with gavel, its line, projects ranked and
   await expect(page.getByTestId("odds-tip")).toContainText("6 prompts judged");
 
   // nothing of what was typed is kept. the file is written a moment after the last score
-  const file = path.join(f.root, ".grove", "scores.gavel-v3.1.v1.json");
+  const file = path.join(f.root, ".grove", "decisioning", "scores.gavel-v3.1.v1.json");
   await expect
     .poll(
       () =>
@@ -371,7 +371,9 @@ test("judgment day odds come and go with the switch: off, on, off again", async 
   await expect(page.getByTestId("tile-odds")).toHaveCount(0);
   await expect(page.getByTestId("gavel")).toHaveCount(0);
   expect(await g.scorer()).toEqual({ spawned: 0, running: false });
-  expect(existsSync(path.join(f.root, ".grove", "scores.gavel-v3.1.v1.json"))).toBe(false);
+  expect(existsSync(path.join(f.root, ".grove", "decisioning", "scores.gavel-v3.1.v1.json"))).toBe(
+    false,
+  );
 
   // on: judged in the scorer's process, and the tile comes
   await flip(true);

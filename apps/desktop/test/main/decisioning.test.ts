@@ -472,6 +472,8 @@ describe("decisioning", () => {
     expect(real.mode).toBe("llama");
     expect(real.url).toBe("https://huggingface.co/x");
     expect(real.modelsDir).toBe("/Users/x/Library/Application Support/Grove/models");
+    // the scores have a folder of their own in the state dir: one file per task
+    expect(real.stateDir).toBe("/r/.grove/decisioning");
     const test = decisioningSetup({ ...base, env: {}, customRoot: true });
     expect([test.mode, test.url, test.modelsDir]).toEqual(["stub", undefined, "/r/.grove/models"]);
     const stand = decisioningSetup({
