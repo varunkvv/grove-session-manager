@@ -152,6 +152,11 @@ export class DecisioningService {
     this.file = { v: 1, rubric: "", files: {}, scores: {} };
   }
 
+  /** the scorer process is up: a test root asks, to see it never is while the switch is off */
+  get scorerRunning(): boolean {
+    return this.scorer?.running ?? false;
+  }
+
   private get key(): string {
     return scorerKey(this.o.model);
   }
@@ -208,8 +213,10 @@ export class DecisioningService {
   switched(on: boolean): void {
     if (on && this.o.supported && !this.ready && !this.download) void this.fetchModel();
     if (!on) {
+      // off is off: no download goes on, and the model's process and memory go now
       this.download?.abort.abort();
       this.scorer?.stop();
+      this.scorer = null;
     }
     this.push();
     this.kick();

@@ -265,7 +265,8 @@ function KeyRecorder({ value, onChange }: { value: string; onChange: (key: strin
   );
 }
 
-const megabytes = (n: number): string => `${Math.round(n / 1e6).toLocaleString("en-US")} MB`;
+const megabytes = (n: number): string =>
+  n > 0 && n < 1e6 ? "less than 1 MB" : `${Math.round(n / 1e6).toLocaleString("en-US")} MB`;
 
 /**
  * decisioning's model: what is on disk, the download's progress, and Download / Delete. these act

@@ -618,12 +618,12 @@ export function Usage() {
         {model && (
           <>
             {judged && model ? (
-              // four: two by two where the window is narrow, the odds a little wider when in a row,
-              // so its words keep clear of gavel
+              // four: two by two where the window is narrow. in a row the odds tile is a third wider,
+              // so its words keep clear of gavel and the others' change lines still fit
               <div
                 role="radiogroup"
                 aria-label="What the chart measures"
-                className="mt-5 grid grid-cols-2 gap-3 @3xl:grid-cols-[1fr_1fr_1fr_1.35fr]"
+                className="mt-5 grid grid-cols-2 gap-3 @3xl:grid-cols-[1fr_1fr_1fr_1.3fr]"
                 data-testid="usage-tiles"
               >
                 {tiles}

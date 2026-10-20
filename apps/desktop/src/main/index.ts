@@ -404,6 +404,8 @@ async function start(): Promise<void> {
 
   // decisioning (beta): judgment day odds. a test root never downloads or loads a real model: it
   // judges with the keyword stub, and fetches only from the stand-in server GROVE_MODEL_URL names
+  /** under a test root, how many scorer processes started: none while the switch is off */
+  let scorerSpawns = 0;
   const decided = decisioningSetup({
     env: process.env,
     customRoot: appEnv.customRoot,
@@ -424,10 +426,12 @@ async function start(): Promise<void> {
         ? process.env.GROVE_ON_BATTERY === "1"
         : electron.powerMonitor.isOnBatteryPower(),
     busy: () => sessions.usageCounting(),
-    spawn: () =>
-      electron.utilityProcess.fork(path.join(outDir, "scorer", "index.cjs"), [], {
+    spawn: () => {
+      scorerSpawns += 1;
+      return electron.utilityProcess.fork(path.join(outDir, "scorer", "index.cjs"), [], {
         serviceName: "Grove scorer",
-      }),
+      });
+    },
     fetch: (url, init) => electron.net.fetch(url, init),
     onStatus: (s) => pusher.send("decisioning:status", s),
   });
@@ -519,6 +523,8 @@ async function start(): Promise<void> {
       /** the key a summon would be held on, and the summon itself: a test root holds no key */
       summonKey: () => summonKeyOf(settings),
       summon: summonMain,
+      /** decisioning's scorer: how many processes started, and whether one runs now */
+      scorer: () => ({ spawned: scorerSpawns, running: decisioning.scorerRunning }),
     };
   }
 

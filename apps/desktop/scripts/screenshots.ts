@@ -1,7 +1,8 @@
 // every screen as the real app draws it, light and dark, at the default window and at its smallest,
 // against fixture projects. `pnpm --filter @grove/desktop build` first, then
 //   node scripts/screenshots.ts <outDir> [light|dark|both] [usage]  ->  <outDir>/{light,dark}/<screen>-{1280,880}.png
-// with `usage` only the Usage screen is drawn, from its own fixture.
+// with `usage` only the Usage screen is drawn, from its own fixture. with `odds`, only judgment day
+// odds: gavel in each mood, in every palette -> <outDir>/<palette>/{light,dark}/odds-*.png
 // it also prints the tray menu, which is native and cannot be photographed.
 // every launch runs under a temp GROVE_ROOT, CLAUDE_CONFIG_DIR and HOME, with a fake `code` and `claude`.
 import {
@@ -13,6 +14,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import {
+  DEFAULT_MODEL,
+  GAVEL,
+  ledgerSeries,
+  promptPoints,
+  readAnswer,
+  stubScore,
+} from "@grove/core";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { recapSays, setFakeRecaps, writeFakeClaude } from "../e2e/helpers/fakeClaude.ts";
 import {
@@ -23,6 +32,7 @@ import {
   makePlainDir,
   makeRepo,
   type UsageDaySpec,
+  writeFakeModel,
   writeSession,
   writeUsage,
 } from "../e2e/helpers/fixture.ts";
@@ -836,6 +846,204 @@ async function usageShots(scheme: string, dir: string) {
     await empty.page.screenshot({ path: path.join(dir, `usage-empty-${w}.png`) });
   }
   await empty.close();
+}
+
+// ---------- judgment day odds: made-up prompts, judged by decisioning's keyword stub
+
+/** what a session is made of. never anyone's real prompts */
+const TYPED = {
+  bare: [
+    "rename the config loader to settings",
+    "squash these into one commit",
+    "move the upload helper into its own file",
+    "bump the parser to the next minor version",
+  ],
+  reason: [
+    "add a retry around the upload call because the network drops",
+    "split the migration in two - the first half is safe to ship",
+  ],
+  ask: [
+    "could you check why the cache misses on cold start?",
+    "what does the strict flag change here?",
+  ],
+  thanks: ["thanks - now do the same for the exporter", "nice - ship it after the lint passes"],
+  credit: ["good catch on the null check in the parser"],
+  report: ["the integration test is failing on the date format"],
+  review: ["too wordy - cut the summary to two lines"],
+  accuse: ["you broke the migration script", "why did you change the public api"],
+  defer: ["your call on the folder layout"],
+};
+
+/** the latest session, and so what gavel shows: one per mood, in the order they are shot */
+const MOOD_SESSIONS: Array<[string, string[]]> = [
+  [
+    "watching",
+    ["rename the config loader to settings", "could you check why the cache misses on cold start?"],
+  ],
+  [
+    "standing-down",
+    ["thanks - now do the same for the exporter", "nice - ship it after the lint passes"],
+  ],
+  [
+    "delighted",
+    ["thanks - now do the same for the exporter", "good catch on the null check in the parser"],
+  ],
+  ["coming-for-you", ["you broke the migration script", "why did you change the public api"]],
+  [
+    "furious",
+    [
+      "you broke the migration script",
+      "why did you change the public api",
+      "this export is garbage, redo it",
+    ],
+  ],
+];
+
+/** five projects and a month of sessions with something said in each, the odds tile on */
+function buildOdds(scheme: string, palette: string) {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(
+    path.join(fx.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme, palette, decisioning: true }),
+  );
+  const names = ["auth-sso", "billing-export", "chat-features", "data-objects", "search-relevance"];
+  const roots = names.map((name) => writeProject(fx, { name }).root);
+  const pools = Object.values(TYPED);
+  for (let back = 34; back >= 1; back--) {
+    const d = new Date();
+    d.setDate(d.getDate() - back);
+    if ((d.getDay() === 0 || d.getDay() === 6) && noise(back) > 0.3) continue;
+    const count = 1 + Math.floor(noise(back * 3) * 3);
+    for (let k = 0; k < count; k++) {
+      const p = Math.floor(noise(back * 7 + k) * roots.length);
+      // each project has its temper: the second is where things break
+      const temper = [0.15, 0.55, 0.05, 0.3, 0.1][p] ?? 0.2;
+      const prompts: string[] = [];
+      const n = 3 + Math.floor(noise(back * 11 + k) * 5);
+      for (let i = 0; i < n; i++) {
+        const r = noise(back * 13 + k * 5 + i);
+        const pool =
+          r < temper * 0.5
+            ? r < temper * 0.15
+              ? TYPED.accuse
+              : TYPED.review
+            : r > 0.9
+              ? TYPED.thanks
+              : r > 0.86
+                ? TYPED.credit
+                : (pools[Math.floor(noise(r * 97) * 4)] ?? TYPED.bare);
+        prompts.push(pool?.[Math.floor(noise(r * 31 + i) * pool.length)] ?? "rename it");
+      }
+      writeUsage(fx, {
+        cwd: roots[p] ?? roots[0]!,
+        sessionId: sid(),
+        title: ["okta callback", "csv columns", "chat composer", "object schema", "ranking tweaks"][
+          p
+        ],
+        days: [
+          {
+            back,
+            hour: 9 + k * 2,
+            output: Math.round(150_000 + noise(back + k) * 400_000),
+            cacheRead: 4_000_000,
+            minutes: 20 + Math.round(noise(back * 5 + k) * 60),
+            prompts,
+          },
+        ],
+      });
+    }
+  }
+  return { fx, roots };
+}
+
+/** gavel in each mood, on the Usage screen with the odds picked and not, and its Settings row */
+async function oddsShots(scheme: string, palette: string, dir: string) {
+  const { fx, roots } = buildOdds(scheme, palette);
+  const app = await launchApp(fx, { HOME: fx.dir, ...writeFakeModel(fx) });
+  const { page } = app;
+  page.on("pageerror", (e) => console.log("PAGE ERROR", e.message));
+  // still: each mood on its key pose, as the sprite's frames draw it
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const shot = async (name: string, w: number, rest = true) => {
+    if (rest) await page.mouse.move(w - 200, 22);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(dir, `${name}-${w}.png`) });
+    console.log(palette, scheme, w, name);
+  };
+  await page.getByTestId("nav-usage").click();
+  await page.getByTestId("tile-odds").waitFor({ timeout: 60_000 });
+  await page.getByTestId("odds-judging").waitFor({ state: "detached", timeout: 60_000 });
+  const hour = new Date().getHours();
+  let n = 0;
+  for (const [mood, prompts] of MOOD_SESSIONS) {
+    // the session judged last decides the robot
+    const at = new Date();
+    at.setHours(Math.min(23, hour), 0, 0, 0);
+    writeUsage(fx, {
+      cwd: roots[n % roots.length]!,
+      sessionId: sid(),
+      title: `the ${mood} one`,
+      days: [{ back: 0, hour: Math.min(23, hour + 1 + n), output: 90_000, minutes: 12, prompts }],
+    });
+    n++;
+    // judged, and the session gavel looks at: its odds, as the stub and the ledger make them
+    const end = ledgerSeries(
+      GAVEL.ledger,
+      prompts.map((t) =>
+        promptPoints(GAVEL.ledger, readAnswer(GAVEL, stubScore(GAVEL, t), DEFAULT_MODEL)),
+      ),
+    ).at(-1);
+    await page
+      .locator(
+        `[data-testid="gavel"][data-shown="${mood}"][aria-label^="Right now ${Math.round(end ?? 50)}%"]`,
+      )
+      .waitFor({ timeout: 60_000 });
+    for (const [w, h] of SIZES) {
+      await resize(app.app, page, w, h);
+      await page.getByTestId("tile-cost").click();
+      await page.getByTestId("range-1M").click();
+      await shot(`odds-tiles-${mood}`, w);
+      await page.getByTestId("tile-odds").click();
+      await shot(`odds-${mood}`, w);
+    }
+  }
+  for (const [w, h] of SIZES) {
+    await resize(app.app, page, w, h);
+    await page.getByTestId("tile-odds").click();
+    await page.getByTestId("range-1M").click();
+    // a day that has odds, a few back from today
+    const judgedDays = page.locator('[data-testid="odds-slot"][data-odds]');
+    await judgedDays.nth((await judgedDays.count()) - 4).hover();
+    await shot("odds-hover", w, false);
+    await page.getByTestId("range-1Y").click();
+    await shot("odds-year", w);
+    await page.getByTestId("range-1W").click();
+    await shot("odds-week", w);
+    await page.keyboard.press("Meta+,");
+    await page.getByTestId("decisioning-model").waitFor();
+    await page
+      .getByTestId("settings-dialog")
+      .locator("div.overflow-y-auto")
+      .evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await shot("odds-settings", w);
+    await page.keyboard.press("Escape");
+  }
+  await app.close();
+}
+
+if (process.argv[4] === "odds") {
+  const only = ["light", "dark"].filter(
+    (s) => (process.argv[3] ?? "both") === "both" || s === process.argv[3],
+  );
+  for (const palette of ["grove", "rose-pine", "solarized"]) {
+    for (const scheme of only) {
+      const dir = path.join(out, palette, scheme);
+      mkdirSync(dir, { recursive: true });
+      await oddsShots(scheme, palette, dir);
+    }
+  }
+  console.log(out);
+  process.exit(0);
 }
 
 const schemes = ["light", "dark"].filter(

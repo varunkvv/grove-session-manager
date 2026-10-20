@@ -17,7 +17,7 @@ import {
   writeFakeModel,
   writeUsage,
 } from "./helpers/fixture.ts";
-import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { groveTest, type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 
 const AUTH = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -322,19 +322,69 @@ test("judgment day odds: a fourth tile with gavel, its line, projects ranked and
   await expect(page.getByTestId("odds-tip")).toContainText(`${Math.round(day)}%`);
   await expect(page.getByTestId("odds-tip")).toContainText("6 prompts judged");
 
-  // nothing of what was typed is kept
-  const kept = readFileSync(path.join(f.root, ".grove", "scores.gavel-v3.1.v1.json"), "utf8");
+  // nothing of what was typed is kept. the file is written a moment after the last score
+  const file = path.join(f.root, ".grove", "scores.gavel-v3.1.v1.json");
+  await expect
+    .poll(
+      () =>
+        existsSync(file) ? Object.keys(JSON.parse(readFileSync(file, "utf8")).scores).length : 0,
+      {
+        timeout: 15_000,
+      },
+    )
+    .toBe(6);
+  const kept = readFileSync(file, "utf8");
   for (const said of [...KIND, ...HARSH]) expect(kept).not.toContain(said.slice(0, 12));
 });
 
-test("judgment day odds are not there with decisioning off, or before its model is ready", async () => {
-  for (const o of [{ on: false }, { model: false }]) {
-    const { fx: f, env } = judged(o);
-    app = await launchApp(f, env);
-    await app.page.getByTestId("nav-usage").click();
-    await expect(tile(app.page, "cost")).toHaveText("$40", { timeout: 20_000 });
-    await expect(app.page.getByTestId("tile-odds")).toHaveCount(0);
-    await expect(app.page.getByTestId("gavel")).toHaveCount(0);
-    await app.close();
-  }
+test("judgment day odds come and go with the switch: off, on, off again", async () => {
+  // the model is on disk already, so only the switch decides
+  const { fx: f, env } = judged({ on: false });
+  app = await launchApp(f, env);
+  const { page } = app;
+  const g = groveTest(app.app);
+  const weights = path.join(f.root, ".grove", "models", DEFAULT_MODEL.file);
+  const flip = async (to: boolean) => {
+    await expect(async () => {
+      await page.keyboard.press("Meta+,");
+      await expect(page.getByTestId("settings-dialog")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+    const sw = page.getByTestId("setting-decisioning");
+    await expect(sw).toHaveAttribute("aria-checked", String(!to));
+    await sw.click();
+    await page.getByTestId("save-settings").click();
+    await expect(page.getByTestId("settings-dialog")).toBeHidden();
+  };
+
+  // off: the screen as it was, and nothing ran
+  await page.getByTestId("nav-usage").click();
+  await expect(tile(page, "cost")).toHaveText("$40", { timeout: 20_000 });
+  await expect(page.getByTestId("usage-tiles").getByRole("radio")).toHaveCount(3);
+  await expect(page.getByTestId("tile-odds")).toHaveCount(0);
+  await expect(page.getByTestId("gavel")).toHaveCount(0);
+  expect(await g.scorer()).toEqual({ spawned: 0, running: false });
+  expect(existsSync(path.join(f.root, ".grove", "scores.gavel-v3.1.v1.json"))).toBe(false);
+
+  // on: judged in the scorer's process, and the tile comes
+  await flip(true);
+  const day = odds([...KIND, ...HARSH]).at(-1) ?? 50;
+  await expect(tile(page, "odds")).toHaveText(`${Math.round(day)}%`, { timeout: 30_000 });
+  await expect(page.getByTestId("usage-tiles").getByRole("radio")).toHaveCount(4);
+  expect((await g.scorer()).spawned).toBeGreaterThan(0);
+
+  // off again: the tile goes, the process goes, the weights stay until Delete
+  await flip(false);
+  await expect(page.getByTestId("tile-odds")).toHaveCount(0);
+  await expect(page.getByTestId("usage-tiles").getByRole("radio")).toHaveCount(3);
+  await expect.poll(async () => (await g.scorer()).running).toBe(false);
+  expect(existsSync(weights)).toBe(true);
+});
+
+test("judgment day odds wait for the model: switched on with none on disk, there is no tile", async () => {
+  const { fx: f, env } = judged({ model: false });
+  app = await launchApp(f, env);
+  await app.page.getByTestId("nav-usage").click();
+  await expect(tile(app.page, "cost")).toHaveText("$40", { timeout: 20_000 });
+  await expect(app.page.getByTestId("tile-odds")).toHaveCount(0);
+  expect(await groveTest(app.app).scorer()).toEqual({ spawned: 0, running: false });
 });

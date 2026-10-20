@@ -381,6 +381,69 @@ describe("decisioning", () => {
     await svc.dispose();
   });
 
+  it("off, on, off again: nothing runs while off, and off stops the judging but keeps the model", async () => {
+    const t = transcript([
+      prompt("rename the old helper module", 120),
+      prompt("you broke the login page again", 60),
+    ]);
+    const state = sandbox("grove-decide-");
+    const models = path.join(state, "models");
+    const settings = { on: false };
+    let spawned = 0;
+    const children: Array<ScorerChild & { killed: boolean }> = [];
+    const svc = new DecisioningService({
+      stateDir: state,
+      modelsDir: models,
+      model: DEFAULT_MODEL,
+      file: FILE,
+      url: await serve(WEIGHTS),
+      rubric: GAVEL,
+      mode: "stub",
+      enabled: () => settings.on,
+      supported: true,
+      transcripts: () => [{ path: t, size: readFileSync(t).length }],
+      onBattery: () => false,
+      busy: () => false,
+      spawn: () => {
+        spawned++;
+        const c = fakeChild();
+        children.push(c);
+        return c;
+      },
+      fetch,
+      free: plenty,
+      onStatus: () => {},
+    });
+    // off, the model not on disk: nothing is fetched, read, judged or started
+    await svc.load();
+    await svc.run();
+    expect(requests).toEqual([]);
+    expect([svc.status().prompts, spawned, svc.scorerRunning]).toEqual([0, 0, false]);
+    expect(svc.odds(() => null)).toBeUndefined();
+
+    // on: the model comes down, the prompts are read and judged in the scorer's process
+    settings.on = true;
+    svc.switched(true);
+    await expect.poll(() => svc.status().model.state).toBe("ready");
+    await svc.run();
+    expect([svc.status().prompts, svc.status().scored, spawned]).toEqual([2, 2, 1]);
+    expect(svc.scorerRunning).toBe(true);
+    expect(svc.odds(() => null)?.current).toBeDefined();
+
+    // off again: the process goes, the tile goes, the weights stay, and a new prompt waits
+    settings.on = false;
+    svc.switched(false);
+    expect(svc.scorerRunning).toBe(false);
+    expect(children[0]?.killed).toBe(true);
+    expect(svc.odds(() => null)).toBeUndefined();
+    expect(await modelReady(models, FILE)).toBe(true);
+    writeFileSync(t, `${readFileSync(t, "utf8")}${prompt("thanks, that fixed it for good", 1)}\n`);
+    await svc.run();
+    expect([svc.status().prompts, spawned]).toEqual([2, 1]);
+    expect(svc.status().on).toBe(false);
+    await svc.dispose();
+  });
+
   it("is off below macOS 14, and a test root never reaches the real model", () => {
     expect(macosSupported("darwin", "14.0.0")).toBe(true);
     expect(macosSupported("darwin", "13.6.1")).toBe(false);
