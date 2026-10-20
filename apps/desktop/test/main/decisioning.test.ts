@@ -455,6 +455,7 @@ describe("decisioning", () => {
       url: "https://huggingface.co/x",
       platform: "darwin",
       systemVersion: "26.7.0",
+      totalMemory: 16 * 1024 ** 3,
     };
     const real = decisioningSetup({ ...base, env: {}, customRoot: false });
     expect(real.mode).toBe("llama");
@@ -473,6 +474,55 @@ describe("decisioning", () => {
     });
     expect(stand.url).toBe("http://127.0.0.1:1/m");
     expect(stand.file).toEqual({ file: DEFAULT_MODEL.file, sha256: "ab", size: 9 });
+    // a model that wants more memory than the mac has is off, and says why
+    const small = decisioningSetup({
+      ...base,
+      env: {},
+      customRoot: false,
+      model: { ...DEFAULT_MODEL, minMemoryGB: 32 },
+    });
+    expect([small.supported, small.unsupported]).toEqual([
+      false,
+      "Needs a Mac with 32 GB of memory or more.",
+    ]);
+    const old = decisioningSetup({ ...base, env: {}, customRoot: false, systemVersion: "13.6" });
+    expect(old.unsupported).toBe("Needs macOS 14 or later.");
+    expect(real.supported).toBe(true);
+  });
+
+  it("says when the scorer will not run, and does not try again for a minute", async () => {
+    const t = transcript([prompt("rename the old helper module", 30)]);
+    const { models, state } = setup();
+    await readyModel(models);
+    const settings = { on: true };
+    let spawned = 0;
+    const svc = new DecisioningService({
+      stateDir: state,
+      modelsDir: models,
+      model: DEFAULT_MODEL,
+      file: FILE,
+      rubric: GAVEL,
+      mode: "stub",
+      enabled: () => settings.on,
+      supported: true,
+      transcripts: () => [{ path: t, size: readFileSync(t).length }],
+      onBattery: () => false,
+      busy: () => false,
+      spawn: () => {
+        spawned++;
+        return fakeChild({ failLoad: true });
+      },
+      fetch,
+      free: plenty,
+      onStatus: () => {},
+    });
+    await svc.load();
+    await svc.run();
+    expect(svc.status().stalled).toBe("no metal");
+    expect(svc.status().scored).toBe(0);
+    await svc.run();
+    expect(spawned).toBe(1);
+    await svc.dispose();
   });
 });
 

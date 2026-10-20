@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   DEFAULT_MODEL,
@@ -416,6 +417,7 @@ async function start(): Promise<void> {
     url: modelUrl(DEFAULT_MODEL),
     platform: process.platform,
     systemVersion: process.getSystemVersion(),
+    totalMemory: os.totalmem(),
   });
   const decisioning = new DecisioningService({
     ...decided,

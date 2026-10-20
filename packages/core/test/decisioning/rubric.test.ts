@@ -154,12 +154,11 @@ describe("the model registry", () => {
       expect(m.size).toBeGreaterThan(0);
       expect(m.tieMargin).toBeGreaterThanOrEqual(0);
     }
-    expect(modelUrl(DEFAULT_MODEL)).toBe(
-      "https://huggingface.co/mradermacher/OneJev1.6-0.8B-GGUF/resolve/74d2d1a64836edfd866293008c7265ed32b95f4d/OneJev1.6-0.8B.Q8_0.gguf",
-    );
-    expect(scorerKey(DEFAULT_MODEL)).toBe(
-      "onejev1.6-0.8b-q8_0/qev-labels-v2/context-in-state/score/hint",
-    );
+    // shapes, not this model's values: swapping the entry is phase 0's one edit
+    const m = DEFAULT_MODEL;
+    expect(modelUrl(m)).toBe(`https://huggingface.co/${m.repo}/resolve/${m.revision}/${m.file}`);
+    expect(scorerKey(m).startsWith(`${m.id}/${m.prompt}/${m.layout}/`)).toBe(true);
+    expect(scorerKey({ ...m, hint: !m.hint })).not.toBe(scorerKey(m));
     expect(scorerKey({ ...DEFAULT_MODEL, readout: { kind: "shift", shifts: 5 } })).toContain(
       "/shift5/",
     );

@@ -64,8 +64,10 @@ export interface DecisioningOptions {
   mode: ScorerMode;
   /** the setting, read fresh */
   enabled: () => boolean;
-  /** macOS 14 or later */
+  /** macOS 14 or later, and memory enough for the model */
   supported: boolean;
+  /** why not, for Settings */
+  unsupported?: string;
   /** every top-level transcript grove lists */
   transcripts: () => ReadonlyArray<{ path: string; size: number }>;
   /** a session folder whose prompts are not judged. temp folders unless a test root says */
@@ -85,6 +87,21 @@ export interface DecisioningOptions {
 export const macosSupported = (platform: string, version: string): boolean =>
   platform === "darwin" && Number(version.split(".")[0]) >= 14;
 
+/** why this mac cannot run the model, or undefined when it can */
+export function unsupportedWhy(o: {
+  platform: string;
+  systemVersion: string;
+  totalMemory: number;
+  model: Pick<ModelEntry, "minMemoryGB">;
+}): string | undefined {
+  if (!macosSupported(o.platform, o.systemVersion)) return "Needs macOS 14 or later.";
+  // GiB, as a mac's memory is sold: an 8 GB mac reports 8 x 1024^3
+  if (o.totalMemory < o.model.minMemoryGB * 1024 ** 3) {
+    return `Needs a Mac with ${o.model.minMemoryGB} GB of memory or more.`;
+  }
+  return undefined;
+}
+
 /**
  * where the model goes and what judges with it. a test root keeps the weights under its own state
  * dir, judges with the keyword stub unless GROVE_SCORER=llama, downloads only from GROVE_MODEL_URL
@@ -100,10 +117,20 @@ export function decisioningSetup(o: {
   url: string;
   platform: string;
   systemVersion: string;
+  totalMemory: number;
 }): Pick<
   DecisioningOptions,
-  "stateDir" | "modelsDir" | "model" | "file" | "url" | "mode" | "supported" | "ignore"
+  | "stateDir"
+  | "modelsDir"
+  | "model"
+  | "file"
+  | "url"
+  | "mode"
+  | "supported"
+  | "unsupported"
+  | "ignore"
 > {
+  const why = unsupportedWhy({ ...o, model: o.model });
   const test = o.customRoot;
   const size = Number(o.env.GROVE_MODEL_SIZE);
   const stand = test && o.env.GROVE_MODEL_SHA256 && size > 0;
@@ -117,7 +144,8 @@ export function decisioningSetup(o: {
       ? { url: test ? o.env.GROVE_MODEL_URL : o.url }
       : {}),
     mode: test && o.env.GROVE_SCORER !== "llama" ? "stub" : "llama",
-    supported: macosSupported(o.platform, o.systemVersion),
+    supported: why === undefined,
+    ...(why ? { unsupported: why } : {}),
     ...(test ? { ignore: () => false } : {}),
   };
 }
@@ -145,6 +173,7 @@ export class DecisioningService {
   private again = false;
   private waiting: "battery" | undefined;
   private retryAt = 0;
+  private stalled: string | undefined;
   private disposed = false;
 
   constructor(o: DecisioningOptions) {
@@ -198,10 +227,12 @@ export class DecisioningService {
     return {
       on: this.o.enabled(),
       supported: this.o.supported,
+      ...(this.o.unsupported ? { unsupported: this.o.unsupported } : {}),
       model,
       prompts,
       scored,
       ...(this.waiting && this.active ? { waiting: this.waiting } : {}),
+      ...(this.stalled && this.active ? { stalled: this.stalled } : {}),
     };
   }
 
@@ -408,10 +439,14 @@ export class DecisioningService {
       rubric: this.o.rubric,
     });
     try {
-      return await this.scorer.score(batch.map((p) => ({ text: p.text, prev: p.prev })));
+      const answers = await this.scorer.score(batch.map((p) => ({ text: p.text, prev: p.prev })));
+      this.stalled = undefined;
+      return answers;
     } catch (e) {
-      // the model would not load, or the process died: tried again on the next kick
-      log.warn("decisioning scorer:", e instanceof Error ? e.message : String(e));
+      // the model would not load, or the process died: tried again on the next kick, and Settings
+      // says so meanwhile, so a broken model never looks like slow judging
+      this.stalled = e instanceof Error ? e.message : String(e);
+      log.warn("decisioning scorer:", this.stalled);
       this.scorer.stop();
       this.scorer = null;
       this.retryAt = this.now + RETRY_MS;

@@ -280,7 +280,7 @@ function DecisioningModel({ draftOn, savedOn }: { draftOn: boolean; savedOn: boo
   if (!status.supported) {
     return (
       <p className="mt-2 text-sm text-fg-4" data-testid="decisioning-unsupported">
-        Needs macOS 14 or later.
+        {status.unsupported ?? "Needs macOS 14 or later."}
       </p>
     );
   }
@@ -339,6 +339,11 @@ function DecisioningModel({ draftOn, savedOn }: { draftOn: boolean; savedOn: boo
       {m.state === "failed" && m.error && (
         <p className="text-sm text-danger" data-testid="decisioning-error">
           {m.error}
+        </p>
+      )}
+      {m.state === "ready" && status.stalled && (
+        <p className="text-sm text-danger" data-testid="decisioning-stalled">
+          Judging stopped: {status.stalled} It tries again in a minute.
         </p>
       )}
       {m.state === "ready" && status.prompts > 0 && (

@@ -427,8 +427,10 @@ export interface OddsView {
 export interface DecisioningStatus {
   /** the setting */
   on: boolean;
-  /** macOS 14 or later: the runtime needs it */
+  /** macOS 14 or later, and the memory the model asks for */
   supported: boolean;
+  /** why not, when it is not: what Settings says in place of the model */
+  unsupported?: string;
   model: {
     label: string;
     /** bytes */
@@ -444,6 +446,8 @@ export interface DecisioningStatus {
   scored: number;
   /** what holds the backfill back: the mac is on battery */
   waiting?: "battery";
+  /** the scorer's last failure (the model would not load, its process died). tried again in a minute */
+  stalled?: string;
 }
 
 export type MenuCommandId =

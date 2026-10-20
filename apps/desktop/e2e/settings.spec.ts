@@ -53,7 +53,8 @@ test("decisioning: the switch downloads its model with progress, and Delete take
     );
     for (let at = from; at < body.length; at += 100_000) {
       res.write(body.subarray(at, at + 100_000));
-      await new Promise((r) => setTimeout(r, 80));
+      // ~4s in all: long enough to be caught downloading after Save and a reopened dialog
+      await new Promise((r) => setTimeout(r, 200));
     }
     res.end();
   });
