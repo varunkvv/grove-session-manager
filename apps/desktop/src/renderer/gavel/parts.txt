@@ -1,0 +1,232 @@
+# gavel - parts. '.' is transparent. build.py paints a mood's parts in the order listed.
+# moods named x-* are variants under comparison; build.py writes them to scratch/.
+# arm.r.idle is not in a key pose - it is the neutral in-between for the thumb and the raised fist.
+@size 28 22
+
+@part head
+..OOOOOOODDDDD..
+.OHHHHHHLLLLLMD.
+OHLKKKKKKKKKKMMD
+OHKKKKKKKKKKKKMD
+OHKKKKKKKKKKKKMD
+OLKKKKKKKKKKKKMD
+DLKKKKKKKKKKKKMD
+DLKKKKKKKKKKKKMD
+DLKKKKKKKKKKKKMD
+DLMKKKKKKKKKKSSD
+.DMMMMMMMMMMMSD.
+..DDDDDDDDDDDD..
+
+@part face.watch
+............
+........RR..
+.......RHRR.
+.HHHH..RRRR.
+..HH....RR..
+............
+.....HHH....
+............
+
+@part face.angry
+............
+.RR......RR.
+.RRRR..RRRR.
+..RRR..RRR..
+............
+.....HH.....
+....H..H....
+............
+
+@part antenna.violet
+.HV.
+VVVV
+VVVV
+.D..
+
+@part antenna.red
+.HR.
+RRRR
+RRRR
+.D..
+
+@part torso
+.DDDDDD.
+OLMMMMSD
+OLMMMMSD
+.DDDDDD.
+
+@part legs
+.OMD..OMD.
+OLMD..OLMD
+DDDD..DDDD
+
+@part shadow
+gggggggggggggg
+
+@part arm.l.idle
+.OO.
+OLMD
+OLMD
+OLSD
+.DD.
+
+@part arm.r.idle
+.DD.
+DMSD
+DMSD
+DMSD
+.DD.
+
+@part arm.r.thumb
+.......OO..
+......OHLD.
+......OLMD.
+......OLMD.
+.....OHLLMD
+.OOOOODDDSD
+DLLLLLLLMSD
+.DDDDDDDDD.
+
+# an open raised hand, the arm angled up in two 1-row steps (no crease, so it never reads as a fist).
+# since v8 it is pleased's royal wave
+@part arm.l.cheer
+.OOO.......
+OHLLD......
+OLLMD......
+.OLLD......
+..OLLOO....
+...DLLLOOO.
+....DDLLLLD
+......DDDD.
+
+@part face.furious
+.rr......rr.
+rRR......RRr
+rRRRR..RRRRr
+.rRRR..RRRr.
+..rrr..rrr..
+..H.H.H.H...
+...H.H.H.H..
+............
+
+@part arm.l.back
+.OO
+OSD
+OSD
+.DD
+
+@part arm.r.back
+DD.
+DSD
+DSD
+DD.
+
+@part arm.r.fist-up
+.......OOO.
+......OHLMD
+......ODDSD
+......OLMSD
+.......DDD.
+.......OMD.
+.......OMD.
+.......OMD.
+.OOOOOOLMD.
+DLLLLLLLMD.
+.DDDDDDDDD.
+
+@part arm.l.fist-up
+.OOO.......
+OHLMD......
+OLDDD......
+OLMSD......
+.DDD.......
+.OMD.......
+.OMD.......
+.OMD.......
+.OMLOOOOOO.
+.OLLLLLLLLD
+.DDDDDDDDD.
+
+@part anger
+RR
+RR
+RR
+..
+RR
+
+# v8: the top two moods are condescension, not affection. "good little ant" at best.
+# pleased (85+, mood id delighted): eyes closed in contented U-arcs, a hook smirk
+@part face.pleased
+............
+............
+.H..H..H..H.
+..HH....HH..
+............
+........H...
+.....HHH....
+............
+
+# tolerating (70-84, mood id standing-down): half-lidded (watching's squint, both eyes), a 2px smirk
+@part face.tolerating
+............
+............
+.HHHH..HHHH.
+..HH....HH..
+............
+.......H....
+.....HH.....
+............
+
+# moods: layer part x y, painted in this order
+# pleased: one hand behind the back, the other raised in a lazy royal wave toward the number
+@mood delighted
+shadow shadow 7 21
+legs legs 9 19
+arm-r arm.r.back 18 15
+torso torso 10 15
+head head 6 4
+arm-l arm.l.cheer 0 10
+antenna antenna.violet 12 0
+face face.pleased 8 6
+
+# tolerating: the same thumbs up, now deadpan
+@mood standing-down
+shadow shadow 7 21
+legs legs 9 19
+torso torso 10 15
+arm-l arm.l.idle 7 15
+head head 6 4
+arm-r arm.r.thumb 17 10
+antenna antenna.violet 12 0
+face face.tolerating 8 6
+
+@mood watching
+shadow shadow 7 21
+legs legs 9 19
+arm-l arm.l.back 7 15
+arm-r arm.r.back 18 15
+torso torso 10 15
+head head 6 4
+antenna antenna.violet 12 0
+face face.watch 8 6
+
+@mood coming-for-you
+shadow shadow 7 21
+legs legs 9 19
+torso torso 10 15
+arm-l arm.l.idle 7 15
+head head 6 5
+arm-r arm.r.fist-up 17 7
+antenna antenna.red 12 1
+face face.angry 8 7
+
+@mood furious
+shadow shadow 7 21
+legs legs 9 19
+torso torso 10 15
+head head 6 4
+arm-l arm.l.fist-up 0 7
+arm-r arm.r.fist-up 17 7
+antenna antenna.red 12 0
+face face.furious 8 6
+fx anger 23 0
