@@ -8,6 +8,7 @@ import {
   promptPoints,
   readAnswer,
   stubScore,
+  weightsFileName,
 } from "@grove/core";
 import { expect, type Page, test } from "@playwright/test";
 import {
@@ -345,7 +346,12 @@ test("judgment day odds come and go with the switch: off, on, off again", async 
   app = await launchApp(f, env);
   const { page } = app;
   const g = groveTest(app.app);
-  const weights = path.join(f.root, ".grove", "models", DEFAULT_MODEL.file);
+  const weights = path.join(
+    f.root,
+    ".grove",
+    "models",
+    weightsFileName(env.GROVE_MODEL_SHA256 ?? ""),
+  );
   const flip = async (to: boolean) => {
     await expect(async () => {
       await page.keyboard.press("Meta+,");

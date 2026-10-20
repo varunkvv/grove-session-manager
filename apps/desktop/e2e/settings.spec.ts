@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { DEFAULT_MODEL } from "@grove/core";
+import { weightsFileName } from "@grove/core";
 import { expect, test } from "@playwright/test";
 import { makeFixture } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
@@ -88,7 +88,8 @@ test("decisioning: the switch downloads its model with progress, and Delete take
     await expect(page.getByTestId("decisioning-progress")).toBeVisible();
     await expect(row).toHaveAttribute("data-state", "ready", { timeout: 20_000 });
     await expect(page.getByTestId("decisioning-size")).toHaveText("2 MB on this Mac");
-    const weights = path.join(fx.root, ".grove", "models", DEFAULT_MODEL.file);
+    // named by its hash, not the file name upstream
+    const weights = path.join(fx.root, ".grove", "models", weightsFileName(sha));
     expect(readFileSync(weights).equals(body)).toBe(true);
 
     // Delete acts now, not on Save

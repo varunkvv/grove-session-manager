@@ -8,6 +8,7 @@ import {
   DEFAULT_MODEL,
   emptyScores,
   GAVEL,
+  type ModelEntry,
   type ScoreFile,
   scoresFileName,
   toKept,
@@ -136,6 +137,16 @@ describe("the model download", () => {
     await expect(
       downloadModel({ dir, model: FILE, url: broken, fetch, free: plenty }),
     ).rejects.toThrow(/answered 404/);
+  });
+
+  it("names the weights by their hash: a moved or renamed upstream file is the same weights", () => {
+    const a = weightsPath("/m", { sha256: SHA, size: 1 });
+    expect(path.basename(a)).toBe(`${SHA.slice(0, 16)}.gguf`);
+    // the same bytes under another repo and name: one file on disk
+    const moved: ModelEntry = { ...DEFAULT_MODEL, repo: "someone/else", file: "x.gguf" };
+    expect(weightsPath("/m", moved)).toBe(weightsPath("/m", DEFAULT_MODEL));
+    // two models with the same upstream name: two files
+    expect(weightsPath("/m", { sha256: "0".repeat(64), size: 1 })).not.toBe(a);
   });
 
   it("deletes the weights, a part and the check", async () => {
@@ -473,7 +484,7 @@ describe("decisioning", () => {
       },
     });
     expect(stand.url).toBe("http://127.0.0.1:1/m");
-    expect(stand.file).toEqual({ file: DEFAULT_MODEL.file, sha256: "ab", size: 9 });
+    expect(stand.file).toEqual({ sha256: "ab", size: 9 });
     // a model that wants more memory than the mac has is off, and says why
     const small = decisioningSetup({
       ...base,

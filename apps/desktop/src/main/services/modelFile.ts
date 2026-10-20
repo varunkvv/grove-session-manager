@@ -4,16 +4,18 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, stat, statfs, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ModelEntry } from "@grove/core";
+import { type ModelEntry, weightsFileName } from "@grove/core";
 
 /** what a model is downloaded and checked against: the registry entry, or a test root's stand-in */
-export type ModelFile = Pick<ModelEntry, "file" | "sha256" | "size">;
+export type ModelFile = Pick<ModelEntry, "sha256" | "size">;
 
 /** room left on the disk after the download, so it never fills it */
 const MARGIN = 512 * 1024 * 1024;
 const PROGRESS_MS = 250;
 
-export const weightsPath = (dir: string, m: ModelFile): string => path.join(dir, m.file);
+/** by hash: the URL it is fetched from can move without a second download */
+export const weightsPath = (dir: string, m: ModelFile): string =>
+  path.join(dir, weightsFileName(m.sha256));
 const partPath = (dir: string, m: ModelFile) => `${weightsPath(dir, m)}.part`;
 /** written after the hash matched: the weights are not hashed again on every start */
 const okPath = (dir: string, m: ModelFile) => `${weightsPath(dir, m)}.sha256`;

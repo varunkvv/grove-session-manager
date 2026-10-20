@@ -139,7 +139,7 @@ export function decisioningSetup(o: {
     // appData, not userData: a dev build shares the one download with the installed app
     modelsDir: test ? path.join(o.stateDir, "models") : path.join(o.appData, "Grove", "models"),
     model: o.model,
-    file: stand ? { file: o.model.file, sha256: o.env.GROVE_MODEL_SHA256 ?? "", size } : o.model,
+    file: stand ? { sha256: o.env.GROVE_MODEL_SHA256 ?? "", size } : o.model,
     ...((test ? o.env.GROVE_MODEL_URL : o.url)
       ? { url: test ? o.env.GROVE_MODEL_URL : o.url }
       : {}),

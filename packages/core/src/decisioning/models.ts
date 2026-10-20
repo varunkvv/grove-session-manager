@@ -77,6 +77,12 @@ export const MODELS: readonly ModelEntry[] = [ONEJEV_08B];
 /** the one grove downloads */
 export const DEFAULT_MODEL: ModelEntry = ONEJEV_08B;
 
+/**
+ * the weights' name on disk: their hash, not the upstream file name. the same bytes moved to
+ * another repo or renamed are never downloaded again, and two entries never share a path
+ */
+export const weightsFileName = (sha256: string): string => `${sha256.slice(0, 16)}.gguf`;
+
 export const modelUrl = (m: Pick<ModelEntry, "repo" | "revision" | "file">): string =>
   `https://huggingface.co/${m.repo}/resolve/${m.revision}/${m.file}`;
 

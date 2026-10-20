@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { claudeProjectSlug, DEFAULT_MODEL } from "@grove/core";
+import { claudeProjectSlug, weightsFileName } from "@grove/core";
 
 export interface Fixture {
   dir: string;
@@ -622,7 +622,7 @@ export function writeFakeModel(fx: Fixture): Record<string, string> {
   mkdirSync(dir, { recursive: true });
   const body = Buffer.from("not a model: a test root judges with the stub\n");
   const sha = createHash("sha256").update(body).digest("hex");
-  writeFileSync(path.join(dir, DEFAULT_MODEL.file), body);
-  writeFileSync(path.join(dir, `${DEFAULT_MODEL.file}.sha256`), `${sha}\n`);
+  writeFileSync(path.join(dir, weightsFileName(sha)), body);
+  writeFileSync(path.join(dir, `${weightsFileName(sha)}.sha256`), `${sha}\n`);
   return { GROVE_MODEL_SHA256: sha, GROVE_MODEL_SIZE: String(body.length) };
 }
