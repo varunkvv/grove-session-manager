@@ -45,6 +45,12 @@ Fixed since 0.23.42:
 
 - an MCP server's form or sign-in page in a chat window, and a paused session's dialog, are in needs you and notify
   like a permission prompt. before, only the chat window showed them
+- an approved permission prompt leaves needs you when you approve it. before, it stayed until the command finished,
+  minutes for a build
+- several permission prompts from one session within a minute are one notification. the row in needs you still shows
+  the newest
+- a session started in a project's subfolder or working copy shows its permission prompts and questions under needs
+  you, from claude's own session file
 
 ## 0.22
 
