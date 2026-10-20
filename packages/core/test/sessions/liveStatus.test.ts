@@ -158,8 +158,14 @@ describe("session status from hook events", () => {
       at: 2,
     });
     expect(still).toMatchObject({ target: "pnpm test --filter api", agentId: "a1" });
-    // answered: running again, and the agent that asked is not asking any more
-    const answered = reduceStatus(still, { sessionId: SID, event: "PostToolUse", at: 3 });
+    // answered: running again, and the agent that asked is not asking any more. its own tool call
+    // says so, the main thread's would not
+    const answered = reduceStatus(still, {
+      sessionId: SID,
+      event: "PostToolUse",
+      at: 3,
+      agentId: "a1",
+    });
     expect(answered?.state).toBe("running");
     expect(answered?.agentId).toBeUndefined();
     expect(answered?.target).toBeUndefined();
@@ -492,6 +498,176 @@ describe("session status from hook events", () => {
     const events = await drainStatusEvents(dir);
     expect(events.map((e) => e.event)).toEqual(["UserPromptSubmit", "Stop"]);
     expect(readdirSync(dir)).toEqual(["7-7.tmp"]);
+  });
+});
+
+/**
+ * what grove's hooks got from a real sdk session (claude 2.1.296, sdk 0.3.296), oldest first.
+ * PreToolUse and the user's paths are left out. `at` is the second the event came in, plus 10ms
+ * per event before it in that second
+ */
+function capture(name: string): StatusEvent[] {
+  const file = path.join(import.meta.dirname, "../fixtures/hooks", `${name}.json`);
+  const events = JSON.parse(readFileSync(file, "utf8")) as Array<{ at: number; payload: unknown }>;
+  return events.map((e) => parseStatusEvent(e.payload, e.at) as StatusEvent);
+}
+
+/** each event with the status it left */
+function replay(events: StatusEvent[], from?: LiveStatus) {
+  let s = from;
+  return events.map((ev) => {
+    s = reduceStatus(s, ev);
+    return { ev, s };
+  });
+}
+
+const who = (ev: StatusEvent) => `${ev.event} ${ev.agentId ? "agent" : "main"}`;
+
+describe("an ask while a background agent works", () => {
+  it("the main thread's question stays while the agent's tools run (bg-agent capture)", () => {
+    // launches the agent, asks a question while it works, gets the answer
+    const steps = replay(capture("bg-agent").slice(0, 8));
+    expect(steps.map(({ ev, s }) => `${who(ev)} -> ${s?.state}`)).toEqual([
+      "UserPromptSubmit main -> running",
+      "PostToolUse main -> running",
+      "SubagentStart agent -> running",
+      "PermissionRequest main -> permission",
+      // the agent's Bash, six seconds into the question
+      "PostToolUse agent -> permission",
+      "Notification main -> permission",
+      // the answer
+      "PostToolUse main -> running",
+      "PostToolUse agent -> running",
+    ]);
+    const asking = steps[4]?.s;
+    expect(asking).toMatchObject({ detail: "AskUserQuestion", lastEventAt: steps[4]?.ev.at });
+    expect(needsYou(asking)).toBe(true);
+  });
+
+  it("the main thread's tool call still ends its ask. a denied one ends at its next tool or the Stop", () => {
+    expect(
+      run([
+        { event: "UserPromptSubmit", at: 1 },
+        { event: "PermissionRequest", at: 2, toolName: "Bash" },
+        { event: "PostToolUse", at: 3, agentId: "a1" },
+        { event: "PostToolUse", at: 4, toolName: "Bash" },
+      ]).trail,
+    ).toEqual(["running", "permission", "permission", "running"]);
+    expect(
+      run([
+        { event: "UserPromptSubmit", at: 1 },
+        { event: "PermissionRequest", at: 2, toolName: "Bash" },
+        { event: "PostToolUse", at: 3, toolName: "Read" },
+      ]).trail,
+    ).toEqual(["running", "permission", "running"]);
+    expect(
+      run([
+        { event: "UserPromptSubmit", at: 1 },
+        { event: "PermissionRequest", at: 2, toolName: "Bash" },
+        { event: "Stop", at: 3, message: "ok, leaving it" },
+      ]).s?.state,
+    ).toBe("waiting");
+  });
+
+  it("an agent asking mid-turn is answered by its own tool call, never the main thread's", () => {
+    const { s, trail } = run([
+      { event: "UserPromptSubmit", at: 1 },
+      { event: "PermissionRequest", at: 2, toolName: "Bash", agentId: "a1" },
+      { event: "PostToolUse", at: 3, toolName: "Read" },
+      { event: "PostToolUse", at: 4, agentId: "a2" },
+      { event: "PostToolUse", at: 5, toolName: "Bash", agentId: "a1" },
+    ]);
+    expect(trail).toEqual(["running", "permission", "permission", "permission", "running"]);
+    expect(s).toMatchObject({ turnStart: 1, lastEventAt: 5 });
+    expect(s?.agentId).toBeUndefined();
+  });
+
+  it("an agent asking after the turn ended puts back what it interrupted, as it was", () => {
+    const ended = run([
+      { event: "UserPromptSubmit", at: 1_000 },
+      { event: "Stop", at: 2_000, message: "Should I keep going?" },
+    ]).s as LiveStatus;
+    for (const was of [ended, { ...ended, seen: true }]) {
+      const asked = reduceStatus(was, {
+        sessionId: SID,
+        event: "PermissionRequest",
+        at: 3_000,
+        toolName: "Bash",
+        agentId: "a1",
+      });
+      expect(asked).toMatchObject({ state: "permission", detail: "Bash", agentId: "a1" });
+      expect(asked?.resume).toEqual(was);
+      expect(needsYou(asked)).toBe(true);
+      const back = reduceStatus(asked, {
+        sessionId: SID,
+        event: "PostToolUse",
+        at: 4_000,
+        agentId: "a1",
+      });
+      expect(back).toEqual({ ...was, lastEventAt: 4_000 });
+    }
+  });
+
+  it("the asking agent's stop ends its denied ask too. another agent's tools and stop do not", () => {
+    const { s, trail } = run([
+      { event: "UserPromptSubmit", at: 1 },
+      { event: "Stop", at: 2 },
+      { event: "PermissionRequest", at: 3, toolName: "Bash", agentId: "a1" },
+      { event: "PostToolUse", at: 4, agentId: "a2" },
+      { event: "SubagentStop", at: 5, agentId: "a2" },
+      { event: "SubagentStop", at: 6, agentId: "a1" },
+    ]);
+    expect(trail).toEqual([
+      "running",
+      "waiting",
+      "permission",
+      "permission",
+      "permission",
+      "waiting",
+    ]);
+    expect(s).toMatchObject({ at: 2, lastEventAt: 6 });
+    // mid-turn there is nothing to put back: the turn runs on
+    expect(
+      run([
+        { event: "UserPromptSubmit", at: 1 },
+        { event: "PermissionRequest", at: 2, toolName: "Bash", agentId: "a1" },
+        { event: "SubagentStop", at: 3, agentId: "a1" },
+      ]).trail,
+    ).toEqual(["running", "permission", "running"]);
+  });
+
+  it("an ask on top of an ask keeps one level", () => {
+    // an agent asking while the main thread asks: the main thread's question comes back after
+    const main = run([
+      { event: "UserPromptSubmit", at: 1 },
+      { event: "PermissionRequest", at: 2, toolName: "AskUserQuestion" },
+      { event: "PermissionRequest", at: 3, toolName: "Bash", agentId: "a1" },
+      { event: "PostToolUse", at: 4, agentId: "a1" },
+    ]);
+    expect(main.s).toMatchObject({ state: "permission", at: 2, detail: "AskUserQuestion" });
+    expect(main.s?.agentId).toBeUndefined();
+    // two agents asking after the turn ended: the second keeps the turn, never the first's ask
+    const two = run([
+      { event: "UserPromptSubmit", at: 1 },
+      { event: "Stop", at: 2 },
+      { event: "PermissionRequest", at: 3, toolName: "Bash", agentId: "a1" },
+      { event: "PermissionRequest", at: 4, toolName: "Edit", agentId: "a2" },
+    ]);
+    expect(two.s?.resume).toMatchObject({ state: "waiting", at: 2 });
+    expect(two.s?.resume?.resume).toBeUndefined();
+    expect(
+      reduceStatus(two.s, { sessionId: SID, event: "PostToolUse", at: 5, agentId: "a2" }),
+    ).toMatchObject({ state: "waiting", at: 2 });
+  });
+
+  it("a Stop or a prompt of the main thread replaces an agent's ask", () => {
+    const asking = run([
+      { event: "UserPromptSubmit", at: 1 },
+      { event: "Stop", at: 2 },
+      { event: "PermissionRequest", at: 3, toolName: "Bash", agentId: "a1" },
+    ]).s;
+    const prompted = reduceStatus(asking, { sessionId: SID, event: "UserPromptSubmit", at: 4 });
+    expect(prompted).toEqual({ state: "running", at: 4, lastEventAt: 4, turnStart: 4 });
   });
 });
 

@@ -264,6 +264,11 @@ export interface LiveStatus {
   question?: string;
   /** a subagent raised the permission prompt, not the session itself. only while it asks. */
   agentId?: string;
+  /**
+   * what a subagent's ask interrupted, put back as it was when that ask ends: a turn that had
+   * ended, or the main thread's own ask. one level, never nested
+   */
+  resume?: LiveStatus;
   /** someone already looked. a new event clears it. */
   seen?: boolean;
   /** grove ended this process itself (a quit, the reaper): its SessionEnd is not the session ending */

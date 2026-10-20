@@ -1,0 +1,264 @@
+[
+  {
+    "at": 1792517222000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Do these in order. 1) Launch ONE background agent (Agent tool with run_in_background: true, subagent_type general-purpose) whose task is: \"Run the Bash command `sleep 4; echo a` six times, one call at a time, then reply finished.\" 2) Right after launching it, without waiting, use the AskUserQuestion tool to ask me \"Pick a colour\" with options Red and Blue. 3) After my answer, end your turn by asking me in plain text: \"Should I keep going?\""
+    }
+  },
+  {
+    "at": 1792517224010,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Agent",
+      "tool_input": {
+        "description": "Run sleep/echo command six times",
+        "prompt": "Run the Bash command `sleep 4; echo a` six times, one call at a time, then reply finished.",
+        "subagent_type": "general-purpose",
+        "run_in_background": true
+      }
+    }
+  },
+  {
+    "at": 1792517224020,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "SubagentStart"
+    }
+  },
+  {
+    "at": 1792517225010,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "PermissionRequest",
+      "tool_name": "AskUserQuestion",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Pick a colour",
+            "header": "Colour",
+            "options": [
+              {
+                "label": "Red",
+                "description": "The colour red"
+              },
+              {
+                "label": "Blue",
+                "description": "The colour blue"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "at": 1792517231000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 4; echo a",
+        "description": "Run sleep and echo command"
+      }
+    }
+  },
+  {
+    "at": 1792517231010,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "Notification",
+      "message": "Claude needs your permission to use AskUserQuestion",
+      "notification_type": "permission_prompt"
+    }
+  },
+  {
+    "at": 1792517235000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "AskUserQuestion",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Pick a colour",
+            "header": "Colour",
+            "options": [
+              {
+                "label": "Red",
+                "description": "The colour red"
+              },
+              {
+                "label": "Blue",
+                "description": "The colour blue"
+              }
+            ],
+            "multiSelect": false
+          }
+        ],
+        "answers": {
+          "Pick a colour": "Red"
+        }
+      }
+    }
+  },
+  {
+    "at": 1792517236000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 4; echo a",
+        "description": "Run sleep and echo command"
+      }
+    }
+  },
+  {
+    "at": 1792517237000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "Stop",
+      "last_assistant_message": "You picked Red. Should I keep going?",
+      "background_tasks": [
+        {
+          "id": "a60eda2b00200fe27",
+          "type": "subagent",
+          "status": "running",
+          "description": "Run sleep/echo command six times",
+          "agent_type": "general-purpose"
+        }
+      ],
+      "session_crons": []
+    }
+  },
+  {
+    "at": 1792517242000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 4; echo a",
+        "description": "Run sleep and echo command"
+      }
+    }
+  },
+  {
+    "at": 1792517247000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 4; echo a",
+        "description": "Run sleep and echo command"
+      }
+    }
+  },
+  {
+    "at": 1792517252000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 4; echo a",
+        "description": "Run sleep and echo command"
+      }
+    }
+  },
+  {
+    "at": 1792517257000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sleep 4; echo a",
+        "description": "Run sleep and echo command"
+      }
+    }
+  },
+  {
+    "at": 1792517259000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "agent_id": "a60eda2b00200fe27",
+      "agent_type": "general-purpose",
+      "hook_event_name": "SubagentStop",
+      "last_assistant_message": "Finished.",
+      "background_tasks": [
+        {
+          "id": "a60eda2b00200fe27",
+          "type": "subagent",
+          "status": "running",
+          "description": "Run sleep/echo command six times",
+          "agent_type": "general-purpose"
+        }
+      ],
+      "session_crons": []
+    }
+  },
+  {
+    "at": 1792517259010,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "<task-notification>\n<task-id>a60eda2b00200fe27</task-id>\n<tool-use-id>toolu_01KXyHKbvghDCWgNPsHwTPQQ</tool-use-id>\n<output-file>/private/tmp/claude-501/-private-tmp-grove-probe-ws/8a759b7f-8519-4f2b-87d9-a6708e123fc5/tasks/a60eda2b00200fe27.output</output-file>\n<status>completed</status>\n<summary>Agent \"Run sleep/echo command six times\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n<result>Finished.</result>\n<usage><subagent_tokens>20079</subagent_tokens><tool_uses>6</tool_uses><duration_ms>34912</duration_ms></usage>\n</task-notification>"
+    }
+  },
+  {
+    "at": 1792517262000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "Stop",
+      "last_assistant_message": "The background agent completed—it finished running the sleep/echo command six times successfully.\n\nStill waiting on your answer: Should I keep going?",
+      "background_tasks": [],
+      "session_crons": []
+    }
+  },
+  {
+    "at": 1792517311000,
+    "payload": {
+      "session_id": "8a759b7f-8519-4f2b-87d9-a6708e123fc5",
+      "cwd": "/private/tmp/grove-probe/ws",
+      "hook_event_name": "SessionEnd",
+      "reason": "other"
+    }
+  }
+]

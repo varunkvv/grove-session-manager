@@ -138,6 +138,14 @@ export function goneTasks(
   return gone;
 }
 
+/** a session just started needing someone */
+export function entered(was: LiveStatus | undefined, s: LiveStatus | undefined): boolean {
+  if (!s || !needsYou(s)) return false;
+  // what an agent's ask interrupted, back now that the ask is over, is not new
+  if (was?.resume?.state === s.state && was.resume.at === s.at) return false;
+  return !needsYou(was) || was?.state !== s.state || was.at !== s.at;
+}
+
 /**
  * what a restart should believe. a registry state is re-read from the live processes, and so is
  * the supervisor's - but not that someone dismissed it, which rebuilt would come back unseen
@@ -539,9 +547,7 @@ export class LiveService {
 
   private notifyEntered(before: ReadonlyMap<string, LiveStatus>): void {
     for (const [id, s] of this.statuses) {
-      const was = before.get(id);
-      const entered = needsYou(s) && (!needsYou(was) || was?.state !== s.state || was.at !== s.at);
-      if (entered) this.opts.onNeedsYou(id, s);
+      if (entered(before.get(id), s)) this.opts.onNeedsYou(id, s);
     }
   }
 

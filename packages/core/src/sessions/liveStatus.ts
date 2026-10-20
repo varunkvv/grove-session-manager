@@ -473,6 +473,31 @@ function next(
   return out;
 }
 
+/**
+ * a permission prompt or a question. a background agent can ask after the main thread's turn
+ * ended, or while the main thread asks: what it interrupts is kept, to come back when its ask
+ * ends. one level, so an ask on top of an agent's ask keeps what that one kept
+ */
+function ask(
+  prev: LiveStatus | undefined,
+  ev: StatusEvent,
+  extra: Partial<LiveStatus>,
+): LiveStatus {
+  const kept = ev.agentId && prev && prev.state !== "running" ? (prev.resume ?? prev) : undefined;
+  return next(prev, ev, "permission", {
+    ...extra,
+    // a subagent asking: the notification can land on it, not only on its session
+    ...(ev.agentId ? { agentId: ev.agentId } : {}),
+    ...(kept ? { resume: kept } : {}),
+  });
+}
+
+/** the ask is over: what it interrupted comes back as it was, else the turn runs on */
+function answered(prev: LiveStatus, ev: StatusEvent): LiveStatus {
+  if (!prev.resume) return next(prev, ev, "running");
+  return { ...prev.resume, lastEventAt: Math.max(prev.lastEventAt, ev.at) };
+}
+
 /** one event on top of what we knew. undefined means the session is no longer live. */
 export function reduceStatus(
   prev: LiveStatus | undefined,
@@ -484,14 +509,17 @@ export function reduceStatus(
     case "UserPromptSubmit":
       return next(undefined, ev, "running", { turnStart: ev.at });
     case "PermissionRequest":
-      return next(prev, ev, "permission", {
+      return ask(prev, ev, {
         ...(ev.toolName ? { detail: ev.toolName } : {}),
         ...(ev.toolTarget ? { target: ev.toolTarget } : {}),
-        // a subagent asking: the notification can land on it, not only on its session
-        ...(ev.agentId ? { agentId: ev.agentId } : {}),
       });
     case "PostToolUse":
-      if (ev.agentId && prev?.state !== "permission") return touched;
+      // only the one that asked ends an ask: a background agent's tools keep running while the
+      // main thread waits on the person, and the main thread's while an agent does
+      if (prev?.state === "permission") {
+        return ev.agentId === prev.agentId ? answered(prev, ev) : touched;
+      }
+      if (ev.agentId) return touched;
       // after a turn ended, a tool call means a new turn started without a prompt - a background
       // task finishing wakes the conversation up on its own
       if (prev?.state === "waiting" || prev?.state === "failed")
@@ -503,10 +531,7 @@ export function reduceStatus(
         ev.notificationType === "agent_needs_input"
       ) {
         if (prev?.state === "permission") return touched;
-        return next(prev, ev, "permission", {
-          ...(ev.message ? { detail: ev.message } : {}),
-          ...(ev.agentId ? { agentId: ev.agentId } : {}),
-        });
+        return ask(prev, ev, ev.message ? { detail: ev.message } : {});
       }
       if (ev.notificationType === "idle_prompt" && prev?.state !== "waiting") {
         return next(prev, ev, "waiting");
@@ -532,7 +557,12 @@ export function reduceStatus(
     // a subagent starting or finishing is not the session starting or finishing. SubagentStop even
     // carries the agent's closing message, which must never read as the session's own.
     case "SubagentStart":
+      return touched;
     case "SubagentStop":
+      // the agent that asked is done: its ask is over too, answered or denied
+      if (prev?.state === "permission" && ev.agentId && ev.agentId === prev.agentId) {
+        return answered(prev, ev);
+      }
       return touched;
     default:
       return touched;
