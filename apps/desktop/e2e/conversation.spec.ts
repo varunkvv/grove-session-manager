@@ -165,6 +165,49 @@ test("the panel has the session's turns under its recap, opened at the end, and 
   await expect(panel(page).getByText("The PR is open: #42.")).toBeInViewport();
 });
 
+test("the panel has everything claude said in a turn, in order, as markdown with live links", async () => {
+  seed();
+  const link = "https://claude.ai/code/artifact/5c6ce80e-62a5-4f85-9d6a-6e91bc9e31fb";
+  const outline = `outline up: ${link} - now orienting on the stack`;
+  const o = { sessionId: SID.talk, cwd };
+  // session 7797c6c8's shape: a text and calls in one message, a later text, still working
+  appendTurn(file, o, {
+    prompt: "write the stack up in a doc",
+    tools: [
+      { name: "Bash", input: { command: "git log --oneline" }, said: outline },
+      { name: "Bash", input: { command: "gh pr list" } },
+      {
+        name: "Read",
+        input: { file_path: path.join(cwd, "auth.ts") },
+        said: "the stack section is in",
+      },
+    ],
+  });
+  hookEvent(fx, SID.talk, "UserPromptSubmit");
+  app = await launchApp(fx);
+  const { page } = app;
+  await page.locator('[data-testid="project-item"][data-id="auth-sso"]').click();
+  await row(page, SID.talk).click({ timeout: 15_000 });
+  const turn = turns(page).last();
+  // under way: what it said first stays, what it said last is in the answer's place
+  await expect(turn.getByTestId("turn-said")).toHaveText([outline]);
+  await expect(panel(page).getByTestId("panel-text")).toHaveText("the stack section is in");
+  await expect(turn.getByRole("link", { name: link })).toHaveAttribute("href", link);
+  // no folds, and never a tool's name in the panel
+  await expect(turn.getByTestId("step-fold")).toHaveCount(0);
+  await expect(panel(page)).not.toContainText("gh pr list");
+
+  // the answer comes: it is last, and nothing it said before goes
+  appendTurn(file, o, { reply: "Two need a change before they merge." });
+  hookEvent(fx, SID.talk, "Stop", {
+    last_assistant_message: "Two need a change before they merge.",
+  });
+  await expect(panel(page).getByTestId("panel-text")).toHaveText(
+    "Two need a change before they merge.",
+  );
+  await expect(turn.getByTestId("turn-said")).toHaveText([outline, "the stack section is in"]);
+});
+
 test("a long session sends its last hundred turns and says the rest are in the editor", async () => {
   seed();
   app = await launchApp(fx);

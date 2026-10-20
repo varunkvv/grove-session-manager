@@ -1,5 +1,5 @@
 import { type ConversationView, type FileMark, fileKind, type TurnView } from "@grove/core/pure";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   ChatStatus,
   InboxRowView,
@@ -11,14 +11,14 @@ import type {
 } from "../../shared/ipc.ts";
 import { blocks } from "../logic/blocks.ts";
 import { nextActiveKey } from "../logic/rows.ts";
-import { type SessionState, workLine } from "../logic/views.ts";
+import { type SessionState, turnParts, workLine } from "../logic/views.ts";
 import { openChat, openWith, review } from "../state/actions.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { type Section, useStore } from "../state/store.ts";
 import { Ask } from "./Asks.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { StepList, Thought } from "./Steps.tsx";
+import { StepFold, StepList, Thought } from "./Steps.tsx";
 import {
   Button,
   ComposerFrame,
@@ -152,9 +152,10 @@ function Tasks({ tasks }: { tasks: readonly TaskView[] }) {
 export const QUIET = "text-sm text-fg-4";
 
 /**
- * one turn: what the person typed, the work in one line, and the message it ended on. the steps
- * inside the work are in the editor. the message is an agent's and goes through Markdown, what
- * the person typed is plain text
+ * one turn: what the person typed, the work in one line, everything it said on the way in order,
+ * and the message it ended on. what it said is an agent's and goes through Markdown, what the
+ * person typed is plain text. grove chat folds the steps between what it said, the panel leaves
+ * them out
  */
 export function Turn({
   turn,
@@ -171,8 +172,8 @@ export function Turn({
   /** say what was attached to a prompt (images, files): grove chat, where they are sent from */
   images?: boolean;
   /**
-   * grove chat: the work line opens the turn's steps, and the thinking before the answer sits
-   * folded above it. the panel has neither
+   * grove chat: the steps between what it said sit folded where they ran, the work line opens
+   * them all, and the thinking before the answer sits folded above it. the panel has none of it
    */
   detail?: boolean;
   /** the steps start open: an agent's own transcript, which is opened to see what it did */
@@ -262,8 +263,15 @@ export function Turn({
     ...(going ? { ms: undefined } : {}),
     ...(agentsLink ? { agents: 0 } : {}),
   });
+  // what it said on the way, each after the steps that led to it. the last one's place is the
+  // panel's text when it has not answered
+  const parts = turnParts(turn.steps);
+  const said = parts.length - 1;
+  const folded = detail && parts.some((x) => x.work.some((w) => w.kind === "tool"));
+  const firstFold = parts.findIndex((x) => x.work.some((w) => w.kind === "tool"));
+  const textId = (i: number) => (last && !turn.text && i === said - 1 ? "panel-text" : undefined);
   // the last turn always says what the agent said, even when that is nothing yet
-  const talks = !!turn.text || !!work || (last && p?.kind !== "command");
+  const talks = !!turn.text || !!work || said > 0 || (last && p?.kind !== "command");
   return (
     <section
       className="mt-6 first:mt-0"
@@ -291,18 +299,18 @@ export function Turn({
           <Markdown text={turn.output} />
         </div>
       )}
-      {turn.said?.map((said) => (
+      {turn.said?.map((words) => (
         // close under what he said before it: his two messages read as a pair
-        <PromptBlock key={said} className="mt-2">
+        <PromptBlock key={words} className="mt-2">
           <h3 className="text-sm font-medium text-fg-4">You, while it worked</h3>
-          <p className={cx(typed, "-mr-2 pr-2")}>{said}</p>
+          <p className={cx(typed, "-mr-2 pr-2")}>{words}</p>
         </PromptBlock>
       ))}
       {talks && (
         <>
           <h3 className="mt-3 text-sm font-medium text-fg-4" data-testid="turn-work">
             Claude
-            {detail && turn.steps?.length ? (
+            {folded ? (
               <>
                 <span className="font-normal"> · </span>
                 <button
@@ -335,13 +343,38 @@ export function Turn({
               </span>
             )}
           </h3>
-          {detail && open && turn.steps && (
-            <StepList steps={turn.steps} before={turn.stepsBefore} going={going} />
+          {/* nothing said on the way: the work line is the one fold, as it always was */}
+          {folded && open && said === 0 && (
+            <StepList steps={parts[0]?.work ?? []} before={turn.stepsBefore} going={going} />
           )}
+          {said > 0 &&
+            parts.map((part, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: a turn's parts only grow, in order
+              <Fragment key={i}>
+                {detail && part.work.length > 0 && (
+                  // the work line opens or closes them all: each starts again from it
+                  <StepFold
+                    key={`${open}`}
+                    steps={part.work}
+                    before={i === firstFold ? turn.stepsBefore : undefined}
+                    going={going}
+                    open={open}
+                  />
+                )}
+                {part.text !== undefined && (
+                  <div
+                    className={detail || i === 0 ? "mt-1" : "mt-2"}
+                    data-testid={textId(i) ?? "turn-said"}
+                  >
+                    <Markdown text={part.text} className={last ? "md-full" : undefined} />
+                  </div>
+                )}
+              </Fragment>
+            ))}
           {detail && turn.thought && <Thought text={turn.thought.text} ms={turn.thought.ms} />}
           <div
-            className={cx("mt-1", detail && "group/answer relative")}
-            data-testid={last ? "panel-text" : undefined}
+            className={cx(!detail && said > 0 ? "mt-2" : "mt-1", detail && "group/answer relative")}
+            data-testid={last && (turn.text || said === 0) ? "panel-text" : undefined}
           >
             {turn.text ? (
               <Markdown
@@ -351,7 +384,9 @@ export function Turn({
               />
             ) : (
               // grove chat says what it is doing under the turn instead
-              last && !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
+              last &&
+              said === 0 &&
+              !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
             )}
             {/* grove chat: what can be done with an answer, on hover, in the gap under it */}
             {detail && armed && scope && turn.text && !going && (
@@ -468,6 +503,9 @@ function SessionCard({
   const asks = elsewhere ? [] : (host?.asks ?? []);
   const running = !!host?.running;
   const last = talk?.items.findLast((i): i is TurnView => i.kind === "turn");
+  // the end of what it last said: its answer, or what it said before it stopped without one
+  const lastSaid =
+    last?.text || last?.steps?.flatMap((x) => (x.kind === "text" ? [x.text] : [])).at(-1);
   const made = madeOf(talk);
   // what runs for it: agents and workflows, not a workflow's own agents
   const agents = (host?.agents ?? []).filter((a) => a.state === "running" && !a.workflow);
@@ -515,11 +553,11 @@ function SessionCard({
           {host && <LiveLine status={host} className="mt-1" />}
         </div>
       )}
-      {!running && asks.length === 0 && last?.text && (
+      {!running && asks.length === 0 && lastSaid && (
         <div data-testid="card-tail">
           <h3 className="text-sm font-medium text-fg-4">Claude</h3>
           <div className="selectable mt-1">
-            <Markdown text={tailOf(last.text)} />
+            <Markdown text={tailOf(lastSaid)} />
           </div>
         </div>
       )}

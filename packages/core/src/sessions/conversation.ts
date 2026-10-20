@@ -710,8 +710,8 @@ export interface TurnView {
   agents: number;
   ms?: number;
   /**
-   * the message it ended on. markdown, and an agent's: untrusted. for the last turn, when it has
-   * not ended on one, the last thing it said
+   * the message it ended on: a final message that calls no tool. markdown, and an agent's:
+   * untrusted. what it said before that is in `steps`
    */
   text?: string;
   /** how it ended when not on a message: an interrupt, an api error */
@@ -719,8 +719,9 @@ export interface TurnView {
   /** files it wrote that can be looked at, and images it read: what a chat window shows a card for */
   outputs?: FileMark[];
   /**
-   * a chat window's only: what the turn did before it answered, in order - its thinking, the
-   * tools it ran, what it said between them. `stepsBefore`: older steps left out of a long turn
+   * what the turn did before it answered, in order - its thinking, the tools it ran, what it said
+   * between them, each said thing whole as an answer is. the panel's has only what it said.
+   * `stepsBefore`: older tools and thinking left out of a long turn, never something it said
    */
   steps?: StepView[];
   stepsBefore?: number;
@@ -750,16 +751,21 @@ export type StepView =
   | { kind: "thinking"; text: string; ms?: number }
   | { kind: "text"; text: string };
 
-/** a long turn's list keeps its last steps: the rest are counted */
+/** a long turn's list keeps its last steps and everything it said: the rest are counted */
 const VIEW_STEPS = 300;
+/** a thinking block keeps its start */
 const VIEW_STEP_TEXT = 4000;
+
+/** a message keeps its end, where the question is */
+const clip = (text: string, max: number) => (text.length > max ? `…${text.slice(1 - max)}` : text);
 
 /**
  * a turn's work as a chat window lists it: every step but the answer, and the thinking that came
  * right before the answer apart, since that is the one shown beside it. a thinking block's time
- * is from what came before it (the prompt, or the last result) to when it was written
+ * is from what came before it (the prompt, or the last result) to when it was written. what it
+ * said keeps `max`, as its answer does
  */
-function stepsOf(turn: Turn): Pick<TurnView, "steps" | "stepsBefore" | "thought"> {
+function stepsOf(turn: Turn, max: number): Pick<TurnView, "steps" | "stepsBefore" | "thought"> {
   const work = turn.work;
   const answer = new Set(answerSteps(work));
   let was = turn.prompt?.at ?? work.startedAt ?? 0;
@@ -787,28 +793,36 @@ function stepsOf(turn: Turn): Pick<TurnView, "steps" | "stepsBefore" | "thought"
       });
       was = Math.max(was, s.at);
     } else if (s.kind === "text" && !answer.has(i)) {
-      views.push({ i, view: { kind: "text", text: cut(s.text, VIEW_STEP_TEXT) } });
+      views.push({ i, view: { kind: "text", text: clip(s.text, max) } });
       was = Math.max(was, s.at);
     }
   });
-  // the thinking after the last tool is the answer's: it shows with it, not in the list
+  // the thinking after the last tool or text is the answer's: it shows with it, not in the list
   let thought: TurnView["thought"];
-  const lastTool = views.findLastIndex((v) => v.view.kind === "tool");
-  const after = views.slice(lastTool + 1).filter((v) => v.view.kind === "thinking");
-  if (after.length && (answer.size > 0 || lastTool < 0)) {
+  const lastDone = views.findLastIndex((v) => v.view.kind !== "thinking");
+  const after = views.slice(lastDone + 1).filter((v) => v.view.kind === "thinking");
+  if (after.length && (answer.size > 0 || lastDone < 0)) {
     const texts = after.map((v) => (v.view as { text: string }).text);
     const ms = after.reduce((n, v) => n + ((v.view as { ms?: number }).ms ?? 0), 0);
     thought = { text: texts.join("\n\n"), ...(ms ? { ms } : {}) };
     const drop = new Set(after.map((v) => v.i));
     views.splice(0, views.length, ...views.filter((v) => !drop.has(v.i)));
   }
-  const steps = views.map((v) => v.view);
-  const before = Math.max(0, steps.length - VIEW_STEPS);
+  const all = views.map((v) => v.view);
+  const from = all.length - VIEW_STEPS;
+  const steps = all.filter((s, n) => n >= from || s.kind === "text");
+  const before = all.length - steps.length;
   return {
-    ...(steps.length ? { steps: steps.slice(before) } : {}),
+    ...(steps.length ? { steps } : {}),
     ...(before ? { stepsBefore: before } : {}),
     ...(thought ? { thought } : {}),
   };
+}
+
+/** what a turn said before its answer, in order: all the panel shows of its steps */
+function saidOf(turn: Turn, max: number): Pick<TurnView, "steps"> {
+  const steps = stepsOf(turn, max).steps?.filter((s) => s.kind === "text");
+  return steps?.length ? { steps } : {};
 }
 
 /** a file a turn showed: one it wrote or edited, or with `read` an image it looked at */
@@ -866,8 +880,8 @@ export interface ConversationView {
 }
 
 /**
- * the conversation as markdown, to copy or keep: each prompt and the answer it got, whole, in
- * order, with where it was compacted. the work in between is left out, as a chat reads
+ * the conversation as markdown, to copy or keep: each prompt and everything claude said back,
+ * whole, in order, with where it was compacted. the tools in between are left out, as a chat reads
  */
 export function conversationMarkdown(state: ConversationState, title: string): string {
   const out = [`# ${title}`];
@@ -883,9 +897,9 @@ export function conversationMarkdown(state: ConversationState, title: string): s
           ? `## You\n\n${p.text}`
           : `## ${p.kind === "command" ? "Command" : "Task"}\n\n${p.text}`,
       );
-    const answer = answerOf(item.work);
-    if (answer) out.push(`## Claude\n\n${answer}`);
-    else if (item.apiError) out.push(`_${item.apiError}_`);
+    const said = item.work.steps.flatMap((s) => (s.kind === "text" ? [s.text] : []));
+    if (said.length) out.push(`## Claude\n\n${said.join("\n\n")}`);
+    if (item.apiError && !answerOf(item.work)) out.push(`_${item.apiError}_`);
   }
   return `${out.join("\n\n")}\n`;
 }
@@ -895,7 +909,7 @@ export function conversationView(
   state: ConversationState,
   /**
    * `textMax`: what a message keeps, every turn's. a chat window reads them whole. `chat`: what
-   * only a chat window draws - the files a prompt came with, the steps, the thinking. `turns`: how
+   * only a chat window draws - the files a prompt came with, the tools, the thinking. `turns`: how
    * many of the last turns, when not VIEW_TURNS (a chat window's "Show older")
    */
   opts: { textMax?: number; chat?: boolean; turns?: number } = {},
@@ -920,12 +934,10 @@ export function conversationView(
 function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: boolean }): TurnView {
   const n = turnNumbers(item);
   const said = item.marks.flatMap((m) => (m.kind === "said" ? [cut(m.text, VIEW_PROMPT)] : []));
-  const answer = answerOf(item.work);
-  // a turn still under way, or one that stopped: the last thing it said, as the panel always showed
-  const words = last && !answer ? item.work.steps.findLast((s) => s.kind === "text") : undefined;
-  const text = answer || (words?.kind === "text" ? words.text : "");
+  // a turn still under way, or one that stopped, has no answer: what it said is in its steps
+  const text = answerOf(item.work);
   const max = opts.textMax ?? (last ? VIEW_LAST_TEXT : VIEW_TEXT);
-  const error = item.work.last?.error ?? (answer ? undefined : item.apiError);
+  const error = item.work.last?.error ?? (text ? undefined : item.apiError);
   const outputs = fileMarks(item.work);
   return {
     kind: "turn",
@@ -946,10 +958,10 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
     files: n.filesEdited,
     agents: n.agents,
     ...(n.durationMs !== undefined ? { ms: n.durationMs } : {}),
-    ...(text ? { text: text.length > max ? `…${text.slice(1 - max)}` : text } : {}),
+    ...(text ? { text: clip(text, max) } : {}),
     ...(error ? { note: error } : item.work.interrupted ? { note: "Interrupted" } : {}),
     ...(outputs.length ? { outputs } : {}),
-    ...(opts.chat ? stepsOf(item) : {}),
+    ...(opts.chat ? stepsOf(item, max) : saidOf(item, max)),
     ...(opts.chat && item.output ? { output: item.output } : {}),
     ...(opts.chat ? workflowsOf(item.work) : {}),
     ...(opts.chat && error ? { failed: true } : {}),

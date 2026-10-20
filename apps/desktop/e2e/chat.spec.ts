@@ -5,7 +5,13 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
-import { hookEvent, makeFixture, readExecLog, writeSession } from "./helpers/fixture.ts";
+import {
+  appendTurn,
+  hookEvent,
+  makeFixture,
+  readExecLog,
+  writeSession,
+} from "./helpers/fixture.ts";
 import { groveTest, type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { liveSession, writeProject } from "./helpers/project.ts";
 
@@ -1285,6 +1291,51 @@ test("a turn's steps open from its work line: each tool and what it acted on", a
   await expect(page.getByTestId("session-card")).toBeVisible();
   await expect(page.getByTestId("session-panel").getByTestId("turn")).toHaveCount(0);
   await expect(page.getByTestId("session-panel").getByTestId("turn-steps-toggle")).toHaveCount(0);
+});
+
+test("a turn reads in order: each thing claude said in full, the steps between them folded", async () => {
+  const s = seed(true);
+  const link = "https://claude.ai/code/artifact/5c6ce80e-62a5-4f85-9d6a-6e91bc9e31fb";
+  const outline = `outline up: ${link} - now orienting on the stack`;
+  appendTurn(
+    s.file,
+    { sessionId: SID, cwd: s.root },
+    {
+      prompt: "write the stack up in a doc",
+      tools: [
+        { name: "Bash", input: { command: "git log --oneline" }, said: outline },
+        { name: "Bash", input: { command: "gh pr list" } },
+        { name: "Grep", input: { pattern: "req.body.scope" }, said: "the stack section is in" },
+      ],
+      reply: "Two need a change before they merge.",
+    },
+  );
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const turn = chat.getByTestId("turn").last();
+  await expect(chat.getByTestId("panel-text")).toHaveText("Two need a change before they merge.");
+  // what it said on the way is full-weight markdown, its link live
+  await expect(turn.getByTestId("turn-said")).toHaveText([outline, "the stack section is in"]);
+  await expect(turn.getByRole("link", { name: link })).toHaveAttribute("href", link);
+  // the steps between are folded where they ran, the work line over them all
+  const folds = turn.getByTestId("step-fold");
+  await expect(folds).toHaveText(["2 steps", "1 step"]);
+  await expect(turn.getByTestId("steps")).toHaveCount(0);
+  await folds.first().getByRole("button").click();
+  await expect(turn.getByTestId("step")).toHaveText([/^Bash\s*git log/, /^Bash\s*gh pr list/]);
+  await turn.getByTestId("turn-steps-toggle").click();
+  await expect(turn.getByTestId("steps")).toHaveCount(2);
+  await expect(turn.getByTestId("step")).toHaveCount(3);
+  await turn.getByTestId("turn-steps-toggle").click();
+  await expect(turn.getByTestId("steps")).toHaveCount(0);
+  // the answer stays last, and copying it copies only the answer. his clipboard goes back after
+  const clipboard = () => electron.evaluate(({ clipboard }) => clipboard.readText());
+  const was = await clipboard();
+  await turn.getByTestId("panel-text").hover();
+  await turn.getByRole("button", { name: "Copy answer" }).click();
+  await expect.poll(clipboard).toBe("Two need a change before they merge.");
+  await electron.evaluate(({ clipboard }, text) => clipboard.writeText(text), was);
 });
 
 test("agents: a count in the header, a list in the drawer with a stop each, and each one's own transcript", async () => {

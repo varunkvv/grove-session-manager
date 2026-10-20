@@ -192,8 +192,11 @@ export function writeSession(fx: Fixture, o: SessionOptions): string {
 export interface TurnSpec {
   /** what the person typed */
   prompt: string;
-  /** the tool calls of the work, each with a result */
-  tools?: Array<{ name: string; input: Record<string, unknown> }>;
+  /**
+   * the tool calls of the work, each with a result. `said`: what it wrote before the call, in the
+   * same message, as Claude Code writes a text and its calls
+   */
+  tools?: Array<{ name: string; input: Record<string, unknown>; said?: string }>;
   /** the message it ended on. absent while the turn is under way */
   reply?: string;
   /** how long ago it started, and how long it took. now and 30s unless given */
@@ -246,6 +249,20 @@ export function appendTurn(
   }
   steps.forEach((tool, i) => {
     const toolId = `toolu_${n}_${i}`;
+    if (tool.said !== undefined) {
+      lines.push({
+        type: "assistant",
+        ...envelope,
+        uuid: id("e", i),
+        timestamp: at(i + 1),
+        message: {
+          role: "assistant",
+          id: `msg_${n}_${i}`,
+          model: "claude-opus-5",
+          content: [{ type: "text", text: tool.said }],
+        },
+      });
+    }
     lines.push(
       {
         type: "assistant",
