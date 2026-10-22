@@ -110,7 +110,7 @@ function ImageFile({ src, alt }: { src: string; alt: string }) {
   const at = useRef<{ fx: number; fy: number; x: number; y: number }>(null);
   const [big, setBig] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  // only fitted is its width the panel's say
+  // measured while it fits: zoomed, it is as wide as itself
   const measure = (img: HTMLImageElement) => !zoomed && setBig(img.naturalWidth > img.clientWidth);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a zoom is when to move the scroll
   useLayoutEffect(() => {
