@@ -26,6 +26,7 @@ const event = { sender, senderFrame: { url: "app://renderer/index.html" } };
 const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-open-")));
 const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-open-out-")));
 writeFileSync(path.join(dir, "shot.png"), "x");
+writeFileSync(path.join(dir, "run.command"), "x");
 writeFileSync(path.join(outside, "secret.png"), "x");
 
 // a session made in a chat window, with its window open: its folder is the one it may show
@@ -70,6 +71,14 @@ describe("Open in the viewer", () => {
         error: { code: "not-allowed" },
       });
     }
+    expect(fake.openPath).not.toHaveBeenCalled();
+  });
+
+  it("opens only an image or a video", async () => {
+    expect(await open(path.join(dir, "run.command"))).toMatchObject({
+      ok: false,
+      error: { code: "not-allowed" },
+    });
     expect(fake.openPath).not.toHaveBeenCalled();
   });
 

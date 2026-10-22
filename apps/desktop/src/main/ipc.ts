@@ -9,6 +9,7 @@ import {
   conversationView,
   type EditorTarget,
   editDiff,
+  fileKind,
   filesWritten,
   findAgentFile,
   isValidSessionId,
@@ -1234,8 +1235,14 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatOpenFile(id, file) {
+      const real = await allowed(id, file);
+      // an agent's .command or .app would run: only what the viewer shows an Open for
+      const kind = fileKind(real);
+      if (kind !== "image" && kind !== "video") {
+        throw new AppError("not-allowed", "Only an image or a video opens from here.");
+      }
       // what went wrong comes back as words, never as a throw
-      const why = await electron.shell.openPath(await allowed(id, file));
+      const why = await electron.shell.openPath(real);
       if (why) throw new AppError("open-failed", why);
     },
 
