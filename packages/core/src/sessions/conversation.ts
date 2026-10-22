@@ -859,10 +859,11 @@ export interface FileMark {
 }
 
 /** what a file's name says it is, for what a chat window can draw of it */
-export function fileKind(path: string): "image" | "markdown" | "html" | undefined {
+export function fileKind(path: string): "image" | "video" | "markdown" | "html" | undefined {
   const ext = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase();
   if (!ext) return undefined;
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
+  if (["mp4", "mov", "m4v", "webm"].includes(ext)) return "video";
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "html" || ext === "htm") return "html";
   return undefined;

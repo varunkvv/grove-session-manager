@@ -23,7 +23,7 @@ function whereOf(file: string, cwd: string): string {
   return dir.startsWith(`${cwd}/`) ? dir.slice(cwd.length + 1) : dir;
 }
 
-const KIND_WORD = { image: "Image", markdown: "Markdown", html: "Page" } as const;
+const KIND_WORD = { image: "Image", video: "Video", markdown: "Markdown", html: "Page" } as const;
 
 /** the files a turn wrote that can be looked at, and the images it read */
 export function OutputCards({ outputs }: { outputs: readonly FileMark[] }) {

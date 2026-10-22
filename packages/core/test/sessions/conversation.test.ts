@@ -9,6 +9,7 @@ import {
   conversationMarkdown,
   conversationView,
   editDiff,
+  fileKind,
   filesWritten,
   MESSAGE_MAX,
   type Turn,
@@ -764,7 +765,10 @@ describe("the files a turn showed", () => {
       result("t6", "denied", 12, { isError: true }),
       says("m7", call("t7", "Write", { file_path: "/w/page.html" }), 13),
       result("t7", "ok", 14),
-      says("m8", text("Done."), 15),
+      // a video it looked at is no card: only an image read is
+      says("m9", call("t9", "Read", { file_path: "/w/clip.mp4" }), 15),
+      result("t9", "binary", 16),
+      says("m8", text("Done."), 17),
     ]);
     const turn = v.items[0] as TurnView;
     expect(turn.outputs).toEqual([
@@ -772,6 +776,19 @@ describe("the files a turn showed", () => {
       { path: "/w/plan.md" },
       { path: "/w/page.html" },
     ]);
+  });
+
+  it("knows what a file is by its name: images, videos, markdown, pages", () => {
+    expect(fileKind("/w/shot.PNG")).toBe("image");
+    expect(fileKind("/w/d.svg")).toBe("image");
+    for (const f of ["/w/a.mp4", "/w/b.MOV", "/w/c.m4v", "/w/d.webm"]) {
+      expect(fileKind(f), f).toBe("video");
+    }
+    expect(fileKind("/w/plan.md")).toBe("markdown");
+    expect(fileKind("/w/page.htm")).toBe("html");
+    expect(fileKind("/w/song.mp3")).toBeUndefined();
+    expect(fileKind("/w/app.ts")).toBeUndefined();
+    expect(fileKind("/w/Makefile")).toBeUndefined();
   });
 
   it("lists every file the session wrote, the latest first", async () => {
