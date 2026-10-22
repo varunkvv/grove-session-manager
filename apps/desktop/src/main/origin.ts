@@ -7,16 +7,18 @@ export const APP_ENTRY_URL = `${APP_SCHEME}://${APP_HOST}/index.html`;
  * prefers-color-scheme, so a pinned appearance is carried on the url instead. it is read before
  * the first render, which a push over ipc could not promise. "system" carries nothing, and the
  * page follows the media query on its own. a palette other than grove's rides along, for the same
- * reason: the first paint is already in its colours
+ * reason: the first paint is already in its colours. so does a text size other than 100
  */
 export function entryUrl(
   base: string,
   appearance: "system" | "light" | "dark",
   palette?: "grove" | "rose-pine" | "solarized",
+  textScale?: number,
 ): string {
   const q = new URLSearchParams();
   if (appearance !== "system") q.set("theme", appearance);
   if (palette && palette !== "grove") q.set("palette", palette);
+  if (textScale && textScale !== 100) q.set("scale", String(textScale));
   return q.size ? `${base}?${q}` : base;
 }
 

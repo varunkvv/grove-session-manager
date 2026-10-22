@@ -58,12 +58,13 @@ export function App() {
   const ready = useStore((s) => s.ready);
   const appearance = useStore((s) => s.settings?.appearance);
   const palette = useStore((s) => s.settings?.palette);
+  const textScale = useStore((s) => s.settings?.textScale);
   const view = useStore((s) => s.view.name);
 
   useEffect(() => {
     // until the settings are in, the url's look stands
-    if (appearance) applyAppearance(appearance, palette);
-  }, [appearance, palette]);
+    if (appearance) applyAppearance(appearance, palette, textScale);
+  }, [appearance, palette, textScale]);
 
   useEffect(() => {
     let off: (() => void) | undefined;

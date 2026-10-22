@@ -355,8 +355,14 @@ async function start(): Promise<void> {
   const chatWindows = new ChatWindows({
     preload: preloadFile,
     url: () =>
-      entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance, settings.palette),
+      entryUrl(
+        appEnv.devServerUrl ?? APP_ENTRY_URL,
+        settings.appearance,
+        settings.palette,
+        settings.textScale,
+      ),
     palette: () => settings.palette,
+    textScale: () => settings.textScale,
     attach: (id, contents) => chat.attach(id, contents),
     detach: (id, contents) => chat.detach(id, contents),
     fixedSize: !!appEnv.customRoot,
@@ -610,52 +616,58 @@ async function start(): Promise<void> {
   await titles.load();
   await sessions.loadCached(combos.list());
 
+  /** settings saved, from the dialog or a key: everything that hangs off one moves with it */
+  const applySettings = (s: Settings) => {
+    const tracking = s.trackAllSessions === true;
+    if (tracking !== (settings.trackAllSessions === true)) {
+      void live
+        .trackAllSessions(tracking)
+        .catch((e) =>
+          pusher.send("toast", { level: "error", title: "Session status", body: String(e) }),
+        );
+    }
+    // File > Open Project in {editor} names it, and grove chat's switch moves cmd-N
+    const menuMoved =
+      s.editor !== settings.editor || (s.chat === true) !== (settings.chat === true);
+    const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
+    const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
+    const chatMoved = (s.chat === true) !== (settings.chat === true);
+    const decisioningMoved = wantsModel(s) !== wantsModel(settings);
+    const lookMoved =
+      s.appearance !== settings.appearance ||
+      s.palette !== settings.palette ||
+      s.textScale !== settings.textScale;
+    settings = s;
+    if (menuMoved) menu(resolveEditor(s).label);
+    summon(s);
+    // the spare chat window is there only while grove chat is on, and in the page's appearance and
+    // text size. an open chat window draws in them too
+    if (chatMoved) chatWindows.setSpare(s.chat === true);
+    if (lookMoved) {
+      chatWindows.appearance(s.appearance);
+      // a palette alone moves no nativeTheme, so nothing else repaints the frame
+      win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors, s.palette));
+    }
+    if (decisioningMoved) decisioning.switched(wantsModel(s));
+    if (recapsMoved) projects.recapsSwitched();
+    if (recapsMoved || renamesMoved) {
+      sessions.retitle();
+      // the title hook in or out of every file grove manages, and nothing left pending when out
+      void titles.switched();
+      void combos.syncAll();
+      void live.syncUserHooks();
+    }
+    const { running, left } = holding();
+    awake.set(s.keepAwake !== false && running + left > 0);
+    showTray();
+    electron.nativeTheme.themeSource = s.appearance;
+  };
+
   const handlers = registerIpc({
     env: appEnv,
     projectsDir,
     settings: () => settings,
-    setSettings: (s) => {
-      const tracking = s.trackAllSessions === true;
-      if (tracking !== (settings.trackAllSessions === true)) {
-        void live
-          .trackAllSessions(tracking)
-          .catch((e) =>
-            pusher.send("toast", { level: "error", title: "Session status", body: String(e) }),
-          );
-      }
-      // File > Open Project in {editor} names it, and grove chat's switch moves cmd-N
-      const menuMoved =
-        s.editor !== settings.editor || (s.chat === true) !== (settings.chat === true);
-      const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
-      const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
-      const chatMoved = (s.chat === true) !== (settings.chat === true);
-      const decisioningMoved = wantsModel(s) !== wantsModel(settings);
-      const lookMoved = s.appearance !== settings.appearance || s.palette !== settings.palette;
-      settings = s;
-      if (menuMoved) menu(resolveEditor(s).label);
-      summon(s);
-      // the spare chat window is there only while grove chat is on, and in the page's appearance.
-      // an open chat window draws in it too
-      if (chatMoved) chatWindows.setSpare(s.chat === true);
-      if (lookMoved) {
-        chatWindows.appearance(s.appearance);
-        // a palette alone moves no nativeTheme, so nothing else repaints the frame
-        win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors, s.palette));
-      }
-      if (decisioningMoved) decisioning.switched(wantsModel(s));
-      if (recapsMoved) projects.recapsSwitched();
-      if (recapsMoved || renamesMoved) {
-        sessions.retitle();
-        // the title hook in or out of every file grove manages, and nothing left pending when out
-        void titles.switched();
-        void combos.syncAll();
-        void live.syncUserHooks();
-      }
-      const { running, left } = holding();
-      awake.set(s.keepAwake !== false && running + left > 0);
-      showTray();
-      electron.nativeTheme.themeSource = s.appearance;
-    },
+    setSettings: applySettings,
     sessions,
     live,
     combos,
@@ -680,7 +692,12 @@ async function start(): Promise<void> {
     preload: preloadFile,
     stateFile: path.join(electron.app.getPath("userData"), "window-state.json"),
     fixedSize: !!appEnv.customRoot,
-    url: entryUrl(appEnv.devServerUrl ?? APP_ENTRY_URL, settings.appearance, settings.palette),
+    url: entryUrl(
+      appEnv.devServerUrl ?? APP_ENTRY_URL,
+      settings.appearance,
+      settings.palette,
+      settings.textScale,
+    ),
     palette: settings.palette,
     show: !startHidden,
   });

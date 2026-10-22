@@ -18,6 +18,7 @@ import type {
   SessionAgent,
   SessionTasks,
   TeardownOutcome,
+  TextScale,
   TitleSource,
   TurnView,
 } from "@grove/core/pure";
@@ -143,6 +144,8 @@ export interface AppSettings {
   appearance: "system" | "light" | "dark";
   /** the colours. absent is grove */
   palette?: "grove" | "rose-pine" | "solarized";
+  /** Text size: the conversation's text, in percent. absent is 100 */
+  textScale?: TextScale;
   editorBin?: string;
   extensionsDir?: string;
   gitPath?: string;
@@ -659,8 +662,12 @@ export interface PushEvents {
   "chat:text": { at: number; text: string };
   /** a chat window only: the file its viewer shows changed on disk */
   "chat:file": { path: string };
-  /** a chat window only: the Appearance or Theme setting moved */
-  "chat:appearance": { appearance: AppSettings["appearance"]; palette: AppSettings["palette"] };
+  /** a chat window only: the Appearance, Theme or Text size setting moved */
+  "chat:appearance": {
+    appearance: AppSettings["appearance"];
+    palette: AppSettings["palette"];
+    textScale: AppSettings["textScale"];
+  };
   /** a chat window only: open this beside the conversation, as the session card asked */
   "chat:show": ChatShow;
   /** a chat window only: ⌘F was pressed in it. it finds in its own conversation */
@@ -669,6 +676,8 @@ export interface PushEvents {
   "chat:session": SessionHit;
   /** the main window: a session grove runs moved (a state, an ask, a tool). never its tokens */
   "chat:host": { sessionId: string; status: ChatStatus };
+  /** the main window: the settings moved from outside its dialog (⌘+ in any window) */
+  "settings:changed": AppSettings;
 }
 
 /**
@@ -715,6 +724,7 @@ export const PUSH_CHANNELS = [
   "chat:find",
   "chat:session",
   "chat:host",
+  "settings:changed",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 // ---------- grove chat: a session grove runs itself, through the agent sdk, in a window of its own
@@ -923,6 +933,7 @@ export interface ChatTarget {
   at: number;
   appearance: AppSettings["appearance"];
   palette: AppSettings["palette"];
+  textScale: AppSettings["textScale"];
   /** the editor's name, for Open in */
   editor: string;
   status: ChatStatus;

@@ -54,6 +54,7 @@ function windows() {
     preload: "",
     url: () => "app://grove/",
     palette: () => "grove",
+    textScale: () => undefined,
     attach: () => {},
     detach: () => {},
   });

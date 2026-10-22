@@ -239,6 +239,8 @@ export async function connect(): Promise<() => void> {
     // a nudge with nothing in it: the list on screen asks main again
     window.grove.on("sessions:changed", () => void loadSessions()),
     window.grove.on("editor:status", (editor) => set({ editor })),
+    // ⌘+ / ⌘- in any window: the text size moved without the dialog
+    window.grove.on("settings:changed", (settings) => set({ settings })),
     window.grove.on("decisioning:status", (decisioning) => set({ decisioning })),
     window.grove.on("toast", (t) => toast(t)),
     // a notification or a tray row was clicked: take where it lands, now that the page is here

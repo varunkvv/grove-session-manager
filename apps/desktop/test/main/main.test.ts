@@ -199,6 +199,16 @@ describe("what the renderer is allowed to be", () => {
     );
   });
 
+  it("a text size other than 100 rides on the entry url, for the first paint", () => {
+    const base = "app://renderer/index.html";
+    expect(entryUrl(base, "system", undefined, undefined)).toBe(base);
+    expect(entryUrl(base, "system", "grove", 100)).toBe(base);
+    expect(entryUrl(base, "system", undefined, 135)).toBe(`${base}?scale=135`);
+    expect(entryUrl(base, "dark", "solarized", 90)).toBe(
+      `${base}?theme=dark&palette=solarized&scale=90`,
+    );
+  });
+
   it("a link in an agent's output leaves only for the web, and only as what it parses to", () => {
     expect(externalUrl("https://www.postgresql.org/docs/")).toBe(
       "https://www.postgresql.org/docs/",

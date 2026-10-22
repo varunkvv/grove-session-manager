@@ -12,6 +12,8 @@ export interface ChatWindowsOptions {
   url: () => string;
   /** the palette now: a window's frame is painted in its canvas */
   palette: () => AppSettings["palette"];
+  /** the Text size setting now */
+  textScale: () => AppSettings["textScale"];
   /** a window took a session, or let it go: the host pushes to it, or stops */
   attach: (sessionId: string, contents: WebContents) => void;
   detach: (sessionId: string, contents: WebContents) => void;
@@ -164,12 +166,16 @@ export class ChatWindows {
     }
   }
 
-  /** the Appearance or Theme setting moved: every chat window draws in the new one, the spare included */
+  /**
+   * the Appearance, Theme or Text size setting moved: every chat window draws in the new one, the
+   * spare included
+   */
   appearance(appearance: AppSettings["appearance"]): void {
     const palette = this.o.palette();
+    const textScale = this.o.textScale();
     for (const win of this.bySession.values()) {
       if (!win.isDestroyed())
-        win.webContents.send("grove:chat:appearance", { appearance, palette });
+        win.webContents.send("grove:chat:appearance", { appearance, palette, textScale });
     }
     this.repaint();
     this.remakeSpare();

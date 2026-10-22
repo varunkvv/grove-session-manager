@@ -432,7 +432,7 @@ export function ChatApp() {
     if (t.show) showIt(t.show);
     stream.current = t.text;
     setShown(t.text);
-    applyAppearance(t.appearance, t.palette);
+    applyAppearance(t.appearance, t.palette, t.textScale);
     void read();
   }, [read, showIt]);
 
@@ -468,8 +468,8 @@ export function ChatApp() {
           return { ...rest, session: hit, ...(hit.project ? { project: hit.project } : {}) };
         }),
       ),
-      api().on("chat:appearance", ({ appearance, palette }) =>
-        applyAppearance(appearance, palette),
+      api().on("chat:appearance", ({ appearance, palette, textScale }) =>
+        applyAppearance(appearance, palette, textScale),
       ),
       // ⌘F, which the app's menu sends here when this window has the keyboard
       api().on("chat:find", () => setFinding((n) => n + 1)),
