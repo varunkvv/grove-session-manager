@@ -1,3 +1,4 @@
+import type { TurnView } from "@grove/core/pure";
 import { describe, expect, it } from "vitest";
 import {
   CLOSED,
@@ -7,6 +8,7 @@ import {
   needsYouCount,
   PAGE,
   projectHues,
+  queuedRows,
   runningFor,
   sessionOrder,
   startBlocked,
@@ -408,5 +410,60 @@ describe("a turn read in order", () => {
   it("is one part of work for a turn that said nothing on the way", () => {
     expect(turnParts([tool("a"), tool("b")])).toEqual([{ work: [tool("a"), tool("b")] }]);
     expect(turnParts(undefined)).toEqual([{ work: [] }]);
+  });
+});
+
+describe("what was sent while it worked, as rows", () => {
+  const row = (id: string, said: string, taken?: boolean) => ({
+    id,
+    text: said,
+    said,
+    ...(taken ? { taken } : {}),
+  });
+  const turn = (o: Partial<TurnView>): TurnView => ({
+    kind: "turn",
+    tools: 0,
+    files: 0,
+    agents: 0,
+    ...o,
+  });
+  const talk = (...items: TurnView[]) => ({ items, older: 0 });
+  it("keeps a queued one, and a taken one the transcript has not got yet", () => {
+    const rows = [row("a", "and the tests"), row("b", "and the lint", true)];
+    expect(
+      queuedRows(rows, talk(turn({ prompt: { kind: "human", text: "fix it", uuid: "p" } }))),
+    ).toEqual(rows);
+    expect(queuedRows(rows, null)).toEqual(rows);
+  });
+  it("lets a taken one go once the transcript has it by its uuid: typed mid-turn, or a turn's prompt", () => {
+    const rows = [
+      row("a", "and the tests", true),
+      row("b", "and the lint", true),
+      row("c", "and docs", true),
+    ];
+    const t = talk(
+      turn({
+        prompt: { kind: "human", text: "fix it", uuid: "p" },
+        steps: [{ kind: "said", text: "and the tests", uuid: "a" }],
+      }),
+      turn({ prompt: { kind: "human", text: "and the lint", uuid: "b" } }),
+    );
+    expect(queuedRows(rows, t)).toEqual([row("c", "and docs", true)]);
+  });
+  it("matches on the words where the view has no uuid, in the last turns only", () => {
+    const rows = [row("a", "and the tests", true), row("b", "fix it", true)];
+    const t = talk(
+      turn({ prompt: { kind: "human", text: "fix it" } }),
+      turn({ prompt: { kind: "human", text: "go" } }),
+      turn({
+        prompt: { kind: "human", text: "on" },
+        steps: [{ kind: "said", text: "and the tests" }],
+      }),
+    );
+    expect(queuedRows(rows, t)).toEqual([row("b", "fix it", true)]);
+  });
+  it("never lets a queued one go by its words", () => {
+    const rows = [row("a", "go")];
+    expect(queuedRows(rows, talk(turn({ prompt: { kind: "human", text: "go" } })))).toEqual(rows);
   });
 });

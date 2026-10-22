@@ -1,6 +1,7 @@
 // what the screens compute from main's views. pure: every fact here was derived in main, this is
 // only filtering, order and words.
 import {
+  type ConversationView,
   formatDuration,
   type InboxKind,
   type StepView,
@@ -8,6 +9,7 @@ import {
   tokenize,
 } from "@grove/core/pure";
 import type {
+  ChatStatus,
   InboxRowView,
   InboxView,
   ProjectId,
@@ -288,6 +290,37 @@ export function turnParts(steps: readonly StepView[] | undefined): TurnPart[] {
     parts.push({ work: [] });
   }
   return parts;
+}
+
+/** what the window sent, until the transcript has it: a prompt's start is enough to know it */
+export const same = (a: string, b: string) => a.trim().slice(0, 200) === b.trim().slice(0, 200);
+
+/**
+ * what was sent while it worked, as rows under the conversation: each until the transcript has it.
+ * a queued one always. a taken one until it is there - by the uuid it went with, on what he typed
+ * mid-turn or on the prompt of the turn it ran as. a view without uuids (the panel's prompts)
+ * matches on the words, in the last two turns only, where it can have landed
+ */
+export function queuedRows(
+  queued: ChatStatus["queued"],
+  talk: ConversationView | null | undefined,
+): ChatStatus["queued"] {
+  if (!queued.some((q) => q.taken)) return queued;
+  const turns = (talk?.items ?? []).filter((i): i is TurnView => i.kind === "turn");
+  const ids = new Set<string>();
+  for (const t of turns) {
+    if (t.prompt?.uuid) ids.add(t.prompt.uuid);
+    for (const s of t.steps ?? []) if (s.kind === "said" && s.uuid) ids.add(s.uuid);
+  }
+  const words = turns
+    .slice(-2)
+    .flatMap((t) => [
+      ...(t.prompt?.kind === "human" && !t.prompt.uuid ? [t.prompt.text] : []),
+      ...(t.steps ?? []).flatMap((s) => (s.kind === "said" && !s.uuid ? [s.text] : [])),
+    ]);
+  return queued.filter(
+    (q) => !q.taken || !(ids.has(q.id) || (q.said && words.some((w) => same(w, q.said)))),
+  );
 }
 
 /** `12 steps · 3 files edited · 4m`: a turn's work in one line. nothing for a turn that only talked */

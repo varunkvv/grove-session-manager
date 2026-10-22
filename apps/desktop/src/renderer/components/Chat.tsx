@@ -18,6 +18,7 @@ import type {
 import { attachKind, bytes } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
+import { queuedRows, same } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
@@ -28,7 +29,7 @@ import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { QUIET, Turn } from "./SessionPanel.tsx";
+import { QUIET, QueuedRows, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
   Button,
@@ -47,7 +48,6 @@ import {
   ModeDot,
   Overlay,
   ProjectMark,
-  PromptBlock,
   Segmented,
   SendButton,
   Spinner,
@@ -63,9 +63,6 @@ const api = () => window.grove;
 
 /** the reading column, and the composer under it at the same width */
 const COLUMN = "mx-auto w-full max-w-[760px] px-6";
-
-/** what the window sent, until the transcript has it: a prompt's start is enough to know it */
-const same = (a: string, b: string) => a.trim().slice(0, 200) === b.trim().slice(0, 200);
 
 /** grove's caps on what crosses into main (main holds them too): see ATTACH in services/chat.ts */
 const CAP = { image: 20 * 1024 * 1024, pdf: 10 * 1024 * 1024, text: 512 * 1024, files: 10 };
@@ -1435,27 +1432,10 @@ export function ChatApp() {
                     }}
                   />
                 ))}
-                {s.queued.map((q) => (
-                  <div key={q.id} className="group/queued mt-3" data-testid="chat-queued">
-                    {/* his block's outline until claude takes it. its one action where a sent
-                        one's are */}
-                    <PromptBlock queued>
-                      {/* taken back before claude gets to it: its words go back in the composer */}
-                      <IconButton
-                        label="Take back"
-                        data-testid="chat-unqueue"
-                        className="absolute top-1.5 right-1.5 opacity-0 group-hover/queued:opacity-100 focus-visible:opacity-100"
-                        onClick={() => void unqueue(q)}
-                      >
-                        <Icon name="x" size={10} />
-                      </IconButton>
-                      <h3 className="pr-8 text-sm font-medium text-fg-4">You, queued</h3>
-                      <p className="selectable mt-1 whitespace-pre-wrap break-words text-fg-3">
-                        {q.text}
-                      </p>
-                    </PromptBlock>
-                  </div>
-                ))}
+                <QueuedRows
+                  queued={queuedRows(s.queued, talk)}
+                  onUnqueue={(q) => void unqueue(q)}
+                />
               </div>
             </div>
             <footer className="shrink-0">

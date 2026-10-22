@@ -11,7 +11,13 @@ import type {
 } from "../../shared/ipc.ts";
 import { blocks } from "../logic/blocks.ts";
 import { nextActiveKey } from "../logic/rows.ts";
-import { type SessionState, type TypedStep, turnParts, workLine } from "../logic/views.ts";
+import {
+  queuedRows,
+  type SessionState,
+  type TypedStep,
+  turnParts,
+  workLine,
+} from "../logic/views.ts";
 import { openChat, openWith, review } from "../state/actions.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { type Section, useStore } from "../state/store.ts";
@@ -455,6 +461,53 @@ function Typed({ step, images }: { step: TypedStep; images?: boolean }) {
   );
 }
 
+/**
+ * what was sent while it worked, under the conversation (queuedRows says which). queued: his
+ * block's outline until claude takes it, and its one action where a sent one's are. taken: drawn
+ * as sent, where it was, until the transcript has it in its place
+ */
+export function QueuedRows({
+  queued,
+  onUnqueue,
+}: {
+  queued: ChatStatus["queued"];
+  /** taken back before claude gets to it: grove chat's only */
+  onUnqueue?: (q: ChatStatus["queued"][number]) => void;
+}) {
+  return queued.map((q) => (
+    <div
+      key={q.id}
+      className="group/queued mt-3"
+      data-testid="chat-queued"
+      data-taken={q.taken ? "" : undefined}
+    >
+      <PromptBlock queued={!q.taken}>
+        {!q.taken && onUnqueue && (
+          <IconButton
+            label="Take back"
+            data-testid="chat-unqueue"
+            className="absolute top-1.5 right-1.5 opacity-0 group-hover/queued:opacity-100 focus-visible:opacity-100"
+            onClick={() => onUnqueue(q)}
+          >
+            <Icon name="x" size={10} />
+          </IconButton>
+        )}
+        <h3 className={cx("text-sm font-medium text-fg-4", !q.taken && onUnqueue && "pr-8")}>
+          {q.taken ? "You, while it worked" : "You, queued"}
+        </h3>
+        <p
+          className={cx(
+            "selectable mt-1 whitespace-pre-wrap break-words",
+            q.taken ? "text-fg-2" : "text-fg-3",
+          )}
+        >
+          {q.text}
+        </p>
+      </PromptBlock>
+    </div>
+  ));
+}
+
 /** the end of an answer: its last paragraph or two, with … when there was more */
 function tailOf(text: string): string {
   const parts = blocks(text).filter((p) => p.trim());
@@ -518,6 +571,7 @@ function SessionCard({
           : undefined;
   const failed = (o: Outcome<unknown>) => setError(o.ok ? undefined : o.error.message);
   const asks = elsewhere ? [] : (host?.asks ?? []);
+  const queued = queuedRows(host?.queued ?? [], talk);
   const running = !!host?.running;
   const last = talk?.items.findLast((i): i is TurnView => i.kind === "turn");
   // the end of what it last said: its answer, or what it said before it stopped without one
@@ -576,6 +630,12 @@ function SessionCard({
           <div className="selectable mt-1">
             <Markdown text={tailOf(lastSaid)} />
           </div>
+        </div>
+      )}
+      {!elsewhere && host && queued.length > 0 && (
+        // what was sent while it works, as the chat window has it: taken back from there
+        <div className="[&>div:first-child]:mt-0" data-testid="card-queued">
+          <QueuedRows queued={queued} />
         </div>
       )}
       {!elsewhere && (
