@@ -312,10 +312,10 @@ async function timeOpen(
   const marks = await page.evaluate(
     () => (window as unknown as { __marks: Record<string, number> }).__marks,
   );
-  // closed, so the next open is handed a new spare
+  // closed, so the next open is handed a new spare. its title is the session's, then its project
   await electron.evaluate(({ BrowserWindow }, t) => {
     BrowserWindow.getAllWindows()
-      .find((w) => w.getTitle() === t)
+      .find((w) => w.getTitle() === t || w.getTitle().startsWith(`${t} · `))
       ?.close();
   }, title);
   return [(marks.visible ?? Number.NaN) - t0, (marks.painted ?? Number.NaN) - t0];
