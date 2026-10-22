@@ -11,7 +11,9 @@
 // waits between two lines, 15 by default), GROVE_FAKE_CHAT_TOOL_MS (how long a main-thread tool
 // runs before its result, 0 by default), GROVE_FAKE_CHAT_RECORDINGS (a folder of recordings to
 // play instead of these: the perf script's long answer), GROVE_FAKE_CHAT_CONTEXT (the tokens
-// get_context_usage says are in use)
+// get_context_usage says are in use), GROVE_FAKE_CHAT_FOLD (1: a message sent while a turn plays
+// is folded into it at the next tool result, as claude code does, instead of playing next),
+// GROVE_FAKE_CHAT_FOLD_MS (how long after its `started` the fold reaches the transcript)
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -27,6 +29,8 @@ const LOG = process.env.GROVE_FAKE_CHAT_LOG;
 const DELAY = Number(process.env.GROVE_FAKE_CHAT_DELAY_MS ?? 15);
 /** how long a tool of the main thread takes before its result: 0, unless a test wants to see it run */
 const TOOL_MS = Number(process.env.GROVE_FAKE_CHAT_TOOL_MS ?? 0);
+const FOLD = process.env.GROVE_FAKE_CHAT_FOLD === "1";
+const FOLD_MS = Number(process.env.GROVE_FAKE_CHAT_FOLD_MS ?? 0);
 const note = (o) => LOG && fs.appendFileSync(LOG, `${JSON.stringify(o)}\n`);
 
 const DIR = process.env.GROVE_FAKE_CHAT_RECORDINGS || __dirname;
@@ -202,6 +206,9 @@ function recordWorkflow(m) {
 
 // ---------- stdout
 const out = (msg) => process.stdout.write(`${asSession(msg)}\n`);
+/** what became of a message the host stamped a uuid on, as claude code says (recordings/d-queue) */
+const life = (uuid, state) =>
+  uuid && out({ type: "command_lifecycle", command_uuid: uuid, state, uuid: crypto.randomUUID(), session_id: sessionId });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- the host's settings controls, answered as claude 2.1.296 does (recordings/c-start.jsonl):
@@ -265,7 +272,10 @@ function settingsControl(r) {
   // a message sent while a turn ran, taken back before it was played (recordings/d-queue)
   if (r.subtype === "cancel_async_message") {
     const i = inbox.findIndex((m) => m.type === "user" && m.uuid === r.message_uuid);
-    if (i >= 0) inbox.splice(i, 1);
+    if (i >= 0) {
+      inbox.splice(i, 1);
+      life(r.message_uuid, "cancelled");
+    }
     return { cancelled: i >= 0 };
   }
   // the summary's numbers, as recordings/d-compact has them. GROVE_FAKE_CHAT_CONTEXT: tokens in use
@@ -316,6 +326,7 @@ process.stdin.on("data", (chunk) => {
       continue;
     }
     inbox.push(m);
+    if (m.type === "user") life(m.uuid, "queued");
     wake?.();
   }
 });
@@ -343,7 +354,33 @@ async function next(match) {
   }
 }
 
-async function play(turn) {
+/**
+ * a message sent while the turn plays, handed to it at a tool result: started, then the transcript's
+ * queued_command attachment, as claude code writes it (the uuid the host stamped is its source_uuid)
+ */
+async function fold(folded) {
+  for (let i = inbox.findIndex((m) => m.type === "user"); i >= 0; i = inbox.findIndex((m) => m.type === "user")) {
+    const [m] = inbox.splice(i, 1);
+    life(m.uuid, "started");
+    folded.push(m.uuid);
+    if (FOLD_MS) await sleep(FOLD_MS);
+    const content = Array.isArray(m.message.content) ? m.message.content : [{ type: "text", text: m.message.content }];
+    record("attachment", undefined, {
+      attachment: {
+        type: "queued_command",
+        prompt: content,
+        ...(m.uuid ? { source_uuid: m.uuid } : {}),
+        delivery_id: crypto.randomUUID(),
+        commandMode: "prompt",
+        origin: { kind: "human" },
+        timestamp: new Date().toISOString(),
+        humanTurn: true,
+      },
+    });
+  }
+}
+
+async function play(turn, folded) {
   let last = null;
   for (const l of turn.lines) {
     if (l.dir === "in") {
@@ -400,6 +437,7 @@ async function play(turn) {
         ...(m.tool_use_result !== undefined ? { toolUseResult: m.tool_use_result } : {}),
       });
     }
+    if (FOLD && result) await fold(folded);
   }
 }
 
@@ -410,9 +448,13 @@ async function play(turn) {
     const text = (Array.isArray(m.message.content) ? m.message.content : [{ text: m.message.content }])
       .map((c) => c.text ?? "")
       .join("");
+    life(m.uuid, "started");
     // the line keeps the uuid the host stamped, as claude code's does (recordings/d-atpath)
     record("user", m.message, m.uuid ? { uuid: m.uuid } : {});
-    await play(turns.find((t) => t.text === text) ?? turns[0]);
+    const folded = [];
+    await play(turns.find((t) => t.text === text) ?? turns[0], folded);
+    // claude code says these either side of the turn's result: here after it
+    for (const uuid of [m.uuid, ...folded]) life(uuid, "completed");
   }
   process.exit(0);
 })();

@@ -194,9 +194,10 @@ export interface TurnSpec {
   prompt: string;
   /**
    * the tool calls of the work, each with a result. `said`: what it wrote before the call, in the
-   * same message, as Claude Code writes a text and its calls
+   * same message, as Claude Code writes a text and its calls. `typed`: what the person sent while
+   * it ran, handed over after its result as Claude Code writes that (a queued_command attachment)
    */
-  tools?: Array<{ name: string; input: Record<string, unknown>; said?: string }>;
+  tools?: Array<{ name: string; input: Record<string, unknown>; said?: string; typed?: string }>;
   /** the message it ended on. absent while the turn is under way */
   reply?: string;
   /** how long ago it started, and how long it took. now and 30s unless given */
@@ -288,6 +289,21 @@ export function appendTurn(
         },
       },
     );
+    if (tool.typed !== undefined) {
+      lines.push({
+        type: "attachment",
+        ...envelope,
+        uuid: id("f", i),
+        timestamp: at(i + 1),
+        attachment: {
+          type: "queued_command",
+          prompt: [{ type: "text", text: tool.typed }],
+          source_uuid: id("g", i),
+          commandMode: "prompt",
+          origin: { kind: "human" },
+        },
+      });
+    }
   });
   if (t.reply !== undefined) {
     lines.push({
