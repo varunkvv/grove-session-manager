@@ -199,14 +199,14 @@ const VARIANTS: Record<ButtonVariant, string> = {
   link: "font-medium text-accent enabled:hover:underline focus-visible:underline",
 };
 /**
- * in a conversation the words grow with the text size, and the button with them: there its height
- * is a minimum. anywhere else it is fixed, as it always was (a min-height on the Latest button, over
- * the conversation, moved a pixel of the composer at 100%)
+ * in a conversation (a card's buttons) the words grow with the text size, and the button's height
+ * with them. anywhere else the height is what it always was: the variant never applies there, so
+ * nothing moves (a changed height on the Latest button, over the conversation, moved a pixel)
  */
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-6 in-[.reading]:h-auto in-[.reading]:min-h-6 gap-1.5 px-2 text-sm",
-  md: "h-7 in-[.reading]:h-auto in-[.reading]:min-h-7 gap-1.5 px-3 text-body",
-  lg: "h-8 in-[.reading]:h-auto in-[.reading]:min-h-8 gap-1.5 px-3 text-body",
+  sm: "h-6 in-[.reading]:h-[calc(1.5rem*var(--text-scale))] gap-1.5 px-2 text-sm",
+  md: "h-7 in-[.reading]:h-[calc(1.75rem*var(--text-scale))] gap-1.5 px-3 text-body",
+  lg: "h-8 in-[.reading]:h-[calc(2rem*var(--text-scale))] gap-1.5 px-3 text-body",
 };
 
 export function Button({
@@ -615,8 +615,9 @@ export function Field({
   );
 }
 
+/** in a conversation (a card's field) its height grows with the text size, as a button's does */
 export const inputClass =
-  "no-drag min-h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4";
+  "no-drag h-8 in-[.reading]:h-[calc(2rem*var(--text-scale))] w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4";
 
 /**
  * a select the way the other fields look. `appearance: none` takes the platform's arrow away, and

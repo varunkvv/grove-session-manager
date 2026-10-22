@@ -156,7 +156,7 @@ export function QuestionCard({
                 data-testid="ask-tab"
                 onClick={() => go(i)}
                 className={cx(
-                  "fade inline-flex min-h-6 items-center gap-1 rounded-md px-2 text-sm",
+                  "fade inline-flex h-[calc(1.5rem*var(--text-scale,1))] items-center gap-1 rounded-md px-2 text-sm",
                   i === at ? "bg-canvas text-fg" : "text-fg-3 hover:text-fg",
                 )}
               >
@@ -171,7 +171,7 @@ export function QuestionCard({
               data-testid="ask-tab-submit"
               onClick={() => go(qs.length)}
               className={cx(
-                "fade inline-flex min-h-6 items-center rounded-md px-2 text-sm",
+                "fade inline-flex h-[calc(1.5rem*var(--text-scale,1))] items-center rounded-md px-2 text-sm",
                 review ? "bg-canvas text-fg" : "text-fg-3 hover:text-fg",
               )}
             >
