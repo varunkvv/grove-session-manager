@@ -1724,7 +1724,7 @@ test("an image dropped or pasted into the composer goes to claude with the messa
   });
 });
 
-test("files: the + menu's picker, a drop anywhere, chips, and what can't be attached goes in as its path", async () => {
+test("files: the + menu's picker, a drop anywhere, chips, and a type claude has no block for goes by its path", async () => {
   const s = seed(true);
   const dir = path.join(s.fx.dir, "attach");
   mkdirSync(dir, { recursive: true });
@@ -1748,15 +1748,16 @@ test("files: the + menu's picker, a drop anywhere, chips, and what can't be atta
   await menu.getByTestId("menu-item").first().click();
   await (await chooser).setFiles([pdf, csv, docx]);
   const chips = chat.getByTestId("chip");
-  await expect(chips).toHaveCount(2);
-  await expect(chips.first()).toContainText("spec.pdf");
-  await expect(chips.last()).toContainText("data.csv");
-  // a docx is no type claude takes: the message names where it is instead
-  await expect(chat.getByTestId("chat-note")).toContainText(
-    "report.docx can't be attached, so its path is in the message",
-  );
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(0)).toContainText("spec.pdf");
+  await expect(chips.nth(1)).toContainText("data.csv");
+  // a docx is no type claude takes: it goes by its path, and nothing is typed for it
+  await expect(chips.nth(2)).toContainText("report.docx");
+  await expect(chips.nth(2)).toContainText("File · 20 B");
+  await expect(chips.nth(2)).toHaveAttribute("title", docx);
+  await expect(chat.getByTestId("chat-note")).toHaveCount(0);
   const composer = chat.getByTestId("composer");
-  await expect(composer).toHaveValue(`${docx} `);
+  await expect(composer).toHaveValue("");
   // a drag over the window says where it lands
   await chat.evaluate(() => {
     const dt = new DataTransfer();
@@ -1774,16 +1775,16 @@ test("files: the + menu's picker, a drop anywhere, chips, and what can't be atta
       ?.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
   });
   await expect(chat.getByTestId("drop-overlay")).toHaveCount(0);
-  await expect(chips).toHaveCount(3);
+  await expect(chips).toHaveCount(4);
   // one taken back
   await chips.last().getByTestId("chip-remove").click();
-  await expect(chips).toHaveCount(2);
+  await expect(chips).toHaveCount(3);
   await composer.fill(HELLO);
   await composer.press("Enter");
   await expect(chips).toHaveCount(0);
   await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
   await expect(chat.getByTestId("turn").last().getByTestId("turn-attached")).toHaveText(
-    " · spec.pdf · data.csv",
+    " · spec.pdf · data.csv · report.docx",
   );
   const sent = sentToClaude(s.chatLog)
     .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
@@ -1799,6 +1800,7 @@ test("files: the + menu's picker, a drop anywhere, chips, and what can't be atta
       source: { type: "text", media_type: "text/plain", data: "a,b\n1,2\n" },
       title: "data.csv",
     },
+    { type: "text", text: expect.stringContaining(`\npath: ${docx}\n`) },
     { type: "text", text: HELLO },
   ]);
   // Mention a file puts an @ where the caret is, and the files menu opens on it
@@ -1806,6 +1808,85 @@ test("files: the + menu's picker, a drop anywhere, chips, and what can't be atta
   await menu.getByTestId("menu-item").last().click();
   await expect(composer).toHaveValue("@");
   await expect(chat.getByTestId("suggest")).toHaveAttribute("data-kind", "@");
+});
+
+test("a video picked or copied in finder goes by its path, as a chip, and shows as one after a reload", async () => {
+  const s = seed(true);
+  const dir = path.join(s.fx.dir, "media");
+  mkdirSync(dir, { recursive: true });
+  const clip = path.join(dir, "clip.mp4");
+  const zip = path.join(dir, "notes.zip");
+  const copied = path.join(dir, "Screen Recording.mov");
+  // inside the session's folder: a video is still a chip, only text and pdfs get an @
+  const inside = path.join(s.root, "demo.mp4");
+  for (const f of [clip, zip, copied, inside]) writeFileSync(f, "not really a video");
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await chat.getByTestId("chat-attach").click();
+  const chooser = chat.waitForEvent("filechooser");
+  await chat.getByTestId("attach-menu").getByTestId("menu-item").first().click();
+  await (await chooser).setFiles([clip, zip, inside]);
+  const chips = chat.getByTestId("chip");
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(0)).toContainText("clip.mp4");
+  await expect(chips.nth(0)).toContainText("Video · 18 B");
+  await expect(chips.nth(1)).toContainText("notes.zip");
+  await expect(chips.nth(1)).toContainText("File · 18 B");
+  await expect(chips.nth(2)).toContainText("demo.mp4");
+  await expect(composer).toHaveValue("");
+  // a copy in finder pastes as a File with its path (probe, electron 44). the page's own input
+  // hands one over with its path, as the clipboard does. finder puts the name on the clipboard as
+  // a string too: electron 44 does not show it, and a paste that does must not type it in
+  await chat.evaluate(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.id = "copied";
+    input.hidden = true;
+    document.body.append(input);
+  });
+  await chat.locator("#copied").setInputFiles(copied);
+  const kept = await chat.evaluate(() => {
+    const dt = new DataTransfer();
+    const file = (document.getElementById("copied") as HTMLInputElement).files?.[0];
+    if (file) dt.items.add(file);
+    dt.setData("text/plain", "Screen Recording.mov");
+    return document
+      .querySelector('[data-testid="composer"]')
+      ?.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }),
+      );
+  });
+  // the box would type its name in: held back
+  expect(kept).toBe(false);
+  await expect(chips).toHaveCount(4);
+  await expect(chips.nth(3)).toContainText("Screen Recording.mov");
+  await expect(chips.nth(3)).toHaveAttribute("title", copied);
+  await expect(composer).toHaveValue("");
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chips).toHaveCount(0);
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
+  const sent = sentToClaude(s.chatLog)
+    .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
+    .find((m) => m?.type === "user");
+  const content = sent?.message?.content ?? [];
+  expect(content.map((c) => c.type)).toEqual(["text", "text", "text", "text", "text"]);
+  expect(content[0]?.text).toContain(`path: ${clip}\ntype: video/mp4\nsize: 18 bytes`);
+  expect(content[1]?.text).toContain(`path: ${zip}\n`);
+  expect(content[2]?.text).toContain(`path: ${inside}\n`);
+  expect(content[3]?.text).toContain(`path: ${copied}\ntype: video/quicktime`);
+  expect(content[4]).toEqual({ type: "text", text: HELLO });
+  // his message names the files and says only what he typed: now, and read back from the transcript
+  const turn = chat.getByTestId("turn").last();
+  const files = " · clip.mp4 · notes.zip · demo.mp4 · Screen Recording.mov";
+  await expect(turn.getByTestId("turn-attached")).toHaveText(files);
+  await expect(turn.getByTestId("panel-prompt")).toHaveText(HELLO);
+  await chat.reload();
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
+  await expect(chat.getByTestId("turn").last().getByTestId("turn-attached")).toHaveText(files);
+  await expect(chat.getByTestId("turn").last().getByTestId("panel-prompt")).toHaveText(HELLO);
 });
 
 test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project", async () => {
