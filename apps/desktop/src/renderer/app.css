@@ -130,6 +130,8 @@
 :root {
   /* no attribute: follow macOS, which is what prefers-color-scheme still reports correctly */
   color-scheme: light dark;
+  /* the Text size setting, 1 at 100%. set on :root by state/appearance.ts, read by .reading */
+  --reading-scale: 1;
   /* not a @theme shadow: tailwind inlines those at build time, so one could never switch */
   --shadow-overlay:
     0 8px 30px light-dark(rgb(0 0 0 / 0.13), rgb(0 0 0 / 0.5)),
@@ -511,8 +513,36 @@ dialog::backdrop {
 }
 
 /*
+ * what is read: the conversation, the message box, a file's words. it grows with the Text size
+ * setting and the rest of the window (headers, menus, lists, dialogs) stays. every size token is
+ * redefined here, so a text-sm inside is the bigger one, and so is the 13/20 most of it inherits
+ * from body. text only: spacing, icons and radii stay. line heights are whole px, so a line never
+ * sits on half a pixel. --text-scale is defined only here, so .md's own sizes outside a reading
+ * area are what they always were. a layer under the utilities: a text-sm on the reading element
+ * itself still wins over its 13px
+ */
+@layer components {
+  .reading {
+    --text-scale: var(--reading-scale);
+    --text-meta: calc(11px * var(--text-scale));
+    --text-meta--line-height: round(calc(16px * var(--text-scale)), 1px);
+    --text-sm: calc(12px * var(--text-scale));
+    --text-sm--line-height: round(calc(18px * var(--text-scale)), 1px);
+    --text-body: calc(13px * var(--text-scale));
+    --text-body--line-height: round(calc(20px * var(--text-scale)), 1px);
+    --text-title: calc(15px * var(--text-scale));
+    --text-title--line-height: round(calc(22px * var(--text-scale)), 1px);
+    --text-figure: calc(26px * var(--text-scale));
+    --text-figure--line-height: round(calc(32px * var(--text-scale)), 1px);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+}
+
+/*
  * markdown an agent wrote, in the app's own typography: no boxes, hairlines where a structure
  * needs one, mono only for code. headings stay near body size - it is someone's report, not a page.
+ * its sizes are the tokens, or go through --text-scale, so in a reading area they grow with it
  */
 .md {
   color: var(--color-fg-2);
@@ -544,12 +574,12 @@ dialog::backdrop {
   margin: 14px 0 4px;
   color: var(--color-fg);
   font-weight: 600;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }
 .md h1 {
-  font-size: 15px;
-  line-height: 22px;
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
 }
 .md strong {
   color: var(--color-fg);
@@ -583,20 +613,20 @@ dialog::backdrop {
 }
 .md code {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale, 1));
   color: var(--color-fg);
 }
 .md :not(pre) > code {
   background: var(--color-raised);
   border-radius: 4px;
   padding: 1px 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .md pre {
   padding: 2px 0 2px 12px;
   border-left: 1px solid var(--color-line-strong);
   overflow-x: auto;
-  line-height: 17px;
+  line-height: round(calc(17px * var(--text-scale, 1)), 1px);
 }
 .md pre code {
   color: var(--color-fg-2);
@@ -613,8 +643,8 @@ dialog::backdrop {
 }
 .md table {
   border-collapse: collapse;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
   display: block;
   overflow-x: auto;
 }
