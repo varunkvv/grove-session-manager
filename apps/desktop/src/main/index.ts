@@ -603,7 +603,7 @@ async function start(): Promise<void> {
   let sizing = Promise.resolve();
   /**
    * the Text size setting a step bigger, smaller or back to 100, saved as Settings would save it.
-   * every window follows, and the main window's store hears of it. at either end nothing happens.
+   * every window follows. at either end nothing happens.
    * one after another, so a held key never skips a step
    */
   const textSize = (dir: -1 | 0 | 1): Promise<void> => {
@@ -615,7 +615,6 @@ async function start(): Promise<void> {
         textScale: next === 100 ? undefined : next,
       });
       applySettings(saved);
-      pusher.send("settings:changed", saved);
     };
     const done = sizing.then(step);
     sizing = done.catch(() => {});
@@ -686,6 +685,8 @@ async function start(): Promise<void> {
     awake.set(s.keepAwake !== false && running + left > 0);
     showTray();
     electron.nativeTheme.themeSource = s.appearance;
+    // the main window's store has what was saved, from wherever it was saved (a key, a chat window)
+    pusher.send("settings:changed", s);
   };
 
   const handlers = registerIpc({

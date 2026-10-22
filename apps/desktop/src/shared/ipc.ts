@@ -679,7 +679,7 @@ export interface PushEvents {
   "chat:session": SessionHit;
   /** the main window: a session grove runs moved (a state, an ask, a tool). never its tokens */
   "chat:host": { sessionId: string; status: ChatStatus };
-  /** the main window: the settings moved from outside its dialog (⌘+ in any window) */
+  /** the main window: the settings were saved, from its dialog or elsewhere (⌘+ in any window) */
   "settings:changed": AppSettings;
 }
 
