@@ -1,7 +1,14 @@
 // grove chat draws what a session made: images and videos through main's session scheme, which
 // serves only the session's folders and the temp folder, cards for files it wrote, and a viewer
 // beside the conversation. no claude runs: the transcripts are written before launch.
-import { copyFileSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { FILE_SCHEME, sessionUrl } from "../src/shared/sessionUrl.ts";
@@ -242,7 +249,22 @@ test("a mermaid fence is drawn as a picture, and one that is not a diagram stays
   expect(blocked).toEqual([]);
 });
 
-test("a video opens in the viewer, plays only when asked, and seeks", async () => {
+/** what Open hands to the Mac, kept in main instead: a test never opens Preview on the desk */
+async function stubOpen(electron: ElectronApplication, answer = "") {
+  await electron.evaluate(({ shell }, why) => {
+    const g = globalThis as unknown as { opened: string[] };
+    g.opened = [];
+    shell.openPath = async (file) => {
+      g.opened.push(file);
+      return why;
+    };
+  }, answer);
+}
+
+const opened = (electron: ElectronApplication) =>
+  electron.evaluate(() => (globalThis as unknown as { opened: string[] }).opened);
+
+test("a video opens in the viewer, plays only when asked, seeks, and opens in the Mac's app", async () => {
   const s = seed("");
   mkdirSync(path.join(s.root, "artifacts"), { recursive: true });
   // 4s of h264, 160x90, made once with ffmpeg
@@ -306,6 +328,15 @@ test("a video opens in the viewer, plays only when asked, and seeks", async () =
     got: 100,
   });
   expect(await ask(`bytes=${size}-`)).toMatchObject({ status: 416, range: `bytes */${size}` });
+
+  // Open: the file as it really is, to the Mac. what the Mac says back when it cannot
+  await stubOpen(app.app);
+  await chat.getByTestId("viewer-open").click();
+  await expect.poll(() => opened(app.app)).toEqual([realpathSync(clip)]);
+  await expect(chat.getByTestId("chat-error")).toHaveCount(0);
+  await stubOpen(app.app, "No application knows how to open it.");
+  await chat.getByTestId("viewer-open").click();
+  await expect(chat.getByTestId("chat-error")).toHaveText("No application knows how to open it.");
 });
 
 /** an svg is drawn at the size it says it is */
@@ -352,6 +383,7 @@ test("a big image opens at its own size on a click and fits again on the next, a
 
   await cards.filter({ hasText: "wide.svg" }).click();
   await expect.poll(fit).toEqual(FITTED);
+  await expect(chat.getByTestId("viewer-open")).toBeVisible();
   await image.click();
   await expect(image).toHaveAttribute("data-zoomed", "true");
   await expect.poll(fit).toEqual(ZOOMED);
@@ -367,6 +399,12 @@ test("a big image opens at its own size on a click and fits again on the next, a
   await expect.poll(fit).toMatchObject({ natural: 2, cursor: "default" });
   await image.click();
   await expect(image).not.toHaveAttribute("data-zoomed");
+  await expect(chat.getByTestId("viewer-open")).toBeVisible();
   await cards.filter({ hasText: "wide.svg" }).click();
   await expect.poll(fit).toEqual(FITTED);
+
+  // no Open for words: a .md or a .ts would open in an editor
+  await cards.filter({ hasText: "notes.md" }).click();
+  await expect(chat.getByTestId("viewer-text")).toContainText("notes");
+  await expect(chat.getByTestId("viewer-open")).toHaveCount(0);
 });

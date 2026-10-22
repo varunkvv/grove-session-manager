@@ -847,6 +847,7 @@ export function ChatApp() {
       ? agents?.find((a) => a.id === pane.agent && a.kind !== "workflow")
       : undefined;
   const stopAgent = async (id: string) => setError(failed(await api().chatStopAgent(id)));
+  const openFile = async (file: string) => setError(failed(await api().chatOpenFile(file)));
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
@@ -1701,6 +1702,7 @@ export function ChatApp() {
                 file={pane.file}
                 diff={pane.diff}
                 onList={() => setPane({ kind: "files" })}
+                onOpen={(file) => void openFile(file)}
                 onClose={() => setPane(null)}
               />
             ) : (

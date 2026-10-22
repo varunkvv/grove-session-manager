@@ -53,7 +53,8 @@ export type IconName =
   | "more"
   | "copy"
   | "pencil"
-  | "undo";
+  | "undo"
+  | "external";
 
 const PATHS: Record<IconName, ReactNode> = {
   inbox: (
@@ -89,6 +90,10 @@ const PATHS: Record<IconName, ReactNode> = {
   stop: <rect x="4.25" y="4.25" width="7.5" height="7.5" rx="1.5" fill="currentColor" />,
   pencil: <path d="M10.75 2.75 13.25 5.25 5.5 13H3v-2.5l7.75-7.75ZM9.25 4.25l2.5 2.5" />,
   undo: <path d="M5.5 3.5 2.75 6.25 5.5 9M2.75 6.25h6.5a3.75 3.75 0 0 1 0 7.5H7" />,
+  // out of grove, into another app
+  external: (
+    <path d="M9.25 2.75h4v4M13.25 2.75 7.5 8.5M11.25 9.5v2.75a1 1 0 0 1-1 1h-6.5a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1H6.5" />
+  ),
   copy: (
     <>
       <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" />

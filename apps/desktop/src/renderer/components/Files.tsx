@@ -10,7 +10,7 @@ import { FILE_SCHEME, HTML_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts
 import { dirOf } from "../logic/links.ts";
 import { ChatScopeContext, useChatScope } from "../state/chatScope.ts";
 import { Highlighted, Markdown } from "./Markdown.tsx";
-import { cx, Diff, DiffCount, Icon, IconButton, Spinner } from "./ui.tsx";
+import { Button, cx, Diff, DiffCount, Icon, IconButton, Spinner } from "./ui.tsx";
 
 const api = () => window.grove;
 
@@ -154,12 +154,15 @@ export function Viewer({
   file,
   diff,
   onList,
+  onOpen,
   onClose,
 }: {
   file: string;
   /** what changed in it since the last commit, not the file itself */
   diff?: boolean;
   onList: () => void;
+  /** in the app the Mac opens it with */
+  onOpen: (file: string) => void;
   onClose: () => void;
 }) {
   const scope = useChatScope();
@@ -191,6 +194,19 @@ export function Viewer({
             <span className="text-sm text-fg-4"> · {whereOf(file, scope.base)}</span>
           )}
         </span>
+        {/* Preview or QuickTime has the zoom and the scrubbing. not a text file: a .ts opens xcode */}
+        {!diff && (kind === "image" || kind === "video") && (
+          <Button
+            size="sm"
+            variant="quiet"
+            title="Open in the app your Mac uses for it"
+            data-testid="viewer-open"
+            onClick={() => onOpen(file)}
+          >
+            <Icon name="external" size={12} />
+            Open
+          </Button>
+        )}
         <IconButton label="Close" onClick={onClose} data-testid="viewer-close">
           <Icon name="x" size={12} />
         </IconButton>
