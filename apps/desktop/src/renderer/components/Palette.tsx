@@ -9,6 +9,7 @@ import {
   go,
   goUsage,
   newSession,
+  openChat,
   openSession,
   report,
   switchProject,
@@ -177,9 +178,10 @@ function Open({ windows }: { windows: readonly ChatWindowView[] }) {
       case "session":
         if (item.hit) openSession(item.hit.key, item.hit.open, item.hit.title);
         break;
-      // an open chat window, where it was
+      // an open chat window, where it was. Enter on it opens the session from here, as a
+      // double-click on its row does
       case "window":
-        void window.grove.showWindow(arg);
+        if (item.window) openChat(item.window.hit.key, item.window.hit.title);
         break;
       // a dialog takes the keyboard itself
       case "settings":

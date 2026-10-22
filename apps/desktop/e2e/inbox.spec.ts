@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import {
@@ -9,7 +9,7 @@ import {
   readExecLog,
   writeSession,
 } from "./helpers/fixture.ts";
-import { groveTest, type LaunchedApp, launchApp, step } from "./helpers/launchApp.ts";
+import { groveTest, type LaunchedApp, launchApp, step, waitFor } from "./helpers/launchApp.ts";
 import { interrupted, liveSession, writeProject } from "./helpers/project.ts";
 
 const SID = {
@@ -311,25 +311,39 @@ test("a click opens the session in a panel beside the list, another row swaps it
   await expect(page.getByTestId("panel")).toHaveCount(0);
 });
 
-test("a double-click opens the row's session in the editor, once, wherever the panel lands under it", async () => {
+test("a double-click opens the row's session in the editor, once, wherever the panel lands under it, and takes it out of Needs you", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
-  // a stop stays in the inbox when its session is opened, so it can be opened again and again
-  const stopped = row(page, "stopped");
+  // opening it from here is meant: it leaves Needs you as its Dismiss takes it, and the panel goes
+  // to the row that took its place. a new stop brings it back, to be opened again
+  const turn = row(page, "turn");
+  const again = async () => {
+    hookEvent(fx, SID.turn, "Stop", { last_assistant_message: REPLY });
+    await ready(page);
+  };
+  /** the row the panel goes to once the turn's leaves: the one that takes its place */
+  const next = async () => {
+    const order = await rows(page).evaluateAll((els) => els.map((e) => e.id));
+    return order[order.indexOf((await turn.getAttribute("id")) as string) + 1] as string;
+  };
 
   // the middle of a row: the first click opens the panel, whose edge is then under the pointer
-  await stopped.dblclick();
+  let after = await next();
+  await turn.dblclick();
   await expect.poll(() => code().length).toBe(1);
-  await expect(panel(page)).toHaveAttribute("data-id", SID.stopped);
-  await expect(openRow(page)).toHaveAttribute("data-kind", "stopped");
-  await expect(page.getByTestId("toast")).toHaveText(["Opening callback handler in VS Code"]);
+  await expect(page.getByTestId("toast")).toHaveText(["Opening idp config in VS Code"]);
+  await ready(page, 3);
+  await expect(openRow(page)).toHaveAttribute("id", after);
+  await expect(panel(page)).not.toHaveAttribute("data-id", SID.turn);
 
   // the right of a closed list's row: the second click lands in the panel
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("panel")).toHaveCount(0);
+  await again();
+  after = await next();
   // on its second line: under the mouse the first line's right is the row's buttons
-  const box = (await stopped.boundingBox()) as { x: number; y: number; width: number };
+  const box = (await turn.boundingBox()) as { x: number; y: number; width: number };
   const at = [box.x + box.width * 0.8, box.y + 40] as const;
   await page.mouse.dblclick(...at);
   await expect.poll(() => code().length).toBe(2);
@@ -341,36 +355,70 @@ test("a double-click opens the row's session in the editor, once, wherever the p
       at,
     ),
   ).toBe("panel");
-  // the second click was nobody's: the panel is still on that row, and on the inbox
-  await expect(panel(page)).toHaveAttribute("data-id", SID.stopped);
+  // the second click was nobody's: one open, and the panel went on as the first one's did
+  await ready(page, 3);
+  await expect(openRow(page)).toHaveAttribute("id", after);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
 
   // with the panel open nothing moves, and it is still one open
-  await stopped.dblclick();
+  await again();
+  await turn.dblclick();
   await expect.poll(() => code().length).toBe(3);
-  await expect(rows(page)).toHaveCount(4);
+  await ready(page, 3);
 
   // two clicks on a row's button are that button's, twice: no third open for the row
-  await under(stopped, () => stopped.getByTestId("inbox-open").dblclick({ timeout: 2_000 }));
+  await again();
+  await under(turn, () => turn.getByTestId("inbox-open").dblclick({ timeout: 2_000 }));
   await expect.poll(() => code().length).toBe(5);
+  await ready(page, 3);
   // a double-click in the panel is the panel's: it selects a word
+  await row(page, "stopped").click();
   await panel(page).getByTestId("panel-prompt").dblclick();
-  // an agent grove cannot open: the double-click says why, like the key does
+  // an agent grove cannot open: the double-click says why, like the key does, and it still needs him
   await row(page, "permission").dblclick({ position: { x: 200, y: 12 } });
   await expect(
     page.getByTestId("toast").filter({ hasText: "running in the background" }),
   ).toBeVisible();
   await page.waitForTimeout(500);
   expect(code()).toHaveLength(5);
+  await ready(page, 3);
+});
 
-  // opening a session that waited on him is not answering it: its row stays until he replies there
-  // or dismisses it, and the panel is on it
-  await row(page, "turn").dblclick({ position: { x: 200, y: 12 } });
-  await expect.poll(() => code().length).toBe(6);
+test("with grove chat on, a landing leaves the row, and ⌘K's Enter on its window or a double-click takes it out", async () => {
+  seed();
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  app = await launchApp(fx);
+  const { page } = app;
+  await ready(page);
+  const g = groveTest(app.app);
+  const chatOpen = (id: string) =>
+    waitFor(async () => {
+      for (const p of app.app.windows()) {
+        if (!p.url().includes("#/chat")) continue;
+        if ((await p.locator(`[data-testid="chat"][data-id="${id}"]`).count()) > 0) return true;
+      }
+      return false;
+    }, 15_000);
+
+  // a notification click lands in its chat window: not meant as an open, so it still needs him
+  await g.reveal(SID.failed);
+  await chatOpen(SID.failed);
   await page.waitForTimeout(500);
-  await expect(row(page, "turn")).toHaveCount(1);
-  await expect(rows(page)).toHaveCount(4);
-  await expect(panel(page)).toHaveAttribute("data-id", SID.turn);
+  await ready(page);
+  // the main window's ⌘K lists that window. Enter on it is an open from here
+  await page.bringToFront();
+  await page.keyboard.press("Meta+k");
+  await page.locator(`[data-testid="palette-item"][data-id="window:${SID.failed}"]`).click();
+  await ready(page, 3);
+  await expect(row(page, "failed")).toHaveCount(0);
+
+  // a double-click is its chat window, and the same
+  await page.bringToFront();
+  await row(page, "stopped").dblclick();
+  await chatOpen(SID.stopped);
+  await ready(page, 2);
+  await expect(row(page, "stopped")).toHaveCount(0);
+  expect(code()).toEqual([]);
 });
 
 test("the panel's own buttons: Dismiss hands it to the row that took the place, and the last row closes it", async () => {
@@ -389,13 +437,14 @@ test("the panel's own buttons: Dismiss hands it to the row that took the place, 
     (await openRow(page).getAttribute("data-id")) as string,
   );
 
-  // the panel's Open is the editor
+  // the panel's Open is the editor, and takes it out of Needs you as its Dismiss does
   await row(page, "stopped").click();
   await panel(page).getByTestId("panel-open").click();
   await expect.poll(() => code().length).toBe(1);
+  await ready(page, 2);
 
   // the last rows go: the panel closes with the list, and a new row does not open it again
-  for (const _ of [1, 2, 3]) await panel(page).getByTestId("panel-dismiss").click();
+  for (const _ of [1, 2]) await panel(page).getByTestId("panel-dismiss").click();
   await expect(rows(page)).toHaveCount(0);
   // the sessions are still listed, under their day. the panel went with the last that needed him
   await expect(page.getByTestId("session-row")).toHaveCount(6);

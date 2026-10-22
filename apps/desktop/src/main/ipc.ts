@@ -411,8 +411,8 @@ function buildHandlers(deps: Deps): Handlers {
         return { message: elsewhere };
       }
       if (runtime === "background") await releaseBackground(deps, row);
-      // its chat window, if it had one, is not where it is. opening it is not a reply: it still
-      // needs the person until they answer it there or dismiss it
+      // its chat window, if it had one, is not where it is. nothing is dismissed here: this is a
+      // landing's and a chat window's Open too. the main window's own open dismisses (actions.ts)
       deps.chatWindows.close(row.sessionId);
       const missing = {
         message: `${label} opened without landing: Grove is not set up there.`,

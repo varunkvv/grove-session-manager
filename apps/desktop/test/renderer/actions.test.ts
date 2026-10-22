@@ -8,7 +8,10 @@ import {
   go,
   loadSessions,
   newProject,
+  openChat,
   openRow,
+  openSession,
+  openWith,
   perform,
   review,
   setInbox,
@@ -63,6 +66,8 @@ const s = () => useStore.getState();
 /** what main answers. a test that reaches main sets what it needs */
 const grove: Record<string, (...args: never[]) => unknown> = {};
 (globalThis as { window?: unknown }).window = { grove };
+/** main's answers to an open, and what came after them */
+const settled = () => new Promise((done) => setTimeout(done));
 
 beforeEach(() => {
   for (const k of Object.keys(grove)) delete grove[k];
@@ -281,13 +286,18 @@ describe("keys on a list", () => {
       asked.push("chat");
       return Promise.resolve({ ok: true, value: undefined });
     };
+    grove.review = (_p: never, keys: never) => {
+      asked.push(`dismiss ${keys}`);
+      return Promise.resolve({ ok: true, value: undefined });
+    };
     s().set({ keys: true, peek: "s-asks", active: { ...s().active, inbox: "s-asks" } });
     perform({ type: "open-in-editor" });
     perform({ type: "open" });
-    perform({ type: "open-editor" });
-    await Promise.resolve();
-    expect(asked).toEqual(["editor"]);
     expect(s().peek).toBe("s-asks");
+    perform({ type: "open-editor" });
+    await settled();
+    // the editor opened it from here: it leaves Needs you, as Dismiss would take it
+    expect(asked).toEqual(["editor", "dismiss seen:s-asks"]);
   });
 
   it("grove chat on: cmd-Enter and a second Enter open its window, cmd-shift-Enter the editor", async () => {
@@ -300,6 +310,10 @@ describe("keys on a list", () => {
       asked.push(`chat ${key}`);
       return Promise.resolve({ ok: true, value: undefined });
     };
+    grove.review = (_p: never, keys: never) => {
+      asked.push(`dismiss ${keys}`);
+      return Promise.resolve({ ok: true, value: undefined });
+    };
     s().set({ settings: { editor: "vscode", appearance: "system", chat: true }, keys: true });
     s().set({ active: { ...s().active, inbox: "s-asks" } });
     // the first Enter is still the panel
@@ -308,8 +322,14 @@ describe("keys on a list", () => {
     perform({ type: "open" });
     perform({ type: "open-editor" });
     perform({ type: "open-in-editor" });
-    await Promise.resolve();
-    expect(asked).toEqual(["chat /p/s-asks.jsonl", "chat /p/s-asks.jsonl", "editor"]);
+    await settled();
+    // the first open that went through dismissed it. the row was gone for the others
+    expect(asked).toEqual([
+      "chat /p/s-asks.jsonl",
+      "chat /p/s-asks.jsonl",
+      "editor",
+      "dismiss seen:s-asks",
+    ]);
   });
 
   it("cmd-Enter on a row grove cannot open says why, instead of nothing", () => {
@@ -675,5 +695,66 @@ describe("Dismiss", () => {
     expect(s().inbox.rows).toHaveLength(3);
     answer(true);
     expect(await other).toBe(true);
+  });
+});
+
+describe("an open from the main window", () => {
+  let dismissed: unknown[][];
+  beforeEach(() => {
+    dismissed = [];
+    grove.review = (...args: never[]) => {
+      dismissed.push(args);
+      return Promise.resolve({ ok: true, value: undefined });
+    };
+    grove.openChat = () => Promise.resolve({ ok: true, value: undefined });
+    grove.openSession = () => Promise.resolve({ ok: true, value: {} });
+  });
+  const needs = () => s().inbox.rows.map((r) => r.sessionId);
+
+  it("takes the session out of Needs you as Dismiss does, a stop too, once the open went through", async () => {
+    // its chat window, a file in it, the editor: every way the main window opens it
+    openChat("/p/s-asks.jsonl", "s-asks");
+    await settled();
+    expect(dismissed).toEqual([["auth", ["seen:s-asks"], true]]);
+    openChat("/p/s-cut.jsonl", "s-cut", { file: "/ws/auth/notes.md" });
+    await settled();
+    expect(dismissed).toHaveLength(2);
+    expect(dismissed[1]).toEqual(["auth", ["seen:s-cut"], true]);
+    openWith("/p/s-bill.jsonl", {}, "s-bill");
+    await settled();
+    expect(dismissed[2]).toEqual(["billing", ["seen:s-bill"], true]);
+    expect(needs()).toEqual([]);
+  });
+
+  it("a session that needs nothing has nothing to dismiss", async () => {
+    s().set({ settings: { editor: "vscode", appearance: "system", chat: true } });
+    openSession("/p/s-quiet.jsonl", {}, "s-quiet");
+    openWith("/p/s-quiet.jsonl", {}, "s-quiet");
+    await settled();
+    expect(dismissed).toEqual([]);
+    expect(needs()).toEqual(["s-asks", "s-cut", "s-bill"]);
+  });
+
+  it("an open that failed, or a stop that was not confirmed, leaves it in Needs you", async () => {
+    const refused = { ok: false, error: { code: "no-session", message: "gone" } };
+    grove.openChat = () => Promise.resolve(refused);
+    grove.openSession = () => Promise.resolve(refused);
+    openChat("/p/s-asks.jsonl", "s-asks");
+    openWith("/p/s-asks.jsonl", {}, "s-asks");
+    // a background agent at work is asked about first. no answer yet
+    const confirm = { title: "Stop it?", body: "", label: "Stop" };
+    openWith("/p/s-cut.jsonl", { confirm }, "s-cut");
+    await settled();
+    expect(dismissed).toEqual([]);
+    expect(needs()).toEqual(["s-asks", "s-cut", "s-bill"]);
+    expect(s().toasts).toHaveLength(2);
+
+    // confirmed, and it opens: now it goes
+    grove.openSession = () => Promise.resolve({ ok: true, value: {} });
+    const dialog = s().dialog;
+    if (dialog?.kind !== "confirm") throw new Error("no confirm");
+    dialog.run();
+    await settled();
+    expect(dismissed).toEqual([["auth", ["seen:s-cut"], true]]);
   });
 });

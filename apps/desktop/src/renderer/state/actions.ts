@@ -147,6 +147,7 @@ export function openWith(
   const run = async () => {
     const res = await api().openSession(key);
     if (!res.ok) return void report(`Could not open ${label}`, res);
+    opened(key);
     state().toast({
       level: "info",
       title: res.value.message ?? `Opening ${label} in ${editorLabel()}`,
@@ -165,7 +166,19 @@ export function openChat(key: SessionKey | undefined, label: string, show?: Chat
   if (!key) return;
   void api()
     .openChat(key, show)
-    .then((res) => report(`Could not open ${label}`, res));
+    .then((res) => {
+      if (report(`Could not open ${label}`, res)) opened(key);
+    });
+}
+
+/**
+ * an open from the main window is meant, where a notification click or a look is not: it does what
+ * Dismiss on the session's needs-you row does. a chat window has no inbox rows, so there it is
+ * nothing
+ */
+function opened(key: SessionKey): void {
+  const row = state().inbox.rows.find((r) => r.key === key);
+  if (row) void review(row.project, row.reviewKeys);
 }
 
 /**
