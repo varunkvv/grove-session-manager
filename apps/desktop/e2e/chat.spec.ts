@@ -1920,6 +1920,8 @@ test("text size: Settings and ⌘+ / ⌘- / ⌘0 grow what is read in every wind
         "| attempt | waits |",
         "| --- | --- |",
         "| 1 | 100ms |",
+        // enough below it that the conversation scrolls
+        ...Array.from({ length: 30 }, (_, i) => `\nParagraph ${i + 1} of the write-up.`),
       ].join("\n"),
     },
   );
@@ -1979,10 +1981,23 @@ test("text size: Settings and ⌘+ / ⌘- / ⌘0 grow what is read in every wind
   await chat.bringToFront();
   const composer = chat.getByTestId("composer");
   await composer.focus();
+  // the turn at the top of the conversation stays where it is as the text grows
+  const box = chat.getByTestId("conversation");
+  const turnTop = () =>
+    box.evaluate((el) => {
+      const t = [...el.querySelectorAll('[data-testid="turn"]')].at(-1) as HTMLElement;
+      return t.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    });
+  await box.evaluate((el) => {
+    const t = [...el.querySelectorAll('[data-testid="turn"]')].at(-1) as HTMLElement;
+    el.scrollTop += t.getBoundingClientRect().top - el.getBoundingClientRect().top - 16;
+  });
+  expect(await turnTop()).toBeCloseTo(16, 0);
   await composer.press("Meta+=");
   await expect.poll(saved).toBe(150);
   await expect.poll(async () => (await sizes()).composer).toBeCloseTo(19.5, 2);
   close(await sizes(), at(1.5));
+  expect(Math.abs((await turnTop()) - 16)).toBeLessThanOrEqual(1);
   await expect.poll(() => px(tail)).toBeCloseTo(19.5, 2);
   // at the end a key does nothing
   await composer.press("Meta+Shift+=");
@@ -2003,6 +2018,16 @@ test("text size: Settings and ⌘+ / ⌘- / ⌘0 grow what is read in every wind
 
   await composer.press("Meta+-");
   await expect.poll(saved).toBe(135);
+  // and a window at the end of the conversation stays at its end
+  await expect.poll(async () => (await sizes()).composer).toBeCloseTo(17.55, 2);
+  await box.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await composer.press("Meta+=");
+  await expect.poll(async () => (await sizes()).composer).toBeCloseTo(19.5, 2);
+  expect(await box.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(
+    24,
+  );
   await composer.press("Meta+0");
   await expect.poll(saved).toBeUndefined();
   await expect.poll(async () => (await sizes()).composer).toBe(13);
