@@ -21,6 +21,7 @@ import {
   readConversation,
   readEditDiff,
 } from "../../src/sessions/conversationFile.ts";
+import { attachedFileText } from "../../src/transcript/prompt.ts";
 import {
   apiError,
   apiErrorMessage,
@@ -497,6 +498,20 @@ describe("what the real stretch does not have", () => {
     // the panel's view is as it was
     const panel = conversationView(state).items[0] as TurnView;
     expect(panel.prompt).not.toHaveProperty("files");
+  });
+
+  it("names a file attached by its path, and a message that is only one says nothing", async () => {
+    const clip = (p: string) =>
+      text(attachedFileText({ path: p, mediaType: "video/mp4", size: 9 }));
+    const state = await fold([
+      prompt([clip("/Users/v/Desktop/clip.mp4"), text("what happens at 0:03?")], 0),
+      says("m1", text("A door opens."), 1),
+      prompt([clip("/tmp/b.zip")], 2),
+      says("m2", text("A zip."), 3),
+    ]);
+    const [a, b] = turns(state);
+    expect(a?.prompt).toMatchObject({ text: "what happens at 0:03?", files: ["clip.mp4"] });
+    expect(b?.prompt).toMatchObject({ text: "", files: ["b.zip"] });
   });
 
   it("lists a turn's steps for a chat window, with the thinking before the answer apart", async () => {

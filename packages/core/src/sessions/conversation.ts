@@ -5,7 +5,7 @@
 // same pairing of calls and results, the same rule for what the final message is. what this adds
 // is where a turn starts and ends, and the few things that are the conversation rather than the
 // work: a plan it proposed, a question it asked, what the person said while it worked.
-import { cleanBlockText, extractCommand } from "../transcript/prompt.ts";
+import { attachedFilePath, cleanBlockText, extractCommand } from "../transcript/prompt.ts";
 import { squash } from "../transcript/title.ts";
 import {
   emptyTimelineState,
@@ -160,11 +160,20 @@ function imagesIn(content: unknown): number {
   return blocksOf(content).filter((b) => isObject(b) && b.type === "image").length;
 }
 
-/** the titles of the documents attached to a message: what grove chat and vs code name them */
+/** a text block that is a file grove chat attached by its path: the path */
+const attachedPath = (b: unknown) =>
+  isObject(b) && b.type === "text" ? attachedFilePath(str(b.text) ?? "") : null;
+
+/**
+ * the titles of the documents attached to a message: what grove chat and vs code name them. a file
+ * attached by its path (a video) is named by its file name
+ */
 function filesIn(content: unknown): string[] {
-  return blocksOf(content).flatMap((b) =>
-    isObject(b) && b.type === "document" ? [cut(str(b.title) || "a file", 200)] : [],
-  );
+  return blocksOf(content).flatMap((b) => {
+    if (isObject(b) && b.type === "document") return [cut(str(b.title) || "a file", 200)];
+    const at = attachedPath(b);
+    return at ? [cut(at.slice(at.lastIndexOf("/") + 1) || "a file", 200)] : [];
+  });
 }
 
 const ENTITIES: Record<string, string> = {
@@ -194,8 +203,9 @@ function typed(content: unknown): string {
     if (clean) kept.push(clean);
   }
   if (kept.length > 0) return cut(kept.join("\n\n"), PROMPT_MAX);
+  // a message that is only a file attached by its path says nothing: the file is named apart
   return squash(
-    textOf(content)
+    textOf(blocksOf(content).filter((b) => !attachedPath(b)))
       .replace(/<[^>]+>/g, " ")
       .trim(),
     300,

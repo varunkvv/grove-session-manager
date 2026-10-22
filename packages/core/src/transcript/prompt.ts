@@ -31,6 +31,28 @@ export function cleanBlockText(text: string): string | null {
   return t;
 }
 
+/**
+ * a file grove chat attached by its path: one the api takes no block for (a video, a zip). claude
+ * reads it from disk. it starts with `<`, so cleanBlockText already keeps it out of what was typed
+ */
+export function attachedFileText(file: { path: string; mediaType: string; size: number }): string {
+  return [
+    "<attached-file>",
+    "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
+    `path: ${file.path}`,
+    ...(file.mediaType ? [`type: ${file.mediaType}`] : []),
+    `size: ${file.size} bytes`,
+    "</attached-file>",
+  ].join("\n");
+}
+
+const ATTACHED_PATH = /^<attached-file>\n[\s\S]*?^path: (.+)$[\s\S]*<\/attached-file>$/m;
+
+/** the path in a block attachedFileText wrote, or null for any other text */
+export function attachedFilePath(text: string): string | null {
+  return ATTACHED_PATH.exec(text.trim())?.[1] ?? null;
+}
+
 function isCarrierEntry(entry: Record<string, unknown>): boolean {
   if (entry.isSidechain === true || entry.isMeta === true) return true;
   if (entry.isCompactSummary === true || entry.isVisibleInTranscriptOnly === true) return true;

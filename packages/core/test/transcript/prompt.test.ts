@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cleanBlockText, extractCommand, extractUserText } from "../../src/transcript/prompt.ts";
+import {
+  attachedFilePath,
+  attachedFileText,
+  cleanBlockText,
+  extractCommand,
+  extractUserText,
+} from "../../src/transcript/prompt.ts";
 import { text, userEntry } from "../helpers/transcript.ts";
 
 describe("the system-reminder block trap", () => {
@@ -128,5 +134,27 @@ describe("entries that are not a person's turn", () => {
 
   it("origin.kind human is a real turn", () => {
     expect(extractUserText(userEntry([text("hi")], { origin: { kind: "human" } }))).toBe("hi");
+  });
+});
+
+describe("a file grove chat attached by its path", () => {
+  const clip = { path: "/Users/v/Desktop/clip (1).mp4", mediaType: "video/mp4", size: 44073 };
+
+  it("says where it is, and reads its path back", () => {
+    const block = attachedFileText(clip);
+    expect(block).toContain(
+      "path: /Users/v/Desktop/clip (1).mp4\ntype: video/mp4\nsize: 44073 bytes",
+    );
+    expect(attachedFilePath(block)).toBe(clip.path);
+    // a type chromium does not know is left out
+    expect(attachedFileText({ ...clip, mediaType: "" })).not.toContain("type:");
+    expect(attachedFilePath(attachedFileText({ ...clip, mediaType: "" }))).toBe(clip.path);
+  });
+
+  it("is not something the person typed, and words that look like it are", () => {
+    const entry = userEntry([text(attachedFileText(clip)), text("what is in this video?")]);
+    expect(extractUserText(entry)).toBe("what is in this video?");
+    expect(attachedFilePath("path: /etc/passwd")).toBeNull();
+    expect(attachedFilePath("<attached-file>\nno path here\n</attached-file>")).toBeNull();
   });
 });
