@@ -34,7 +34,8 @@ and the `claude` CLI for agents in the background. Checked against Claude Code 2
    conversation both go through it
 4. **New session** opens the project in your editor on a new Claude conversation. Say there what it should do
 5. Watch **All sessions**: the ones that need you are on top, from any project. A click opens one in a panel beside
-   the list, a double-click opens it in the editor, which is where you answer. **Dismiss** clears a row
+   the list, a double-click opens it in the editor, which is where you answer. **Dismiss** clears a row, and so does
+   opening it
 
 ## A project is a folder
 
@@ -177,14 +178,16 @@ do. A Needs permission row keeps the tool: that is exact, and it is what you ans
 
 Each state keeps one colour everywhere: orange for permission, the accent for your turn, red for failed and stopped,
 green for working and for watching. Working is a dot that pulses, watching a ring that does not. A Needs permission,
-Your turn or Failed row stays until you answer it or **Dismiss** it. Answering is a prompt you send (in a chat window,
-the editor or the terminal), an answer to a card in a chat window, or approving or denying a permission anywhere.
-Opening the session, landing on it from a notification, or its chat window having the keyboard does not take it out.
+Your turn or Failed row stays until you answer it, **Dismiss** it or open it from the main window. Answering is a prompt
+you send (in a chat window, the editor or the terminal), an answer to a card in a chat window, or approving or denying
+a permission anywhere. Opening it from the main window (a double-click, **Open**, `⌘K`, `↵`) does what Dismiss does,
+a Stopped row too. Landing on it from a notification or the menu bar, or its chat window having the keyboard, does not
+take it out.
 Nor does Claude starting a turn of its own: a background command or agent ending, a Monitor event, a cron or a `/loop`
 firing. Its row stays under Needs you with the working dot beside what it is at, and that turn's end takes its place.
 Closing the session's editor tab or terminal does not take it out either, and it does not age out. A dismissed row
-comes back on what that session needs next. A Stopped row stays until it is dismissed, the session runs again, or a
-week has passed. A dismissed session is still listed, under the day it last
+comes back on what that session needs next. A Stopped row stays until it is dismissed or opened, the session runs again,
+or a week has passed. A dismissed session is still listed, under the day it last
 moved, and the panel goes on to the next row that needs you.
 
 A click on a project shows **its sessions**, all of them, in the same groups. A row has the title, the state, the
@@ -425,8 +428,9 @@ sessions that project. What stopped while Grove was closed shows under Needs you
 
 A click opens the window on that session with its panel open: its row under Needs you in All sessions when it has
 one, else its row in its project's sessions. With grove chat on it opens the session's chat window, in front. A session
-that is in neither, or in no project, opens in the editor. Landing on a session does not take it out of Needs you. The
-dock badge carries the same count as the menu bar. **Notifications** in Settings switches them off.
+that is in neither, or in no project, opens in the editor. Landing on a session does not take it out of Needs you
+(opening it from the main window does). The dock badge carries the same count as the menu bar. **Notifications** in
+Settings switches them off.
 
 A notification plays a short chime of Grove's own. macOS decides whether it sounds: System Settings, Notifications,
 Grove.

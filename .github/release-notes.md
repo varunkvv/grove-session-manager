@@ -52,6 +52,11 @@ Fixed since 0.24.47:
 - once, after this update: switch Grove off and on under Screen & System Audio Recording and under Microphone (or
   remove it with - and add it back), then quit Grove and open it again. from then on it sticks
 
+Changed since 0.24.48:
+
+- opening a session from the main window (a double-click, **Open**, ⌘K, Enter) takes it out of needs you, as Dismiss
+  does. a notification or menu bar click still does not, and neither does looking at its chat window
+
 ## 0.23
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.23 adds a toy you have to switch on:
