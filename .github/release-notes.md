@@ -10,6 +10,8 @@ New:
 - copy a file in Finder and paste it in the message box: it attaches the same way as picking it
 - Claude gets the file's path, its type and its size, and reads it from where it is on your Mac. images, PDFs and
   text files go to Claude whole, as before
+- an image over 20 MB, a PDF over 10 MB or a text file over 512 KB goes by its path too, instead of being refused. so
+  do PDFs and text files past 16 MB together in one message
 - your message names the files it came with, and still does after the window is reopened
 
 Keep in mind:

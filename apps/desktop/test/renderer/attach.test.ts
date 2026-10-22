@@ -38,6 +38,9 @@ describe("what grove chat attaches, as vs code decides it", () => {
     expect(fileWord("audio/mpeg")).toBe("Audio");
     expect(fileWord("application/zip")).toBe("File");
     expect(fileWord("")).toBe("File");
+    // an image or a pdf too big to send as one goes by its path as well
+    expect(fileWord("image/png")).toBe("Image");
+    expect(fileWord("application/pdf")).toBe("PDF");
   });
 
   it("says a size the way a chip has room for", () => {

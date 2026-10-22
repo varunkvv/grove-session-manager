@@ -61,6 +61,8 @@ export function attachKind(type: string, name: string): AttachKind {
 /** what a chip calls a file that goes by its path */
 export function fileWord(type: string): string {
   const t = type.toLowerCase();
+  if (t === "application/pdf") return "PDF";
+  if (t.startsWith("image/")) return "Image";
   return t.startsWith("video/") ? "Video" : t.startsWith("audio/") ? "Audio" : "File";
 }
 

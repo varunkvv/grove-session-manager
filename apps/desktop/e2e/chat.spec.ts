@@ -1889,6 +1889,39 @@ test("a video picked or copied in finder goes by its path, as a chip, and shows 
   await expect(chat.getByTestId("turn").last().getByTestId("panel-prompt")).toHaveText(HELLO);
 });
 
+test("a text file or a pdf over its cap goes by its path, not refused", async () => {
+  const s = seed(true);
+  const dir = path.join(s.fx.dir, "big");
+  mkdirSync(dir, { recursive: true });
+  const log = path.join(dir, "big.log");
+  const pdf = path.join(dir, "big.pdf");
+  writeFileSync(log, "x".repeat(600 * 1024));
+  writeFileSync(pdf, Buffer.alloc(11 * 1024 * 1024));
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("chat-attach").click();
+  const chooser = chat.waitForEvent("filechooser");
+  await chat.getByTestId("attach-menu").getByTestId("menu-item").first().click();
+  await (await chooser).setFiles([log, pdf]);
+  const chips = chat.getByTestId("chip");
+  await expect(chips).toHaveCount(2);
+  await expect(chips.nth(0)).toContainText("File · 600 KB");
+  await expect(chips.nth(1)).toContainText("PDF · 11.0 MB");
+  await expect(chat.getByTestId("chat-error")).toHaveCount(0);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
+  const sent = sentToClaude(s.chatLog)
+    .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
+    .find((m) => m?.type === "user");
+  const content = sent?.message?.content ?? [];
+  expect(content.map((c) => c.type)).toEqual(["text", "text", "text"]);
+  expect(content[0]?.text).toContain(`path: ${log}\n`);
+  expect(content[1]?.text).toContain(`path: ${pdf}\ntype: application/pdf`);
+});
+
 test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s);
