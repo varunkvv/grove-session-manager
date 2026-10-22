@@ -79,8 +79,11 @@ export type Mark =
       said?: string;
     }
   | { kind: "question"; step: number; at: number; questions: Question[]; declined?: boolean }
-  /** something the person typed while it worked. Claude Code hands it over mid-turn. */
-  | { kind: "said"; step: number; at: number; text: string; images?: number };
+  /**
+   * something the person typed while it worked. Claude Code hands it over mid-turn. `uuid`: the one
+   * the host sent it with (a probe: the attachment's `source_uuid` is the uuid on the sdk message)
+   */
+  | { kind: "said"; step: number; at: number; text: string; images?: number; uuid?: string };
 
 export interface Turn {
   kind: "turn";
@@ -568,12 +571,14 @@ export class ConversationFold {
     if (!text && images === 0) return;
     // the prompt sent twice (a double submit): the second copy is not something else they said
     if (open.turn.prompt?.kind === "human" && open.turn.prompt.text === text) return;
+    const uuid = str(attachment.source_uuid);
     open.turn.marks.push({
       kind: "said",
       step: open.turn.work.steps.length,
       at,
       text,
       ...(images ? { images } : {}),
+      ...(uuid ? { uuid } : {}),
     });
   }
 }
@@ -702,8 +707,6 @@ export interface TurnView {
   };
   /** a chat window's only: the uuid of the turn's last line, where a fork from it stops */
   end?: string;
-  /** what the person typed while it worked */
-  said?: string[];
   /** tool calls, files edited, subagents started, and how long it took */
   tools: number;
   files: number;
@@ -720,8 +723,9 @@ export interface TurnView {
   outputs?: FileMark[];
   /**
    * what the turn did before it answered, in order - its thinking, the tools it ran, what it said
-   * between them, each said thing whole as an answer is. the panel's has only what it said.
-   * `stepsBefore`: older tools and thinking left out of a long turn, never something it said
+   * between them, each said thing whole as an answer is, and what the person typed while it
+   * worked, where it was handed over. the panel's has only what was said.
+   * `stepsBefore`: older tools and thinking left out of a long turn, never something said
    */
   steps?: StepView[];
   stepsBefore?: number;
@@ -749,9 +753,11 @@ export type StepView =
       failed?: string;
     }
   | { kind: "thinking"; text: string; ms?: number }
-  | { kind: "text"; text: string };
+  | { kind: "text"; text: string }
+  /** the person's, typed while it worked. `uuid`: the one the host sent it with */
+  | { kind: "said"; text: string; images?: number; uuid?: string };
 
-/** a long turn's list keeps its last steps and everything it said: the rest are counted */
+/** a long turn's list keeps its last steps and everything said: the rest are counted */
 const VIEW_STEPS = 300;
 /** a thinking block keeps its start */
 const VIEW_STEP_TEXT = 4000;
@@ -763,14 +769,34 @@ const clip = (text: string, max: number) => (text.length > max ? `…${text.slic
  * a turn's work as a chat window lists it: every step but the answer, and the thinking that came
  * right before the answer apart, since that is the one shown beside it. a thinking block's time
  * is from what came before it (the prompt, or the last result) to when it was written. what it
- * said keeps `max`, as its answer does
+ * said keeps `max`, as its answer does. what the person typed while it worked sits where it was
+ * handed over, cut as a prompt is
  */
 function stepsOf(turn: Turn, max: number): Pick<TurnView, "steps" | "stepsBefore" | "thought"> {
   const work = turn.work;
   const answer = new Set(answerSteps(work));
   let was = turn.prompt?.at ?? work.startedAt ?? 0;
   const views: Array<{ view: StepView; i: number }> = [];
+  const said = turn.marks.filter((m) => m.kind === "said");
+  let k = 0;
+  /** what he typed before step `i` was taken: it goes ahead of it */
+  const typedBefore = (i: number) => {
+    for (; k < said.length && (said[k]?.step ?? 0) <= i; k++) {
+      const m = said[k] as Extract<Mark, { kind: "said" }>;
+      views.push({
+        i: -1,
+        view: {
+          kind: "said",
+          text: cut(m.text, VIEW_PROMPT),
+          ...(m.images ? { images: m.images } : {}),
+          ...(m.uuid ? { uuid: m.uuid } : {}),
+        },
+      });
+      was = Math.max(was, m.at);
+    }
+  };
   work.steps.forEach((s, i) => {
+    typedBefore(i);
     if (s.kind === "tool") {
       if (s.server) return;
       views.push({
@@ -797,6 +823,7 @@ function stepsOf(turn: Turn, max: number): Pick<TurnView, "steps" | "stepsBefore
       was = Math.max(was, s.at);
     }
   });
+  typedBefore(Number.POSITIVE_INFINITY);
   // the thinking after the last tool or text is the answer's: it shows with it, not in the list
   let thought: TurnView["thought"];
   const lastDone = views.findLastIndex((v) => v.view.kind !== "thinking");
@@ -810,7 +837,7 @@ function stepsOf(turn: Turn, max: number): Pick<TurnView, "steps" | "stepsBefore
   }
   const all = views.map((v) => v.view);
   const from = all.length - VIEW_STEPS;
-  const steps = all.filter((s, n) => n >= from || s.kind === "text");
+  const steps = all.filter((s, n) => n >= from || s.kind === "text" || s.kind === "said");
   const before = all.length - steps.length;
   return {
     ...(steps.length ? { steps } : {}),
@@ -819,9 +846,9 @@ function stepsOf(turn: Turn, max: number): Pick<TurnView, "steps" | "stepsBefore
   };
 }
 
-/** what a turn said before its answer, in order: all the panel shows of its steps */
+/** what was said before its answer, both ways, in order: all the panel shows of its steps */
 function saidOf(turn: Turn, max: number): Pick<TurnView, "steps"> {
-  const steps = stepsOf(turn, max).steps?.filter((s) => s.kind === "text");
+  const steps = stepsOf(turn, max).steps?.filter((s) => s.kind === "text" || s.kind === "said");
   return steps?.length ? { steps } : {};
 }
 
@@ -897,8 +924,21 @@ export function conversationMarkdown(state: ConversationState, title: string): s
           ? `## You\n\n${p.text}`
           : `## ${p.kind === "command" ? "Command" : "Task"}\n\n${p.text}`,
       );
-    const said = item.work.steps.flatMap((s) => (s.kind === "text" ? [s.text] : []));
-    if (said.length) out.push(`## Claude\n\n${said.join("\n\n")}`);
+    // what he typed while it worked is his, under its own heading where it was handed over
+    const runs: Array<{ who: string; texts: string[] }> = [];
+    const add = (who: string, text: string) => {
+      const run = runs.at(-1);
+      if (run?.who === who) run.texts.push(text);
+      else runs.push({ who, texts: [text] });
+    };
+    const typed = item.marks.filter((m) => m.kind === "said");
+    let k = 0;
+    item.work.steps.forEach((s, i) => {
+      for (; k < typed.length && (typed[k]?.step ?? 0) <= i; k++) add("You", typed[k]?.text ?? "");
+      if (s.kind === "text") add("Claude", s.text);
+    });
+    for (; k < typed.length; k++) add("You", typed[k]?.text ?? "");
+    for (const run of runs) out.push(`## ${run.who}\n\n${run.texts.join("\n\n")}`);
     if (item.apiError && !answerOf(item.work)) out.push(`_${item.apiError}_`);
   }
   return `${out.join("\n\n")}\n`;
@@ -933,7 +973,6 @@ export function conversationView(
 /** one turn as the page gets it. `last`: the one under way, or the one the panel is for */
 function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: boolean }): TurnView {
   const n = turnNumbers(item);
-  const said = item.marks.flatMap((m) => (m.kind === "said" ? [cut(m.text, VIEW_PROMPT)] : []));
   // a turn still under way, or one that stopped, has no answer: what it said is in its steps
   const text = answerOf(item.work);
   const max = opts.textMax ?? (last ? VIEW_LAST_TEXT : VIEW_TEXT);
@@ -953,7 +992,6 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
           },
         }
       : {}),
-    ...(said.length ? { said } : {}),
     tools: n.tools,
     files: n.filesEdited,
     agents: n.agents,

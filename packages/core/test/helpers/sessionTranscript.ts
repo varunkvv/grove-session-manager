@@ -190,13 +190,14 @@ export function turnDuration(ms: number, s: number) {
   return { type: "system", subtype: "turn_duration", durationMs: ms, ...envelope(s) };
 }
 
-/** something typed while it worked, handed over mid-turn */
-export function queued(textTyped: string, s: number, mode = "prompt") {
+/** something typed while it worked, handed over mid-turn. `uuid`: the one the host sent it with */
+export function queued(textTyped: string, s: number, mode = "prompt", uuid?: string) {
   return {
     type: "attachment",
     attachment: {
       type: "queued_command",
       prompt: [{ type: "text", text: textTyped }],
+      ...(uuid ? { source_uuid: uuid } : {}),
       commandMode: mode,
       origin: { kind: mode === "prompt" ? "human" : "task-notification" },
       timestamp: at(s),

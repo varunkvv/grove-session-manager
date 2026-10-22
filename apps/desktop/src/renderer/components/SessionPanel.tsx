@@ -11,7 +11,7 @@ import type {
 } from "../../shared/ipc.ts";
 import { blocks } from "../logic/blocks.ts";
 import { nextActiveKey } from "../logic/rows.ts";
-import { type SessionState, turnParts, workLine } from "../logic/views.ts";
+import { type SessionState, type TypedStep, turnParts, workLine } from "../logic/views.ts";
 import { openChat, openWith, review } from "../state/actions.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { type Section, useStore } from "../state/store.ts";
@@ -151,11 +151,15 @@ function Tasks({ tasks }: { tasks: readonly TaskView[] }) {
 /** one line of what happened, where there is nothing to read: a compaction, an interrupt */
 export const QUIET = "text-sm text-fg-4";
 
+/** what the person typed: plain text, a pasted brief scrolls in place */
+const TYPED =
+  "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
+
 /**
- * one turn: what the person typed, the work in one line, everything it said on the way in order,
- * and the message it ended on. what it said is an agent's and goes through Markdown, what the
- * person typed is plain text. grove chat folds the steps between what it said, the panel leaves
- * them out
+ * one turn: what the person typed, the work in one line, everything said on the way in order (what
+ * he typed while it worked too, where claude took it), and the message it ended on. what it said
+ * is an agent's and goes through Markdown, what the person typed is plain text. grove chat folds
+ * the steps between what was said, the panel leaves them out
  */
 export function Turn({
   turn,
@@ -188,8 +192,6 @@ export function Turn({
   const p = turn.prompt;
   // the turn it is in now has no end yet, so no length either
   const going = last && working;
-  const typed =
-    "selectable mt-1 max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words text-fg-2";
   // what the person said: a prompt, or a command with words after it. a bare one says nothing
   // (recap.ts reads them the same way). an agent's prompt is what another agent asked it
   const mine =
@@ -243,7 +245,7 @@ export function Turn({
       {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near. in
           his block the scrollbar sits in its padding, off the words */}
       <p
-        className={cx(typed, mine && "-mr-2 pr-2")}
+        className={cx(TYPED, mine && "-mr-2 pr-2")}
         data-testid={last ? "panel-prompt" : undefined}
       >
         {p.text}
@@ -263,13 +265,15 @@ export function Turn({
     ...(going ? { ms: undefined } : {}),
     ...(agentsLink ? { agents: 0 } : {}),
   });
-  // what it said on the way, each after the steps that led to it. the last one's place is the
-  // panel's text when it has not answered
+  // what was said on the way, each after the steps that led to it: claude's, and his typed while
+  // it worked, where it was handed over. claude's last one's place is the panel's text when it has
+  // not answered
   const parts = turnParts(turn.steps);
   const said = parts.length - 1;
+  const lastText = parts.findLastIndex((x) => x.text !== undefined);
   const folded = detail && parts.some((x) => x.work.some((w) => w.kind === "tool"));
   const firstFold = parts.findIndex((x) => x.work.some((w) => w.kind === "tool"));
-  const textId = (i: number) => (last && !turn.text && i === said - 1 ? "panel-text" : undefined);
+  const textId = (i: number) => (last && !turn.text && i === lastText ? "panel-text" : undefined);
   // the last turn always says what the agent said, even when that is nothing yet
   const talks = !!turn.text || !!work || said > 0 || (last && p?.kind !== "command");
   return (
@@ -299,13 +303,6 @@ export function Turn({
           <Markdown text={turn.output} />
         </div>
       )}
-      {turn.said?.map((words) => (
-        // close under what he said before it: his two messages read as a pair
-        <PromptBlock key={words} className="mt-2">
-          <h3 className="text-sm font-medium text-fg-4">You, while it worked</h3>
-          <p className={cx(typed, "-mr-2 pr-2")}>{words}</p>
-        </PromptBlock>
-      ))}
       {talks && (
         <>
           <h3 className="mt-3 text-sm font-medium text-fg-4" data-testid="turn-work">
@@ -369,12 +366,13 @@ export function Turn({
                     <Markdown text={part.text} className={last ? "md-full" : undefined} />
                   </div>
                 )}
+                {part.typed && <Typed step={part.typed} images={images} />}
               </Fragment>
             ))}
           {detail && turn.thought && <Thought text={turn.thought.text} ms={turn.thought.ms} />}
           <div
             className={cx(!detail && said > 0 ? "mt-2" : "mt-1", detail && "group/answer relative")}
-            data-testid={last && (turn.text || said === 0) ? "panel-text" : undefined}
+            data-testid={last && (turn.text || lastText < 0) ? "panel-text" : undefined}
           >
             {turn.text ? (
               <Markdown
@@ -385,7 +383,7 @@ export function Turn({
             ) : (
               // grove chat says what it is doing under the turn instead
               last &&
-              said === 0 &&
+              lastText < 0 &&
               !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
             )}
             {/* grove chat: what can be done with an answer, on hover, in the gap under it */}
@@ -435,6 +433,25 @@ export function Turn({
         </p>
       )}
     </section>
+  );
+}
+
+/** what he typed while it worked, in his block where claude took it */
+function Typed({ step, images }: { step: TypedStep; images?: boolean }) {
+  return (
+    <div className="mt-2" data-testid="turn-typed">
+      <PromptBlock>
+        <h3 className="text-sm font-medium text-fg-4">
+          You, while it worked
+          {images && !!step.images && (
+            <span className="font-normal">
+              {` · ${step.images} ${step.images === 1 ? "image" : "images"}`}
+            </span>
+          )}
+        </h3>
+        <p className={cx(TYPED, "-mr-2 pr-2")}>{step.text}</p>
+      </PromptBlock>
+    </div>
   );
 }
 

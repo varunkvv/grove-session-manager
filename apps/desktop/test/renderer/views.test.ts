@@ -396,6 +396,15 @@ describe("a turn read in order", () => {
       { work: [tool("c")] },
     ]);
   });
+  it("cuts it at what he typed while it worked too, as his", () => {
+    const typed = { kind: "said" as const, text: "and the tests", uuid: "u1" };
+    expect(turnParts([tool("a"), typed, said("running them"), tool("b"), typed])).toEqual([
+      { work: [tool("a")], typed },
+      { work: [], text: "running them" },
+      { work: [tool("b")], typed },
+      { work: [] },
+    ]);
+  });
   it("is one part of work for a turn that said nothing on the way", () => {
     expect(turnParts([tool("a"), tool("b")])).toEqual([{ work: [tool("a"), tool("b")] }]);
     expect(turnParts(undefined)).toEqual([{ work: [] }]);

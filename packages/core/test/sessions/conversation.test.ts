@@ -599,13 +599,12 @@ describe("the conversation as the page gets it", () => {
     // no thinking, no tool's name or output: the numbers of the work, and what it said
     for (const x of t) {
       expect(Object.keys(x).every((k) => TURN_KEYS.includes(k))).toBe(true);
-      expect(x.steps?.every((s) => s.kind === "text") ?? true).toBe(true);
+      expect(x.steps?.every((s) => s.kind === "text" || s.kind === "said") ?? true).toBe(true);
     }
   });
   const TURN_KEYS = [
     "kind",
     "prompt",
-    "said",
     "tools",
     "files",
     "agents",
@@ -641,12 +640,15 @@ describe("the conversation as the page gets it", () => {
         {
           kind: "turn",
           prompt: { kind: "human", text: "fix the parser" },
-          said: ["and the tests too"],
           tools: 3,
           files: 1,
           agents: 1,
           ms: 240_000,
-          steps: [{ kind: "text", text: "Looking at the parser." }],
+          // what he typed sits where it was handed over: after the first edit's result
+          steps: [
+            { kind: "text", text: "Looking at the parser." },
+            { kind: "said", text: "and the tests too" },
+          ],
           text: "Fixed, and all 40 pass.",
         },
         {
@@ -1010,6 +1012,62 @@ describe("every message claude writes in a turn", () => {
     lines.push(says("mz", text("All 400 done."), 500));
     const view = conversationView(await fold(lines), { chat: true }).items[0] as TurnView;
     expect(view.steps?.[0]).toEqual({ kind: "text", text: `outline up: ${LINK}` });
+    expect(view.steps).toHaveLength(301);
+    expect(view.stepsBefore).toBe(100);
+    expect(view.steps?.[1]).toMatchObject({ kind: "tool", target: "step 100" });
+  });
+
+  it("puts what he typed while it worked where it was handed over, with the uuid it was sent with", async () => {
+    const lines = [
+      prompt("fix the retry loop", 0),
+      says("m1", call("t1", "Read", { file_path: "/p/fetch.ts" }), 1),
+      result("t1", "code", 2),
+      queued("and run the retry tests", 3, "prompt", "aaaa-1"),
+      says("m2", text("Running them too."), 4),
+      says("m2", call("t2", "Bash", { command: "pnpm test retry" }), 5),
+      result("t2", "ok", 6),
+    ];
+    const going = await fold(lines);
+    const chat = conversationView(going, { chat: true }).items[0] as TurnView;
+    expect(chat.steps?.map((s) => s.kind)).toEqual(["tool", "said", "text", "tool"]);
+    expect(chat.steps?.[1]).toEqual({
+      kind: "said",
+      text: "and run the retry tests",
+      uuid: "aaaa-1",
+    });
+    // typed just now, before claude did anything with it: the turn's end, where the row was
+    const now = await fold([...lines, queued("and the lint", 7, "prompt", "aaaa-2")]);
+    const end = conversationView(now, { chat: true }).items[0] as TurnView;
+    expect(end.steps?.at(-1)).toEqual({ kind: "said", text: "and the lint", uuid: "aaaa-2" });
+    // the panel has what was said both ways, in order
+    const panel = conversationView(now).items[0] as TurnView;
+    expect(panel.steps?.map((s) => s.kind)).toEqual(["said", "text", "said"]);
+    // the markdown has his under his own heading, in order
+    expect(conversationMarkdown(now, "retry")).toBe(
+      `${[
+        "# retry",
+        "## You",
+        "fix the retry loop",
+        "## You",
+        "and run the retry tests",
+        "## Claude",
+        "Running them too.",
+        "## You",
+        "and the lint",
+      ].join("\n\n")}\n`,
+    );
+  });
+
+  it("keeps what he typed through a long turn's cut, as it keeps a text", async () => {
+    const lines: object[] = [prompt("do it all", 0)];
+    for (let i = 0; i < 400; i++) {
+      lines.push(says(`m${i + 1}`, call(`t${i}`, "Bash", { command: `step ${i}` }), 2 + i));
+      lines.push(result(`t${i}`, "ok", 2 + i));
+      if (i === 10) lines.push(queued("skip the slow ones", 2 + i, "prompt", "bbbb-1"));
+    }
+    lines.push(says("mz", text("All 400 done."), 500));
+    const view = conversationView(await fold(lines), { chat: true }).items[0] as TurnView;
+    expect(view.steps?.[0]).toEqual({ kind: "said", text: "skip the slow ones", uuid: "bbbb-1" });
     expect(view.steps).toHaveLength(301);
     expect(view.stepsBefore).toBe(100);
     expect(view.steps?.[1]).toMatchObject({ kind: "tool", target: "step 100" });
