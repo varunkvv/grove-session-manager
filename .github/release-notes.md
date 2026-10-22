@@ -1,3 +1,23 @@
+## 0.26
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.26 lets you attach any file in a chat
+window, videos included.
+
+New:
+
+- pick, drop or paste any file into the message box: a video, an audio file, a zip, a docx. it sits there as a chip
+  with its name, its size and what it is, and a video shows its first frame. before, its path went into your message
+- copy a file in Finder and paste it in the message box: it attaches the same way as picking it
+- Claude gets the file's path, its type and its size, and reads it from where it is on your Mac. images, PDFs and
+  text files go to Claude whole, as before
+- your message names the files it came with, and still does after the window is reopened
+
+Keep in mind:
+
+- Claude can't watch a video or listen to audio from the message itself. it can open the file, or run a tool on it
+  such as ffmpeg
+- a file is sent by where it is: move or delete it before Claude reads it and Claude can't find it
+
 ## 0.25
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.25 lets you make the conversation's text
