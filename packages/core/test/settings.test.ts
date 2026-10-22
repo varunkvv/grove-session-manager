@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { loadSettings, saveSettings, settingsFilePath, wantsModel } from "../src/settings.ts";
+import { stepTextScale, TEXT_SCALES } from "../src/textScale.ts";
 import { makeSandbox } from "./helpers/transcript.ts";
 
 describe("settings", () => {
@@ -45,6 +46,40 @@ describe("settings", () => {
     expect((await saveSettings(app, { palette: "solarized" })).palette).toBe("solarized");
     writeFileSync(settingsFilePath(app), JSON.stringify({ palette: "dracula" }));
     expect((await loadSettings(app)).palette).toBeUndefined();
+  });
+
+  it("the text size is one of its steps, absent for 100 and for anything else", async () => {
+    const app = makeSandbox("grove-settings-");
+    expect((await loadSettings(app)).textScale).toBeUndefined();
+    for (const step of [90, 110, 120, 135, 150] as const) {
+      expect((await saveSettings(app, { textScale: step })).textScale).toBe(step);
+      expect((await loadSettings(app)).textScale).toBe(step);
+    }
+    // the default, written or not, reads as no setting
+    writeFileSync(settingsFilePath(app), JSON.stringify({ textScale: 100 }));
+    expect((await loadSettings(app)).textScale).toBeUndefined();
+    for (const bad of [125, "120", 1.2, null]) {
+      writeFileSync(settingsFilePath(app), JSON.stringify({ textScale: bad }));
+      expect((await loadSettings(app)).textScale).toBeUndefined();
+    }
+    // saved back to 100 the key goes
+    await saveSettings(app, { textScale: 120 });
+    expect((await saveSettings(app, { textScale: undefined })).textScale).toBeUndefined();
+    expect(JSON.parse(readFileSync(settingsFilePath(app), "utf8"))).not.toHaveProperty("textScale");
+  });
+
+  it("a text size step goes one up or down, stays at either end, and 0 is back to 100", () => {
+    expect(stepTextScale(undefined, 1)).toBe(110);
+    expect(stepTextScale(100, -1)).toBe(90);
+    expect(stepTextScale(120, 1)).toBe(135);
+    expect(stepTextScale(135, -1)).toBe(120);
+    expect(stepTextScale(150, 1)).toBe(150);
+    expect(stepTextScale(90, -1)).toBe(90);
+    expect(stepTextScale(150, 0)).toBe(100);
+    expect(stepTextScale(90, 0)).toBe(100);
+    // a size that is no step is taken as 100
+    expect(stepTextScale(125, 1)).toBe(110);
+    expect(TEXT_SCALES).toEqual([90, 100, 110, 120, 135, 150]);
   });
 
   it("the summon key is kept as given, and cleared it is the default again", async () => {

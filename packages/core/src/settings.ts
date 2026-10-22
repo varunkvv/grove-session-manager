@@ -1,5 +1,6 @@
 import path from "node:path";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "./fsx.ts";
+import { isTextScale, type TextScale } from "./textScale.ts";
 
 /** shared by the app and the extension. a GUI app launched from Finder sees no shell env, so this is a file. */
 export type Appearance = "system" | "light" | "dark";
@@ -12,6 +13,8 @@ export interface Settings {
   appearance: Appearance;
   /** absent is grove */
   palette?: Palette;
+  /** Text size: the conversation's text, in percent. one of TEXT_SCALES, absent is 100 */
+  textScale?: TextScale;
   /** absolute path to the editor's CLI. overrides the preset. */
   editorBin?: string;
   extensionsDir?: string;
@@ -63,6 +66,8 @@ function clean(raw: unknown): Settings {
   if (raw.palette === "grove" || raw.palette === "rose-pine" || raw.palette === "solarized") {
     s.palette = raw.palette;
   }
+  // 100 is the default: as absent, so a file that says it reads the same as one that does not
+  if (isTextScale(raw.textScale) && raw.textScale !== 100) s.textScale = raw.textScale;
   for (const key of [
     "editorBin",
     "extensionsDir",
