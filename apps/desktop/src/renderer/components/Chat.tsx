@@ -15,7 +15,7 @@ import type {
   ChatTarget,
   Outcome,
 } from "../../shared/ipc.ts";
-import { attachKind, bytes } from "../logic/attach.ts";
+import { attachKind, bytes, fileWord } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
@@ -69,8 +69,8 @@ const COLUMN = "mx-auto w-full max-w-[calc(760px*var(--reading-scale))] px-6";
 /** grove's caps on what crosses into main (main holds them too): see ATTACH in services/chat.ts */
 const CAP = { image: 20 * 1024 * 1024, pdf: 10 * 1024 * 1024, text: 512 * 1024, files: 10 };
 
-/** a file in the composer: what goes to claude, and what its chip shows */
-type Attached = ChatAttachment & { size: number; url?: string };
+/** a file in the composer: what goes to claude, and what its chip shows. `video`: its first frame */
+type Attached = ChatAttachment & { size: number; url?: string; video?: File };
 
 const dataUrl = (f: File) =>
   new Promise<string>((resolve, reject) => {
@@ -83,13 +83,16 @@ const base64 = (url: string) => url.slice(url.indexOf(",") + 1);
 
 /**
  * files picked, dropped or pasted, read as claude takes them. one it cannot take, or one over its
- * cap, is said why. one that is not a type it takes goes into the message as its path
+ * cap, is said why. one that is not a type it takes goes by its path: a copy in finder, a drop and
+ * a pick all have one. a file with none (nothing makes one today) is refused
  */
-async function readAttachment(f: File): Promise<Attached | { path: string } | { refused: string }> {
+async function readAttachment(f: File): Promise<Attached | { refused: string }> {
   const kind = attachKind(f.type, f.name);
-  if (kind === "unsupported") {
+  if (kind === "file") {
     const path = window.grove.pathOf(f);
-    return path ? { path } : { refused: `${f.name} can't be attached.` };
+    if (!path) return { refused: `${f.name} can't be attached.` };
+    const video = f.type.toLowerCase().startsWith("video/") ? { video: f } : {};
+    return { kind, name: f.name, path, mediaType: f.type, size: f.size, ...video };
   }
   if (f.size > CAP[kind]) {
     return {
@@ -243,15 +246,47 @@ function Chip({
       </div>
     );
   }
+  const byPath = file.kind === "file";
   return (
-    <div className={CHIP} data-testid="chip" title={file.kind === "image" ? undefined : file.name}>
-      <Icon name="file" faint />
+    <div
+      className={CHIP}
+      data-testid="chip"
+      data-kind={file.kind}
+      title={file.kind === "image" ? undefined : byPath ? file.path : file.name}
+    >
+      {file.video ? <FirstFrame file={file.video} /> : <Icon name="file" faint />}
       <span className="min-w-0 truncate text-sm text-fg-2">
         {file.kind === "image" ? "image" : file.name}
       </span>
-      <span className="shrink-0 text-sm text-fg-4">{bytes(file.size)}</span>
+      <span className="shrink-0 text-sm text-fg-4">
+        {byPath && `${fileWord(file.mediaType)} · `}
+        {bytes(file.size)}
+      </span>
       {remove}
     </div>
+  );
+}
+
+/** a video's first frame, in its chip. one chromium cannot play keeps the file icon */
+function FirstFrame({ file }: { file: File }) {
+  const [url, setUrl] = useState<string>();
+  const [bad, setBad] = useState(false);
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+  if (!url || bad) return <Icon name="file" faint />;
+  return (
+    <video
+      // past 0: chromium draws no frame for a video loaded only to its metadata at 0
+      src={`${url}#t=0.1`}
+      preload="metadata"
+      muted
+      className="h-7 w-10 shrink-0 rounded-sm bg-black object-cover"
+      data-testid="chip-frame"
+      onError={() => setBad(true)}
+    />
   );
 }
 
@@ -711,8 +746,8 @@ export function ChatApp() {
       setPastes([]);
       history.current = null;
     }
-    // what goes over: the chip's size and thumbnail stay here
-    const out = attached.map(({ size: _size, url: _url, ...f }) => f as ChatAttachment);
+    // what goes over: the chip's thumbnail and frame stay here. main reads a file's size itself
+    const out = attached.map(({ url: _url, video: _video, ...f }) => f as ChatAttachment);
     if (!running) {
       setSent(text);
       setSentFiles(namesOf(out));
@@ -754,21 +789,12 @@ export function ChatApp() {
         .map((f) => readAttachment(f).catch(() => ({ refused: `${f.name} could not be read.` }))),
     );
     const taken = got.filter((g): g is Attached => "kind" in g);
-    const paths = got.flatMap((g) => ("path" in g ? [g.path] : []));
     const refused = got.flatMap((g) => ("refused" in g ? [g.refused] : []));
     const room = CAP.files - files.length;
     if (taken.length > room) refused.push(`${CAP.files} files at most go with one message.`);
     if (taken.length) setFiles((was) => [...was, ...taken.slice(0, Math.max(0, room))]);
-    if (paths.length) {
-      // claude reads it from where it is: the message names it
-      setDraft((d) => `${d}${d && !/\s$/.test(d) ? " " : ""}${paths.join(" ")} `);
-      const names = paths.map((p) => p.slice(p.lastIndexOf("/") + 1)).join(", ");
-      setNote(
-        `${names} can't be attached, so ${paths.length === 1 ? "its path is" : "their paths are"} in the message.`,
-      );
-    }
     setError(refused.length ? refused.join(" ") : undefined);
-    if (taken.length || paths.length || mentioned.length) warm();
+    if (taken.length || mentioned.length) warm();
     composer.current?.focus();
   };
 
@@ -1558,9 +1584,11 @@ export function ChatApp() {
                           return;
                         }
                         if (pasted.length === 0) return;
-                        // a screenshot is only an image. a copy from a page that has words too
-                        // pastes its words as well
-                        if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+                        // a screenshot is only an image. files copied in finder have their paths,
+                        // and the box would type their names in. a copy from a page that has words
+                        // too pastes its words as well
+                        const onDisk = [...pasted].every((f) => window.grove.pathOf(f));
+                        if (!words || onDisk) e.preventDefault();
                         void attach(pasted);
                       }}
                       onKeyDown={(e) => {
@@ -1868,7 +1896,7 @@ export function ChatApp() {
             {
               key: "upload",
               label: "Upload from computer…",
-              description: "Images, PDFs and text files",
+              description: "Any file: images, PDFs, text, videos",
             },
             { key: "mention", label: "Mention a file", description: "@ a file in this project" },
           ]}

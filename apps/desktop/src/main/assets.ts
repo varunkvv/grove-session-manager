@@ -4,9 +4,10 @@ export const CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  // grove chat: a session's images and videos, and its html pages in a sandboxed frame (protocol.ts)
+  // grove chat: a session's images and videos, and its html pages in a sandboxed frame (protocol.ts).
+  // blob: is a video attached in the composer, for its chip's first frame
   "img-src 'self' data: grove-file:",
-  "media-src grove-file:",
+  "media-src grove-file: blob:",
   "frame-src grove-html:",
   "font-src 'self'",
   "connect-src 'self'",

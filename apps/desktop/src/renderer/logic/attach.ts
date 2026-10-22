@@ -1,9 +1,9 @@
 // what grove chat can attach, decided the way the vs code extension decides it (webview `vm1` /
 // `Ad0`): the image types the api takes, a pdf, and text - by its mime type, or by its name when
-// chromium gives a code file an empty or wrong type (.ts comes as video/mp2t). anything else goes
-// into the message as its path.
+// chromium gives a code file an empty or wrong type (.ts comes as video/mp2t). anything else (a
+// video, a zip) is a `file`: it goes by its path on disk, and claude reads it from there.
 
-export type AttachKind = "image" | "pdf" | "text" | "unsupported";
+export type AttachKind = "image" | "pdf" | "text" | "file";
 
 const IMAGES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -55,7 +55,13 @@ export function attachKind(type: string, name: string): AttachKind {
   const t = type.toLowerCase();
   if (IMAGES.includes(t)) return "image";
   if (t === "application/pdf") return "pdf";
-  return isText(t, name) ? "text" : "unsupported";
+  return isText(t, name) ? "text" : "file";
+}
+
+/** what a chip calls a file that goes by its path */
+export function fileWord(type: string): string {
+  const t = type.toLowerCase();
+  return t.startsWith("video/") ? "Video" : t.startsWith("audio/") ? "Audio" : "File";
 }
 
 /** 220 KB, 3.4 MB: a chip's size */
