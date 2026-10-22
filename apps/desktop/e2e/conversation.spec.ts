@@ -208,6 +208,51 @@ test("the panel has everything claude said in a turn, in order, as markdown with
   await expect(turn.getByTestId("turn-said")).toHaveText([outline, "the stack section is in"]);
 });
 
+test("the panel has what he typed while it worked where claude took it, between what it said", async () => {
+  seed();
+  const typed = "and run the retry tests too";
+  appendTurn(
+    file,
+    { sessionId: SID.talk, cwd },
+    {
+      prompt: "fix the retry loop",
+      tools: [
+        {
+          name: "Read",
+          input: { file_path: path.join(cwd, "fetch.ts") },
+          said: "reading the loop",
+        },
+        { name: "Bash", input: { command: "pnpm test" }, typed },
+        {
+          name: "Edit",
+          input: { file_path: path.join(cwd, "fetch.ts") },
+          said: "the counter resets",
+        },
+      ],
+      reply: "Fixed, and the retry tests pass.",
+    },
+  );
+  app = await launchApp(fx);
+  const { page } = app;
+  await page.locator('[data-testid="project-item"][data-id="auth-sso"]').click();
+  await row(page, SID.talk).click({ timeout: 15_000 });
+  const turn = turns(page).last();
+  await expect(turn.getByTestId("turn-typed")).toContainText(`You, while it worked${typed}`);
+  const order = await turn.evaluate((el) =>
+    [
+      ...el.querySelectorAll(
+        '[data-testid="turn-said"], [data-testid="turn-typed"], [data-testid="panel-text"]',
+      ),
+    ].map((x) => x.textContent),
+  );
+  expect(order).toEqual([
+    "reading the loop",
+    `You, while it worked${typed}`,
+    "the counter resets",
+    "Fixed, and the retry tests pass.",
+  ]);
+});
+
 test("a long session sends its last hundred turns and says the rest are in the editor", async () => {
   seed();
   app = await launchApp(fx);

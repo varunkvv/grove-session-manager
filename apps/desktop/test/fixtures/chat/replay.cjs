@@ -13,7 +13,8 @@
 // play instead of these: the perf script's long answer), GROVE_FAKE_CHAT_CONTEXT (the tokens
 // get_context_usage says are in use), GROVE_FAKE_CHAT_FOLD (1: a message sent while a turn plays
 // is folded into it at the next tool result, as claude code does, instead of playing next),
-// GROVE_FAKE_CHAT_FOLD_MS (how long after its `started` the fold reaches the transcript)
+// GROVE_FAKE_CHAT_FOLD_MS (how long after its `started` the fold reaches the transcript),
+// GROVE_FAKE_CHAT_NEXT_MS (how long after a turn's end a message waiting for it starts)
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -31,6 +32,7 @@ const DELAY = Number(process.env.GROVE_FAKE_CHAT_DELAY_MS ?? 15);
 const TOOL_MS = Number(process.env.GROVE_FAKE_CHAT_TOOL_MS ?? 0);
 const FOLD = process.env.GROVE_FAKE_CHAT_FOLD === "1";
 const FOLD_MS = Number(process.env.GROVE_FAKE_CHAT_FOLD_MS ?? 0);
+const NEXT_MS = Number(process.env.GROVE_FAKE_CHAT_NEXT_MS ?? 0);
 const note = (o) => LOG && fs.appendFileSync(LOG, `${JSON.stringify(o)}\n`);
 
 const DIR = process.env.GROVE_FAKE_CHAT_RECORDINGS || __dirname;
@@ -455,6 +457,7 @@ async function play(turn, folded) {
     await play(turns.find((t) => t.text === text) ?? turns[0], folded);
     // claude code says these either side of the turn's result: here after it
     for (const uuid of [m.uuid, ...folded]) life(uuid, "completed");
+    if (NEXT_MS && inbox.some((x) => x.type === "user")) await sleep(NEXT_MS);
   }
   process.exit(0);
 })();

@@ -306,10 +306,15 @@ test("the session card: what it waits on is answered from the main window, and a
   await card.getByTestId("card-reply").fill(HELLO);
   await card.getByTestId("card-reply").press("Enter");
   await expect(chat.getByTestId("chat-queued")).toContainText(HELLO);
+  // the card has it too, over its reply box. it is taken back from the chat window
+  await expect(card.getByTestId("chat-queued")).toContainText("You, queued");
+  await expect(card.getByTestId("chat-queued")).toContainText(HELLO);
+  await expect(card.getByTestId("chat-unqueue")).toHaveCount(0);
   // taken back before claude got to it: its words come back to the reply box's twin, the composer
   await chat.getByTestId("chat-queued").hover();
   await chat.getByTestId("chat-unqueue").click();
   await expect(chat.getByTestId("chat-queued")).toHaveCount(0);
+  await expect(card.getByTestId("chat-queued")).toHaveCount(0);
   await expect(chat.getByTestId("composer")).toHaveValue(HELLO);
   // what runs for it is one line, and it opens the chat window's agents
   await expect(card.getByTestId("card-agents")).toContainText(
@@ -317,6 +322,100 @@ test("the session card: what it waits on is answered from the main window, and a
   );
   await card.getByTestId("card-agents").click();
   await expect(chat.getByTestId("agents")).toBeVisible();
+});
+
+/**
+ * watches the conversation every frame from now on: the words are on screen, as a row, his block
+ * or a prompt, and never gone once seen. `gap()` says if a frame ever missed them
+ */
+async function watchFor(page: Page, words: string) {
+  await page.evaluate((w) => {
+    const g = window as unknown as { gapSeen?: boolean; gapMissed?: number };
+    g.gapSeen = false;
+    g.gapMissed = 0;
+    const look = () => {
+      const on = !!document.querySelector('[data-testid="conversation"]')?.textContent?.includes(w);
+      if (on) g.gapSeen = true;
+      else if (g.gapSeen) g.gapMissed = (g.gapMissed ?? 0) + 1;
+      requestAnimationFrame(look);
+    };
+    look();
+  }, words);
+  return {
+    gap: () => page.evaluate(() => (window as unknown as { gapMissed?: number }).gapMissed ?? 0),
+  };
+}
+
+test("a message typed while it works stays on screen as claude takes it, and lands where it was taken", async () => {
+  const s = seed(true);
+  const typed = "and run the retry tests once the lister is back";
+  const { app: electron, page } = await launch(s, {
+    GROVE_FAKE_CHAT_TOOL_MS: "2500",
+    GROVE_FAKE_CHAT_FOLD: "1",
+    GROVE_FAKE_CHAT_FOLD_MS: "1500",
+  });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(AGENTS);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("state")).toHaveAttribute("data-state", "working");
+  await composer.fill(typed);
+  await composer.press("Enter");
+  const row = chat.getByTestId("chat-queued");
+  await expect(row).toContainText("You, queued");
+  const watch = await watchFor(chat, typed);
+  // claude took it: the same row, as sent, and nothing to take back. the transcript has not got it
+  await expect(row).toHaveAttribute("data-taken", "", { timeout: 15_000 });
+  await expect(row).toContainText("You, while it worked");
+  await expect(row).toContainText(typed);
+  await expect(row.getByTestId("chat-unqueue")).toHaveCount(0);
+  await expect(chat.getByTestId("turn-typed")).toHaveCount(0);
+  // the transcript has it: his block in the turn, where it was taken, and the row gone
+  const turn = chat.getByTestId("turn").last();
+  await expect(turn.getByTestId("turn-typed")).toContainText(typed, { timeout: 15_000 });
+  await expect(row).toHaveCount(0);
+  // after the steps that ran before it, before what claude said after it, not under the prompt
+  await expect(chat.getByTestId("state")).toHaveCount(0, { timeout: 30_000 });
+  const order = await turn.evaluate((el) =>
+    [
+      ...el.querySelectorAll(
+        '[data-testid="step-fold"], [data-testid="turn-typed"], [data-testid="panel-text"]',
+      ),
+    ].map((x) => x.getAttribute("data-testid")),
+  );
+  expect(order.indexOf("turn-typed")).toBeGreaterThan(order.indexOf("step-fold"));
+  expect(order.indexOf("turn-typed")).toBeLessThan(order.lastIndexOf("panel-text"));
+  await expect(turn.getByTestId("panel-prompt")).not.toContainText(typed);
+  expect(await watch.gap()).toBe(0);
+});
+
+test("a message still queued when the turn ends runs as the next turn, on screen all the way", async () => {
+  const s = seed(true);
+  const after = "Reply with exactly: after the interrupt";
+  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_NEXT_MS: "1500" });
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const composer = chat.getByTestId("composer");
+  await composer.fill(COUNT);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("3");
+  await composer.fill(after);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("chat-queued")).toContainText("You, queued");
+  const watch = await watchFor(chat, after);
+  await composer.press("Escape");
+  // the turn is over and claude has it to run next: the same row, as sent
+  await expect(chat.getByTestId("state")).toHaveCount(0);
+  await expect(chat.getByTestId("chat-queued")).toHaveAttribute("data-taken", "");
+  await expect(chat.getByTestId("chat-queued")).toContainText("You, while it worked");
+  // the next turn's prompt, and the row gone
+  await expect(chat.getByTestId("turn").last().getByTestId("panel-prompt")).toHaveText(after, {
+    timeout: 15_000,
+  });
+  await expect(chat.getByTestId("panel-text")).toHaveText("after the interrupt");
+  await expect(chat.getByTestId("chat-queued")).toHaveCount(0);
+  expect(await watch.gap()).toBe(0);
 });
 
 test("the session card of a session live in VS Code only points there", async () => {
