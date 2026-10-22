@@ -1,7 +1,7 @@
 // grove chat's host: one claude per session grove runs itself, through the agent sdk, kept in main
 // so it outlives the window it was opened from. no electron import: a window is a PushTarget.
 import { randomUUID } from "node:crypto";
-import { type FSWatcher, watch } from "node:fs";
+import { type FSWatcher, statSync, watch } from "node:fs";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,7 +18,7 @@ import type {
   UserDialogRequest,
   UserDialogResult,
 } from "@anthropic-ai/claude-agent-sdk";
-import { editDiff, firstSentence, toolLabel, toolTarget } from "@grove/core";
+import { attachedFileText, editDiff, firstSentence, toolLabel, toolTarget } from "@grove/core";
 import type {
   ChatAgent,
   ChatAnswer,
@@ -257,13 +257,34 @@ export function parseAttachments(raw: unknown): ChatAttachment[] {
       documents += o.text.length;
       return { kind: "text", name: o.name, text: o.text };
     }
+    // by its path: nothing is read, so no size cap. it has to be a file there now, by that name
+    if (o.kind === "file") {
+      if (!isText(o.path, 4096) || !path.isAbsolute(o.path) || /[\0\n\r]/.test(o.path)) {
+        throw bad();
+      }
+      if (!isText(o.mediaType, 255)) throw bad();
+      const st = (() => {
+        try {
+          return statSync(o.path);
+        } catch {
+          return null;
+        }
+      })();
+      if (!st) throw bad(`${o.name} is not there any more.`);
+      if (!st.isFile()) throw bad(`${o.name} is not a file.`);
+      const name = path.basename(o.path);
+      return { kind: "file", name, path: o.path, mediaType: o.mediaType, size: st.size };
+    }
     throw bad();
   });
   if (documents > ATTACH.documents) throw bad("Those files are too big to send together.");
   return out;
 }
 
-/** a message's content blocks: what is attached first, in the shapes vs code sends, then the words */
+/**
+ * a message's content blocks: what is attached first, in the shapes vs code sends, then the words.
+ * a file the api takes no block for is a text block naming where it is on disk
+ */
 function blocksFor(text: string, files: ChatAttachment[]): SDKUserMessage["message"]["content"] {
   return [
     ...files.map((f) =>
@@ -272,22 +293,24 @@ function blocksFor(text: string, files: ChatAttachment[]): SDKUserMessage["messa
             type: "image" as const,
             source: { type: "base64" as const, media_type: f.mediaType, data: f.data },
           }
-        : f.kind === "pdf"
-          ? {
-              type: "document" as const,
-              source: {
-                type: "base64" as const,
-                media_type: "application/pdf" as const,
-                data: f.data,
+        : f.kind === "file"
+          ? { type: "text" as const, text: attachedFileText(f) }
+          : f.kind === "pdf"
+            ? {
+                type: "document" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: "application/pdf" as const,
+                  data: f.data,
+                },
+                title: f.name,
+              }
+            : {
+                // always text/plain: a csv sent as text/csv makes the api drop the document
+                type: "document" as const,
+                source: { type: "text" as const, media_type: "text/plain" as const, data: f.text },
+                title: f.name,
               },
-              title: f.name,
-            }
-          : {
-              // always text/plain: a csv sent as text/csv makes the api drop the document
-              type: "document" as const,
-              source: { type: "text" as const, media_type: "text/plain" as const, data: f.text },
-              title: f.name,
-            },
     ),
     ...(text ? [{ type: "text" as const, text }] : []),
   ];

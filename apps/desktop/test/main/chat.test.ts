@@ -1236,6 +1236,62 @@ describe("grove chat's host", () => {
     expect(() => parseAttachments([big, big])).toThrow("too big to send together");
   });
 
+  it("takes any other file by its path: a file there now, counted, never read", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-attach-"));
+    const clip = path.join(dir, "clip.mp4");
+    writeFileSync(clip, "not really a video");
+    const file = { kind: "file", name: "clip.mp4", path: clip, mediaType: "video/mp4", size: 1 };
+    // main's own size, from the disk, and the name is the path's
+    expect(parseAttachments([{ ...file, name: "other.mov", extra: 1 }])).toEqual([
+      { kind: "file", name: "clip.mp4", path: clip, mediaType: "video/mp4", size: 18 },
+    ]);
+    // a type chromium does not know is empty
+    expect(parseAttachments([{ ...file, mediaType: "" }])[0]).toMatchObject({ mediaType: "" });
+    for (const bad of [
+      [{ ...file, path: "clip.mp4" }],
+      [{ ...file, path: 4 }],
+      [{ ...file, path: `${clip}\n/etc/passwd` }],
+      [{ ...file, mediaType: 4 }],
+      [{ ...file, name: "" }],
+      Array.from({ length: 11 }, () => file),
+    ]) {
+      expect(() => parseAttachments(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow(
+        "not a file Claude can take",
+      );
+    }
+    expect(() => parseAttachments([{ ...file, path: path.join(dir, "gone.mp4") }])).toThrow(
+      "clip.mp4 is not there any more.",
+    );
+    expect(() => parseAttachments([{ ...file, path: dir }])).toThrow("clip.mp4 is not a file.");
+  });
+
+  it("sends a file by its path as a text block saying where it is, before the words", async () => {
+    const s = setup();
+    const clip = path.join(s.where.cwd, "clip.mp4");
+    await s.host.send(SESSION, s.where, HELLO, [
+      { kind: "file", name: "clip.mp4", path: clip, mediaType: "video/mp4", size: 44073 },
+    ]);
+    await turnEnded(s);
+    const sent = s
+      .log()
+      .map((l) => l.in as { type?: string; message?: { content?: unknown[] } })
+      .find((m) => m?.type === "user");
+    expect(sent?.message?.content).toEqual([
+      {
+        type: "text",
+        text: [
+          "<attached-file>",
+          "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
+          `path: ${clip}`,
+          "type: video/mp4",
+          "size: 44073 bytes",
+          "</attached-file>",
+        ].join("\n"),
+      },
+      { type: "text", text: HELLO },
+    ]);
+  });
+
   it("sends a pdf and a text file as documents, before the words, as vs code does", async () => {
     const s = setup();
     await s.host.send(SESSION, s.where, HELLO, [

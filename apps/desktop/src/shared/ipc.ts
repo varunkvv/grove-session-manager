@@ -960,7 +960,9 @@ export interface ChatCommand {
 
 /**
  * a file attached in the composer, in the shapes the vs code extension sends: an image or a pdf as
- * base64, a text or code file as its text. `name` is what claude sees as the document's title
+ * base64, a text or code file as its text. `name` is what claude sees as the document's title.
+ * anything else (a video, a zip) goes as its path on disk: claude reads it from there, and the
+ * bytes never cross ipc
  */
 export type ChatAttachment =
   | {
@@ -969,7 +971,8 @@ export type ChatAttachment =
       data: string;
     }
   | { kind: "pdf"; name: string; data: string }
-  | { kind: "text"; name: string; text: string };
+  | { kind: "text"; name: string; text: string }
+  | { kind: "file"; name: string; path: string; mediaType: string; size: number };
 
 /** a file `@` offers: what goes in the message, and how the menu shows it */
 export interface ChatPath {
