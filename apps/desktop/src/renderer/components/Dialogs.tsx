@@ -1,4 +1,4 @@
-import { shortPath, type TeardownOutcome } from "@grove/core/pure";
+import { shortPath, TEXT_SCALES, type TeardownOutcome, type TextScale } from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import { type AppSettings, DEFAULT_SUMMON_KEY } from "../../shared/ipc.ts";
 import { acceleratorOf, keyLabel } from "../logic/keys.ts";
@@ -418,7 +418,7 @@ export function SettingsDialog() {
       <div className="space-y-3.5">
         {/* side by side: a row more would push the dialog past a window of the default height */}
         <div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Field label="Appearance">
               <Select
                 value={draft.appearance}
@@ -445,10 +445,26 @@ export function SettingsDialog() {
                 <option value="solarized">Solarized</option>
               </Select>
             </Field>
+            <Field label="Text size">
+              <Select
+                value={draft.textScale ?? 100}
+                onChange={(e) => {
+                  const scale = Number(e.target.value) as TextScale;
+                  setDraft({ ...draft, textScale: scale === 100 ? undefined : scale });
+                }}
+                data-testid="setting-text-size"
+              >
+                {TEXT_SCALES.map((scale) => (
+                  <option key={scale} value={scale}>
+                    {scale === 100 ? "100% (default)" : `${scale}%`}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           </div>
           <span className="mt-1.5 block text-sm text-fg-4">
-            System follows macOS, including when it switches at sunset. Each theme comes in light
-            and dark.
+            System follows macOS, at sunset too. Each theme comes in light and dark. Text size grows
+            the conversation and the message box. ⌘+ and ⌘- change it too.
           </span>
         </div>
         <Field label="Editor">

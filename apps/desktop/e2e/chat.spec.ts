@@ -1901,6 +1901,127 @@ test("chat windows follow the appearance, cascade from the last one, and open at
   expect(b?.y).toBe((a?.y ?? 0) + 26);
 });
 
+test("text size: Settings and ⌘+ / ⌘- / ⌘0 grow what is read in every window, never the window's own controls", async () => {
+  const s = seed(true);
+  const code = `const wait = Math.min(30_000, 100 * 2 ** attempt++); // ${"a long line ".repeat(12)}`;
+  appendTurn(
+    s.file,
+    { sessionId: SID, cwd: s.root },
+    {
+      prompt: "why does the retry loop spin",
+      tools: [{ name: "Bash", input: { command: "rg -n attempt src/ingest" } }],
+      reply: [
+        "The backoff starts again on every 429.",
+        "",
+        "```ts",
+        code,
+        "```",
+        "",
+        "| attempt | waits |",
+        "| --- | --- |",
+        "| 1 | 100ms |",
+      ].join("\n"),
+    },
+  );
+  const { app: electron, page } = await launch(s);
+  const settingsFile = path.join(s.fx.root, "settings.json");
+  const saved = () => JSON.parse(readFileSync(settingsFile, "utf8")).textScale;
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  const answer = chat.getByTestId("panel-text").locator("p").first();
+  await expect(answer).toHaveText("The backoff starts again on every 429.");
+  const turn = chat.getByTestId("turn").last();
+  await turn.getByTestId("turn-steps-toggle").click();
+  const px = (l: ReturnType<Page["locator"]>) =>
+    l.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+  const sizes = async () => ({
+    answer: await px(answer),
+    code: await px(turn.locator("pre code").first()),
+    step: await px(turn.getByTestId("step").first()),
+    composer: await px(chat.getByTestId("composer")),
+    title: await px(chat.getByTestId("chat-title")),
+    model: await px(chat.getByTestId("chat-model")),
+  });
+  const at = (scale: number) => ({
+    answer: 13 * scale,
+    code: 11.5 * scale,
+    step: 12 * scale,
+    composer: 13 * scale,
+    title: 13,
+    model: 12,
+  });
+  const close = (got: Record<string, number>, want: Record<string, number>) => {
+    for (const k of Object.keys(want)) expect(got[k], k).toBeCloseTo(want[k] as number, 2);
+  };
+  close(await sizes(), at(1));
+
+  // Settings: the window draws in it at once, and only what is read grows
+  await page.bringToFront();
+  await page.keyboard.press("Meta+,");
+  await page.getByTestId("setting-text-size").selectOption("135");
+  await page.getByTestId("save-settings").click();
+  await expect(page.getByTestId("settings-dialog")).toBeHidden();
+  expect(saved()).toBe(135);
+  await expect.poll(async () => (await sizes()).answer).toBeCloseTo(17.55, 2);
+  close(await sizes(), at(1.35));
+  // line heights are whole px
+  expect(await answer.evaluate((el) => getComputedStyle(el).lineHeight)).toBe("27px");
+
+  // the main window's session card follows the same setting, its header does not
+  await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
+  const tail = page.getByTestId("card-tail").locator("p").first();
+  await expect(tail).toBeVisible();
+  expect(await px(tail)).toBeCloseTo(17.55, 2);
+  expect(await px(page.getByTestId("session-panel").locator("header h2"))).toBe(13);
+
+  // the keys, from the chat window: a step each, saved, and the main window follows too
+  // menu keys go to the window that has the keyboard
+  await chat.bringToFront();
+  const composer = chat.getByTestId("composer");
+  await composer.focus();
+  await composer.press("Meta+=");
+  await expect.poll(saved).toBe(150);
+  await expect.poll(async () => (await sizes()).composer).toBeCloseTo(19.5, 2);
+  close(await sizes(), at(1.5));
+  await expect.poll(() => px(tail)).toBeCloseTo(19.5, 2);
+  // at the end a key does nothing
+  await composer.press("Meta+Shift+=");
+  await chat.waitForTimeout(300);
+  expect(saved()).toBe(150);
+
+  // at 150%: nothing in the turn is cut off by a fixed height
+  const clipped = await chat.getByTestId("conversation").evaluate((box) =>
+    [...box.querySelectorAll<HTMLElement>("*")]
+      .filter((el) => {
+        const o = getComputedStyle(el);
+        const hides = /hidden|clip/.test(o.overflowY) || /hidden|clip/.test(o.overflow);
+        return hides && el.textContent?.trim() && el.scrollHeight > el.clientHeight + 1;
+      })
+      .map((el) => `${el.tagName}.${el.className}`),
+  );
+  expect(clipped).toEqual([]);
+
+  await composer.press("Meta+-");
+  await expect.poll(saved).toBe(135);
+  await composer.press("Meta+0");
+  await expect.poll(saved).toBeUndefined();
+  await expect.poll(async () => (await sizes()).composer).toBe(13);
+  close(await sizes(), at(1));
+  // ⌘+ with shift, as the menu says it
+  await composer.press("Meta+Shift+=");
+  await expect.poll(saved).toBe(110);
+
+  // and from the dialog back to the default: no setting left in the file
+  await page.bringToFront();
+  await page.keyboard.press("Meta+,");
+  await expect(page.getByTestId("setting-text-size")).toHaveValue("110");
+  await page.getByTestId("setting-text-size").selectOption("100");
+  await page.getByTestId("save-settings").click();
+  await expect(page.getByTestId("settings-dialog")).toBeHidden();
+  expect(saved()).toBeUndefined();
+  await expect.poll(() => px(tail)).toBe(13);
+});
+
 test("⌘K lists the other chat windows: Enter goes to the one looked at last, and ⌘K Enter flips back", async () => {
   const s = seed(true);
   const SID2 = "cccccccc-0000-4000-8000-000000000002";

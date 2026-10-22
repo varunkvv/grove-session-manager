@@ -105,3 +105,30 @@ test("decisioning: the switch downloads its model with progress, and Delete take
     server.close();
   }
 });
+
+test("Text size sits beside Appearance and Theme, and the hint under the three stays two lines", async () => {
+  app = await launchApp(makeFixture({ withCompanion: true }));
+  const { app: electron, page } = app;
+  await electron.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]?.setSize(1280, 800),
+  );
+  await page.keyboard.press("Meta+,");
+  const select = page.getByTestId("setting-text-size");
+  await expect(select).toHaveValue("100");
+  expect(await select.locator("option").allTextContents()).toEqual([
+    "90%",
+    "100% (default)",
+    "110%",
+    "120%",
+    "135%",
+    "150%",
+  ]);
+  // one row with the other two
+  const top = async (id: string) => (await page.getByTestId(id).boundingBox())?.y;
+  expect(await top("setting-text-size")).toBe(await top("setting-appearance"));
+  // their one hint stays two lines at the default size, so the dialog is no taller than it was
+  const hint = page
+    .getByTestId("setting-text-size")
+    .locator("xpath=ancestor::div[contains(@class,'grid')]/following-sibling::span");
+  expect((await hint.boundingBox())?.height).toBeLessThanOrEqual(36);
+});
