@@ -823,7 +823,7 @@ export class ChatHost {
    */
   async unqueue(id: string, uuid: string): Promise<boolean> {
     const h = this.hosted.get(id);
-    if (!h?.status.queued.some((q) => q.id === uuid)) return false;
+    if (!h?.status.queued.some((q) => q.id === uuid && !q.taken)) return false;
     const q = h.q as (Query & { cancelAsyncMessage?: (u: string) => Promise<boolean> }) | undefined;
     const gone = (await q?.cancelAsyncMessage?.(uuid).catch(() => false)) === true;
     if (gone) this.set(h, { queued: h.status.queued.filter((x) => x.id !== uuid) });
@@ -1262,11 +1262,20 @@ export class ChatHost {
   private take(h: Hosted, m: SDKMessage): void {
     h.lastActive = this.now();
     // what became of a message sent while a turn ran (probe): queued, then started (folded into
-    // the turn, where the transcript shows it), completed, or cancelled. not in the sdk's types
+    // the turn, where the transcript shows it), completed, or cancelled. not in the sdk's types.
+    // taken, its row stays as sent until the window reads it from the transcript: a read follows
     const life = m as unknown as { type: string; command_uuid?: string; state?: string };
     if (life.type === "command_lifecycle") {
-      if (life.state !== "queued" && h.status.queued.some((q) => q.id === life.command_uuid))
-        this.set(h, { queued: h.status.queued.filter((q) => q.id !== life.command_uuid) });
+      const row = h.status.queued.find((q) => q.id === life.command_uuid);
+      if (!row || life.state === "queued") return;
+      const taken = life.state === "started" || life.state === "completed";
+      if (taken && row.taken) return;
+      this.set(h, {
+        queued: taken
+          ? h.status.queued.map((q) => (q === row ? { ...q, taken: true } : q))
+          : h.status.queued.filter((q) => q !== row),
+        rev: h.status.rev + 1,
+      });
       return;
     }
     switch (m.type) {
@@ -1409,7 +1418,9 @@ export class ChatHost {
           tool: undefined,
           activity: undefined,
           thinking: undefined,
-          queued: [],
+          // taken in this turn: the transcript has had it a while. still queued: it runs as the
+          // next turn, and is that turn's prompt once it starts
+          queued: h.status.queued.flatMap((q) => (q.taken ? [] : [{ ...q, taken: true }])),
           rev: h.status.rev + 1,
         });
         this.o.onChange?.();

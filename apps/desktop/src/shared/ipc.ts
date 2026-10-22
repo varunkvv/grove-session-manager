@@ -873,10 +873,12 @@ export interface ChatStatus {
    */
   limit?: { state: "warning" | "rejected"; window: string; used?: number; resets?: number };
   /**
-   * sent while a turn ran, and not taken yet: its uuid (what takes it back), what the row shows,
-   * and the words alone, which go back in the composer when it is taken back
+   * sent while a turn ran: its uuid (what takes it back, and what the transcript knows it by), what
+   * the row shows, and the words alone, which go back in the composer when it is taken back.
+   * `taken`: claude has it, folded into the turn or to run next. it stays until the turn after the
+   * one that took it ends, and a window draws it as sent until it reads it from the transcript
    */
-  queued: Array<{ id: string; text: string; said: string }>;
+  queued: Array<{ id: string; text: string; said: string; taken?: boolean }>;
   /** what went wrong last: claude did not start, a control was refused */
   error?: string;
   /** bumped whenever the transcript moved: the window reads it again */

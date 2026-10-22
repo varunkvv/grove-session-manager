@@ -97,6 +97,8 @@ function setup(
   failFirst = false,
   recordings?: string,
   onReset?: (from: string, to: string) => void,
+  /** more for the fake: GROVE_FAKE_CHAT_FOLD and the like */
+  fake: Record<string, string> = {},
 ): Setup {
   // real: /var/folders is /private/var/folders, and claude reports its cwd resolved
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-chat-")));
@@ -134,6 +136,7 @@ function setup(
       GROVE_FAKE_CHAT_LOG: logFile,
       GROVE_FAKE_CHAT_DELAY_MS: String(delayMs),
       ...(recordings ? { GROVE_FAKE_CHAT_RECORDINGS: recordings } : {}),
+      ...fake,
       // what a grove started from a claude code session would pass on
       CLAUDECODE: "1",
       CLAUDE_CODE_ENTRYPOINT: "claude-vscode",
@@ -546,6 +549,57 @@ describe("grove chat's host", () => {
       /^toolu_/,
     );
     await turnEnded(s);
+  });
+
+  it("keeps a message claude folds into the turn, taken, until that turn ends", async () => {
+    const s = setup(2, false, undefined, undefined, {
+      GROVE_FAKE_CHAT_FOLD: "1",
+      GROVE_FAKE_CHAT_TOOL_MS: "300",
+    });
+    await s.host.send(SESSION, s.where, AGENTS);
+    await until(() => s.host.status(SESSION).tool, "a tool to run");
+    await s.host.send(SESSION, s.where, "and the tests too");
+    const [q] = s.host.status(SESSION).queued;
+    expect(q).toMatchObject({ text: "and the tests too" });
+    expect(q?.taken).toBeUndefined();
+    const rev = s.host.status(SESSION).rev;
+    // claude started on it: the row stays, as sent, and the window reads the transcript again
+    await until(() => s.host.status(SESSION).queued[0]?.taken, "the message taken");
+    expect(s.host.status(SESSION).rev).toBeGreaterThan(rev);
+    // taken, it can't be taken back
+    expect(await s.host.unqueue(SESSION, q?.id ?? "")).toBe(false);
+    // the transcript knows it by the uuid it went with
+    await until(
+      () => readFileSync(s.transcript, "utf8").includes(`"source_uuid":"${q?.id}"`),
+      "the fold in the transcript",
+    );
+    await turnEnded(s);
+    expect(s.host.status(SESSION).queued).toEqual([]);
+  });
+
+  it("keeps a message still queued at a turn's end as taken: it runs next, and goes when that ends", async () => {
+    const s = setup();
+    s.host.attach(SESSION, s.window);
+    await s.host.send(SESSION, s.where, COUNT);
+    await until(() => s.host.text(SESSION).length > 0, "the count");
+    await s.host.send(SESSION, s.where, AFTER);
+    const id = s.host.status(SESSION).queued[0]?.id;
+    await s.host.interrupt(SESSION);
+    await until(
+      () => readFileSync(s.transcript, "utf8").includes('after the interrupt"'),
+      "the next turn's reply",
+    );
+    // the turn it ran as ended too: gone
+    await until(() => s.host.status(SESSION).queued.length === 0, "the row to go");
+    const statuses = s.window.sent
+      .filter(([c]) => c === "grove:chat:status")
+      .map(([, p]) => p as ChatStatus);
+    // the first turn's end: the row taken, not gone
+    const ended = statuses.find((st) => !st.running && st.queued.length > 0);
+    expect(ended?.queued).toEqual([{ id, text: AFTER, said: AFTER, taken: true }]);
+    expect(s.host.running(SESSION)).toBe(false);
+    // it ran as that turn's prompt, with the uuid it went with
+    expect(readFileSync(s.transcript, "utf8")).toContain(`"uuid":"${id}"`);
   });
 
   it("takes back a queued message by the uuid it went with, before claude gets to it", async () => {
