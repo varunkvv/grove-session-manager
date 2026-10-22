@@ -541,28 +541,31 @@ test("the keyboard: arrows move, cmd-D dismisses, cmd-Enter opens the editor, En
     await at(order[3]!);
   });
 
-  // the last of the three that need him is the stop: cmd-Enter opens it, and it stays
+  // the last of the three that need him is the stop: cmd-Enter opens it, and takes it out of Needs
+  // you as cmd-D would
   const opened = () => code().length;
   await step(async () => {
     if (opened() === 0) await press("Meta+ArrowUp", "ArrowDown", "ArrowDown", "Meta+Enter");
     await expect.poll(opened, { timeout: 3_000 }).toBe(1);
   });
+  await ready(page, 2);
+  await expect(row(page, "stopped")).toHaveCount(0);
 
   // the arrows alone never open the panel. Enter does, on the keyboard's row, and the list stays
   await expect(page.getByTestId("panel")).toHaveCount(0);
+  const left = await rows(page).evaluateAll((els) => els.map((e) => e.id));
   await step(async () => {
-    await press("Meta+ArrowUp", "ArrowDown", "ArrowDown", "Enter");
-    await expect(panel(page)).toHaveAttribute("data-id", SID.stopped, { timeout: 2_000 });
+    await press("Meta+ArrowUp", "ArrowDown", "Enter");
+    await expect(openRow(page)).toHaveAttribute("id", left[1] as string, { timeout: 2_000 });
   });
   await expect(page.getByTestId("screen")).toHaveAttribute("data-view", "inbox");
   await expect(page.getByRole("listbox")).toBeFocused();
   expect(opened()).toBe(1);
 
   // while it is open it goes where the arrows go, from its own row whatever the mouse did since
-  const left = await rows(page).evaluateAll((els) => els.map((e) => e.id));
   await step(async () => {
-    await press("Meta+ArrowUp", "ArrowDown");
-    await expect(openRow(page)).toHaveAttribute("id", left[1] as string, { timeout: 2_000 });
+    await press("Meta+ArrowUp");
+    await expect(openRow(page)).toHaveAttribute("id", left[0] as string, { timeout: 2_000 });
   });
   await expect(panel(page)).toHaveAttribute(
     "data-id",
