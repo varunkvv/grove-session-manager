@@ -832,6 +832,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatFork",
   "chatSide",
   "chatReadFile",
+  "chatOpenFile",
   "chatWatch",
   "chatWarm",
   "chatSend",
@@ -1230,6 +1231,12 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
 
     async chatReadFile(id, file) {
       return readText(await allowed(id, file));
+    },
+
+    async chatOpenFile(id, file) {
+      // what went wrong comes back as words, never as a throw
+      const why = await electron.shell.openPath(await allowed(id, file));
+      if (why) throw new AppError("open-failed", why);
     },
 
     async chatWatch(id, file) {

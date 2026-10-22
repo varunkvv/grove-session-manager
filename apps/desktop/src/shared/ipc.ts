@@ -990,6 +990,8 @@ export interface ChatApi {
   chatChangeDiff(path: string): Promise<Outcome<string[]>>;
   /** a file of the session's, for the viewer. refused outside its folders */
   chatReadFile(path: string): Promise<Outcome<ChatFileText>>;
+  /** a file of the session's, in the app the Mac opens it with: Preview, QuickTime. same refusal */
+  chatOpenFile(path: string): Promise<Outcome>;
   /** the file the viewer shows, so a change to it is pushed (`chat:file`). null: none */
   chatWatch(path: string | null): Promise<Outcome>;
   /** the first keystroke: claude starts now, so the first send does not wait for it */
@@ -1059,6 +1061,7 @@ export const CHAT_CHANNELS = [
   "chatChanges",
   "chatChangeDiff",
   "chatReadFile",
+  "chatOpenFile",
   "chatWatch",
   "chatWarm",
   "chatSend",
