@@ -36,6 +36,28 @@ export function sessionFileOf(url: string): { sessionId: string; file: string } 
   return u.host ? { sessionId: u.host, file } : null;
 }
 
+/**
+ * the bytes a `range: bytes=a-b` header asks for out of a file of `size`, both ends in, as a video
+ * asks when it seeks. undefined: all of it (no header, or one this does not read, which the spec
+ * says to ignore). null: none of it is there, a 416
+ */
+export function byteRange(
+  header: string | null,
+  size: number,
+): { start: number; end: number } | null | undefined {
+  const m = header && /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m || (!m[1] && !m[2])) return undefined;
+  // `-n`: the last n bytes
+  if (!m[1]) {
+    const n = Number(m[2]);
+    return n > 0 && size > 0 ? { start: Math.max(0, size - n), end: size - 1 } : null;
+  }
+  const start = Number(m[1]);
+  const end = m[2] ? Number(m[2]) : Number.POSITIVE_INFINITY;
+  if (end < start) return undefined;
+  return start < size ? { start, end: Math.min(end, size - 1) } : null;
+}
+
 /** what the viewer reads of a text file. past this it says how big it is */
 export const READ_MAX = 2_000_000;
 

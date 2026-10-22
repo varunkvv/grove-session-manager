@@ -1,20 +1,23 @@
-import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import * as electron from "electron";
 import { FILE_SCHEME, HTML_SCHEME } from "../shared/sessionUrl.ts";
 import { CSP, contentTypeFor, resolveAssetPath } from "./assets.ts";
 import { APP_HOST, APP_SCHEME } from "./origin.ts";
-import { sessionFileOf, within } from "./sessionFiles.ts";
+import { byteRange, sessionFileOf, within } from "./sessionFiles.ts";
 
 /**
  * before `ready`, and only once. standard + secure gives the page a real origin, so 'self' in the
- * CSP means something. the session schemes are grove chat's: images, and html in the sandbox
+ * CSP means something. the session schemes are grove chat's: images and videos, and html in the
+ * sandbox. `stream` lets a video play from them, a piece at a time
  */
 export function registerAppScheme(): void {
   electron.protocol.registerSchemesAsPrivileged([
     { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
-    { scheme: FILE_SCHEME, privileges: { standard: true, secure: true } },
-    { scheme: HTML_SCHEME, privileges: { standard: true, secure: true } },
+    { scheme: FILE_SCHEME, privileges: { standard: true, secure: true, stream: true } },
+    { scheme: HTML_SCHEME, privileges: { standard: true, secure: true, stream: true } },
   ]);
 }
 
@@ -24,7 +27,13 @@ const NO_RENDERER =
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Grove</title></head>' +
   "<body></body></html>";
 
-function respond(status: number, body: BodyInit | null, type: string, csp = CSP): Response {
+function respond(
+  status: number,
+  body: BodyInit | null,
+  type: string,
+  csp = CSP,
+  more: Record<string, string> = {},
+): Response {
   return new Response(body, {
     status,
     headers: {
@@ -32,6 +41,7 @@ function respond(status: number, body: BodyInit | null, type: string, csp = CSP)
       "content-security-policy": csp,
       "x-content-type-options": "nosniff",
       "cache-control": "no-cache",
+      ...more,
     },
   });
 }
@@ -63,10 +73,13 @@ export function serveRenderer(rendererDir: string): void {
   });
 }
 
-const IMAGES = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
+const MEDIA = new Set([
+  ...[".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"],
+  ...[".mp4", ".mov", ".m4v", ".webm"],
+]);
 
-/** an image is only ever an <img>. this is for one opened any other way */
-const IMAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+/** an image is only ever an <img>, a video a <video>. this is for one opened any other way */
+const MEDIA_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
 /**
  * a page an agent wrote, in a sandboxed iframe with an opaque origin and no preload. it may pull in
@@ -86,8 +99,9 @@ export const HTML_CSP = [
 ].join("; ");
 
 /**
- * after `ready`. a chat window's images and html pages: `<scheme>://<session id>/<path>`, served
- * only from under the folders `rootsOf` gives that session, which is none unless its window is open
+ * after `ready`. a chat window's images, videos and html pages: `<scheme>://<session id>/<path>`,
+ * served only from under the folders `rootsOf` gives that session, which is none unless its window
+ * is open. read as it is sent, and in the pieces a `range` asks for: a video seeks with those
  */
 export function serveSessionFiles(rootsOf: (sessionId: string) => Promise<string[] | null>): void {
   const serve = (scheme: string, csp: string, only?: ReadonlySet<string>) =>
@@ -103,12 +117,27 @@ export function serveSessionFiles(rootsOf: (sessionId: string) => Promise<string
       const roots = await rootsOf(at.sessionId);
       const file = roots && (await within(roots, at.file));
       if (!file) return respond(404, "not found", "text/plain", csp);
-      try {
-        return respond(200, new Uint8Array(await readFile(file)), contentTypeFor(file), csp);
-      } catch {
-        return respond(404, "not found", "text/plain", csp);
+      const size = await stat(file).then(
+        (s) => (s.isFile() ? s.size : null),
+        () => null,
+      );
+      if (size === null) return respond(404, "not found", "text/plain", csp);
+      const range = byteRange(request.headers.get("range"), size);
+      if (range === null) {
+        return respond(416, null, "text/plain", csp, { "content-range": `bytes */${size}` });
       }
+      const { start, end } = range ?? { start: 0, end: size - 1 };
+      // an empty file has no bytes to stream: start 0, end -1
+      const body =
+        request.method === "HEAD" || end < start
+          ? null
+          : (Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream);
+      return respond(range ? 206 : 200, body, contentTypeFor(file), csp, {
+        "accept-ranges": "bytes",
+        "content-length": String(end - start + 1),
+        ...(range ? { "content-range": `bytes ${start}-${end}/${size}` } : {}),
+      });
     });
-  serve(FILE_SCHEME, IMAGE_CSP, IMAGES);
+  serve(FILE_SCHEME, MEDIA_CSP, MEDIA);
   serve(HTML_SCHEME, HTML_CSP);
 }

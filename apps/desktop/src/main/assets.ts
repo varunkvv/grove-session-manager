@@ -4,8 +4,9 @@ export const CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  // grove chat: a session's images, and its html pages in a sandboxed frame (protocol.ts)
+  // grove chat: a session's images and videos, and its html pages in a sandboxed frame (protocol.ts)
   "img-src 'self' data: grove-file:",
+  "media-src grove-file:",
   "frame-src grove-html:",
   "font-src 'self'",
   "connect-src 'self'",
@@ -28,6 +29,10 @@ const TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
   ".ico": "image/x-icon",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",

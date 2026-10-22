@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { sessionFileOf, within } from "../../src/main/sessionFiles.ts";
+import { byteRange, sessionFileOf, within } from "../../src/main/sessionFiles.ts";
 import { FILE_SCHEME, sessionUrl } from "../../src/shared/sessionUrl.ts";
 
 describe("the files a chat window may show", () => {
@@ -37,6 +37,28 @@ describe("the files a chat window may show", () => {
         ? path.join(root, "plans", "a.md")
         : null,
     );
+  });
+
+  it("gives a video the bytes it asks for when it seeks", () => {
+    // no header, or one it does not read: all of it
+    expect(byteRange(null, 100)).toBeUndefined();
+    expect(byteRange("bytes=0-1,5-6", 100)).toBeUndefined();
+    expect(byteRange("bytes=-", 100)).toBeUndefined();
+    expect(byteRange("items=0-1", 100)).toBeUndefined();
+    expect(byteRange("bytes=9-3", 100)).toBeUndefined();
+    // a-b, a-, -n
+    expect(byteRange("bytes=0-0", 100)).toEqual({ start: 0, end: 0 });
+    expect(byteRange("bytes=10-19", 100)).toEqual({ start: 10, end: 19 });
+    expect(byteRange("bytes=90-500", 100)).toEqual({ start: 90, end: 99 });
+    expect(byteRange("bytes=40-", 100)).toEqual({ start: 40, end: 99 });
+    expect(byteRange("bytes=-10", 100)).toEqual({ start: 90, end: 99 });
+    expect(byteRange("bytes=-500", 100)).toEqual({ start: 0, end: 99 });
+    // past the end, or nothing at all: none of it
+    expect(byteRange("bytes=100-", 100)).toBeNull();
+    expect(byteRange("bytes=100-200", 100)).toBeNull();
+    expect(byteRange("bytes=-0", 100)).toBeNull();
+    expect(byteRange("bytes=0-", 0)).toBeNull();
+    expect(byteRange("bytes=-5", 0)).toBeNull();
   });
 
   it("reads back the session and the path the page put in a url", () => {
