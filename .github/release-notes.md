@@ -29,6 +29,14 @@ Fixed since 0.23.44:
   answered or dismissed it, as the menu bar already had it. before, it went quiet
 - a notification click with grove chat on lands in the session's chat window, not behind the main window
 
+Fixed since 0.24.45:
+
+- a message you type while Claude works stays on screen: "You, queued" until Claude takes it, then "You, while it
+  worked" where Claude took it in the turn. before, it vanished when Claude took it and came back under the turn's
+  first prompt, often off screen
+- a message that waited until the turn ended stays until it runs as the next turn
+- a reply from the session card while Claude works shows on the card as queued, then taken
+
 ## 0.23
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.23 adds a toy you have to switch on:
