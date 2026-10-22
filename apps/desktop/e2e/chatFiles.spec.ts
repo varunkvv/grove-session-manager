@@ -1,9 +1,10 @@
-// grove chat draws what a session made: images through main's session scheme, which serves only
-// the session's folders and the temp folder, cards for files it wrote, and a viewer beside the
-// conversation. no claude runs: the transcripts are written before launch.
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+// grove chat draws what a session made: images and videos through main's session scheme, which
+// serves only the session's folders and the temp folder, cards for files it wrote, and a viewer
+// beside the conversation. no claude runs: the transcripts are written before launch.
+import { copyFileSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
+import { FILE_SCHEME, sessionUrl } from "../src/shared/sessionUrl.ts";
 import { appendTurn, makeFixture, writeSession } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
@@ -239,4 +240,133 @@ test("a mermaid fence is drawn as a picture, and one that is not a diagram stays
     "Could not draw this diagram",
   );
   expect(blocked).toEqual([]);
+});
+
+test("a video opens in the viewer, plays only when asked, and seeks", async () => {
+  const s = seed("");
+  mkdirSync(path.join(s.root, "artifacts"), { recursive: true });
+  // 4s of h264, 160x90, made once with ffmpeg
+  const clip = path.join(s.root, "artifacts", "clip.mp4");
+  copyFileSync(path.join(import.meta.dirname, "fixtures", "clip.mp4"), clip);
+  const chat = await open(s);
+  const blocked: string[] = [];
+  chat.on("console", (m) => {
+    if (/Content Security Policy|Refused to/i.test(m.text())) blocked.push(m.text());
+  });
+  await chat.getByTestId("chat-files").click();
+  await chat.getByTestId("file-item").filter({ hasText: "clip.mp4" }).click();
+  const video = chat.getByTestId("viewer-video");
+  // a duration: the scheme served it, the page's CSP let it in, and its type was a video's
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.duration)).toBeCloseTo(4, 0);
+  expect(await video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true);
+  const seeked = await video.evaluate(
+    (v: HTMLVideoElement) =>
+      new Promise<number>((done) => {
+        v.addEventListener("seeked", () => done(v.currentTime), { once: true });
+        v.currentTime = 3;
+      }),
+  );
+  expect(seeked).toBeCloseTo(3, 0);
+  expect(blocked).toEqual([]);
+
+  // the pieces a seek asks for, from main's scheme as the page gets them
+  const size = statSync(clip).size;
+  const ask = (range?: string) =>
+    app.app.evaluate(
+      async ({ net }, o) => {
+        const r = await net.fetch(o.url, o.range ? { headers: { range: o.range } } : {});
+        return {
+          status: r.status,
+          type: r.headers.get("content-type"),
+          ranges: r.headers.get("accept-ranges"),
+          range: r.headers.get("content-range"),
+          length: r.headers.get("content-length"),
+          got: (await r.arrayBuffer()).byteLength,
+        };
+      },
+      { url: sessionUrl(FILE_SCHEME, SID, clip), range },
+    );
+  expect(await ask()).toEqual({
+    status: 200,
+    type: "video/mp4",
+    ranges: "bytes",
+    range: null,
+    length: String(size),
+    got: size,
+  });
+  expect(await ask("bytes=10-19")).toMatchObject({
+    status: 206,
+    range: `bytes 10-19/${size}`,
+    length: "10",
+    got: 10,
+  });
+  expect(await ask("bytes=-100")).toMatchObject({
+    status: 206,
+    range: `bytes ${size - 100}-${size - 1}/${size}`,
+    got: 100,
+  });
+  expect(await ask(`bytes=${size}-`)).toMatchObject({ status: 416, range: `bytes */${size}` });
+});
+
+/** an svg is drawn at the size it says it is */
+const WIDE =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="3000" height="1500"><rect width="3000" height="1500" fill="#0b817d"/><rect x="1400" y="700" width="200" height="100" fill="#fff"/></svg>';
+
+test("a big image opens at its own size on a click and fits again on the next, a small one stays", async () => {
+  const s = seed("");
+  const wide = path.join(s.root, "art", "wide.svg");
+  const plan = path.join(s.root, "art", "notes.md");
+  writeFileSync(wide, WIDE);
+  writeFileSync(plan, "# notes");
+  appendTurn(
+    s.file,
+    { sessionId: SID, cwd: s.root },
+    {
+      prompt: "draw it big",
+      tools: [
+        { name: "Write", input: { file_path: wide, content: "x" } },
+        { name: "Read", input: { file_path: path.join(s.root, "art", "shot.png") } },
+        { name: "Write", input: { file_path: plan, content: "x" } },
+      ],
+      reply: "Drew it.",
+    },
+  );
+  const chat = await open(s);
+  const cards = chat.getByTestId("output-card");
+  await expect(cards).toHaveCount(3);
+  const image = chat.getByTestId("viewer-image");
+  /** how wide it is against the panel that scrolls it, and the pointer over it */
+  const fit = () =>
+    image.evaluate((img: HTMLImageElement) => {
+      const box = img.parentElement as HTMLElement;
+      return {
+        natural: img.naturalWidth,
+        wider: img.getBoundingClientRect().width > box.clientWidth,
+        scrolls: box.scrollWidth > box.clientWidth,
+        cursor: getComputedStyle(img).cursor,
+      };
+    });
+
+  const FITTED = { natural: 3000, wider: false, scrolls: false, cursor: "zoom-in" };
+  const ZOOMED = { natural: 3000, wider: true, scrolls: true, cursor: "zoom-out" };
+
+  await cards.filter({ hasText: "wide.svg" }).click();
+  await expect.poll(fit).toEqual(FITTED);
+  await image.click();
+  await expect(image).toHaveAttribute("data-zoomed", "true");
+  await expect.poll(fit).toEqual(ZOOMED);
+  await image.click();
+  await expect.poll(fit).toEqual(FITTED);
+
+  // zoomed, then another file: that one is fitted, and so is this one when it comes back
+  await image.click();
+  await expect(image).toHaveAttribute("data-zoomed", "true");
+  await cards.filter({ hasText: "shot.png" }).click();
+  await expect(chat.getByTestId("viewer")).toHaveAttribute("data-file", /shot\.png$/);
+  // a 2x2 image has nothing to zoom into
+  await expect.poll(fit).toMatchObject({ natural: 2, cursor: "default" });
+  await image.click();
+  await expect(image).not.toHaveAttribute("data-zoomed");
+  await cards.filter({ hasText: "wide.svg" }).click();
+  await expect.poll(fit).toEqual(FITTED);
 });

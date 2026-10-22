@@ -1,10 +1,10 @@
 // grove chat's files: a card in the turn for what the session wrote or looked at, a list of every
 // file it wrote with the project's plans and artifacts, and a viewer beside the conversation. all
-// of it is the agent's: images go through <img>, html only into a sandboxed frame, text through
-// the same Markdown the conversation has, and every path through main's check of the session's
-// folders.
+// of it is the agent's: images go through <img>, videos through <video>, html only into a
+// sandboxed frame, text through the same Markdown the conversation has, and every path through
+// main's check of the session's folders.
 import { type FileMark, fileKind } from "@grove/core/pure";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatChange, ChatFileText } from "../../shared/ipc.ts";
 import { FILE_SCHEME, HTML_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { dirOf } from "../logic/links.ts";
@@ -101,6 +101,54 @@ function ChangeDiff({ file, v }: { file: string; v: number }) {
   return <Diff lines={lines} className="max-h-none!" />;
 }
 
+/**
+ * an image at the panel's width, and on a click at its own size, scrolling both ways, when that is
+ * bigger. the spot clicked stays under the pointer
+ */
+function ImageFile({ src, alt }: { src: string; alt: string }) {
+  const ref = useRef<HTMLImageElement>(null);
+  const at = useRef<{ fx: number; fy: number; x: number; y: number }>(null);
+  const [big, setBig] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+  // only fitted is its width the panel's say
+  const measure = (img: HTMLImageElement) => !zoomed && setBig(img.naturalWidth > img.clientWidth);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a zoom is when to move the scroll
+  useLayoutEffect(() => {
+    const img = ref.current;
+    const box = img?.parentElement;
+    if (!img || !box || !at.current) return;
+    const r = img.getBoundingClientRect();
+    box.scrollLeft += r.left + at.current.fx * r.width - at.current.x;
+    box.scrollTop += r.top + at.current.fy * r.height - at.current.y;
+  }, [zoomed]);
+  return (
+    <img
+      ref={ref}
+      src={src}
+      alt={alt}
+      className={cx(
+        "mx-auto block",
+        zoomed ? "max-w-none cursor-zoom-out" : cx("max-w-full", big && "cursor-zoom-in"),
+      )}
+      onLoad={(e) => measure(e.currentTarget)}
+      onMouseEnter={(e) => measure(e.currentTarget)}
+      onClick={(e) => {
+        if (!big) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        at.current = {
+          fx: (e.clientX - r.left) / r.width,
+          fy: (e.clientY - r.top) / r.height,
+          x: e.clientX,
+          y: e.clientY,
+        };
+        setZoomed(!zoomed);
+      }}
+      data-testid="viewer-image"
+      data-zoomed={zoomed || undefined}
+    />
+  );
+}
+
 /** a file the viewer has open: drawn for what it is, and again whenever it changes on disk */
 export function Viewer({
   file,
@@ -165,11 +213,21 @@ export function Viewer({
       ) : (
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {kind === "image" ? (
-            <img
+            // another file is fitted again
+            <ImageFile
+              key={file}
               src={sessionUrl(FILE_SCHEME, scope.session, file, v)}
               alt={nameOf(file)}
-              className="mx-auto block max-w-full"
-              data-testid="viewer-image"
+            />
+          ) : kind === "video" ? (
+            // never plays on its own. as tall as the panel at most
+            // biome-ignore lint/a11y/useMediaCaption: an agent's recording has no captions to give
+            <video
+              controls
+              preload="metadata"
+              src={sessionUrl(FILE_SCHEME, scope.session, file, v)}
+              className="mx-auto block max-h-full max-w-full"
+              data-testid="viewer-video"
             />
           ) : (
             <TextFile file={file} v={v} />
