@@ -53,10 +53,14 @@ mac:
       arch: arm64
     - target: dir
       arch: arm64
-  # ad-hoc: an arm64 mac refuses to run a binary with no signature at all
+  # ad-hoc: an arm64 mac refuses to run a binary with no signature at all. a release is signed again
+  # with a self-signed certificate after this (afterSign below), so macOS keeps its screen recording
+  # and microphone grants across updates. a local build stays ad-hoc
   identity: "-"
   hardenedRuntime: false
   notarize: false
+# signs the app with GROVE_SIGN_IDENTITY when it is set, and does nothing when it is not
+afterSign: ./scripts/after-sign.cjs
 
 # the usual drag-to-install window
 dmg:

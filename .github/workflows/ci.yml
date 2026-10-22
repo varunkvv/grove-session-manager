@@ -62,7 +62,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: macos-latest
     env:
-      # ad-hoc signing only. never go looking for a certificate on the runner.
+      # ad-hoc signing only. never go looking for a certificate on the runner. unlike release, no
+      # self-signed certificate either: a fork's pull request gets no secrets
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
@@ -107,8 +108,14 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      # ad-hoc signing only. never go looking for a certificate on the runner.
+      # electron-builder signs ad-hoc and never goes looking for a certificate on the runner. then
+      # scripts/after-sign.cjs signs the app again with Grove's self-signed certificate, so macOS
+      # keeps a screen recording or microphone grant across updates. CSC_LINK has electron-builder
+      # put the certificate in a keychain of its own for the build, where codesign finds it by name
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      GROVE_SIGN_IDENTITY: Grove Self-Signed
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
