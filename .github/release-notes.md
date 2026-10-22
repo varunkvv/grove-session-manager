@@ -1,3 +1,19 @@
+## 0.25
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.25 lets you make the conversation's text
+bigger, or smaller.
+
+New:
+
+- **Text size** in Settings, from 90% to 150%. it grows everything you read and write in a conversation, together:
+  Claude's answers, your prompts, code, thinking, steps and their commands, the cards that ask you something and the
+  message box. in a chat window, its file viewer and an agent's transcript, and in the main window's session panel
+- ⌘+ and ⌘- make it a step bigger or smaller from any Grove window, and ⌘0 puts it back to 100%. every open window
+  follows at once, and keeps the place you were reading
+- the window's own controls keep their size: headers, the toolbar under the message box, menus, lists and dialogs. so
+  do images and diagrams
+- the conversation's column widens with the text, so a line holds about as many words as before
+
 ## 0.24
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.24 makes needs you predictable: a session
