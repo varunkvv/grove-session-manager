@@ -37,6 +37,14 @@ Fixed since 0.24.45:
 - a message that waited until the turn ended stays until it runs as the next turn
 - a reply from the session card while Claude works shows on the card as queued, then taken
 
+New since 0.24.46:
+
+- videos (mp4, mov, m4v, webm) open in a chat window's file viewer, to play and seek there. before, the viewer could
+  not show them
+- a click on an image bigger than the viewer shows it at full size, scrolling both ways. a second click fits it again
+- **Open** in the viewer hands an image or a video to the app your Mac uses for it: Preview and QuickTime, unless you
+  picked others
+
 ## 0.23
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.23 adds a toy you have to switch on:
