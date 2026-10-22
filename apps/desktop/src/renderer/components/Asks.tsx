@@ -156,7 +156,7 @@ export function QuestionCard({
                 data-testid="ask-tab"
                 onClick={() => go(i)}
                 className={cx(
-                  "fade inline-flex h-6 items-center gap-1 rounded-md px-2 text-sm",
+                  "fade inline-flex min-h-6 items-center gap-1 rounded-md px-2 text-sm",
                   i === at ? "bg-canvas text-fg" : "text-fg-3 hover:text-fg",
                 )}
               >
@@ -171,7 +171,7 @@ export function QuestionCard({
               data-testid="ask-tab-submit"
               onClick={() => go(qs.length)}
               className={cx(
-                "fade inline-flex h-6 items-center rounded-md px-2 text-sm",
+                "fade inline-flex min-h-6 items-center rounded-md px-2 text-sm",
                 review ? "bg-canvas text-fg" : "text-fg-3 hover:text-fg",
               )}
             >
@@ -252,7 +252,9 @@ export function QuestionCard({
             <dl className="space-y-1.5">
               {qs.map((x, i) => (
                 <div key={x.question} className="flex gap-3">
-                  <dt className="w-24 shrink-0 truncate text-sm text-fg-3">{chip(x, i)}</dt>
+                  <dt className="w-[calc(6rem*var(--text-scale,1))] shrink-0 truncate text-sm text-fg-3">
+                    {chip(x, i)}
+                  </dt>
                   <dd
                     className={cx(
                       "selectable min-w-0 break-words",

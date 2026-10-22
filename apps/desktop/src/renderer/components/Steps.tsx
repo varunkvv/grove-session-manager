@@ -80,7 +80,13 @@ function Step({ step, going }: { step: WorkStep; going: boolean }) {
       data-testid="step"
       data-failed={step.failed ? "" : undefined}
     >
-      <span className={cx("w-20 shrink-0 truncate", step.failed ? "text-danger" : "text-fg-3")}>
+      {/* a column of tool names: as wide as the words in it */}
+      <span
+        className={cx(
+          "w-[calc(5rem*var(--text-scale,1))] shrink-0 truncate",
+          step.failed ? "text-danger" : "text-fg-3",
+        )}
+      >
         {toolLabel(step.name)}
       </span>
       <Mono className="min-w-0 flex-1 truncate text-fg-4" title={step.target}>

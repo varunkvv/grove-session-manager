@@ -192,7 +192,7 @@ export function AgentViewer({
           <Icon name="x" size={12} />
         </IconButton>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="reading min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {turn === undefined && <Spinner />}
         {turn === null && <p className={QUIET}>Its transcript is not there yet.</p>}
         {turn && <Turn turn={turn} last working={running} detail stepsOpen who="Asked" />}

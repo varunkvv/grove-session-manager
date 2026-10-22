@@ -847,34 +847,37 @@ export function SessionPanel({
           atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
         }}
       >
-        {chat && <SessionCard session={session} talk={talk} editor={editor} />}
-        {!chat && talk === null && (
-          <p className={QUIET} data-testid="panel-gone">
-            This session's transcript is gone. Claude Code deletes one after 30 days.
-          </p>
-        )}
-        {!chat && !!talk?.older && (
-          <p className={`${QUIET} mb-6`} data-testid="turns-older">
-            {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {editor}.
-          </p>
-        )}
-        {!chat &&
-          talk?.items.map((item, i) =>
-            item.kind === "compact" ? (
-              // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-              <p key={talk.older + i} className={`${QUIET} mt-6`} data-testid="turn-compact">
-                Compacted: what came before was summarised.
-              </p>
-            ) : (
-              <Turn
-                // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
-                key={talk.older + i}
-                turn={item}
-                last={i === talk.items.length - 1}
-                working={state === "working"}
-              />
-            ),
+        {/* what is read grows with the text size. Dismiss is the panel's own button, and stays */}
+        <div className="reading">
+          {chat && <SessionCard session={session} talk={talk} editor={editor} />}
+          {!chat && talk === null && (
+            <p className={QUIET} data-testid="panel-gone">
+              This session's transcript is gone. Claude Code deletes one after 30 days.
+            </p>
           )}
+          {!chat && !!talk?.older && (
+            <p className={`${QUIET} mb-6`} data-testid="turns-older">
+              {talk.older} older {talk.older === 1 ? "turn is" : "turns are"} in {editor}.
+            </p>
+          )}
+          {!chat &&
+            talk?.items.map((item, i) =>
+              item.kind === "compact" ? (
+                // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+                <p key={talk.older + i} className={`${QUIET} mt-6`} data-testid="turn-compact">
+                  Compacted: what came before was summarised.
+                </p>
+              ) : (
+                <Turn
+                  // biome-ignore lint/suspicious/noArrayIndexKey: a transcript only grows, so a turn's number in it is its key
+                  key={talk.older + i}
+                  turn={item}
+                  last={i === talk.items.length - 1}
+                  working={state === "working"}
+                />
+              ),
+            )}
+        </div>
         {row && (
           <Button
             size="sm"

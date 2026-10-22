@@ -62,7 +62,8 @@ import {
 const api = () => window.grove;
 
 /** the reading column, and the composer under it at the same width */
-const COLUMN = "mx-auto w-full max-w-[760px] px-6";
+/** the reading column. it widens with the text size, so a line keeps about as many characters */
+const COLUMN = "mx-auto w-full max-w-[calc(760px*var(--reading-scale))] px-6";
 
 /** grove's caps on what crosses into main (main holds them too): see ATTACH in services/chat.ts */
 const CAP = { image: 20 * 1024 * 1024, pdf: 10 * 1024 * 1024, text: 512 * 1024, files: 10 };
@@ -306,7 +307,8 @@ function Note({ note }: { note: ChatNote }) {
       className="mt-2 flex items-start gap-1.5 text-sm text-fg-4"
       data-testid={`chat-note-${note.kind}`}
     >
-      <span className="flex h-[18px] items-center">
+      {/* as tall as the first line, at any text size */}
+      <span className="flex h-[var(--text-sm--line-height)] items-center">
         <Icon name={note.kind === "denied" ? "x" : "warning"} size={10} />
       </span>
       <span className="selectable min-w-0 break-words">{note.text}</span>
@@ -1318,7 +1320,7 @@ export function ChatApp() {
           <div className="flex min-w-0 flex-1 flex-col">
             <div
               ref={scroller}
-              className="min-h-0 flex-1 overflow-y-auto"
+              className="reading min-h-0 flex-1 overflow-y-auto"
               data-testid="conversation"
               onScroll={(e) => {
                 const el = e.currentTarget;
@@ -1391,7 +1393,7 @@ export function ChatApp() {
                     className="group/side mt-4 border-l border-line pl-3"
                     data-testid="chat-side"
                   >
-                    <h3 className="flex h-6 items-center gap-1 text-sm text-fg-4">
+                    <h3 className="flex min-h-6 items-center gap-1 text-sm text-fg-4">
                       <span className="min-w-0 truncate">Asked on the side: {side.q}</span>
                       <IconButton
                         label="Put it away"
@@ -1504,7 +1506,7 @@ export function ChatApp() {
                       value={draft}
                       placeholder={running ? "Queue a message…" : "Message Claude…"}
                       data-testid="composer"
-                      className="no-drag block max-h-[40vh] min-h-9 w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
+                      className="reading no-drag block max-h-[40vh] min-h-9 w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-1 text-body text-fg placeholder:text-fg-4 [field-sizing:content]"
                       data-composer
                       onChange={(e) => {
                         // typing makes it a draft of its own: the next up starts from the newest

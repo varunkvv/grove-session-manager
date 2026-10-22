@@ -198,10 +198,15 @@ const VARIANTS: Record<ButtonVariant, string> = {
   quiet: "text-fg-3 enabled:hover:bg-raised enabled:hover:text-fg",
   link: "font-medium text-accent enabled:hover:underline focus-visible:underline",
 };
+/**
+ * in a conversation the words grow with the text size, and the button with them: there its height
+ * is a minimum. anywhere else it is fixed, as it always was (a min-height on the Latest button, over
+ * the conversation, moved a pixel of the composer at 100%)
+ */
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-6 gap-1.5 px-2 text-sm",
-  md: "h-7 gap-1.5 px-3 text-body",
-  lg: "h-8 gap-1.5 px-3 text-body",
+  sm: "h-6 in-[.reading]:h-auto in-[.reading]:min-h-6 gap-1.5 px-2 text-sm",
+  md: "h-7 in-[.reading]:h-auto in-[.reading]:min-h-7 gap-1.5 px-3 text-body",
+  lg: "h-8 in-[.reading]:h-auto in-[.reading]:min-h-8 gap-1.5 px-3 text-body",
 };
 
 export function Button({
@@ -611,7 +616,7 @@ export function Field({
 }
 
 export const inputClass =
-  "no-drag h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4";
+  "no-drag min-h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-body text-fg placeholder:text-fg-4";
 
 /**
  * a select the way the other fields look. `appearance: none` takes the platform's arrow away, and
@@ -1324,13 +1329,17 @@ export function RecapBlock({ lines, goal = true }: { lines: Recap; goal?: boolea
   return (
     <dl
       data-testid="recap"
-      className="selectable space-y-1.5 rounded-lg bg-accent-soft px-3 py-2.5 @md:px-4 @md:py-3"
+      // the recap is read: it grows with the text size, its label column with it
+      className="reading selectable space-y-1.5 rounded-lg bg-accent-soft px-3 py-2.5 @md:px-4 @md:py-3"
     >
       {/* a session's description says what it is for, and is not written again every turn */}
       {RECAP_ROWS.filter(([key]) => goal || key !== "goal").map(([key, label]) => (
         // the label runs into its line in a narrow panel, where every row of text counts, and
         // has a column of its own once there is room
-        <div key={key} className="@md:grid @md:grid-cols-[72px_1fr] @md:gap-x-3">
+        <div
+          key={key}
+          className="@md:grid @md:grid-cols-[calc(72px*var(--text-scale,1))_1fr] @md:gap-x-3"
+        >
           <dt
             className={cx(
               "mr-2 inline text-sm font-medium @md:mr-0 @md:block",
@@ -1472,7 +1481,8 @@ export function CheckBox({ checked }: { checked: boolean }) {
     <span
       aria-hidden="true"
       className={cx(
-        "mt-[3px] flex size-3.5 shrink-0 items-center justify-center rounded-sm border",
+        // in the middle of the first line, at any text size
+        "mt-[calc((var(--text-body--line-height)_-_14px)/2)] flex size-3.5 shrink-0 items-center justify-center rounded-sm border",
         checked ? "border-accent-line bg-accent-soft text-accent" : "border-line-strong",
       )}
     >

@@ -212,7 +212,7 @@ export function Viewer({
         </IconButton>
       </div>
       {diff ? (
-        <div className="min-h-0 flex-1 overflow-auto p-4" data-testid="viewer-diff">
+        <div className="reading min-h-0 flex-1 overflow-auto p-4" data-testid="viewer-diff">
           <ChangeDiff file={file} v={v} />
         </div>
       ) : kind === "html" ? (
@@ -279,14 +279,14 @@ function TextFile({ file, v }: { file: string; v: number }) {
   if (fileKind(file) === "markdown" && scope) {
     return (
       <ChatScopeContext.Provider value={{ ...scope, base: dirOf(file) }}>
-        <div data-testid="viewer-text">
+        <div className="reading" data-testid="viewer-text">
           <Markdown text={got.text} className="md-full" />
         </div>
       </ChatScopeContext.Provider>
     );
   }
   return (
-    <pre className="selectable font-mono text-sm text-fg-2" data-testid="viewer-text">
+    <pre className="reading selectable font-mono text-sm text-fg-2" data-testid="viewer-text">
       <Highlighted lang={file.slice(file.lastIndexOf(".") + 1)} code={got.text} />
     </pre>
   );
