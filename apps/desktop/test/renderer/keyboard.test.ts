@@ -28,6 +28,20 @@ const cmd = (k: string, o: Partial<KeyInput> = {}) => key(k, { meta: true, ...o 
 const search = { view: "sessions", inText: true, inSearch: true } as const;
 
 describe("what a key means", () => {
+  it("⌘= and ⌘+ make the text bigger, ⌘- smaller, ⌘0 its default, from a field too, not under a dialog", () => {
+    const size = (dir: number) => ({ type: "text-size", dir });
+    expect(interpret(ctx(), cmd("="))).toEqual(size(1));
+    expect(interpret(ctx(), cmd("+", { shift: true }))).toEqual(size(1));
+    expect(interpret(ctx(), cmd("-"))).toEqual(size(-1));
+    expect(interpret(ctx(), cmd("0"))).toEqual(size(0));
+    expect(interpret(ctx(search), cmd("="))).toEqual(size(1));
+    expect(interpret(ctx({ overlay: true }), cmd("="))).toBeNull();
+    // without cmd, or with another modifier, the key is the field's or the system's
+    expect(interpret(ctx(), key("="))).toBeNull();
+    expect(interpret(ctx(), cmd("-", { alt: true }))).toBeNull();
+    expect(interpret(ctx(), cmd("0", { ctrl: true }))).toBeNull();
+  });
+
   it("nothing while an IME composes", () => {
     expect(interpret(ctx(), key("Enter", { composing: true }))).toBeNull();
     expect(interpret(ctx({ overlay: true }), key("Escape", { composing: true }))).toBeNull();

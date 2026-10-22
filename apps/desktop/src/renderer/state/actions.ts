@@ -496,6 +496,9 @@ export function perform(intent: Intent): void {
     case "refresh":
       void refresh();
       break;
+    case "text-size":
+      void window.grove.textSize(intent.dir);
+      break;
     case "settings":
       s.set({ dialog: { kind: "settings" } });
       break;

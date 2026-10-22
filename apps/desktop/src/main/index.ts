@@ -13,7 +13,9 @@ import {
   removeRecordRuntime,
   resolveEditor,
   type Settings,
+  saveSettings,
   sessionsRegistryDir,
+  stepTextScale,
   wantsModel,
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
@@ -595,7 +597,30 @@ async function start(): Promise<void> {
         if (from && id !== "new-chat") showMain();
         pusher.send("menu:command", { id });
       },
+      textSize: (dir) => void textSize(dir).catch((e) => log.warn("text size:", e)),
     });
+
+  let sizing = Promise.resolve();
+  /**
+   * the Text size setting a step bigger, smaller or back to 100, saved as Settings would save it.
+   * every window follows, and the main window's store hears of it. at either end nothing happens.
+   * one after another, so a held key never skips a step
+   */
+  const textSize = (dir: -1 | 0 | 1): Promise<void> => {
+    const step = async () => {
+      const now = settings.textScale ?? 100;
+      const next = stepTextScale(now, dir);
+      if (next === now) return;
+      const saved = await saveSettings(appEnv.appRoot, {
+        textScale: next === 100 ? undefined : next,
+      });
+      applySettings(saved);
+      pusher.send("settings:changed", saved);
+    };
+    const done = sizing.then(step);
+    sizing = done.catch(() => {});
+    return done;
+  };
 
   await electron.app.whenReady();
   // this is what macOS draws the window frame and the native menus from. the page has its own
@@ -668,6 +693,7 @@ async function start(): Promise<void> {
     projectsDir,
     settings: () => settings,
     setSettings: applySettings,
+    textSize,
     sessions,
     live,
     combos,

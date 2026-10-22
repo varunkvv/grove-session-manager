@@ -26,7 +26,21 @@ export type Intent =
   | { type: "settings" }
   | { type: "focus-search" }
   /** grove chat on: R, the session card's reply box */
-  | { type: "focus-reply" };
+  | { type: "focus-reply" }
+  /** ⌘+ / ⌘- / ⌘0: the Text size setting a step bigger, smaller or back to 100 */
+  | { type: "text-size"; dir: -1 | 0 | 1 };
+
+/**
+ * the text size keys, with cmd and nothing but shift: = and + bigger (+ is shift-= on most
+ * keyboards, its own key on some), - smaller, 0 back to 100. the main window and every chat window
+ * take them, so the menu only shows them
+ */
+export function textSizeKey(e: Pick<KeyInput, "key" | "meta" | "alt" | "ctrl">): -1 | 0 | 1 | null {
+  if (!e.meta || e.alt || e.ctrl) return null;
+  if (e.key === "=" || e.key === "+") return 1;
+  if (e.key === "-") return -1;
+  return e.key === "0" ? 0 : null;
+}
 
 export interface KeyContext {
   /** a dialog or the palette is open. they own their keys. */
@@ -111,6 +125,9 @@ export function interpret(ctx: KeyContext, e: KeyInput): Intent | null {
     return ctx.canGoBack ? { type: "back" } : null;
   }
   if (ctx.overlay) return null;
+
+  const dir = textSizeKey(e);
+  if (dir !== null) return { type: "text-size", dir };
 
   if (e.meta && !e.alt && !e.ctrl) {
     // cmd-shift-A puts the project on screen away, or brings it back. cmd-shift-Enter is the

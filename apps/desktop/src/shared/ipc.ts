@@ -586,6 +586,8 @@ export interface Api {
   editorStatus(refresh?: boolean): Promise<EditorStatus>;
   installCompanion(): Promise<Outcome>;
   updateSettings(patch: Partial<AppSettings>): Promise<Outcome<AppSettings>>;
+  /** ⌘+ / ⌘- / ⌘0 in any window: the Text size setting a step bigger, smaller or back to 100 */
+  textSize(dir: -1 | 0 | 1): Promise<Outcome>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
   openExternal(url: string): Promise<Outcome>;
   reportCspViolation(detail: string): Promise<void>;
@@ -630,6 +632,7 @@ export const INVOKE_CHANNELS = [
   "editorStatus",
   "installCompanion",
   "updateSettings",
+  "textSize",
   "openExternal",
   "reportCspViolation",
 ] as const satisfies ReadonlyArray<keyof Api>;

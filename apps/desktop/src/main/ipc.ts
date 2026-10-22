@@ -95,6 +95,8 @@ export interface Deps {
   projectsDir: string;
   settings: () => Settings;
   setSettings: (s: Settings) => void;
+  /** the Text size setting a step bigger, smaller or back to 100, saved, every window following */
+  textSize: (dir: -1 | 0 | 1) => Promise<void>;
   sessions: SessionService;
   live: LiveService;
   combos: ComboService;
@@ -792,6 +794,11 @@ function buildHandlers(deps: Deps): Handlers {
       editor.applySettings(next);
       pusher.send("editor:status", await editor.status(true));
       return toAppSettings(next);
+    },
+
+    async textSize(dir) {
+      if (dir !== -1 && dir !== 0 && dir !== 1) throw new AppError("bad-step", "Not a step.");
+      await deps.textSize(dir);
     },
 
     async openExternal(url) {

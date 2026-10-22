@@ -18,6 +18,7 @@ import type {
 import { attachKind, bytes } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
+import { textSizeKey } from "../logic/keyboard.ts";
 import { queuedRows, same } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
@@ -504,6 +505,13 @@ export function ChatApp() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing || e.defaultPrevented) return;
+      // ⌘+ / ⌘- / ⌘0: the app's text size, which main saves and every window follows
+      const dir = textSizeKey({ key: e.key, meta: e.metaKey, alt: e.altKey, ctrl: e.ctrlKey });
+      if (dir !== null) {
+        e.preventDefault();
+        void api().textSize(dir);
+        return;
+      }
       const hit = actionsRef.current.find((a) => a.keys && !a.off && pressed(e, a.keys));
       if (hit) {
         e.preventDefault();
@@ -1121,6 +1129,28 @@ export function ChatApp() {
       label: "Agents",
       keys: { key: "g", meta: true, shift: true },
       run: () => toggle("agents"),
+    },
+    // the window takes these keys itself (above), as the main window does: shown, not bound here
+    {
+      id: "text-bigger",
+      group: "View",
+      label: "Make text bigger",
+      shown: "⌘+",
+      run: () => void api().textSize(1),
+    },
+    {
+      id: "text-smaller",
+      group: "View",
+      label: "Make text smaller",
+      shown: "⌘-",
+      run: () => void api().textSize(-1),
+    },
+    {
+      id: "text-actual",
+      group: "View",
+      label: "Actual text size",
+      shown: "⌘0",
+      run: () => void api().textSize(0),
     },
     {
       id: "palette",

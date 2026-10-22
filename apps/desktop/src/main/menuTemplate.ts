@@ -12,6 +12,8 @@ export interface MenuTemplateOptions {
   /** grove chat is on: cmd-N is a new session in it, and a new project moves to cmd-shift-N */
   chat?: boolean;
   send: (id: MenuCommandId) => void;
+  /** the Text size setting a step bigger (1), smaller (-1) or back to 100 (0): main saves it */
+  textSize: (dir: -1 | 0 | 1) => void;
 }
 
 /**
@@ -26,6 +28,15 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
     extra: Partial<MenuItemConstructorOptions> = {},
   ): MenuItemConstructorOptions => ({ label, accelerator, click: () => o.send(id), ...extra });
   const separator: MenuItemConstructorOptions = { type: "separator" };
+  // the keys are the pages' own, as cmd-K is, in the main window and every chat window: ⌘= and ⌘+
+  // both, which one menu key can't be. a click here is main's
+  const textSize = (label: string, accelerator: string, dir: -1 | 0 | 1) =>
+    ({
+      label,
+      accelerator,
+      registerAccelerator: false,
+      click: () => o.textSize(dir),
+    }) satisfies MenuItemConstructorOptions;
   const settings = command("Settings…", "CmdOrCtrl+,", "settings");
 
   const appMenu: MenuItemConstructorOptions = {
@@ -92,6 +103,11 @@ export function buildMenuTemplate(o: MenuTemplateOptions): MenuItemConstructorOp
       // both acted on would open the palette and close it again
       command("Go to…", "CmdOrCtrl+K", "palette", { registerAccelerator: false }),
       command("Refresh", "CmdOrCtrl+R", "refresh"),
+      separator,
+      // safari's words for its text-only zoom
+      textSize("Actual Size", "CmdOrCtrl+0", 0),
+      textSize("Make Text Bigger", "CmdOrCtrl+Plus", 1),
+      textSize("Make Text Smaller", "CmdOrCtrl+-", -1),
       ...(o.isDev
         ? [
             separator,

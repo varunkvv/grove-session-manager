@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { buildMenuTemplate, type TrayView, trayTemplate } from "../../src/main/menuTemplate.ts";
 import type { InboxRowView, LandingTarget, MenuCommandId } from "../../src/shared/ipc.ts";
 
-function items(sent: MenuCommandId[] = [], chat = false): MenuItemConstructorOptions[] {
+function items(
+  sent: MenuCommandId[] = [],
+  chat = false,
+  sized: number[] = [],
+): MenuItemConstructorOptions[] {
   const out: MenuItemConstructorOptions[] = [];
   const walk = (list: MenuItemConstructorOptions[]) => {
     for (const item of list) {
@@ -19,6 +23,7 @@ function items(sent: MenuCommandId[] = [], chat = false): MenuItemConstructorOpt
       isMac: true,
       chat,
       send: (id) => sent.push(id),
+      textSize: (dir) => sized.push(dir),
     }),
   );
   return out;
@@ -45,7 +50,8 @@ describe("the menu", () => {
 
   it("every command, with its key", () => {
     const sent: MenuCommandId[] = [];
-    const commands = items(sent).filter((i) => i.click);
+    const sized: number[] = [];
+    const commands = items(sent, false, sized).filter((i) => i.click);
     expect(commands.map((i) => [i.label, i.accelerator])).toEqual([
       ["Settings…", "CmdOrCtrl+,"],
       ["New Project…", "CmdOrCtrl+N"],
@@ -58,6 +64,9 @@ describe("the menu", () => {
       ["Usage", "CmdOrCtrl+3"],
       ["Go to…", "CmdOrCtrl+K"],
       ["Refresh", "CmdOrCtrl+R"],
+      ["Actual Size", "CmdOrCtrl+0"],
+      ["Make Text Bigger", "CmdOrCtrl+Plus"],
+      ["Make Text Smaller", "CmdOrCtrl+-"],
     ]);
     for (const i of commands) (i.click as () => void)();
     expect(sent).toEqual([
@@ -73,6 +82,8 @@ describe("the menu", () => {
       "palette",
       "refresh",
     ]);
+    // a click on a text size item is main's: it is never sent to the page
+    expect(sized).toEqual([0, 1, -1]);
   });
 
   it("shows cmd-K but leaves the key to the page, so the palette opens while a field has focus", () => {
@@ -81,7 +92,10 @@ describe("the menu", () => {
     // and cmd-shift-A: a toggle the menu and the page both acted on would undo itself
     const archive = items().find((i) => i.label === "Archive or Unarchive Project");
     expect(archive?.registerAccelerator).toBe(false);
-    expect(items().filter((i) => i.registerAccelerator === false)).toHaveLength(2);
+    // and the text size: the pages take ⌘= and ⌘+ both, which one menu key can't be
+    const sizes = items().filter((i) => /Text|Actual/.test(String(i.label)));
+    expect(sizes.map((i) => i.registerAccelerator)).toEqual([false, false, false]);
+    expect(items().filter((i) => i.registerAccelerator === false)).toHaveLength(5);
   });
 });
 
