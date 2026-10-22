@@ -843,9 +843,10 @@ pnpm app:package
 open apps/desktop/dist
 ```
 
-It is ad-hoc signed, which is enough to run on the machine that built it. A DMG that travels through
-a browser, Slack or AirDrop is quarantined by macOS, and needs
-`xattr -dr com.apple.quarantine "/Applications/Grove.app"` once.
+Every release is signed with the same self-signed certificate, so the screen recording and microphone permissions you
+give Grove survive its updates. macOS only trusts an Apple Developer ID, so a DMG that travels through a browser, Slack
+or AirDrop is still quarantined, and needs `xattr -dr com.apple.quarantine "/Applications/Grove.app"` once. A build of
+your own is ad-hoc signed, which is enough to run on the machine that built it.
 
 It follows the macOS appearance, light or dark, and switches with it. **Appearance** in Settings pins it to one.
 
@@ -885,7 +886,8 @@ It follows the macOS appearance, light or dark, and switches with it. **Appearan
 - **a session is missing from `⌘K`** - Claude Code deletes transcripts after 30 days (`cleanupPeriodDays`). the VS Code
   panel also archives sessions after 14 days idle (`claudeCode.archiveInactiveSessions`). those still show here
 - **an agent says the grove tools are gone** - it was open across the upgrade from 0.10. restart it
-- **the app does not open from a download** - it is ad-hoc signed. `xattr -dr com.apple.quarantine "Grove.app"`
+- **the app does not open from a download** - its certificate is self-signed, and macOS only trusts an Apple Developer
+  ID. `xattr -dr com.apple.quarantine "Grove.app"`
 - **landing opened a fresh conversation** - the companion extension is not installed in that editor, or, in Zed, the
   Grove agent is not registered (the app shows a banner and can do either), or the transcript expired
 - **Zed opened the project but not on the session** - the agent Zed last used is not Claude (with Grove), so the panel

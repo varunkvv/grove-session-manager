@@ -45,6 +45,13 @@ New since 0.24.46:
 - **Open** in the viewer hands an image or a video to the app your Mac uses for it: Preview and QuickTime, unless you
   picked others
 
+Fixed since 0.24.47:
+
+- macOS keeps Grove's screen recording and microphone permissions across updates. before, each update dropped them
+  while their switches in System Settings still showed on, so a session inside Grove could not screenshot or record
+- once, after this update: switch Grove off and on under Screen & System Audio Recording and under Microphone (or
+  remove it with - and add it back), then quit Grove and open it again. from then on it sticks
+
 ## 0.23
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.23 adds a toy you have to switch on:
