@@ -19,6 +19,7 @@ import {
   ATTACH,
   ChatHost,
   CLEARING,
+  CLEARING_REFUSED,
   clearingEnv,
   dialogOf,
   hostEnv,
@@ -26,6 +27,7 @@ import {
   parseAnswer,
   parseAttachments,
   REAP_MS,
+  refusedClearing,
   retryLine,
 } from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
@@ -1228,6 +1230,29 @@ describe("grove chat's host", () => {
     }
   });
 
+  it("knows a turn the api refused for the extra body from any other failed one", () => {
+    const result = (o: Record<string, unknown>) => ({ type: "result", subtype: "success", ...o });
+    const extra = "API Error: 400 context_management: Extra inputs are not permitted";
+    const order =
+      "API Error: 400 context_management: `clear_thinking_20251015` must be the first strategy in `context_management.edits` when provided";
+    expect(refusedClearing(result({ is_error: true, api_error_status: 400, result: extra }))).toBe(
+      true,
+    );
+    // without the status field, its text says it
+    expect(refusedClearing(result({ is_error: true, result: order }))).toBe(true);
+    for (const other of [
+      result({
+        is_error: true,
+        api_error_status: 400,
+        result: "API Error: 400 prompt is too long",
+      }),
+      result({ is_error: true, api_error_status: 529, result: "API Error: 529 Overloaded" }),
+      result({ is_error: false, result: "context_management is a thing" }),
+      { type: "assistant", is_error: true, result: extra },
+    ])
+      expect(refusedClearing(other), JSON.stringify(other)).toBe(false);
+  });
+
   it("passes nothing of a parent claude code session on", () => {
     expect(
       hostEnv({
@@ -1483,6 +1508,43 @@ describe("grove chat's host", () => {
     // the copy takes a moment, the second has nothing to copy: it still goes second
     const sent = await until(() => userContents(s).length >= 2 && userContents(s), "both sends");
     expect(sent.map((c) => c.at(-1)?.text)).toEqual([HELLO, AFTER]);
+  });
+
+  it("starts claude again without clearing when the api refuses it, says so once, and leaves it off", async () => {
+    const s = setup(2, false, undefined, undefined, { GROVE_FAKE_CHAT_REFUSE_EXTRA_BODY: "1" });
+    // a session grove just made: its first claude starts it, the second resumes it
+    const where = { ...s.where, fresh: true };
+    await s.host.send(SESSION, where, HELLO);
+    await until(() => s.host.status(SESSION).error === CLEARING_REFUSED, "the refusal said");
+    expect(s.host.status(SESSION).live).toBe(true);
+    const starts = s.log().filter((l) => l.argv) as Array<{
+      argv: string[];
+      env: Record<string, string>;
+    }>;
+    expect(starts).toHaveLength(2);
+    expect(starts[0].env.extraBody).toBeDefined();
+    expect(starts[0].argv).toContain(`--session-id=${SESSION}`);
+    expect(starts[1].env.extraBody).toBeUndefined();
+    expect(starts[1].argv).toContain(`--resume=${SESSION}`);
+    // the turn that failed is in the transcript as the api error it was: its "Try again" re-sends it
+    const lines = readFileSync(s.transcript, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    expect(lines.filter((l) => l.isApiErrorMessage)).toHaveLength(1);
+    // tried again, it runs, and the line is gone with the turn it was about
+    await s.host.send(SESSION, s.where, HELLO);
+    await turnEnded(s);
+    expect(readFileSync(s.transcript, "utf8")).toContain("hello from the spike");
+    expect(s.host.status(SESSION).error).toBeUndefined();
+    // another chat of this grove starts without it: it would only be refused again
+    const other = "22222222-3333-4444-8555-666666666666";
+    await s.host.warm(other, s.where);
+    const third = s
+      .log()
+      .filter((l) => l.argv)
+      .at(-1) as { env: Record<string, string> };
+    expect(third.env.extraBody).toBeUndefined();
   });
 
   it("a send claude could not start for is not sent again with the next one", async () => {

@@ -442,6 +442,19 @@ async function settingsEnv(file: string | undefined): Promise<Record<string, unk
   }
 }
 
+/** a turn the api refused for the extra body: `API Error: 400 context_management: ...` */
+export function refusedClearing(m: { type: string }): boolean {
+  if (m.type !== "result") return false;
+  const r = m as { is_error?: boolean; result?: unknown; api_error_status?: unknown };
+  if (r.is_error !== true || typeof r.result !== "string") return false;
+  const status = r.api_error_status ?? /^API Error: (\d+)/.exec(r.result)?.[1] ?? "";
+  return String(status) === "400" && r.result.includes("context_management");
+}
+
+/** the chat's error line once claude was started again without clearing */
+export const CLEARING_REFUSED =
+  "The API refused clearing old reads here, so Claude restarted without it. Try that message again.";
+
 /** the pill's modes. bypass and the classifier modes only when the session started in one */
 export function modesFor(start: ChatMode | undefined): ChatMode[] {
   const modes: ChatMode[] = ["default", "acceptEdits", "plan"];
@@ -678,6 +691,8 @@ interface Hosted {
   terminalOnly?: Set<string>;
   /** the send under way: its files are put on disk before it goes, and the next waits for it */
   sending?: Promise<void>;
+  /** this claude was started with clearingEnv's extra body */
+  clearing?: boolean;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -752,6 +767,12 @@ export class ChatHost {
   private reaper: NodeJS.Timeout;
   /** whether pdftoppm is on claude's PATH, looked up once: a Read of a pdf's pages needs it */
   private pdfPages?: Promise<boolean>;
+  /**
+   * the api refused the clearing once: no claude started from here on gets it, until grove starts
+   * again. a setup that refuses it (a project's settings, a gateway) would refuse every chat's
+   * first message otherwise
+   */
+  private clearingOff = false;
 
   constructor(o: ChatHostOptions) {
     this.o = o;
@@ -1244,7 +1265,8 @@ export class ChatHost {
         // claude is told of it at launch: a folder added later has to be under one it knows
         mkdir(this.o.uploads, { recursive: true }),
       ]);
-      const clearing = clearingEnv(env, settings);
+      const clearing = this.clearingOff ? {} : clearingEnv(env, settings);
+      h.clearing = clearing.CLAUDE_CODE_EXTRA_BODY !== undefined;
       q = query({
         prompt: h.prompts,
         options: {
@@ -1527,9 +1549,26 @@ export class ChatHost {
         this.o.onChange?.();
         for (const run of h.afterTurn.splice(0)) run();
         void this.contextUsage(h);
+        if (h.clearing && refusedClearing(m)) void this.unclear(h);
         return;
       }
     }
+  }
+
+  /**
+   * the api refused the extra body, and refuses every request of this claude the same way: it is
+   * started again without it, on the same session. the turn that failed has its "Try again"
+   */
+  private async unclear(h: Hosted): Promise<void> {
+    this.clearingOff = true;
+    log.warn(`chat ${h.id.slice(0, 8)}: the api refused clearing old reads, restarting without it`);
+    h.q?.close();
+    await h.ended;
+    // a session grove made has its transcript now: the failed turn is in it, so it resumes
+    h.where = { ...h.where, fresh: false };
+    await this.warm(h.id, h.where).catch(() => {});
+    // after the start: it clears the error line
+    if (h.status.live) this.set(h, { error: CLEARING_REFUSED });
   }
 
   /**
@@ -1678,7 +1717,12 @@ export class ChatHost {
 
   private turnStarted(h: Hosted): void {
     if (h.status.running) return;
-    this.set(h, { running: true, since: this.now() });
+    this.set(h, {
+      running: true,
+      since: this.now(),
+      // said once, for the turn that failed
+      ...(h.status.error === CLEARING_REFUSED ? { error: undefined } : {}),
+    });
     this.o.onChange?.();
   }
 

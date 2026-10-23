@@ -14,7 +14,9 @@
 // get_context_usage says are in use), GROVE_FAKE_CHAT_FOLD (1: a message sent while a turn plays
 // is folded into it at the next tool result, as claude code does, instead of playing next),
 // GROVE_FAKE_CHAT_FOLD_MS (how long after its `started` the fold reaches the transcript),
-// GROVE_FAKE_CHAT_NEXT_MS (how long after a turn's end a message waiting for it starts)
+// GROVE_FAKE_CHAT_NEXT_MS (how long after a turn's end a message waiting for it starts),
+// GROVE_FAKE_CHAT_REFUSE_EXTRA_BODY (1: with CLAUDE_CODE_EXTRA_BODY set, every message fails as the
+// api fails it for a context_management it does not take, live 2026-10-22)
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -33,6 +35,7 @@ const TOOL_MS = Number(process.env.GROVE_FAKE_CHAT_TOOL_MS ?? 0);
 const FOLD = process.env.GROVE_FAKE_CHAT_FOLD === "1";
 const FOLD_MS = Number(process.env.GROVE_FAKE_CHAT_FOLD_MS ?? 0);
 const NEXT_MS = Number(process.env.GROVE_FAKE_CHAT_NEXT_MS ?? 0);
+const REFUSE = process.env.GROVE_FAKE_CHAT_REFUSE_EXTRA_BODY === "1" && !!process.env.CLAUDE_CODE_EXTRA_BODY;
 const note = (o) => LOG && fs.appendFileSync(LOG, `${JSON.stringify(o)}\n`);
 
 const DIR = process.env.GROVE_FAKE_CHAT_RECORDINGS || __dirname;
@@ -444,6 +447,43 @@ async function play(turn, folded) {
   }
 }
 
+/** a turn the api refused before it began, as claude 2.1.296 says it (a 400 on the first request) */
+async function refuse() {
+  const text = "API Error: 400 context_management: Extra inputs are not permitted";
+  const uuid = crypto.randomUUID();
+  const message = {
+    id: crypto.randomUUID(),
+    type: "message",
+    role: "assistant",
+    model: "<synthetic>",
+    content: [{ type: "text", text }],
+    stop_reason: "stop_sequence",
+    stop_sequence: "",
+    usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    context_management: null,
+  };
+  await sleep(DELAY);
+  out({ type: "assistant", message, parent_tool_use_id: null, session_id: sessionId, uuid, error: "unknown", is_api_error_message: true });
+  record("assistant", message, { uuid, isApiErrorMessage: true, error: "unknown", apiErrorStatus: 400 });
+  out({
+    type: "result",
+    subtype: "success",
+    is_error: true,
+    api_error_status: 400,
+    terminal_reason: "api_error",
+    duration_ms: 1,
+    duration_api_ms: 1,
+    num_turns: 1,
+    result: text,
+    session_id: sessionId,
+    total_cost_usd: 0,
+    usage: message.usage,
+    modelUsage: {},
+    permission_denials: [],
+    uuid: crypto.randomUUID(),
+  });
+}
+
 (async () => {
   for (;;) {
     const m = await next((x) => x.type === "user");
@@ -454,6 +494,11 @@ async function play(turn, folded) {
     life(m.uuid, "started");
     // the line keeps the uuid the host stamped, as claude code's does (recordings/d-atpath)
     record("user", m.message, m.uuid ? { uuid: m.uuid } : {});
+    if (REFUSE) {
+      await refuse();
+      life(m.uuid, "completed");
+      continue;
+    }
     const folded = [];
     await play(turns.find((t) => t.text === text) ?? turns[0], folded);
     // claude code says these either side of the turn's result: here after it
