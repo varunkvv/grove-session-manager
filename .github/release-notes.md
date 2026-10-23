@@ -12,7 +12,8 @@ New:
   send it no longer loses it
 - a file from the session's own folder goes as itself, so Claude reads the current version. it's a chip like any
   other file now, not an @ mention
-- Claude reads an attached file without asking, in every permission mode
+- Claude reads Grove's copy of a file without a permission prompt. if the copy fails, the file goes by its own path,
+  and in default mode Claude may ask to read it
 - no size caps on PDFs and text files any more. an image keeps its 20 MB, and over it goes by its path
 - a file pasted with nothing on disk behind it is saved into Grove's folder, instead of refused
 - a PDF or a text file in a message you type while Claude works reaches Claude now. before, Claude Code dropped it
