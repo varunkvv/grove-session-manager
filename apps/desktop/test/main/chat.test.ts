@@ -260,7 +260,7 @@ describe("grove chat's host", () => {
       checkpointing: "true",
       extraBody: expect.any(String),
     });
-    expect(JSON.parse(env.extraBody)).toEqual({
+    expect(JSON.parse(env.extraBody ?? "")).toEqual({
       context_management: {
         edits: [
           { type: "clear_thinking_20251015", keep: "all" },
@@ -1548,10 +1548,11 @@ describe("grove chat's host", () => {
       env: Record<string, string>;
     }>;
     expect(starts).toHaveLength(2);
-    expect(starts[0].env.extraBody).toBeDefined();
-    expect(starts[0].argv).toContain(`--session-id=${SESSION}`);
-    expect(starts[1].env.extraBody).toBeUndefined();
-    expect(starts[1].argv).toContain(`--resume=${SESSION}`);
+    const [first, second] = starts as [(typeof starts)[0], (typeof starts)[0]];
+    expect(first.env.extraBody).toBeDefined();
+    expect(first.argv).toContain(`--session-id=${SESSION}`);
+    expect(second.env.extraBody).toBeUndefined();
+    expect(second.argv).toContain(`--resume=${SESSION}`);
     // the turn that failed is in the transcript as the api error it was: its "Try again" re-sends it
     const lines = readFileSync(s.transcript, "utf8")
       .trim()
