@@ -1,3 +1,13 @@
+## 0.32
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.32 makes the glass stronger.
+
+New:
+
+- the sidebar and the top bar let more of the desktop through
+- a chat window's header is as much glass as the sidebar now: its project still shows in the line under it and the
+  mark beside the title
+
 ## 0.31
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.31 makes the glass from 0.30 easy to see,
