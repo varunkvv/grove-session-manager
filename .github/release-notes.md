@@ -1,3 +1,20 @@
+## 0.30
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.30 lets the desktop show through the main
+window's sidebar and top bar, the way finder's sidebar does.
+
+New:
+
+- the sidebar and the top bar are glass: macOS's sidebar material under your theme's own colour, so grove, rosé pine
+  and solarized each keep their tint
+- the top bar has a hairline of light along its top edge
+
+Keep in mind:
+
+- the sessions and chats beside them stay solid, so reading is unchanged
+- chat windows and the files / agents panels are unchanged
+- with reduce transparency on in macOS, both go solid again
+
 ## 0.29
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.29 says when a message in a grove chat
