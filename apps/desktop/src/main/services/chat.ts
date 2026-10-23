@@ -396,8 +396,10 @@ export function hostEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 export const CLEARING = { trigger: 150_000, keep: 20, atLeast: 20_000 };
 
-const isOn = (v: string | undefined): boolean =>
-  !!v && !["0", "false", "no", "off"].includes(v.trim().toLowerCase());
+const isOn = (v: unknown): boolean =>
+  typeof v === "string" &&
+  !!v.trim() &&
+  !["0", "false", "no", "off"].includes(v.trim().toLowerCase());
 
 /**
  * the env that has the api clear old reads, through claude code's CLAUDE_CODE_EXTRA_BODY. it
@@ -411,12 +413,13 @@ export function clearingEnv(
   settings: Record<string, unknown> = {},
   n = CLEARING,
 ): NodeJS.ProcessEnv {
-  const all = { ...settings, ...env } as Record<string, string | undefined>;
+  // claude code puts its settings' env over its own, as here
+  const all: Record<string, unknown> = { ...env, ...settings };
   if (all.CLAUDE_CODE_EXTRA_BODY !== undefined) return {};
   if (isOn(all.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)) return {};
   for (const k of ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"])
     if (isOn(all[k])) return {};
-  const base = all.ANTHROPIC_BASE_URL?.trim();
+  const base = typeof all.ANTHROPIC_BASE_URL === "string" ? all.ANTHROPIC_BASE_URL.trim() : "";
   if (base && !/^https:\/\/api\.anthropic\.com\/?$/.test(base)) return {};
   const edits = [
     { type: "clear_thinking_20251015", keep: "all" },
@@ -436,7 +439,13 @@ async function settingsEnv(file: string | undefined): Promise<Record<string, unk
   if (!file) return {};
   try {
     const env = JSON.parse(await readFile(file, "utf8"))?.env;
-    return env && typeof env === "object" ? env : {};
+    // a value someone typed as a number still counts, as claude code reads it
+    if (!env || typeof env !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(env).flatMap(([k, v]) =>
+        ["string", "number", "boolean"].includes(typeof v) ? [[k, String(v)]] : [],
+      ),
+    );
   } catch {
     return {};
   }

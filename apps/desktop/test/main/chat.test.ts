@@ -1228,6 +1228,32 @@ describe("grove chat's host", () => {
       // claude code's settings.json env counts as much as the process's
       expect(body({}, e), `settings ${JSON.stringify(e)}`).toBeUndefined();
     }
+    // its settings win over the process env, as in claude code
+    expect(
+      body(
+        { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "0" },
+        { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1" },
+      ),
+    ).toBeUndefined();
+    // a value of another type in the settings is not a crash
+    expect(body({}, { CLAUDE_CODE_USE_BEDROCK: 1, ANTHROPIC_BASE_URL: null })).toBeDefined();
+  });
+
+  it("reads claude code's settings.json env for it, a number typed there too, and still starts", async () => {
+    const s = setup();
+    // the fake claude's config folder: where its transcripts go
+    const settings = path.join(s.transcript.split("/projects/")[0] as string, "settings.json");
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        showThinkingSummaries: true,
+        env: { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1, X: { a: 1 } },
+      }),
+    );
+    await s.host.warm(SESSION, s.where);
+    expect(s.host.status(SESSION).live).toBe(true);
+    const { env } = s.log()[0] as { env: Record<string, string> };
+    expect(env.extraBody).toBeUndefined();
   });
 
   it("knows a turn the api refused for the extra body from any other failed one", () => {
