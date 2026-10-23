@@ -449,9 +449,10 @@ function Typed({ step, images }: { step: TypedStep; images?: boolean }) {
       <PromptBlock>
         <h3 className="text-sm font-medium text-fg-4">
           You, while it worked
-          {images && !!step.images && (
-            <span className="font-normal">
-              {` · ${step.images} ${step.images === 1 ? "image" : "images"}`}
+          {images && (!!step.images || !!step.files?.length) && (
+            <span className="font-normal" data-testid="typed-attached">
+              {step.images ? ` · ${step.images} ${step.images === 1 ? "image" : "images"}` : ""}
+              {step.files?.map((f) => ` · ${f}`).join("")}
             </span>
           )}
         </h3>

@@ -44,7 +44,7 @@ export interface Prompt {
   at: number;
   /** images pasted with it. counted, never decoded. */
   images?: number;
-  /** the names of the files attached to it as documents (a pdf, a text file) */
+  /** the names of the files attached to it: documents, and files sent by their path */
   files?: string[];
   /** it was typed in plan mode */
   plan?: boolean;
@@ -83,7 +83,15 @@ export type Mark =
    * something the person typed while it worked. Claude Code hands it over mid-turn. `uuid`: the one
    * the host sent it with (a probe: the attachment's `source_uuid` is the uuid on the sdk message)
    */
-  | { kind: "said"; step: number; at: number; text: string; images?: number; uuid?: string };
+  | {
+      kind: "said";
+      step: number;
+      at: number;
+      text: string;
+      images?: number;
+      files?: string[];
+      uuid?: string;
+    };
 
 export interface Turn {
   kind: "turn";
@@ -578,9 +586,12 @@ export class ConversationFold {
     if (!open) return;
     const text = typed(attachment.prompt);
     const images = imagesIn(attachment.prompt);
-    if (!text && images === 0) return;
+    // grove chat sends everything typed mid-turn by its path, images too
+    const files = filesIn(attachment.prompt);
+    if (!text && images === 0 && files.length === 0) return;
     // the prompt sent twice (a double submit): the second copy is not something else they said
-    if (open.turn.prompt?.kind === "human" && open.turn.prompt.text === text) return;
+    // (words only: two messages of only files are two)
+    if (text && open.turn.prompt?.kind === "human" && open.turn.prompt.text === text) return;
     const uuid = str(attachment.source_uuid);
     open.turn.marks.push({
       kind: "said",
@@ -588,6 +599,7 @@ export class ConversationFold {
       at,
       text,
       ...(images ? { images } : {}),
+      ...(files.length ? { files } : {}),
       ...(uuid ? { uuid } : {}),
     });
   }
@@ -765,7 +777,7 @@ export type StepView =
   | { kind: "thinking"; text: string; ms?: number }
   | { kind: "text"; text: string }
   /** the person's, typed while it worked. `uuid`: the one the host sent it with */
-  | { kind: "said"; text: string; images?: number; uuid?: string };
+  | { kind: "said"; text: string; images?: number; files?: string[]; uuid?: string };
 
 /** a long turn's list keeps its last steps and everything said: the rest are counted */
 const VIEW_STEPS = 300;
@@ -799,6 +811,7 @@ function stepsOf(turn: Turn, max: number): Pick<TurnView, "steps" | "stepsBefore
           kind: "said",
           text: cut(m.text, VIEW_PROMPT),
           ...(m.images ? { images: m.images } : {}),
+          ...(m.files ? { files: m.files } : {}),
           ...(m.uuid ? { uuid: m.uuid } : {}),
         },
       });

@@ -402,6 +402,29 @@ describe("what the real stretch does not have", () => {
     ]);
   });
 
+  it("files typed while it worked are named, and a message of only files still has its row", async () => {
+    const shot = "/Users/v/Library/Application Support/Grove/uploads/s1/shot.png";
+    const block = (p: string) => ({
+      type: "text",
+      text: attachedFileText({ path: p, mediaType: "image/png", size: 9 }),
+    });
+    const only = queued("", 2);
+    only.attachment.prompt = [block(shot), block("/Users/v/Desktop/b.png")];
+    const [t] = turns(
+      await fold([
+        // a message of only a file before it: this one is not that one sent twice
+        prompt([block("/Users/v/Desktop/a.png")], 0),
+        says("m1", call("t1", "Read", { file_path: "/work/api/app.log" }), 1),
+        only,
+        result("t1", "...", 3),
+        says("m2", text("Seen."), 4),
+      ]),
+    );
+    expect(t?.marks).toEqual([
+      { kind: "said", step: 1, at: expect.any(Number), text: "", files: ["shot.png", "b.png"] },
+    ]);
+  });
+
   it("a plan that was approved, and questions whose answers are keyed differently", async () => {
     const q = (question: string, labels: string[]) => ({
       question,
