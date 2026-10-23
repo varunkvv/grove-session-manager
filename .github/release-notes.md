@@ -1,3 +1,18 @@
+## 0.31
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.31 makes the glass from 0.30 easy to see,
+and brings it to chat windows.
+
+New:
+
+- the sidebar and the top bar let much more of the desktop through: your theme's colour is a light tint now
+- a chat window's header is glass too, still tinted in its project's colour so you can tell windows apart
+
+Keep in mind:
+
+- the chat itself and the session lists stay solid, so reading is unchanged
+- with reduce transparency on in macOS, the glass goes solid again
+
 ## 0.30
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.30 lets the desktop show through the main
