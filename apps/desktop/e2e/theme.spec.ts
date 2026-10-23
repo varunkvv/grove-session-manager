@@ -66,8 +66,13 @@ test("the main window's sidebar and top bar are glass over a see-through body", 
   expect(await app.page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(
     "rgba(0, 0, 0, 0)",
   );
-  // the palette's chrome, partly see-through
-  for (const id of ["sidebar", "top-bar"]) expect(await bg(id)).toMatch(/ \/ 0\.8\)$|, 0\.8\)$/);
+  // the palette's chrome, partly see-through. solid with reduce transparency on, as on a CI runner
+  const reduced = await app.page.evaluate(
+    () => matchMedia("(prefers-reduced-transparency: reduce)").matches,
+  );
+  for (const id of ["sidebar", "top-bar"]) {
+    expect(await bg(id)).toMatch(reduced ? /^rgb\(27, 28, 32\)$/ : / \/ 0\.8\)$|, 0\.8\)$/);
+  }
 });
 
 test("by default it follows the system, and switches with it", async () => {
