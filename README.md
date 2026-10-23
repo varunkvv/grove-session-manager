@@ -848,9 +848,11 @@ open apps/desktop/dist
 ```
 
 Every release is signed with the same self-signed certificate, so the screen recording and microphone permissions you
-give Grove survive its updates. macOS only trusts an Apple Developer ID, so a DMG that travels through a browser, Slack
-or AirDrop is still quarantined, and needs `xattr -dr com.apple.quarantine "/Applications/Grove.app"` once. A build of
-your own is ad-hoc signed, which is enough to run on the machine that built it.
+give Grove survive its updates. If you gave them to a release before 0.24.48, remove Grove with - under Screen &
+System Audio Recording and under Microphone and add it back once: switching it off and on keeps the old grant. macOS
+only trusts an Apple Developer ID, so a DMG that travels through a browser, Slack or AirDrop is still quarantined, and
+needs `xattr -dr com.apple.quarantine "/Applications/Grove.app"` once. A build of your own is ad-hoc signed, which is
+enough to run on the machine that built it.
 
 It follows the macOS appearance, light or dark, and switches with it. **Appearance** in Settings pins it to one.
 

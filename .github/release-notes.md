@@ -15,6 +15,13 @@ Keep in mind:
 - chat windows and the files / agents panels are unchanged
 - with reduce transparency on in macOS, both go solid again
 
+Fixed since 0.30.58:
+
+- the 0.24.48 notes said switching Grove off and on in System Settings keeps its screen recording and microphone
+  permissions across updates. it doesn't: the switch keeps the old grant, which still fails. remove Grove with -
+  under Screen & System Audio Recording and under Microphone, add it back, then quit Grove and open it again. once is
+  enough
+
 ## 0.29
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.29 says when a message in a grove chat
@@ -174,8 +181,8 @@ Fixed since 0.24.47:
 
 - macOS keeps Grove's screen recording and microphone permissions across updates. before, each update dropped them
   while their switches in System Settings still showed on, so a session inside Grove could not screenshot or record
-- once, after this update: switch Grove off and on under Screen & System Audio Recording and under Microphone (or
-  remove it with - and add it back), then quit Grove and open it again. from then on it sticks
+- once, after this update: remove Grove with - under Screen & System Audio Recording and under Microphone, add it
+  back, then quit Grove and open it again. switching it off and on keeps the old grant. from then on it sticks
 
 Changed since 0.24.48:
 
