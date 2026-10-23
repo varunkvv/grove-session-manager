@@ -1,13 +1,11 @@
 import type { BrowserWindow, WebContents } from "electron";
 import * as electron from "electron";
-import type { AppSettings } from "../shared/ipc.ts";
 import { clampBounds, loadWindowState, MIN_SIZE, saveWindowState } from "./windowState.ts";
 
 export interface MainWindowOptions {
   preload: string;
   stateFile: string;
   url: string;
-  palette?: AppSettings["palette"];
   /**
    * a test root's window keeps the size it asks for, even past the display. a CI runner's screen is
    * narrower than a laptop's, and macOS would shrink the window to it - then the pane covers the
@@ -18,7 +16,7 @@ export interface MainWindowOptions {
   show?: boolean;
 }
 
-/** --color-canvas of each palette in app.css, light and dark. the window is painted before the page loads. */
+/** --color-canvas of each palette in app.css, light and dark. a chat window is painted before its page loads. */
 export const CANVAS = {
   grove: { light: "#FFFFFF", dark: "#17181B" },
   "rose-pine": { light: "#FAF4ED", dark: "#191724" },
@@ -49,7 +47,10 @@ export async function createMainWindow(o: MainWindowOptions): Promise<BrowserWin
     minHeight: MIN_SIZE.height,
     ...(o.fixedSize ? { enableLargerThanScreen: true } : {}),
     show: false,
-    backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors, o.palette),
+    // the desktop shows through the sidebar and the top bar, as in finder. with no backgroundColor
+    // electron makes the page's base transparent, and the page paints its own canvas everywhere
+    // else. inactive, the material goes grey like every mac window's sidebar
+    vibrancy: "sidebar",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 14 },
     webPreferences: {

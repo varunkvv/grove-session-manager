@@ -31,13 +31,9 @@ function setup(appearance?: "system" | "light" | "dark", palette?: "rose-pine"):
   return fx;
 }
 
+/** the screen beside the sidebar. the main window's body is see-through, for the sidebar's glass */
 const canvas = (app: LaunchedApp) =>
-  app.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-/** what electron paints behind the page, as #rrggbb */
-const frame = (app: LaunchedApp) =>
-  app.app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0]?.getBackgroundColor().toLowerCase(),
-  );
+  app.page.getByTestId("screen").evaluate((e) => getComputedStyle(e).backgroundColor);
 
 test("the appearance setting pins the window to light or dark", async () => {
   app = await launchApp(setup("light"));
@@ -51,18 +47,27 @@ test("the appearance setting pins the window to light or dark", async () => {
   expect(await app.app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)).toBe(true);
 });
 
-test("a palette has its own light and dark, and the frame behind the page agrees", async () => {
+test("a palette has its own light and dark", async () => {
   app = await launchApp(setup("light", "rose-pine"));
   expect(await canvas(app)).toBe(ROSE_PINE.light);
   expect(await app.page.evaluate(() => document.documentElement.dataset.palette)).toBe("rose-pine");
   expect(await app.app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)).toBe(false);
-  expect(await frame(app)).toBe("#faf4ed");
   await app.close();
 
   app = await launchApp(setup("dark", "rose-pine"));
   expect(await canvas(app)).toBe(ROSE_PINE.dark);
   expect(await app.app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)).toBe(true);
-  expect(await frame(app)).toBe("#191724");
+});
+
+test("the main window's sidebar and top bar are glass over a see-through body", async () => {
+  app = await launchApp(setup("dark"));
+  const bg = (id: string) =>
+    app.page.getByTestId(id).evaluate((e) => getComputedStyle(e).backgroundColor);
+  expect(await app.page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+  // the palette's chrome, partly see-through
+  for (const id of ["sidebar", "top-bar"]) expect(await bg(id)).toMatch(/ \/ 0\.8\)$|, 0\.8\)$/);
 });
 
 test("by default it follows the system, and switches with it", async () => {
@@ -97,10 +102,9 @@ test("changing the setting takes effect without a restart, and is remembered", a
   app = await launchApp(fx);
   expect(await canvas(app)).toBe(CANVAS.light);
 
-  // a theme too, and the frame follows it though macOS's appearance did not move
+  // a theme too, though macOS's appearance did not move
   await app.page.keyboard.press("Meta+,");
   await app.page.getByTestId("setting-palette").selectOption("rose-pine");
   await app.page.getByTestId("save-settings").click();
   await expect.poll(() => canvas(app)).toBe(ROSE_PINE.light);
-  await expect.poll(() => frame(app)).toBe("#faf4ed");
 });

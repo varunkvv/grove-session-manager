@@ -51,7 +51,7 @@ import { SessionService } from "./services/sessions.ts";
 import { TitleService } from "./services/titles.ts";
 import { sweepUploads } from "./services/uploads.ts";
 import { createTray, updateTray } from "./tray.ts";
-import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
+import { createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
 const appEnv: AppEnv = resolveAppEnv();
 // this file is out/main/index.cjs, so outDir is out/ and the package root is its parent
@@ -674,11 +674,9 @@ async function start(): Promise<void> {
     // the spare chat window is there only while grove chat is on, and in the page's appearance and
     // text size. an open chat window draws in them too
     if (chatMoved) chatWindows.setSpare(s.chat === true);
-    if (lookMoved) {
-      chatWindows.appearance(s.appearance);
-      // a palette alone moves no nativeTheme, so nothing else repaints the frame
-      win?.setBackgroundColor(canvasColor(electron.nativeTheme.shouldUseDarkColors, s.palette));
-    }
+    // the main window has no frame colour to repaint: it is the desktop's material, and the page
+    // paints the rest
+    if (lookMoved) chatWindows.appearance(s.appearance);
     if (decisioningMoved) decisioning.switched(wantsModel(s));
     if (recapsMoved) projects.recapsSwitched();
     if (recapsMoved || renamesMoved) {
@@ -732,7 +730,6 @@ async function start(): Promise<void> {
       settings.palette,
       settings.textScale,
     ),
-    palette: settings.palette,
     show: !startHidden,
   });
   lockDown(win.webContents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
@@ -781,13 +778,8 @@ async function start(): Promise<void> {
     void live.syncUserHooks();
     void background.read();
   });
-  // the page follows the media query on its own. this is only the frame behind it.
-  electron.nativeTheme.on("updated", () => {
-    win?.setBackgroundColor(
-      canvasColor(electron.nativeTheme.shouldUseDarkColors, settings.palette),
-    );
-    chatWindows.repaint();
-  });
+  // the page follows the media query on its own. this is only the frame behind a chat window's
+  electron.nativeTheme.on("updated", () => chatWindows.repaint());
   summon(settings);
   electron.powerMonitor.on("resume", () => void sessions.refresh());
   // the backfill waits for AC power

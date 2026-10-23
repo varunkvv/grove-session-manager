@@ -18,7 +18,7 @@ export function TopBar() {
   const blocked = project && startBlocked(project);
   return (
     <header
-      className="@container drag flex h-11 shrink-0 items-center gap-2 border-b border-line bg-chrome px-4"
+      className="@container drag flex h-11 shrink-0 items-center gap-2 border-b border-line bg-glass glass-edge px-4"
       data-testid="top-bar"
     >
       {view === "inbox" && <h1 className="shrink-0 font-medium">All sessions</h1>}

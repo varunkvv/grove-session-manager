@@ -175,7 +175,11 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <Banner />
-        <main className="min-h-0 flex-1 overflow-hidden" data-testid="screen" data-view={view}>
+        <main
+          className="min-h-0 flex-1 overflow-hidden bg-canvas"
+          data-testid="screen"
+          data-view={view}
+        >
           <Screen />
         </main>
       </div>

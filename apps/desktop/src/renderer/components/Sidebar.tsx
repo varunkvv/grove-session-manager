@@ -75,7 +75,7 @@ export function Sidebar() {
   return (
     <nav
       aria-label="All sessions and projects"
-      className="flex w-[220px] shrink-0 flex-col border-r border-line bg-chrome"
+      className="flex w-[220px] shrink-0 flex-col border-r border-line bg-glass"
       data-testid="sidebar"
     >
       {/* the traffic lights sit in it, and the window is dragged by it */}

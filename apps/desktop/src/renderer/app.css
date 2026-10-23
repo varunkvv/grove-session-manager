@@ -303,6 +303,38 @@ body {
   cursor: default;
 }
 
+/* the main window's own body is see-through, so the sidebar and the top bar can show the desktop.
+   the screen beside them paints the canvas itself (App.tsx). a chat window keeps its canvas */
+:root[data-window="main"] body {
+  background: transparent;
+}
+
+/*
+ * the sidebar and the top bar of the main window: the palette's chrome over the window's vibrancy
+ * (window.ts), so each palette keeps its tint and the wallpaper comes through softly. 80%, because
+ * the faintest words (fg-4) must still read over a black or a white wallpaper. at 80% the worst
+ * case stays near 3:1 even with no help from the material, and the material's own fill takes it
+ * past 4. with reduce transparency on, macOS makes the material opaque and this goes solid
+ */
+@utility bg-glass {
+  background-color: color-mix(in srgb, var(--color-chrome) 80%, transparent);
+}
+
+/* the top bar's glass edge: a hairline of light along its top. no sheen - grove stays flat
+   (design.test.ts) */
+@utility glass-edge {
+  box-shadow: inset 0 1px 0 light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.05));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bg-glass {
+    background-color: var(--color-chrome);
+  }
+  .glass-edge {
+    box-shadow: none;
+  }
+}
+
 input,
 textarea {
   user-select: text;
