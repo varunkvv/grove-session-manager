@@ -59,6 +59,10 @@ const QUESTIONS = [
   "Then reply with exactly three lines, one per question, each 'header: what I picked'. Do not use any other tool.",
 ].join("\n");
 
+/** a 2x2 png */
+const PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP4z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==";
+
 let app: LaunchedApp;
 
 test.afterEach(async () => {
@@ -110,6 +114,10 @@ const openRow = async (page: Page, id: string) => {
   await page.locator(`[data-testid="project-item"][data-id="${id}"]`).click();
   await page.locator(`[data-testid="session-row"][data-id="${SID}"]`).dblclick();
 };
+
+/** grove's uploads under a test root: userData is <root>/.grove/electron */
+const uploadsOf = (s: ReturnType<typeof seed>) =>
+  path.join(s.fx.root, ".grove", "electron", "uploads");
 
 /** what the fake claude was sent: its answers to the permission requests among them */
 function sentToClaude(file: string): Array<Record<string, unknown>> {
@@ -361,9 +369,25 @@ test("a message typed while it works stays on screen as claude takes it, and lan
   await composer.press("Enter");
   await expect(chat.getByTestId("state")).toHaveAttribute("data-state", "working");
   await composer.fill(typed);
+  // a screenshot with it: claude code would send it mid-turn unshrunk, so it goes by a path
+  await chat.evaluate((b64) => {
+    const paste = new DataTransfer();
+    paste.items.add(
+      new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "shot.png", {
+        type: "image/png",
+      }),
+    );
+    document
+      .querySelector('[data-testid="composer"]')
+      ?.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: paste, bubbles: true, cancelable: true }),
+      );
+  }, PNG);
+  await expect(chat.getByTestId("composer-files").locator("img")).toHaveCount(1);
   await composer.press("Enter");
   const row = chat.getByTestId("chat-queued");
   await expect(row).toContainText("You, queued");
+  await expect(row).toContainText(`${typed} [1 image]`);
   const watch = await watchFor(chat, typed);
   // claude took it: the same row, as sent, and nothing to take back. the transcript has not got it
   await expect(row).toHaveAttribute("data-taken", "", { timeout: 15_000 });
@@ -374,7 +398,16 @@ test("a message typed while it works stays on screen as claude takes it, and lan
   // the transcript has it: his block in the turn, where it was taken, and the row gone
   const turn = chat.getByTestId("turn").last();
   await expect(turn.getByTestId("turn-typed")).toContainText(typed, { timeout: 15_000 });
+  await expect(turn.getByTestId("typed-attached")).toHaveText(" · shot.png");
   await expect(row).toHaveCount(0);
+  const shot = path.join(uploadsOf(s), SID, "shot.png");
+  expect(readFileSync(shot).toString("base64")).toBe(PNG);
+  const said = sentToClaude(s.chatLog)
+    .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
+    .filter((m) => m?.type === "user")
+    .at(-1);
+  expect(said?.message?.content?.map((c) => c.type)).toEqual(["text", "text"]);
+  expect(said?.message?.content?.[0]?.text).toContain(`\npath: ${shot}\ntype: image/png\n`);
   // after the steps that ran before it, before what claude said after it, not under the prompt
   await expect(chat.getByTestId("state")).toHaveCount(0, { timeout: 30_000 });
   const order = await turn.evaluate((el) =>
@@ -1185,7 +1218,7 @@ test("the files pane lists what is not committed, each opening its diff", async 
   await expect(chat.getByTestId("viewer-diff").getByTestId("diff")).toHaveText("+# notes");
 });
 
-test("a text file picked from the session's own folder goes in as an @ mention, not an attachment", async () => {
+test("a file picked from the session's own folder is a chip, and goes by its own path, not a copy", async () => {
   const s = seed(true);
   const inside = path.join(s.root, "notes.md");
   writeFileSync(inside, "# notes\n");
@@ -1196,8 +1229,21 @@ test("a text file picked from the session's own folder goes in as an @ mention, 
   const chooser = chat.waitForEvent("filechooser");
   await chat.getByTestId("attach-menu").getByTestId("menu-item").first().click();
   await (await chooser).setFiles([inside]);
-  await expect(chat.getByTestId("composer")).toHaveValue("@notes.md ");
-  await expect(chat.getByTestId("chip")).toHaveCount(0);
+  const composer = chat.getByTestId("composer");
+  await expect(composer).toHaveValue("");
+  await expect(chat.getByTestId("chip")).toContainText("notes.md");
+  await composer.fill(HELLO);
+  await composer.press("Enter");
+  await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
+  await expect(chat.getByTestId("turn").last().getByTestId("turn-attached")).toHaveText(
+    " · notes.md",
+  );
+  const sent = sentToClaude(s.chatLog)
+    .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
+    .find((m) => m?.type === "user");
+  expect(sent?.message?.content?.[0]?.text).toContain(`\npath: ${inside}\n`);
+  expect(sent?.message?.content?.[0]?.text).not.toContain("copy of:");
+  expect(existsSync(path.join(uploadsOf(s), SID))).toBe(false);
 });
 
 test("the context ring shows once the conversation is half full, and compacts from its menu", async () => {
@@ -1724,7 +1770,7 @@ test("an image dropped or pasted into the composer goes to claude with the messa
   });
 });
 
-test("files: the + menu's picker, a drop anywhere, chips, and a type claude has no block for goes by its path", async () => {
+test("files: the + menu's picker, a drop anywhere, chips, and each goes by a path claude reads without asking", async () => {
   const s = seed(true);
   const dir = path.join(s.fx.dir, "attach");
   mkdirSync(dir, { recursive: true });
@@ -1776,33 +1822,39 @@ test("files: the + menu's picker, a drop anywhere, chips, and a type claude has 
   });
   await expect(chat.getByTestId("drop-overlay")).toHaveCount(0);
   await expect(chips).toHaveCount(4);
+  // a file the page made has no path: it goes as its bytes
+  await expect(chips.nth(3)).toContainText("notes.md");
+  await expect(chips.nth(3)).toContainText("File · 7 B");
   // one taken back
-  await chips.last().getByTestId("chip-remove").click();
+  await chips.nth(2).getByTestId("chip-remove").click();
   await expect(chips).toHaveCount(3);
   await composer.fill(HELLO);
   await composer.press("Enter");
   await expect(chips).toHaveCount(0);
   await expect(chat.getByTestId("panel-text")).toContainText("hello from the spike");
   await expect(chat.getByTestId("turn").last().getByTestId("turn-attached")).toHaveText(
-    " · spec.pdf · data.csv · report.docx",
+    " · spec.pdf · data.csv · notes.md",
   );
   const sent = sentToClaude(s.chatLog)
     .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
     .find((m) => m?.type === "user");
-  expect(sent?.message?.content).toEqual([
-    {
-      type: "document",
-      source: { type: "base64", media_type: "application/pdf", data: "JVBERi0xLjQKJSVFT0YK" },
-      title: "spec.pdf",
-    },
-    {
-      type: "document",
-      source: { type: "text", media_type: "text/plain", data: "a,b\n1,2\n" },
-      title: "data.csv",
-    },
-    { type: "text", text: expect.stringContaining(`\npath: ${docx}\n`) },
-    { type: "text", text: HELLO },
-  ]);
+  // nothing inline: from outside the session's folders a clone in grove's uploads, which
+  // claude reads without asking, and the paste written there
+  const mine = path.join(uploadsOf(s), SID);
+  const content = sent?.message?.content ?? [];
+  expect(content.map((c) => c.type)).toEqual(["text", "text", "text", "text"]);
+  expect(content[0]?.text).toContain(
+    `\npath: ${mine}/spec.pdf\ncopy of: ${pdf}\ntype: application/pdf\nsize: 15 bytes\n`,
+  );
+  expect(content[1]?.text).toContain(`\npath: ${mine}/data.csv\ncopy of: ${csv}\ntype: text/csv\n`);
+  expect(content[2]?.text).toContain(
+    `\npath: ${mine}/notes.md\ntype: text/markdown\nsize: 7 bytes\n`,
+  );
+  expect(content[3]).toEqual({ type: "text", text: HELLO });
+  expect(readFileSync(path.join(mine, "spec.pdf"), "utf8")).toBe("%PDF-1.4\n%%EOF\n");
+  expect(readFileSync(path.join(mine, "notes.md"), "utf8")).toBe("# notes");
+  const [first] = sentToClaude(s.chatLog) as Array<{ argv: string[] }>;
+  expect(first?.argv).toContain(`--add-dir=${uploadsOf(s)}`);
   // Mention a file puts an @ where the caret is, and the files menu opens on it
   await chat.getByTestId("chat-attach").click();
   await menu.getByTestId("menu-item").last().click();
@@ -1873,11 +1925,19 @@ test("a video picked or copied in finder goes by its path, as a chip, and shows 
     .find((m) => m?.type === "user");
   const content = sent?.message?.content ?? [];
   expect(content.map((c) => c.type)).toEqual(["text", "text", "text", "text", "text"]);
-  expect(content[0]?.text).toContain(`path: ${clip}\ntype: video/mp4\nsize: 18 bytes`);
-  expect(content[1]?.text).toContain(`path: ${zip}\n`);
-  expect(content[2]?.text).toContain(`path: ${inside}\n`);
-  expect(content[3]?.text).toContain(`path: ${copied}\ntype: video/quicktime`);
+  // copies of the ones from elsewhere, so a move in finder does not lose them. the one in the
+  // session's folder by its own path
+  const mine = path.join(uploadsOf(s), SID);
+  expect(content[0]?.text).toContain(
+    `path: ${mine}/clip.mp4\ncopy of: ${clip}\ntype: video/mp4\nsize: 18 bytes`,
+  );
+  expect(content[1]?.text).toContain(`path: ${mine}/notes.zip\ncopy of: ${zip}\n`);
+  expect(content[2]?.text).toContain(`path: ${inside}\ntype: video/mp4`);
+  expect(content[3]?.text).toContain(
+    `path: ${mine}/Screen Recording.mov\ncopy of: ${copied}\ntype: video/quicktime`,
+  );
   expect(content[4]).toEqual({ type: "text", text: HELLO });
+  expect(existsSync(path.join(mine, "demo.mp4"))).toBe(false);
   // his message names the files and says only what he typed: now, and read back from the transcript
   const turn = chat.getByTestId("turn").last();
   const files = " · clip.mp4 · notes.zip · demo.mp4 · Screen Recording.mov";
@@ -1889,25 +1949,28 @@ test("a video picked or copied in finder goes by its path, as a chip, and shows 
   await expect(chat.getByTestId("turn").last().getByTestId("panel-prompt")).toHaveText(HELLO);
 });
 
-test("a text file or a pdf over its cap goes by its path, not refused", async () => {
+test("a big pdf or text file has no cap, and an image over 20 MB goes by its path too", async () => {
   const s = seed(true);
   const dir = path.join(s.fx.dir, "big");
   mkdirSync(dir, { recursive: true });
   const log = path.join(dir, "big.log");
   const pdf = path.join(dir, "big.pdf");
+  const png = path.join(dir, "huge.png");
   writeFileSync(log, "x".repeat(600 * 1024));
-  writeFileSync(pdf, Buffer.alloc(11 * 1024 * 1024));
+  writeFileSync(pdf, Buffer.alloc(40 * 1024 * 1024));
+  writeFileSync(png, Buffer.alloc(21 * 1024 * 1024));
   const { app: electron, page } = await launch(s);
   await openRow(page, s.id);
   const chat = await chatWindow(electron, SID);
   await chat.getByTestId("chat-attach").click();
   const chooser = chat.waitForEvent("filechooser");
   await chat.getByTestId("attach-menu").getByTestId("menu-item").first().click();
-  await (await chooser).setFiles([log, pdf]);
+  await (await chooser).setFiles([log, pdf, png]);
   const chips = chat.getByTestId("chip");
-  await expect(chips).toHaveCount(2);
+  await expect(chips).toHaveCount(3);
   await expect(chips.nth(0)).toContainText("File · 600 KB");
-  await expect(chips.nth(1)).toContainText("PDF · 11.0 MB");
+  await expect(chips.nth(1)).toContainText("PDF · 40.0 MB");
+  await expect(chips.nth(2)).toContainText("Image · 21.0 MB");
   await expect(chat.getByTestId("chat-error")).toHaveCount(0);
   const composer = chat.getByTestId("composer");
   await composer.fill(HELLO);
@@ -1917,9 +1980,13 @@ test("a text file or a pdf over its cap goes by its path, not refused", async ()
     .map((l) => l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } })
     .find((m) => m?.type === "user");
   const content = sent?.message?.content ?? [];
-  expect(content.map((c) => c.type)).toEqual(["text", "text", "text"]);
-  expect(content[0]?.text).toContain(`path: ${log}\n`);
-  expect(content[1]?.text).toContain(`path: ${pdf}\ntype: application/pdf`);
+  const mine = path.join(uploadsOf(s), SID);
+  expect(content.map((c) => c.type)).toEqual(["text", "text", "text", "text"]);
+  expect(content[0]?.text).toContain(`path: ${mine}/big.log\ncopy of: ${log}\n`);
+  expect(content[1]?.text).toContain(
+    `path: ${mine}/big.pdf\ncopy of: ${pdf}\ntype: application/pdf`,
+  );
+  expect(content[2]?.text).toContain(`path: ${mine}/huge.png\ncopy of: ${png}\ntype: image/png`);
 });
 
 test("cmd-N starts a new session in grove chat, and cmd-shift-N is a new project", async () => {
