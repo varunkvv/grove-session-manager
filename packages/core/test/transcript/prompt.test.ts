@@ -151,6 +151,28 @@ describe("a file grove chat attached by its path", () => {
     expect(attachedFilePath(attachedFileText({ ...clip, mediaType: "" }))).toBe(clip.path);
   });
 
+  it("asks for a read again over memory, names what a copy is of, and says a pdf goes whole without pdftoppm", () => {
+    const copy = "/Users/v/Library/Application Support/Grove/uploads/s1/spec.pdf";
+    const pdf = { path: copy, mediaType: "application/pdf", size: 9 };
+    const block = attachedFileText({ ...pdf, copyOf: "/Users/v/Downloads/spec.pdf", whole: true });
+    expect(block.split("\n")).toEqual([
+      "<attached-file>",
+      "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
+      "If you need its exact contents again later, read it again rather than answering from memory.",
+      "Read the whole PDF, without `pages`: reading pages needs pdftoppm, which is not installed.",
+      `path: ${copy}`,
+      "copy of: /Users/v/Downloads/spec.pdf",
+      "type: application/pdf",
+      "size: 9 bytes",
+      "</attached-file>",
+    ]);
+    // the path read back is the copy's, never the original's
+    expect(attachedFilePath(block)).toBe(copy);
+    // with pdftoppm there, pages work: nothing is said about them
+    expect(attachedFileText(pdf)).not.toContain("pages");
+    expect(attachedFileText(pdf)).not.toContain("copy of:");
+  });
+
   it("is not something the person typed, and words that look like it are", () => {
     const entry = userEntry([text(attachedFileText(clip)), text("what is in this video?")]);
     expect(extractUserText(entry)).toBe("what is in this video?");

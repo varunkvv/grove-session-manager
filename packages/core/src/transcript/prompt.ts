@@ -32,14 +32,29 @@ export function cleanBlockText(text: string): string | null {
 }
 
 /**
- * a file grove chat attached by its path: one the api takes no block for (a video, a zip). claude
- * reads it from disk. it starts with `<`, so cleanBlockText already keeps it out of what was typed
+ * a file grove chat attached by its path: every one but an image sent inline. claude reads it from
+ * disk, again when it needs it again. it starts with `<`, so cleanBlockText already keeps it out of
+ * what was typed. `copyOf`: where it was when it was sent, for a copy grove keeps. `whole`: a pdf
+ * with no pdftoppm on the machine, where a Read with `pages` fails
  */
-export function attachedFileText(file: { path: string; mediaType: string; size: number }): string {
+export function attachedFileText(file: {
+  path: string;
+  mediaType: string;
+  size: number;
+  copyOf?: string;
+  whole?: boolean;
+}): string {
   return [
     "<attached-file>",
     "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
+    "If you need its exact contents again later, read it again rather than answering from memory.",
+    ...(file.whole
+      ? [
+          "Read the whole PDF, without `pages`: reading pages needs pdftoppm, which is not installed.",
+        ]
+      : []),
     `path: ${file.path}`,
+    ...(file.copyOf ? [`copy of: ${file.copyOf}`] : []),
     ...(file.mediaType ? [`type: ${file.mediaType}`] : []),
     `size: ${file.size} bytes`,
     "</attached-file>",
