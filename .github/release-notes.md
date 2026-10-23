@@ -1,3 +1,19 @@
+## 0.29
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.29 says when a message in a grove chat
+was written.
+
+New:
+
+- hover a message you sent, or Claude's answer, and its time shows: next to "You", or under the answer
+- past a day it says the date and how long ago in words: "Oct 19, 9:48 PM · 3 days ago", then weeks, months, years
+
+Keep in mind:
+
+- it's the message you sent and the answer the turn ended on. what Claude said along the way and what you typed while
+  it worked have no time
+- the answer's time is when the turn's last line was written
+
 ## 0.28
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.28 has the API clear old reads out of a
