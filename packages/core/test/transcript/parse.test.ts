@@ -150,6 +150,19 @@ describe("appended metadata records", () => {
     expect(meta.lastActivityMs).toBe(Date.parse("2026-09-02T12:30:00.000Z"));
   });
 
+  it("lastActivityMs counts a compaction's attachments, and never falls back to the head", () => {
+    const head = toJsonl([userEntry("p", { timestamp: "2026-10-20T19:08:00.000Z" })]);
+    const compacted = toJsonl([
+      record("attachment", { timestamp: "2026-10-23T02:21:43.354Z" }),
+      aiTitle("t"),
+    ]);
+    expect(parseTranscript(head, compacted).lastActivityMs).toBe(
+      Date.parse("2026-10-23T02:21:43.354Z"),
+    );
+    // one line bigger than the tail chunk: nothing in it, the indexer uses mtime
+    expect(parseTranscript(head, "").lastActivityMs).toBeUndefined();
+  });
+
   it("gitBranch prefers the tail, pr-link and tag are lifted", () => {
     const head = toJsonl([userEntry("p", { gitBranch: "main" })]);
     const tail = toJsonl([

@@ -4,7 +4,7 @@ import { extractCommand, extractUserText } from "./prompt.ts";
 import { PROMPT_MAX, squash, TITLE_MAX } from "./title.ts";
 
 /** bump when parsing changes what ends up in the cache. it is part of the cache filename. */
-export const PARSER_VERSION = 1;
+export const PARSER_VERSION = 2;
 
 function str(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -88,8 +88,11 @@ function liftRecords(entries: Record<string, unknown>[]): TitleFields {
           f.pr = { number: e.prNumber, url: str(e.prUrl), repo: str(e.prRepository) };
         }
         break;
+      // a turn's own records. after a compaction its attachments alone can fill the tail
       case "user":
-      case "assistant": {
+      case "assistant":
+      case "attachment":
+      case "system": {
         const ms = time(e.timestamp);
         if (ms !== undefined && ms > (f.lastActivityMs ?? 0)) f.lastActivityMs = ms;
         break;
@@ -150,7 +153,9 @@ export function parseTranscript(
   meta.pr = t.pr ?? h.pr;
   meta.relocatedCwd = t.relocatedCwd ?? h.relocatedCwd;
   meta.gitBranch = t.gitBranch ?? headBranch;
-  meta.lastActivityMs = t.lastActivityMs ?? h.lastActivityMs;
+  // a tail with no turn in it (one huge line) says nothing. the head would be the session's start,
+  // days back: leave it out, and the file's mtime stands in
+  meta.lastActivityMs = t.lastActivityMs;
   const lastPrompt = t.lastPrompt ?? h.lastPrompt;
   if (lastPrompt) meta.lastPrompt = squash(lastPrompt, PROMPT_MAX);
 
