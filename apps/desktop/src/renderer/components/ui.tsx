@@ -855,17 +855,17 @@ export function ProjectMark({ id, title }: { id: ProjectId; title?: string }) {
   );
 }
 
-/** written out whole, as the fills are: a project's soft ground, 60% over the window's glass, and its line in the full hue */
+/** written out whole, as the fills are: a project's soft ground at the sidebar's 30% over the window's glass, and its line in the full hue */
 const PROJECT_BAND = [
-  "bg-project-1-soft/60 border-project-1",
-  "bg-project-2-soft/60 border-project-2",
-  "bg-project-3-soft/60 border-project-3",
-  "bg-project-4-soft/60 border-project-4",
-  "bg-project-5-soft/60 border-project-5",
-  "bg-project-6-soft/60 border-project-6",
-  "bg-project-7-soft/60 border-project-7",
-  "bg-project-8-soft/60 border-project-8",
-  "bg-project-9-soft/60 border-project-9",
+  "bg-project-1-soft/30 border-project-1",
+  "bg-project-2-soft/30 border-project-2",
+  "bg-project-3-soft/30 border-project-3",
+  "bg-project-4-soft/30 border-project-4",
+  "bg-project-5-soft/30 border-project-5",
+  "bg-project-6-soft/30 border-project-6",
+  "bg-project-7-soft/30 border-project-7",
+  "bg-project-8-soft/30 border-project-8",
+  "bg-project-9-soft/30 border-project-9",
 ];
 
 /**
