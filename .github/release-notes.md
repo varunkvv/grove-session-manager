@@ -1,3 +1,32 @@
+## 0.27
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.27 changes how a file you attach reaches
+Claude: it's copied, and Claude opens it when it needs it, instead of the whole file riding in your message.
+
+New:
+
+- a PDF, a text or code file, a video, anything that isn't an image goes to Claude as a path on disk, and Claude reads
+  it from there. before, a PDF or a text file went inside your message, and again with every message after it
+- a file from outside the session's folders (Downloads, Desktop) is copied into Grove's own folder first. on your
+  Mac's disk the copy takes no extra space while the original is there, and moving or deleting the original after you
+  send it no longer loses it
+- a file from the session's own folder goes as itself, so Claude reads the current version. it's a chip like any
+  other file now, not an @ mention
+- Claude reads an attached file without asking, in every permission mode
+- no size caps on PDFs and text files any more. an image keeps its 20 MB, and over it goes by its path
+- a file pasted with nothing on disk behind it is saved into Grove's folder, instead of refused
+- a PDF or a text file in a message you type while Claude works reaches Claude now. before, Claude Code dropped it
+- the copies go when the session's transcript does (Claude Code deletes those after 30 days, unless you set it
+  otherwise)
+
+Keep in mind:
+
+- images still go inside the message, so Claude sees a screenshot straight away
+- opening a file is a step of Claude's, so a first answer about a PDF takes a few seconds longer
+- without poppler on your Mac, Claude is told to read a PDF whole rather than by pages
+- a file from another drive is copied in full
+- once Claude has read a file, what it read stays in the conversation until it compacts, as before
+
 ## 0.26
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.26 lets you attach any file in a chat
