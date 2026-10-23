@@ -34,6 +34,35 @@ export function dayBucket(ms: number, now: number = Date.now()): DayBucket {
   return "Older";
 }
 
+const AGO = new Intl.RelativeTimeFormat("en", { numeric: "always" });
+
+/**
+ * when a chat message was written: "3:42 PM" within a day. older ones say the date and how long
+ * ago in words: "Oct 20, 3:42 PM · 2 days ago", "Sep 1, 9:05 AM · 7 weeks ago", the year once it
+ * is another one
+ */
+export function messageTime(ms: number, now: number = Date.now()): string {
+  const d = Math.max(0, now - ms);
+  const clock: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+  if (d < DAY) return new Date(ms).toLocaleTimeString(undefined, clock);
+  const year = new Date(ms).getFullYear() !== new Date(now).getFullYear();
+  const date = new Date(ms).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(year ? { year: "numeric" } : {}),
+    ...clock,
+  });
+  const ago =
+    d < 7 * DAY
+      ? AGO.format(-Math.floor(d / DAY), "day")
+      : d < 9 * 7 * DAY
+        ? AGO.format(-Math.floor(d / (7 * DAY)), "week")
+        : d < 365 * DAY
+          ? AGO.format(-Math.floor(d / (30 * DAY)), "month")
+          : AGO.format(-Math.floor(d / (365 * DAY)), "year");
+  return `${date} · ${ago}`;
+}
+
 /** 45_000 -> "45s", 720_000 -> "12m", 5_400_000 -> "1h 30m" */
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));

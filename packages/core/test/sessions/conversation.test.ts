@@ -36,6 +36,7 @@ import {
   prompt,
   queued,
   result,
+  SESSION_T0,
   says,
   stdout,
   taskNotification,
@@ -521,6 +522,16 @@ describe("what the real stretch does not have", () => {
     // the panel's view is as it was
     const panel = conversationView(state).items[0] as TurnView;
     expect(panel.prompt).not.toHaveProperty("files");
+  });
+
+  it("says when a prompt was sent and when its answer came, in a chat window's view only", async () => {
+    const state = await fold([prompt("hi", 0), says("m1", text("Hello."), 4)]);
+    const chat = conversationView(state, { chat: true }).items[0] as TurnView;
+    expect(chat.prompt?.at).toBe(SESSION_T0);
+    expect(chat.at).toBe(SESSION_T0 + 4000);
+    const panel = conversationView(state).items[0] as TurnView;
+    expect(panel.prompt).not.toHaveProperty("at");
+    expect(panel).not.toHaveProperty("at");
   });
 
   it("names a file attached by its path, and a message that is only one says nothing", async () => {

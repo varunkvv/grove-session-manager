@@ -718,7 +718,7 @@ const VIEW_LAST_TEXT = 20_000;
 export interface TurnView {
   kind: "turn";
   /** what started it. absent when the work carried on after a compaction */
-  /** `uuid`, `parent`: a chat window's only, for rewind and fork */
+  /** `uuid`, `parent`: a chat window's only, for rewind and fork. `at`: its own, when it was sent */
   prompt?: {
     kind: Prompt["kind"];
     text: string;
@@ -726,7 +726,10 @@ export interface TurnView {
     files?: string[];
     uuid?: string;
     parent?: string;
+    at?: number;
   };
+  /** a chat window's only: when its last line was written, the answer's time */
+  at?: number;
   /** a chat window's only: the uuid of the turn's last line, where a fork from it stops */
   end?: string;
   /** tool calls, files edited, subagents started, and how long it took */
@@ -1013,6 +1016,7 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
             ...(opts.chat && item.prompt.files ? { files: item.prompt.files } : {}),
             ...(opts.chat && item.prompt.uuid ? { uuid: item.prompt.uuid } : {}),
             ...(opts.chat && item.prompt.parent ? { parent: item.prompt.parent } : {}),
+            ...(opts.chat && item.prompt.at ? { at: item.prompt.at } : {}),
           },
         }
       : {}),
@@ -1028,6 +1032,7 @@ function turnView(item: Turn, last: boolean, opts: { textMax?: number; chat?: bo
     ...(opts.chat ? workflowsOf(item.work) : {}),
     ...(opts.chat && error ? { failed: true } : {}),
     ...(opts.chat && item.end ? { end: item.end } : {}),
+    ...(opts.chat && n.endedAt ? { at: n.endedAt } : {}),
   };
 }
 

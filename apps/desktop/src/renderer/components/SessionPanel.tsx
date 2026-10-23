@@ -1,4 +1,10 @@
-import { type ConversationView, type FileMark, fileKind, type TurnView } from "@grove/core/pure";
+import {
+  type ConversationView,
+  type FileMark,
+  fileKind,
+  messageTime,
+  type TurnView,
+} from "@grove/core/pure";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   ChatStatus,
@@ -239,15 +245,18 @@ export function Turn({
     <>
       {actions}
       {/* in grove chat his label wraps before the buttons */}
-      <h3 className={cx("text-sm font-medium text-fg-4", mine && detail && "pr-14")}>
-        {who}
-        {images && (!!p.images || !!p.files?.length) && (
-          <span className="font-normal" data-testid="turn-attached">
-            {p.images ? ` · ${p.images} ${p.images === 1 ? "image" : "images"}` : ""}
-            {p.files?.map((f) => ` · ${f}`).join("")}
-          </span>
-        )}
-      </h3>
+      <div className={cx("flex items-baseline gap-2", mine && detail && "pr-14")}>
+        <h3 className="min-w-0 text-sm font-medium text-fg-4">
+          {who}
+          {images && (!!p.images || !!p.files?.length) && (
+            <span className="font-normal" data-testid="turn-attached">
+              {p.images ? ` · ${p.images} ${p.images === 1 ? "image" : "images"}` : ""}
+              {p.files?.map((f) => ` · ${f}`).join("")}
+            </span>
+          )}
+        </h3>
+        {detail && armed && p.at !== undefined && <Stamp at={p.at} className="shrink-0" />}
+      </div>
       {/* a pasted brief runs to pages: it scrolls in place, so what the agent said stays near. in
           his block the scrollbar sits in its padding, off the words */}
       <p
@@ -392,6 +401,13 @@ export function Turn({
               lastText < 0 &&
               !(detail && going) && <p className="text-fg-4">Nothing said yet.</p>
             )}
+            {/* grove chat: when it answered, on hover, in the gap under it on the left */}
+            {detail && armed && turn.text && turn.at !== undefined && !going && (
+              <Stamp
+                at={turn.at}
+                className="absolute top-full left-0 flex h-6 items-center pt-0.5"
+              />
+            )}
             {/* grove chat: what can be done with an answer, on hover, in the gap under it */}
             {detail && armed && scope && turn.text && !going && (
               <div
@@ -439,6 +455,39 @@ export function Turn({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * when a message was written, while the pointer is on it (the hover group it sits in). it is made
+ * on each hover, so "2 days ago" is from then: a chat window's clock does not tick
+ */
+function Stamp({ at, className }: { at: number; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const group = ref.current?.closest('[class*="group/"]');
+    if (!group) return;
+    const enter = () => setNow(Date.now());
+    const leave = () => setNow(null);
+    // made by the hover that armed the turn: the pointer is already in
+    if (group.matches(":hover")) enter();
+    group.addEventListener("mouseenter", enter);
+    group.addEventListener("mouseleave", leave);
+    return () => {
+      group.removeEventListener("mouseenter", enter);
+      group.removeEventListener("mouseleave", leave);
+    };
+  }, []);
+  return (
+    <span
+      ref={ref}
+      className={cx("text-sm tabular-nums text-fg-4 empty:hidden", className)}
+      title={new Date(at).toLocaleString()}
+      data-testid="message-time"
+    >
+      {now !== null && messageTime(at, now)}
+    </span>
   );
 }
 

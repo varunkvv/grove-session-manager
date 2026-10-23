@@ -612,6 +612,33 @@ test("an answer and a code block copy from a button on hover, and ⇧⌘C copies
   await expect.poll(clipboard).toContain("```sh");
 });
 
+test("hovering a message says when it was written, and how long ago past a day", async () => {
+  const fx = makeFixture({ withCompanion: true });
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
+  const { id, root } = writeProject(fx, { name: "chat-trial" });
+  writeSession(fx, {
+    cwd: root,
+    sessionId: SID,
+    title: TITLE,
+    prompt: "set the scene",
+    reply: "Done.",
+    ageMs: 3 * 24 * 3_600_000,
+  });
+  app = await launchApp(fx, { GROVE_CLAUDE_BIN: writeFakeClaude(fx.dir).bin });
+  await openRow(app.page, id);
+  const chat = await chatWindow(app.app, SID);
+  const turn = chat.getByTestId("turn").last();
+  const said = turn.getByTestId("panel-prompt");
+  await said.hover();
+  await expect(turn.getByTestId("message-time").first()).toHaveText(/ · 3 days ago$/);
+  // nothing is said while the pointer is elsewhere
+  await chat.getByTestId("composer").hover();
+  await expect(turn.getByTestId("message-time").first()).toBeHidden();
+  const answer = chat.getByTestId("panel-text");
+  await answer.hover();
+  await expect(answer.getByTestId("message-time")).toHaveText(/ · 3 days ago$/);
+});
+
 test("up and down walk what was said in the session, and Latest brings back the end", async () => {
   const fx = makeFixture({ withCompanion: true });
   writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
