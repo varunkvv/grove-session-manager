@@ -71,7 +71,7 @@ test("the main window's sidebar and top bar are glass over a see-through body", 
     () => matchMedia("(prefers-reduced-transparency: reduce)").matches,
   );
   for (const id of ["sidebar", "top-bar"]) {
-    expect(await bg(id)).toMatch(reduced ? /^rgb\(27, 28, 32\)$/ : / \/ 0\.8\)$|, 0\.8\)$/);
+    expect(await bg(id)).toMatch(reduced ? /^rgb\(27, 28, 32\)$/ : / \/ 0\.4\)$|, 0\.4\)$/);
   }
 });
 

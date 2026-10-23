@@ -11,8 +11,8 @@ applyAppearance(look.get("theme"), look.get("palette"), look.get("scale"));
 
 // one bundle, two pages: a grove chat window is `#/chat`, and never runs the main window's app
 const chat = location.hash.startsWith("#/chat");
-// the main window's body is see-through: its sidebar and top bar show the desktop's material
-if (!chat) document.documentElement.dataset.window = "main";
+// the body is see-through: the sidebar, the top bar and a chat window's header show the desktop's material
+document.documentElement.dataset.window = chat ? "chat" : "main";
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>{chat ? <ChatApp /> : <App />}</StrictMode>,

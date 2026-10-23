@@ -1189,7 +1189,7 @@ export function ChatApp() {
 
   return (
     <div
-      className="@container relative flex h-full flex-col bg-canvas"
+      className="@container relative flex h-full flex-col"
       data-testid="chat"
       data-id={session.sessionId}
       // files dragged anywhere over the window attach where they are dropped
@@ -1360,7 +1360,8 @@ export function ChatApp() {
         </div>
       )}
       <ChatScopeContext.Provider value={scope}>
-        <div className="flex min-h-0 flex-1">
+        {/* the canvas starts under the header, which is glass */}
+        <div className="flex min-h-0 flex-1 bg-canvas">
           <div className="flex min-w-0 flex-1 flex-col">
             <div
               ref={scroller}

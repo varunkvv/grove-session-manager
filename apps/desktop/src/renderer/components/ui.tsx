@@ -855,17 +855,17 @@ export function ProjectMark({ id, title }: { id: ProjectId; title?: string }) {
   );
 }
 
-/** written out whole, as the fills are: a project's soft ground and its line in the full hue */
+/** written out whole, as the fills are: a project's soft ground, 60% over the window's glass, and its line in the full hue */
 const PROJECT_BAND = [
-  "bg-project-1-soft border-project-1",
-  "bg-project-2-soft border-project-2",
-  "bg-project-3-soft border-project-3",
-  "bg-project-4-soft border-project-4",
-  "bg-project-5-soft border-project-5",
-  "bg-project-6-soft border-project-6",
-  "bg-project-7-soft border-project-7",
-  "bg-project-8-soft border-project-8",
-  "bg-project-9-soft border-project-9",
+  "bg-project-1-soft/60 border-project-1",
+  "bg-project-2-soft/60 border-project-2",
+  "bg-project-3-soft/60 border-project-3",
+  "bg-project-4-soft/60 border-project-4",
+  "bg-project-5-soft/60 border-project-5",
+  "bg-project-6-soft/60 border-project-6",
+  "bg-project-7-soft/60 border-project-7",
+  "bg-project-8-soft/60 border-project-8",
+  "bg-project-9-soft/60 border-project-9",
 ];
 
 /**
@@ -875,7 +875,7 @@ const PROJECT_BAND = [
  */
 export function useProjectBand(id: ProjectId | undefined): string {
   const hue = useStore((s) => (id ? projectHues(s.projects).get(id) : undefined));
-  return (hue && PROJECT_BAND[hue - 1]) || "border-line";
+  return (hue && PROJECT_BAND[hue - 1]) || "border-line bg-glass";
 }
 
 /**

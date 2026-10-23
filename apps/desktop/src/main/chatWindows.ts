@@ -3,7 +3,6 @@
 import type { BrowserWindow, WebContents } from "electron";
 import * as electron from "electron";
 import type { AppSettings, ChatShow, SessionHit } from "../shared/ipc.ts";
-import { canvasColor } from "./window.ts";
 import { loadWindowState, saveWindowState } from "./windowState.ts";
 
 export interface ChatWindowsOptions {
@@ -177,16 +176,7 @@ export class ChatWindows {
       if (!win.isDestroyed())
         win.webContents.send("grove:chat:appearance", { appearance, palette, textScale });
     }
-    this.repaint();
     this.remakeSpare();
-  }
-
-  /** macOS switched between light and dark, or the palette moved: the frames behind the pages follow */
-  repaint(): void {
-    const canvas = canvasColor(electron.nativeTheme.shouldUseDarkColors, this.o.palette());
-    for (const win of this.bySession.values()) {
-      if (!win.isDestroyed()) win.setBackgroundColor(canvas);
-    }
   }
 
   /** at the size the person left the last one, cascaded from the last one still open */
@@ -255,7 +245,9 @@ export class ChatWindows {
       minHeight: MIN.height,
       ...(this.o.fixedSize ? { enableLargerThanScreen: true } : {}),
       show: false,
-      backgroundColor: canvasColor(electron.nativeTheme.shouldUseDarkColors, this.o.palette()),
+      // the header shows the desktop, as the main window's sidebar does (window.ts). no backgroundColor,
+      // so the page's base is transparent and the page paints the canvas under the header
+      vibrancy: "sidebar",
       titleBarStyle: "hiddenInset",
       trafficLightPosition: { x: 16, y: 14 },
       // the same lockdown as the main window

@@ -674,8 +674,7 @@ async function start(): Promise<void> {
     // the spare chat window is there only while grove chat is on, and in the page's appearance and
     // text size. an open chat window draws in them too
     if (chatMoved) chatWindows.setSpare(s.chat === true);
-    // the main window has no frame colour to repaint: it is the desktop's material, and the page
-    // paints the rest
+    // no window has a frame colour to repaint: behind each page is the desktop's material
     if (lookMoved) chatWindows.appearance(s.appearance);
     if (decisioningMoved) decisioning.switched(wantsModel(s));
     if (recapsMoved) projects.recapsSwitched();
@@ -778,8 +777,6 @@ async function start(): Promise<void> {
     void live.syncUserHooks();
     void background.read();
   });
-  // the page follows the media query on its own. this is only the frame behind a chat window's
-  electron.nativeTheme.on("updated", () => chatWindows.repaint());
   summon(settings);
   electron.powerMonitor.on("resume", () => void sessions.refresh());
   // the backfill waits for AC power
