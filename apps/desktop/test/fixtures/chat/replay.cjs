@@ -68,6 +68,7 @@ note({
     entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
     CLAUDECODE: process.env.CLAUDECODE,
     checkpointing: process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING,
+    extraBody: process.env.CLAUDE_CODE_EXTRA_BODY,
   },
 });
 

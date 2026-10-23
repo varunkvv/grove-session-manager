@@ -389,6 +389,59 @@ export function hostEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !PARENT_SESSION.has(k)));
 }
 
+/**
+ * when the api clears old tool results out of what claude sees: past 150k tokens of input, every
+ * result but the newest 20, and only when that frees 20k or more. 20 because a turn reads several
+ * files at once and a result cleared in the request it arrives in gets read again
+ */
+export const CLEARING = { trigger: 150_000, keep: 20, atLeast: 20_000 };
+
+const isOn = (v: string | undefined): boolean =>
+  !!v && !["0", "false", "no", "off"].includes(v.trim().toLowerCase());
+
+/**
+ * the env that has the api clear old reads, through claude code's CLAUDE_CODE_EXTRA_BODY. it
+ * replaces claude code's own context_management, so the thinking edit goes too, first (the api
+ * refuses it second). nothing where the api would refuse every request: experimental betas off,
+ * a provider or gateway that does not get the context-management beta. nothing when the person
+ * set an extra body of their own. `settings`: the env of claude code's settings.json
+ */
+export function clearingEnv(
+  env: NodeJS.ProcessEnv,
+  settings: Record<string, unknown> = {},
+  n = CLEARING,
+): NodeJS.ProcessEnv {
+  const all = { ...settings, ...env } as Record<string, string | undefined>;
+  if (all.CLAUDE_CODE_EXTRA_BODY !== undefined) return {};
+  if (isOn(all.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)) return {};
+  for (const k of ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"])
+    if (isOn(all[k])) return {};
+  const base = all.ANTHROPIC_BASE_URL?.trim();
+  if (base && !/^https:\/\/api\.anthropic\.com\/?$/.test(base)) return {};
+  const edits = [
+    { type: "clear_thinking_20251015", keep: "all" },
+    {
+      type: "clear_tool_uses_20250919",
+      trigger: { type: "input_tokens", value: n.trigger },
+      keep: { type: "tool_uses", value: n.keep },
+      clear_at_least: { type: "input_tokens", value: n.atLeast },
+      clear_tool_inputs: false,
+    },
+  ];
+  return { CLAUDE_CODE_EXTRA_BODY: JSON.stringify({ context_management: { edits } }) };
+}
+
+/** the env of claude code's settings.json, where a gateway's base url often is. {} without one */
+async function settingsEnv(file: string | undefined): Promise<Record<string, unknown>> {
+  if (!file) return {};
+  try {
+    const env = JSON.parse(await readFile(file, "utf8"))?.env;
+    return env && typeof env === "object" ? env : {};
+  } catch {
+    return {};
+  }
+}
+
 /** the pill's modes. bypass and the classifier modes only when the session started in one */
 export function modesFor(start: ChatMode | undefined): ChatMode[] {
   const modes: ChatMode[] = ["default", "acceptEdits", "plan"];
@@ -1183,13 +1236,15 @@ export class ChatHost {
     try {
       // only here: with grove chat off the sdk is never even loaded
       const { query } = await import("@anthropic-ai/claude-agent-sdk");
-      const [bin, env, summaries] = await Promise.all([
+      const [bin, env, summaries, settings] = await Promise.all([
         this.o.claudeBin(),
         this.o.env(),
         showsThinking(this.o.claudeSettings),
+        settingsEnv(this.o.claudeSettings),
         // claude is told of it at launch: a folder added later has to be under one it knows
         mkdir(this.o.uploads, { recursive: true }),
       ]);
+      const clearing = clearingEnv(env, settings);
       q = query({
         prompt: h.prompts,
         options: {
@@ -1219,9 +1274,9 @@ export class ChatHost {
             ...(summaries ? { display: "summarized" as const } : {}),
           },
           includePartialMessages: true,
-          // claude's environment. a setting of grove's own for claude code goes in here, over
-          // hostEnv's: CLAUDE_CODE_EXTRA_BODY, if old reads get cleared from context
-          env: hostEnv(env),
+          // claude's environment, and grove's own setting for claude code over it: the api clears
+          // old reads out of context
+          env: { ...hostEnv(env), ...clearing },
           ...(h.model ? { model: h.model } : {}),
           canUseTool: (tool, input, opts) => this.ask(h, tool, input, opts),
           // a refusal's fallback and auto's billed classifier come as cards, as in vs code

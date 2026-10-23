@@ -18,6 +18,8 @@ import { agentsOf } from "../../src/main/ipc.ts";
 import {
   ATTACH,
   ChatHost,
+  CLEARING,
+  clearingEnv,
   dialogOf,
   hostEnv,
   modesFor,
@@ -250,8 +252,26 @@ describe("grove chat's host", () => {
     // no mode is passed: the person's own settings pick it
     expect(argv.join(" ")).not.toContain("--permission-mode");
     // the parent's claude code session is not passed on: the sdk names itself. checkpoints on,
-    // as vs code has them
-    expect(env).toEqual({ entrypoint: "sdk-ts", checkpointing: "true" });
+    // as vs code has them. the api clears old reads: thinking's edit first, as it has to be
+    expect(env).toEqual({
+      entrypoint: "sdk-ts",
+      checkpointing: "true",
+      extraBody: expect.any(String),
+    });
+    expect(JSON.parse(env.extraBody)).toEqual({
+      context_management: {
+        edits: [
+          { type: "clear_thinking_20251015", keep: "all" },
+          {
+            type: "clear_tool_uses_20250919",
+            trigger: { type: "input_tokens", value: 150_000 },
+            keep: { type: "tool_uses", value: 20 },
+            clear_at_least: { type: "input_tokens", value: 20_000 },
+            clear_tool_inputs: false,
+          },
+        ],
+      },
+    });
     // vs code's thinking: a budget, and the summary text because the settings ask for it
     expect(argv).toEqual(
       expect.arrayContaining(["--max-thinking-tokens=31999", "--thinking-display=summarized"]),
@@ -1167,6 +1187,45 @@ describe("grove chat's host", () => {
       "bypassPermissions",
     ]);
     expect(modesFor(undefined)).toEqual(["default", "acceptEdits", "plan"]);
+  });
+
+  it("has the api clear old reads, except where it would refuse every request or the person set their own", () => {
+    const body = (e: NodeJS.ProcessEnv, settings?: Record<string, unknown>) =>
+      clearingEnv(e, settings).CLAUDE_CODE_EXTRA_BODY;
+    const edits = JSON.parse(body({ HOME: "/Users/v" }) ?? "{}").context_management.edits;
+    expect(edits.map((e: { type: string }) => e.type)).toEqual([
+      "clear_thinking_20251015",
+      "clear_tool_uses_20250919",
+    ]);
+    expect(edits[1].keep.value).toBe(CLEARING.keep);
+    // the probe's numbers, through the same builder
+    const small = clearingEnv({}, {}, { trigger: 30_000, keep: 20, atLeast: 2_000 });
+    expect(
+      JSON.parse(small.CLAUDE_CODE_EXTRA_BODY ?? "{}").context_management.edits[1],
+    ).toMatchObject({
+      trigger: { value: 30_000 },
+      clear_at_least: { value: 2_000 },
+    });
+    // anthropic's own api, said out loud, is still it
+    expect(body({ ANTHROPIC_BASE_URL: "https://api.anthropic.com/" })).toBeDefined();
+    // a flag turned off is off
+    expect(body({ CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "0" })).toBeDefined();
+    expect(body({ CLAUDE_CODE_USE_BEDROCK: "false" })).toBeDefined();
+    for (const e of [
+      // claude code drops the beta and still sends the body: a 400 on every request (probe o3)
+      { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1" },
+      { CLAUDE_CODE_USE_BEDROCK: "1" },
+      { CLAUDE_CODE_USE_VERTEX: "true" },
+      { CLAUDE_CODE_USE_FOUNDRY: "1" },
+      // a gateway: claude code does not send it the first-party betas
+      { ANTHROPIC_BASE_URL: "https://llm-gateway.example.com" },
+      // the person's own: theirs stays
+      { CLAUDE_CODE_EXTRA_BODY: '{"metadata":{}}' },
+    ]) {
+      expect(body(e), JSON.stringify(e)).toBeUndefined();
+      // claude code's settings.json env counts as much as the process's
+      expect(body({}, e), `settings ${JSON.stringify(e)}`).toBeUndefined();
+    }
   });
 
   it("passes nothing of a parent claude code session on", () => {
