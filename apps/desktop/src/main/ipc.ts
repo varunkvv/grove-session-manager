@@ -899,11 +899,14 @@ async function whereOf(deps: Pick<Deps, "combos">, row: SessionRow): Promise<Cha
 }
 
 /**
- * the folders a chat window may show files from: its session's, and the temp folder. none for a
- * session with no window open, so nothing else can be reached through the session schemes
+ * the folders a chat window may show files from: its session's, grove's uploads (what was attached)
+ * and the temp folder. none for a session with no window open, so nothing else can be reached
+ * through the session schemes
  */
 export async function chatRoots(
-  deps: Pick<Deps, "sessions" | "combos" | "chatWindows" | "fresh">,
+  deps: Pick<Deps, "sessions" | "combos" | "chatWindows" | "fresh"> & {
+    chat: Pick<ChatHost, "uploads">;
+  },
   id: string,
 ): Promise<string[] | null> {
   if (!deps.chatWindows.has(id)) return null;
@@ -911,7 +914,7 @@ export async function chatRoots(
   const where = row
     ? await whereOf(deps, row).catch(() => null)
     : (deps.fresh.get(id)?.where ?? null);
-  return where ? [where.cwd, ...where.dirs, ...TEMP_ROOTS] : null;
+  return where ? [where.cwd, ...where.dirs, deps.chat.uploads, ...TEMP_ROOTS] : null;
 }
 
 /** the folder's files, as `git ls-files` has them, or a few levels of it when it is no repo */

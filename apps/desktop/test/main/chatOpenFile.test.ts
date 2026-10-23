@@ -1,6 +1,6 @@
 // the viewer's Open: a file of the window's session, in the app the Mac opens it with. through
 // main's ipc as a chat window calls it, with electron's shell stood in for
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +28,10 @@ const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-open-out-
 writeFileSync(path.join(dir, "shot.png"), "x");
 writeFileSync(path.join(dir, "run.command"), "x");
 writeFileSync(path.join(outside, "secret.png"), "x");
+// grove's uploads: what was attached from elsewhere is kept here
+const uploads = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-open-uploads-")));
+mkdirSync(path.join(uploads, SID));
+writeFileSync(path.join(uploads, SID, "clip.mp4"), "x");
 
 // a session made in a chat window, with its window open: its folder is the one it may show
 registerIpc({
@@ -39,6 +43,7 @@ registerIpc({
     sessionOf: (s: unknown) => (s === sender ? SID : undefined),
   },
   fresh: new Map([[SID, { where: { cwd: dir, dirs: [] } }]]),
+  chat: { uploads },
 } as unknown as Deps);
 
 const open = (file: unknown) => fake.handlers.get("grove:chatOpenFile")?.(event, file);
@@ -56,6 +61,12 @@ describe("Open in the viewer", () => {
       ok: true,
     });
     expect(fake.openPath).toHaveBeenLastCalledWith(path.join(dir, "shot.png"));
+  });
+
+  it("opens a file that was attached from elsewhere, from grove's copy of it", async () => {
+    const clip = path.join(uploads, SID, "clip.mp4");
+    expect(await open(clip)).toEqual({ ok: true, value: undefined });
+    expect(fake.openPath).toHaveBeenCalledWith(clip);
   });
 
   it("opens nothing outside the session's folders", async () => {

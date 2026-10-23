@@ -49,6 +49,7 @@ import { Reveals } from "./services/reveal.ts";
 import { ReviewedService } from "./services/reviewed.ts";
 import { SessionService } from "./services/sessions.ts";
 import { TitleService } from "./services/titles.ts";
+import { sweepUploads } from "./services/uploads.ts";
 import { createTray, updateTray } from "./tray.ts";
 import { canvasColor, createMainWindow, denyAllPermissions, lockDown } from "./window.ts";
 
@@ -326,6 +327,11 @@ async function start(): Promise<void> {
   });
 
   // grove chat. nothing of it runs, and the sdk is not even loaded, until a chat window sends
+  // what is attached in it is kept here, a folder per session, until the session's transcript goes
+  const uploads = path.join(electron.app.getPath("userData"), "uploads");
+  void sweepUploads(uploads, projectsDir)
+    .then((gone) => gone.length && log.info(`removed the uploads of ${gone.length} gone sessions`))
+    .catch((e) => log.warn("uploads sweep:", e));
   const chat = new ChatHost({
     claudeBin: async () => {
       // a test root never runs the real claude, only a stub it names
@@ -335,6 +341,7 @@ async function start(): Promise<void> {
       return resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath);
     },
     env: () => loginEnv.get(),
+    uploads,
     // where a session runs moved: its rows say Grove, or no longer do
     onChange: () => projects.sessionsChanged(),
     claudeSettings: path.join(path.dirname(projectsDir), "settings.json"),
@@ -626,7 +633,7 @@ async function start(): Promise<void> {
   // copy of the setting, because nativeTheme does not reach the renderer's media queries.
   electron.nativeTheme.themeSource = settings.appearance;
   serveRenderer(rendererDir);
-  serveSessionFiles((id) => chatRoots({ sessions, combos, chatWindows, fresh }, id));
+  serveSessionFiles((id) => chatRoots({ sessions, combos, chatWindows, fresh, chat }, id));
   denyAllPermissions();
 
   await combos.load();

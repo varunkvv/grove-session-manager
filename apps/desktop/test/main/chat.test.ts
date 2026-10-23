@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -72,6 +73,8 @@ const BACKGROUND =
 interface Setup {
   host: ChatHost;
   where: { cwd: string; dirs: string[] };
+  /** grove's uploads: a folder per session in it */
+  uploads: string;
   /** what the fake got: argv and env once, then every stdin message */
   log: () => Array<Record<string, unknown>>;
   transcript: string;
@@ -121,7 +124,9 @@ function setup(
   const now = { at: Date.now() };
   const letGo: string[][] = [];
   const cards: Array<[string, string | null]> = [];
+  const uploads = path.join(dir, "Application Support", "uploads");
   const host = new ChatHost({
+    uploads,
     claudeBin: async () => {
       if (failFirst) {
         failFirst = false;
@@ -152,6 +157,7 @@ function setup(
   return {
     host,
     where: { cwd, dirs: [extra] },
+    uploads,
     log: () =>
       existsSync(logFile)
         ? readFileSync(logFile, "utf8")
@@ -238,6 +244,9 @@ describe("grove chat's host", () => {
     );
     expect(argv.join(" ")).toContain("--setting-sources=user,project,local");
     expect(argv.join(" ")).toContain(s.where.dirs[0]);
+    // grove's uploads too, made before claude is told of it: an attached file reads without asking
+    expect(argv).toContain(`--add-dir=${s.uploads}`);
+    expect(existsSync(s.uploads)).toBe(true);
     // no mode is passed: the person's own settings pick it
     expect(argv.join(" ")).not.toContain("--permission-mode");
     // the parent's claude code session is not passed on: the sdk names itself. checkpoints on,
@@ -1209,21 +1218,35 @@ describe("grove chat's host", () => {
 
   it("takes from a page only files grove sends, within its caps, and nothing riding along", () => {
     const png = { kind: "image", mediaType: "image/png", data: "iVBORw0KGgo=" };
-    const pdf = { kind: "pdf", name: "spec.pdf", data: "JVBERi0=" };
-    const txt = { kind: "text", name: "data.csv", text: "a,b\n1,2" };
+    const named = { ...png, name: "shot.png" };
+    const paste = { kind: "data", name: "notes.md", mediaType: "text/markdown", data: "IyBoaQ==" };
     expect(parseAttachments(undefined)).toEqual([]);
-    expect(parseAttachments([png, { ...pdf, extra: 1 }, txt])).toEqual([png, pdf, txt]);
+    expect(parseAttachments([png, { ...named, extra: 1 }, { ...paste, extra: 1 }])).toEqual([
+      png,
+      named,
+      paste,
+    ]);
+    // chromium gives a type it does not know as empty
+    expect(parseAttachments([{ ...paste, mediaType: "" }])[0]).toMatchObject({ mediaType: "" });
     for (const bad of [
       "png",
       [null],
       [{ ...png, mediaType: "image/svg+xml" }],
       [{ ...png, data: "not base64!" }],
-      [{ ...png, data: "A".repeat(ATTACH.image + 4) }],
-      [{ ...pdf, data: "not base64!" }],
-      [{ ...pdf, name: "" }],
-      [{ ...pdf, name: 4 }],
-      [{ ...pdf, data: "A".repeat(ATTACH.pdf + 4) }],
-      [{ ...txt, text: "x".repeat(ATTACH.text + 1) }],
+      [{ ...png, data: "A".repeat(ATTACH.bytes + 4) }],
+      [{ ...named, name: "" }],
+      [{ ...named, name: "../shot.png" }],
+      [{ ...paste, data: "not base64!" }],
+      [{ ...paste, data: "A".repeat(ATTACH.bytes + 4) }],
+      [{ ...paste, name: "" }],
+      [{ ...paste, name: 4 }],
+      // its name becomes a file's in grove's uploads: never a path somewhere else
+      [{ ...paste, name: "../../.zshrc" }],
+      [{ ...paste, name: "a\nb" }],
+      [{ ...paste, mediaType: 4 }],
+      // the shapes before 0.27: a pdf or a text file went inline
+      [{ kind: "pdf", name: "spec.pdf", data: "JVBERi0=" }],
+      [{ kind: "text", name: "data.csv", text: "a,b" }],
       [{ kind: "docx", name: "a.docx", data: "AAAA" }],
       Array.from({ length: 11 }, () => png),
     ]) {
@@ -1231,9 +1254,6 @@ describe("grove chat's host", () => {
         "not a file Claude can take",
       );
     }
-    // each under its cap, too much together: pdfs and text go again with every turn
-    const big = { ...pdf, data: "A".repeat(ATTACH.pdf - 100) };
-    expect(() => parseAttachments([big, big])).toThrow("too big to send together");
   });
 
   it("takes any other file by its path: a file there now, counted, never read", () => {
@@ -1265,57 +1285,144 @@ describe("grove chat's host", () => {
     expect(() => parseAttachments([{ ...file, path: dir }])).toThrow("clip.mp4 is not a file.");
   });
 
-  it("sends a file by its path as a text block saying where it is, before the words", async () => {
+  /** the user messages claude got, as their content blocks */
+  const userContents = (s: Setup) =>
+    s.log().flatMap((l) => {
+      const m = l.in as { type?: string; message?: { content?: Array<Record<string, unknown>> } };
+      return m?.type === "user" ? [m.message?.content ?? []] : [];
+    });
+
+  /** a fake pdftoppm in a folder of its own, for a PATH that has one */
+  const withPdftoppm = () => {
+    const bin = mkdtempSync(path.join(os.tmpdir(), "grove-poppler-"));
+    writeFileSync(path.join(bin, "pdftoppm"), "#!/bin/sh\n");
+    chmodSync(path.join(bin, "pdftoppm"), 0o755);
+    return bin;
+  };
+
+  it("sends a file in the session's folders by its own path, as a text block before the words", async () => {
     const s = setup();
     const clip = path.join(s.where.cwd, "clip.mp4");
+    writeFileSync(clip, "not really a video");
     await s.host.send(SESSION, s.where, HELLO, [
-      { kind: "file", name: "clip.mp4", path: clip, mediaType: "video/mp4", size: 44073 },
+      { kind: "file", name: "clip.mp4", path: clip, mediaType: "video/mp4", size: 18 },
     ]);
     await turnEnded(s);
-    const sent = s
-      .log()
-      .map((l) => l.in as { type?: string; message?: { content?: unknown[] } })
-      .find((m) => m?.type === "user");
-    expect(sent?.message?.content).toEqual([
+    expect(userContents(s)[0]).toEqual([
       {
         type: "text",
         text: [
           "<attached-file>",
           "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
+          "If you need its exact contents again later, read it again rather than answering from memory.",
           `path: ${clip}`,
           "type: video/mp4",
-          "size: 44073 bytes",
+          "size: 18 bytes",
           "</attached-file>",
         ].join("\n"),
       },
       { type: "text", text: HELLO },
     ]);
+    // nothing of it was copied
+    expect(existsSync(path.join(s.uploads, SESSION))).toBe(false);
   });
 
-  it("sends a pdf and a text file as documents, before the words, as vs code does", async () => {
-    const s = setup();
+  it("clones a file from elsewhere into the session's uploads and sends the copy, which outlives the original", async () => {
+    const s = setup(2, false, undefined, undefined, { PATH: `${withPdftoppm()}:/usr/bin:/bin` });
+    const away = mkdtempSync(path.join(os.tmpdir(), "grove-downloads-"));
+    const pdf = path.join(away, "spec.pdf");
+    const csv = path.join(away, "data.csv");
+    writeFileSync(pdf, "%PDF-1.4\n%%EOF\n");
+    writeFileSync(csv, "a,b\n1,2\n");
     await s.host.send(SESSION, s.where, HELLO, [
-      { kind: "pdf", name: "spec.pdf", data: "JVBERi0=" },
-      { kind: "text", name: "data.csv", text: "a,b" },
+      { kind: "file", name: "spec.pdf", path: pdf, mediaType: "application/pdf", size: 15 },
+      { kind: "file", name: "data.csv", path: csv, mediaType: "text/csv", size: 8 },
+      { kind: "data", name: "notes.md", mediaType: "text/markdown", data: "IyBoaQ==" },
+      // a second paste by the same name: its own place, under its own name
+      { kind: "data", name: "notes.md", mediaType: "text/markdown", data: "IyB0d28=" },
     ]);
     await turnEnded(s);
-    const sent = s
-      .log()
-      .map((l) => l.in as { type?: string; message?: { content?: unknown[] } })
-      .find((m) => m?.type === "user");
-    expect(sent?.message?.content).toEqual([
-      {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: "JVBERi0=" },
-        title: "spec.pdf",
-      },
-      {
-        type: "document",
-        source: { type: "text", media_type: "text/plain", data: "a,b" },
-        title: "data.csv",
-      },
-      { type: "text", text: HELLO },
+    const mine = path.join(s.uploads, SESSION);
+    const [content] = userContents(s);
+    const texts = (content ?? []).map((b) => b.text as string);
+    expect(texts.at(-1)).toBe(HELLO);
+    expect(texts[0]).toContain(
+      `\npath: ${mine}/spec.pdf\ncopy of: ${pdf}\ntype: application/pdf\nsize: 15 bytes\n`,
+    );
+    // pdftoppm is there: pages work, nothing is said of them
+    expect(texts[0]).not.toContain("pages");
+    expect(texts[1]).toContain(`\npath: ${mine}/data.csv\ncopy of: ${csv}\ntype: text/csv\n`);
+    // a paste has no original: written there, never copied
+    expect(texts[2]).toContain(`\npath: ${mine}/notes.md\ntype: text/markdown\nsize: 4 bytes\n`);
+    expect(texts[2]).not.toContain("copy of:");
+    expect(texts[3]).toContain(`\npath: ${mine}/2/notes.md\n`);
+    expect(readFileSync(path.join(mine, "notes.md"), "utf8")).toBe("# hi");
+    expect(readFileSync(path.join(mine, "2", "notes.md"), "utf8")).toBe("# two");
+    // the original moved or deleted in finder: the copy claude reads is still there
+    rmSync(pdf);
+    expect(readFileSync(path.join(mine, "spec.pdf"), "utf8")).toBe("%PDF-1.4\n%%EOF\n");
+  });
+
+  it("says to read a pdf whole where claude's PATH has no pdftoppm, looked up once", async () => {
+    const s = setup(2, false, undefined, undefined, { PATH: "/usr/bin:/bin" });
+    const pdf = path.join(s.where.cwd, "spec.pdf");
+    writeFileSync(pdf, "%PDF-1.4\n%%EOF\n");
+    const file = { kind: "file" as const, name: "spec.pdf", path: pdf, mediaType: "", size: 15 };
+    const clip = { ...file, name: "clip.mp4", path: path.join(s.where.cwd, "clip.mp4") };
+    writeFileSync(clip.path, "x");
+    await s.host.send(SESSION, s.where, HELLO, [file, clip]);
+    await turnEnded(s);
+    const [content] = userContents(s);
+    // a .pdf chromium gave no type is still a pdf
+    expect(content?.[0]?.text).toContain(
+      "\nRead the whole PDF, without `pages`: reading pages needs pdftoppm, which is not installed.\n",
+    );
+    expect(content?.[1]?.text).not.toContain("pages");
+  });
+
+  it("sends an image inline, and one typed mid-turn by a path: claude code drops documents there and sends images unshrunk", async () => {
+    const s = setup();
+    const png = "iVBORw0KGgo=";
+    await s.host.send(SESSION, s.where, HELLO, [
+      { kind: "image", mediaType: "image/png", data: png, name: "shot.png" },
     ]);
+    await turnEnded(s);
+    expect(userContents(s)[0]?.[0]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: png },
+    });
+    await s.host.send(SESSION, s.where, COUNT);
+    await until(() => s.host.text(SESSION).length > 0, "the count");
+    await s.host.send(SESSION, s.where, AFTER, [
+      { kind: "image", mediaType: "image/png", data: png, name: "shot.png" },
+      { kind: "image", mediaType: "image/jpeg", data: png },
+    ]);
+    expect(s.host.status(SESSION).queued.map((q) => q.text)).toEqual([`${AFTER} [2 images]`]);
+    const queued = await until(() => userContents(s)[2], "the queued message");
+    const mine = path.join(s.uploads, SESSION);
+    expect(queued.map((b) => b.type)).toEqual(["text", "text", "text"]);
+    expect(queued[0]?.text).toContain(`\npath: ${mine}/shot.png\ntype: image/png\nsize: 8 bytes\n`);
+    // a paste with no name is called what it is
+    expect(queued[1]?.text).toContain(`\npath: ${mine}/image.jpg\ntype: image/jpeg\n`);
+    expect(readFileSync(path.join(mine, "shot.png")).toString("base64")).toBe(png);
+    await s.host.interrupt(SESSION);
+    await until(() => s.host.status(SESSION).queued.length === 0, "the queue to clear");
+  });
+
+  it("puts a message's files on disk before it goes, and never lets the next overtake it", async () => {
+    const s = setup();
+    await s.host.warm(SESSION, s.where);
+    const big = path.join(mkdtempSync(path.join(os.tmpdir(), "grove-big-")), "big.bin");
+    writeFileSync(big, Buffer.alloc(8 * 1024 * 1024));
+    await Promise.all([
+      s.host.send(SESSION, s.where, HELLO, [
+        { kind: "file", name: "big.bin", path: big, mediaType: "", size: 1 },
+      ]),
+      s.host.send(SESSION, s.where, AFTER),
+    ]);
+    // the copy takes a moment, the second has nothing to copy: it still goes second
+    const sent = await until(() => userContents(s).length >= 2 && userContents(s), "both sends");
+    expect(sent.map((c) => c.at(-1)?.text)).toEqual([HELLO, AFTER]);
   });
 
   it("a send claude could not start for is not sent again with the next one", async () => {

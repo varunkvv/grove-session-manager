@@ -15,7 +15,7 @@ import type {
   ChatTarget,
   Outcome,
 } from "../../shared/ipc.ts";
-import { attachKind, bytes, fileWord } from "../logic/attach.ts";
+import { bytes, fileWord, isImage } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
@@ -66,14 +66,13 @@ const api = () => window.grove;
 /** the reading column. it widens with the text size, so a line keeps about as many characters */
 const COLUMN = "mx-auto w-full max-w-[calc(760px*var(--reading-scale))] px-6";
 
-/** grove's caps on what crosses into main (main holds them too): see ATTACH in services/chat.ts */
+/**
+ * grove's caps on what crosses into main (main holds them too): see ATTACH in services/chat.ts.
+ * `bytes`: a file sent as its bytes, an image or a paste with no file behind it
+ */
 const CAP = {
-  image: 20 * 1024 * 1024,
-  pdf: 10 * 1024 * 1024,
-  text: 512 * 1024,
+  bytes: 20 * 1024 * 1024,
   files: 10,
-  /** pdfs as base64 and text, all together in one message */
-  documents: 16 * 1024 * 1024,
 };
 
 /** a file in the composer: what goes to claude, and what its chip shows. `video`: its first frame */
@@ -88,12 +87,7 @@ const dataUrl = (f: File) =>
   });
 const base64 = (url: string) => url.slice(url.indexOf(",") + 1);
 
-/**
- * files picked, dropped or pasted, read as claude takes them. one it cannot take, or one over its
- * cap, is said why. one that is not a type it takes goes by its path: a copy in finder, a drop and
- * a pick all have one. a file with none (nothing makes one today) is refused
- */
-/** a file claude opens from disk: what has no block, or is too big for one. null with no path */
+/** a file claude opens from disk: everything but an image it sees inline. null with no path */
 function byPath(f: File): Attached | null {
   const path = window.grove.pathOf(f);
   if (!path) return null;
@@ -101,20 +95,27 @@ function byPath(f: File): Attached | null {
   return { kind: "file", name: f.name, path, mediaType: f.type, size: f.size, ...video };
 }
 
+/**
+ * a file picked, dropped or pasted, as it goes to claude. an image inline, unless it is over its
+ * cap. anything else by its path, which a copy in finder, a drop and a pick all have. one with no
+ * path (a paste of bytes) goes as its bytes, and main writes it to disk. only such a paste over
+ * the cap is refused
+ */
 async function readAttachment(f: File): Promise<Attached | { refused: string }> {
-  const kind = attachKind(f.type, f.name);
-  if (kind === "file") return byPath(f) ?? { refused: `${f.name} can't be attached.` };
-  // over its cap it goes by its path. only a paste with no file behind it is refused
-  if (f.size > CAP[kind]) {
-    return byPath(f) ?? { refused: `${f.name} is over ${bytes(CAP[kind])}.` };
-  }
-  if (kind === "text") return { kind, name: f.name, text: await f.text(), size: f.size };
+  const image = isImage(f.type);
+  const onDisk = image && f.size <= CAP.bytes ? null : byPath(f);
+  if (onDisk) return onDisk;
+  if (f.size > CAP.bytes) return { refused: `${f.name} is over ${bytes(CAP.bytes)}.` };
   const url = await dataUrl(f);
-  if (kind === "pdf") return { kind, name: f.name, data: base64(url), size: f.size };
+  if (!image) {
+    const name = f.name || "file";
+    return { kind: "data", name, mediaType: f.type, data: base64(url), size: f.size };
+  }
   return {
-    kind,
+    kind: "image",
     mediaType: f.type.toLowerCase() as "image/png",
     data: base64(url),
+    ...(f.name ? { name: f.name } : {}),
     size: f.size,
     url,
   };
@@ -252,20 +253,19 @@ function Chip({
       </div>
     );
   }
-  const byPath = file.kind === "file";
   return (
     <div
       className={CHIP}
       data-testid="chip"
       data-kind={file.kind}
-      title={file.kind === "image" ? undefined : byPath ? file.path : file.name}
+      title={file.kind === "file" ? file.path : file.kind === "data" ? file.name : undefined}
     >
       {file.video ? <FirstFrame file={file.video} /> : <Icon name="file" faint />}
       <span className="min-w-0 truncate text-sm text-fg-2">
         {file.kind === "image" ? "image" : file.name}
       </span>
       <span className="shrink-0 text-sm text-fg-4">
-        {byPath && `${fileWord(file.mediaType)} · `}
+        {file.kind !== "image" && `${fileWord(file.mediaType)} · `}
         {bytes(file.size)}
       </span>
       {remove}
@@ -772,47 +772,17 @@ export function ChatApp() {
 
   /** picked, dropped or pasted: what claude can take is attached, the rest is said why */
   const attach = async (list: FileList | null | undefined) => {
-    // a text file or a pdf from the session's own folder is named with @, not attached: claude
-    // reads it from there (probe: @path in prompt text is expanded), and it is not sent again with
-    // every later turn
     const all = [...(list ?? [])];
-    const inside = (f: File) => {
-      const at = window.grove.pathOf(f);
-      const kind = attachKind(f.type, f.name);
-      return at.startsWith(`${target?.cwd}/`) && (kind === "text" || kind === "pdf")
-        ? at.slice((target?.cwd.length ?? 0) + 1)
-        : null;
-    };
-    const mentioned = all.flatMap((f) => (inside(f) !== null ? [inside(f) as string] : []));
-    if (mentioned.length) {
-      setDraft(
-        (d) => `${d}${d && !/\s$/.test(d) ? " " : ""}${mentioned.map((m) => `@${m}`).join(" ")} `,
-      );
-    }
-    const outside = all.filter((f) => inside(f) === null);
     const got = await Promise.all(
-      outside.map((f) =>
-        readAttachment(f).catch(() => ({ refused: `${f.name} could not be read.` })),
-      ),
+      all.map((f) => readAttachment(f).catch(() => ({ refused: `${f.name} could not be read.` }))),
     );
-    // pdfs and text past what one message carries go by their path too
-    const weight = (a: Attached) =>
-      a.kind === "pdf" ? a.data.length : a.kind === "text" ? a.text.length : 0;
-    let carried = files.reduce((n, a) => n + weight(a), 0);
-    const taken = got.flatMap((g, i): Attached[] => {
-      if (!("kind" in g)) return [];
-      const f = outside[i];
-      const moved = carried + weight(g) > CAP.documents && f ? byPath(f) : null;
-      if (moved) return [moved];
-      carried += weight(g);
-      return [g];
-    });
+    const taken = got.flatMap((g): Attached[] => ("kind" in g ? [g] : []));
     const refused = got.flatMap((g) => ("refused" in g ? [g.refused] : []));
     const room = CAP.files - files.length;
     if (taken.length > room) refused.push(`${CAP.files} files at most go with one message.`);
     if (taken.length) setFiles((was) => [...was, ...taken.slice(0, Math.max(0, room))]);
     setError(refused.length ? refused.join(" ") : undefined);
-    if (taken.length || mentioned.length) warm();
+    if (taken.length) warm();
     composer.current?.focus();
   };
 

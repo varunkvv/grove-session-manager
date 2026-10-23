@@ -2,7 +2,7 @@
 // so it outlives the window it was opened from. no electron import: a window is a PushTarget.
 import { randomUUID } from "node:crypto";
 import { type FSWatcher, statSync, watch } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type {
@@ -36,6 +36,7 @@ import type {
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { PushTarget } from "../push.ts";
+import { onPath, type Placed, place } from "./uploads.ts";
 
 /** an idle session with no window open is let go after this. the next send resumes it */
 export const REAP_MS = 10 * 60_000;
@@ -219,43 +220,42 @@ const MB = 1024 * 1024;
 /** base64 of n bytes */
 const encoded = (n: number) => Math.ceil(n / 3) * 4;
 /**
- * grove's caps, on what goes over the wire. claude code shrinks an image before the api sees it
- * (probe: an 18.7MB png went as a 455KB jpeg), so an image's cap only bounds what crosses ipc. a
- * pdf and a text file go as they are, and again with every later turn: together they stay under
- * half the api's 32MB request, so the conversation around them still fits
+ * grove's caps, on what crosses ipc. only an image goes inline, and claude code shrinks it before
+ * the api sees it (probe: an 18.7MB png went as a 455KB jpeg). everything else goes by a path, so
+ * `bytes` only bounds a file sent as its bytes: an image, or a paste with no file behind it
  */
 export const ATTACH = {
   files: 10,
-  image: encoded(20 * MB),
-  pdf: encoded(10 * MB),
-  text: 512 * 1024,
-  documents: 16 * MB,
+  bytes: encoded(20 * MB),
 } as const;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+/** a name that becomes a file's in grove's uploads: no folders in it */
+const isName = (v: unknown): v is string => isText(v, 255) && !!v.trim() && !/[/\0\n\r]/.test(v);
 
 /** files attached in the composer, as the page sent them, held to what grove sends. else refused */
 export function parseAttachments(raw: unknown): ChatAttachment[] {
   if (raw === undefined) return [];
   const bad = (why = "That is not a file Claude can take.") => new AppError("invalid", why);
   if (!Array.isArray(raw) || raw.length > ATTACH.files) throw bad();
-  let documents = 0;
-  const out = raw.map((f): ChatAttachment => {
+  return raw.map((f): ChatAttachment => {
     const o = f as Record<string, unknown> | null;
     if (o?.kind === "image") {
       if (typeof o.mediaType !== "string" || !IMAGE_TYPES.has(o.mediaType)) throw bad();
-      if (!isText(o.data, ATTACH.image) || !BASE64.test(o.data)) throw bad();
-      return { kind: "image", mediaType: o.mediaType as "image/png", data: o.data };
+      if (!isText(o.data, ATTACH.bytes) || !BASE64.test(o.data)) throw bad();
+      if (o.name !== undefined && !isName(o.name)) throw bad();
+      return {
+        kind: "image",
+        mediaType: o.mediaType as "image/png",
+        data: o.data,
+        ...(o.name !== undefined ? { name: o.name as string } : {}),
+      };
     }
     if (!isText(o?.name, 255) || !o.name.trim()) throw bad();
-    if (o.kind === "pdf") {
-      if (!isText(o.data, ATTACH.pdf) || !BASE64.test(o.data)) throw bad();
-      documents += o.data.length;
-      return { kind: "pdf", name: o.name, data: o.data };
-    }
-    if (o.kind === "text") {
-      if (!isText(o.text, ATTACH.text)) throw bad();
-      documents += o.text.length;
-      return { kind: "text", name: o.name, text: o.text };
+    // a paste with no file behind it: main writes it to disk
+    if (o.kind === "data") {
+      if (!isName(o.name) || !isText(o.mediaType, 255)) throw bad();
+      if (!isText(o.data, ATTACH.bytes) || !BASE64.test(o.data)) throw bad();
+      return { kind: "data", name: o.name, mediaType: o.mediaType, data: o.data };
     }
     // by its path: nothing is read, so no size cap. it has to be a file there now, by that name
     if (o.kind === "file") {
@@ -277,15 +277,21 @@ export function parseAttachments(raw: unknown): ChatAttachment[] {
     }
     throw bad();
   });
-  if (documents > ATTACH.documents) throw bad("Those files are too big to send together.");
-  return out;
 }
 
+const isPdf = (f: { name: string; mediaType: string }) =>
+  f.mediaType === "application/pdf" || /\.pdf$/i.test(f.name);
+
 /**
- * a message's content blocks: what is attached first, in the shapes vs code sends, then the words.
- * a file the api takes no block for is a text block naming where it is on disk
+ * a message's content blocks: what is attached first, then the words. an image inline, in the
+ * shape vs code sends it. any other file a text block naming where it is on disk, which claude
+ * reads when it needs it. `pages`: pdftoppm is there, so a Read of a pdf's pages works
  */
-function blocksFor(text: string, files: ChatAttachment[]): SDKUserMessage["message"]["content"] {
+export function blocksFor(
+  text: string,
+  files: Placed[],
+  pages = true,
+): SDKUserMessage["message"]["content"] {
   return [
     ...files.map((f) =>
       f.kind === "image"
@@ -293,24 +299,7 @@ function blocksFor(text: string, files: ChatAttachment[]): SDKUserMessage["messa
             type: "image" as const,
             source: { type: "base64" as const, media_type: f.mediaType, data: f.data },
           }
-        : f.kind === "file"
-          ? { type: "text" as const, text: attachedFileText(f) }
-          : f.kind === "pdf"
-            ? {
-                type: "document" as const,
-                source: {
-                  type: "base64" as const,
-                  media_type: "application/pdf" as const,
-                  data: f.data,
-                },
-                title: f.name,
-              }
-            : {
-                // always text/plain: a csv sent as text/csv makes the api drop the document
-                type: "document" as const,
-                source: { type: "text" as const, media_type: "text/plain" as const, data: f.text },
-                title: f.name,
-              },
+        : { type: "text" as const, text: attachedFileText({ ...f, whole: !pages && isPdf(f) }) },
     ),
     ...(text ? [{ type: "text" as const, text }] : []),
   ];
@@ -319,6 +308,11 @@ function blocksFor(text: string, files: ChatAttachment[]): SDKUserMessage["messa
 export interface ChatHostOptions {
   claudeBin: () => Promise<string>;
   env: () => Promise<NodeJS.ProcessEnv>;
+  /**
+   * where grove keeps what is attached for claude to read, a folder per session in it. claude may
+   * read anything in it without asking
+   */
+  uploads: string;
   /** a process came or went, or a turn started or ended: rows say where a session runs */
   onChange?: () => void;
   now?: () => number;
@@ -549,11 +543,11 @@ class Prompts implements AsyncIterable<SDKUserMessage> {
   private wake: (() => void) | null = null;
 
   /** returns the uuid it went with: claude's command_lifecycle frames and a take-back name it */
-  push(text: string, files: ChatAttachment[] = []): string {
+  push(text: string, files: Placed[] = [], pages = true): string {
     const uuid = randomUUID();
     this.queue.push({
       type: "user",
-      message: { role: "user", content: blocksFor(text, files) },
+      message: { role: "user", content: blocksFor(text, files, pages) },
       parent_tool_use_id: null,
       // typed by a person: the sdk treats a message with no origin as nobody's
       origin: { kind: "human" },
@@ -629,6 +623,8 @@ interface Hosted {
   toolTask?: string;
   /** `system/init.terminal_slash_commands`: commands for a terminal, not a chat window */
   terminalOnly?: Set<string>;
+  /** the send under way: its files are put on disk before it goes, and the next waits for it */
+  sending?: Promise<void>;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -701,6 +697,8 @@ export class ChatHost {
   private readonly o: ChatHostOptions;
   private readonly hosted = new Map<string, Hosted>();
   private reaper: NodeJS.Timeout;
+  /** whether pdftoppm is on claude's PATH, looked up once: a Read of a pdf's pages needs it */
+  private pdfPages?: Promise<boolean>;
 
   constructor(o: ChatHostOptions) {
     this.o = o;
@@ -815,6 +813,11 @@ export class ChatHost {
     return h.starting;
   }
 
+  /** where grove keeps what is attached: the session windows' viewer shows files from it too */
+  get uploads(): string {
+    return this.o.uploads;
+  }
+
   /** while a turn runs, Claude Code queues it */
   async send(
     id: string,
@@ -823,19 +826,34 @@ export class ChatHost {
     files: ChatAttachment[] = [],
   ): Promise<void> {
     const h = this.entry(id, where);
-    const queued = h.status.running;
-    const uuid = h.prompts.push(text, files);
-    // what was said along the way belongs to the turn before
-    if (!queued && h.status.notes?.length) this.set(h, { notes: [] });
-    if (queued) {
-      const images = files.filter((f) => f.kind === "image").length;
-      const named = [
-        ...(images ? [`${images} image${images === 1 ? "" : "s"}`] : []),
-        ...files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
-      ];
-      const shown = named.length ? `${text}${text ? " " : ""}[${named.join(" · ")}]` : text;
-      this.set(h, { queued: [...h.status.queued, { id: uuid, text: shown, said: text }] });
-    } else this.turnStarted(h);
+    // one after another: a message's files go on disk before it goes, and none overtakes the last
+    const go = (h.sending ?? Promise.resolve()).then(async () => {
+      const queued = h.status.running;
+      const placed = await place(files, {
+        roots: [h.where.cwd, ...h.where.dirs],
+        dir: path.join(this.o.uploads, h.id),
+        queued,
+      });
+      let pages = true;
+      if (placed.some((f) => f.kind === "file" && isPdf(f))) {
+        this.pdfPages ??= this.o.env().then((e) => onPath("pdftoppm", e.PATH));
+        pages = await this.pdfPages;
+      }
+      const uuid = h.prompts.push(text, placed, pages);
+      // what was said along the way belongs to the turn before
+      if (!queued && h.status.notes?.length) this.set(h, { notes: [] });
+      if (queued) {
+        const images = files.filter((f) => f.kind === "image").length;
+        const named = [
+          ...(images ? [`${images} image${images === 1 ? "" : "s"}`] : []),
+          ...files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
+        ];
+        const shown = named.length ? `${text}${text ? " " : ""}[${named.join(" · ")}]` : text;
+        this.set(h, { queued: [...h.status.queued, { id: uuid, text: shown, said: text }] });
+      } else this.turnStarted(h);
+    });
+    h.sending = go.catch(() => {});
+    await go;
     await this.warm(id, where);
     if (!h.status.live) throw new Error(h.status.error ?? "Claude did not start.");
   }
@@ -1169,13 +1187,16 @@ export class ChatHost {
         this.o.claudeBin(),
         this.o.env(),
         showsThinking(this.o.claudeSettings),
+        // claude is told of it at launch: a folder added later has to be under one it knows
+        mkdir(this.o.uploads, { recursive: true }),
       ]);
       q = query({
         prompt: h.prompts,
         options: {
           pathToClaudeCodeExecutable: bin,
           cwd: h.where.cwd,
-          additionalDirectories: h.where.dirs,
+          // grove's uploads too: a Read of an attached file never asks, in any mode
+          additionalDirectories: [...h.where.dirs, this.o.uploads],
           // a session grove made has no transcript to resume yet: claude starts one under its id
           ...(h.where.fresh ? { sessionId: h.id } : { resume: h.id }),
           // CLAUDE.md, skills, hooks and the project's settings, as everywhere else. no mode: the
@@ -1198,6 +1219,8 @@ export class ChatHost {
             ...(summaries ? { display: "summarized" as const } : {}),
           },
           includePartialMessages: true,
+          // claude's environment. a setting of grove's own for claude code goes in here, over
+          // hostEnv's: CLAUDE_CODE_EXTRA_BODY, if old reads get cleared from context
           env: hostEnv(env),
           ...(h.model ? { model: h.model } : {}),
           canUseTool: (tool, input, opts) => this.ask(h, tool, input, opts),
