@@ -1315,6 +1315,7 @@ describe("grove chat's host", () => {
           "<attached-file>",
           "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
           "If you need its exact contents again later, read it again rather than answering from memory.",
+          "If Read says the file is unchanged since your last read but that earlier result is gone, Grep it or Read it with an offset.",
           `path: ${clip}`,
           "type: video/mp4",
           "size: 18 bytes",

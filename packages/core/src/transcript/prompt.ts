@@ -33,9 +33,10 @@ export function cleanBlockText(text: string): string | null {
 
 /**
  * a file grove chat attached by its path: every one but an image sent inline. claude reads it from
- * disk, again when it needs it again. it starts with `<`, so cleanBlockText already keeps it out of
- * what was typed. `copyOf`: where it was when it was sent, for a copy grove keeps. `whole`: a pdf
- * with no pdftoppm on the machine, where a Read with `pages` fails
+ * disk, again when it needs it again (grove's clearing takes old reads out of context). it starts
+ * with `<`, so cleanBlockText already keeps it out of what was typed. `copyOf`: where it was when it
+ * was sent, for a copy grove keeps. `whole`: a pdf with no pdftoppm on the machine, where a Read
+ * with `pages` fails
  */
 export function attachedFileText(file: {
   path: string;
@@ -48,6 +49,9 @@ export function attachedFileText(file: {
     "<attached-file>",
     "The user attached this file to their message. It is on disk, not in the message: open it from its path.",
     "If you need its exact contents again later, read it again rather than answering from memory.",
+    // a read of an unchanged file only gets "file unchanged since your last Read" from claude code,
+    // which does not know the api cleared that earlier result (grove clears old reads)
+    "If Read says the file is unchanged since your last read but that earlier result is gone, Grep it or Read it with an offset.",
     ...(file.whole
       ? [
           "Read the whole PDF, without `pages`: reading pages needs pdftoppm, which is not installed.",
