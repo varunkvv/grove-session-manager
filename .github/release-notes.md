@@ -1,3 +1,27 @@
+## 0.28
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.28 has the API clear old reads out of a
+long grove chat, so a file Claude read an hour ago stops riding along in every message after it.
+
+New:
+
+- once a grove chat passes 150k tokens, the API swaps what older tool calls returned (a file Claude read, a search's
+  results) for a short note. the newest 20 stay as they were, and it only clears when that frees 20k tokens or more
+- Claude is told to read an attached file again when it needs its exact contents, and how to get them when Claude
+  Code says the file is unchanged since the last read
+- where the API refuses it, Grove starts that chat's Claude again without it, says so under the message box, and the
+  message that failed has its Try again. it stays off until you quit Grove
+
+Keep in mind:
+
+- it's off with Bedrock, Vertex or Foundry, behind your own ANTHROPIC_BASE_URL, with
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS set, and when you set CLAUDE_CODE_EXTRA_BODY yourself
+- where an old result was, Claude sees that it was cleared, and reads the file again if it needs it. that's a step
+  and a few seconds
+- most of a chat's context is what you and Claude said, so this does the most in long chats that read a lot of files
+- the request that clears writes the prompt cache again from the first cleared result on, so that one costs more
+- only grove chat does this. a session in the terminal or VS Code is as it was
+
 ## 0.27
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.27 changes how a file you attach reaches
