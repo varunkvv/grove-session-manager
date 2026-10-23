@@ -8,6 +8,7 @@ import {
   restFrame,
   staticFrame,
 } from "../../scripts/gavelScene.ts";
+import { CANVAS } from "../../src/main/window.ts";
 
 const dir = path.join(import.meta.dirname, "../../src/renderer");
 const files = readdirSync(dir, { recursive: true })
@@ -254,6 +255,17 @@ describe("design lint", () => {
     const text = readFileSync(path.join(dir, "gavel/parts.txt"), "utf8");
     for (const mood of GAVEL_MOODS) {
       expect(restFrame(parts, mood), mood).toEqual(staticFrame(text, parts, mood));
+    }
+  });
+
+  it("the window is painted in each palette's canvas before its page loads", () => {
+    const all = palettes();
+    expect(Object.keys(CANVAS).sort()).toEqual([...all.keys()].sort());
+    for (const [name, tokens] of all) {
+      const canvas = halves(tokens.get("canvas") ?? "");
+      const painted = CANVAS[name as keyof typeof CANVAS];
+      expect(painted.light.toLowerCase(), `${name} light`).toBe(canvas?.light.toLowerCase());
+      expect(painted.dark.toLowerCase(), `${name} dark`).toBe(canvas?.dark.toLowerCase());
     }
   });
 });

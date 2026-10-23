@@ -1,3 +1,12 @@
+## 0.33
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.33 takes the glass back out of chat windows.
+
+New:
+
+- a chat window's header is its project's solid band again, as before 0.31. the glass stays on the main window's
+  sidebar and top bar
+
 ## 0.32
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.32 makes the glass stronger.

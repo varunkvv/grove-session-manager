@@ -16,6 +16,17 @@ export interface MainWindowOptions {
   show?: boolean;
 }
 
+/** --color-canvas of each palette in app.css, light and dark. a chat window is painted before its page loads. */
+export const CANVAS = {
+  grove: { light: "#FFFFFF", dark: "#17181B" },
+  "rose-pine": { light: "#FAF4ED", dark: "#191724" },
+  solarized: { light: "#FDF6E3", dark: "#002B36" },
+} as const;
+
+export function canvasColor(dark: boolean, palette: keyof typeof CANVAS = "grove"): string {
+  return dark ? CANVAS[palette].dark : CANVAS[palette].light;
+}
+
 const SAVE_DEBOUNCE_MS = 400;
 
 export async function createMainWindow(o: MainWindowOptions): Promise<BrowserWindow> {
