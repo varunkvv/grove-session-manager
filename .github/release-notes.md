@@ -1,3 +1,17 @@
+## 0.34
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.34 shows where each session's pull requests are at.
+
+New:
+
+- a session that opened or pushed a PR shows it after its time: green when checks pass, red when they fail or changes
+  were asked for, faint while they run or it is a draft. a stack says how many are open, and a click lists them
+- the session panel has a Pull requests section: each PR's state, its review, the checks that failed (click one to see
+  it) and when it last changed
+- a chat window's header has the same mark beside the title
+- it asks github through your own `gh`, every minute while the session works and every five otherwise. no `gh`, or
+  logged out, and the marks just say the PR number
+
 ## 0.33
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.33 takes the glass back out of chat windows.
