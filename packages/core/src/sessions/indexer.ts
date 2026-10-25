@@ -5,7 +5,7 @@ import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
 import { pickTitle } from "../transcript/title.ts";
 import { type DayTally, summarizeUsage } from "../transcript/usage.ts";
-import type { ParsedMeta, SessionRecord } from "../types.ts";
+import type { ParsedMeta, PrLink, SessionRecord } from "../types.ts";
 import {
   type CacheEntry,
   cacheKey,
@@ -74,6 +74,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
   const models = usage ? summarizeUsage(Object.values(usage)) : [];
   // "" is the session's own transcript (scanSessionUsage)
   const own = usage?.[""] && summarizeUsage([usage[""]])[0]?.model;
+  const prs = prsOf(m, usage?.[""]?.prs);
   return {
     ...m,
     ...pickTitle(m),
@@ -86,7 +87,18 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     activityMs: m.lastActivityMs ?? s.mtimeMs,
     ...(models.length ? { usage: models } : {}),
     ...(own ? { model: own } : {}),
+    ...(prs.length ? { prs } : {}),
   };
+}
+
+/**
+ * the full pass's links, and the head and tail's last one when the full pass has not got it: a
+ * session counted before links were collected only has those that were appended since
+ */
+function prsOf(meta: ParsedMeta, counted: PrLink[] = []): PrLink[] {
+  const last = meta.pr;
+  if (!last?.url || counted.some((p) => p.url === last.url)) return counted;
+  return [last, ...counted];
 }
 
 async function readSidecarTitle(s: FileStat): Promise<string | undefined> {
@@ -119,7 +131,7 @@ function displayKey(r: SessionRecord): string {
     r.relocatedCwd,
     r.gitBranch,
     r.tag,
-    r.pr?.number,
+    r.prs?.map((p) => p.url).join(" "),
     r.activityMs,
     r.parsed,
     r.entrypoint,

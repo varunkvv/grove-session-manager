@@ -77,7 +77,9 @@ function foldLines(
       line.includes('"type":"user"') &&
       !line.includes('"toolUseResult":') &&
       !line.includes('"type":"tool_result"');
-    if (!usage && !typed) continue;
+    // the pull requests it opened or pushed to. a few short lines per session
+    const pr = !usage && !typed && line.includes('"type":"pr-link"');
+    if (!usage && !typed && !pr) continue;
     try {
       const v: unknown = JSON.parse(line);
       if (!isObject(v)) continue;

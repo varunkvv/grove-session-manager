@@ -602,3 +602,45 @@ describe("usage labels", () => {
     expect(formatTokens(1_100_000_000)).toBe("1.1B");
   });
 });
+
+describe("pull requests a session linked", () => {
+  const link = (n: number, repo = "o/r") => ({
+    type: "pr-link",
+    sessionId: SID.a,
+    prNumber: n,
+    prUrl: `https://github.com/${repo}/pull/${n}`,
+    prRepository: repo,
+    timestamp: "2026-10-25T10:00:00.000Z",
+  });
+
+  it("every link once, oldest first, across an incremental scan", async () => {
+    const { file } = setup([userEntry("hi"), link(1), link(1), link(2)]);
+    const before = await scanUsage(file);
+    expect(before.prs?.map((p) => p.number)).toEqual([1, 2]);
+    appendFileSync(file, toJsonl([link(2), link(3, "o/other")]));
+    const after = await scanUsage(file, before);
+    expect(after.prs).toEqual([
+      { number: 1, url: "https://github.com/o/r/pull/1", repo: "o/r" },
+      { number: 2, url: "https://github.com/o/r/pull/2", repo: "o/r" },
+      { number: 3, url: "https://github.com/o/other/pull/3", repo: "o/other" },
+    ]);
+  });
+
+  it("a link with no url is no pull request, and a link is never spend", async () => {
+    const { file } = setup([{ type: "pr-link", prNumber: 4 }, link(5)]);
+    const t = await scanUsage(file);
+    expect(t.prs?.map((p) => p.number)).toEqual([5]);
+    expect(models(t)).toEqual([]);
+  });
+
+  it("the record has them all, and an append changes the row", async () => {
+    const { base, projectsDir, file } = setup([userEntry("hi"), link(1)]);
+    const index = createSessionIndex({ projectsDir, cacheDir: path.join(base, "c"), usage: true });
+    await index.refresh();
+    expect(index.list()[0]?.prs?.map((p) => p.number)).toEqual([1]);
+    appendFileSync(file, toJsonl([link(2)]));
+    const { changed, record } = await index.refreshFile(file);
+    expect(changed).toBe(true);
+    expect(record?.prs?.map((p) => p.number)).toEqual([1, 2]);
+  });
+});

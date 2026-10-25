@@ -75,6 +75,8 @@ export interface SessionRecord extends ParsedMeta {
   usage?: ModelUsage[];
   /** the model of the session's own transcript, the biggest when it changed model on the way */
   model?: string;
+  /** every pull request its transcript linked, oldest first. one url once */
+  prs?: PrLink[];
 }
 
 export type ComboRelation = "root" | "inside";

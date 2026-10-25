@@ -54,6 +54,8 @@ export interface UsageTally {
    * anything ran after it, and the working time of the turn so far once a person has asked
    */
   clock?: { at: number; idle?: boolean; turn?: number };
+  /** every pull request the file linked (`pr-link` lines), oldest first, one url once */
+  prs?: Array<{ number: number; url: string; repo?: string }>;
 }
 
 const RECENT = 16;
@@ -192,6 +194,10 @@ export class UsageAccumulator {
   }
 
   push(entry: Record<string, unknown>): void {
+    if (entry.type === "pr-link") {
+      this.link(entry);
+      return;
+    }
     const at = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
     if (entry.type === "user") {
       this.starts(entry, at);
@@ -211,6 +217,15 @@ export class UsageAccumulator {
     }
     add(this.tally, day, u.parts, 1);
     this.answers(entry, at, u.parts[0]?.[0] ?? "");
+  }
+
+  /** Claude Code writes the same link many times over. the first one keeps its place */
+  private link(entry: Record<string, unknown>): void {
+    const { prNumber: number, prUrl: url, prRepository: repo } = entry;
+    if (typeof number !== "number" || typeof url !== "string" || !url) return;
+    this.tally.prs ??= [];
+    if (this.tally.prs.some((p) => p.url === url)) return;
+    this.tally.prs.push({ number, url, ...(typeof repo === "string" && repo ? { repo } : {}) });
   }
 
   /** a line a turn starts with: a prompt, a command, a background task's news, an agent's brief */
