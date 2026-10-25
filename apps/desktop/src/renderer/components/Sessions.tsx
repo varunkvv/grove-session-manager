@@ -23,6 +23,7 @@ import {
 } from "../state/actions.ts";
 import { currentProject, listInput, type Section, useStore } from "../state/store.ts";
 import { InboxRow } from "./Inbox.tsx";
+import { PrCell } from "./Pr.tsx";
 import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
 import {
   Button,
@@ -90,6 +91,7 @@ function SessionRow({
   active,
   open,
   tokens,
+  prCol,
   onClick,
 }: {
   item: SessionItem;
@@ -97,6 +99,8 @@ function SessionRow({
   active: boolean;
   /** it is the one in the panel */
   open: boolean;
+  /** some row in the list has a PR: every row keeps the column */
+  prCol: boolean;
   /** the words of a search, marked wherever they show */
   tokens: readonly string[];
   onClick: () => void;
@@ -185,6 +189,7 @@ function SessionRow({
           since={state === "working" ? hit.since : watching && tasksSince(watching)}
           className="w-[60px] text-right"
         />
+        {prCol && <PrCell prs={hit.prs} />}
       </div>
       {snippet ? (
         // why a search has it here: its title does not say
@@ -289,6 +294,8 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
   const typed = tokens.length > 0;
   const groups = useMemo(() => groupSessions(input), [input]);
   const items = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  // the PR column is there only when a row in the list has a PR
+  const prCol = useMemo(() => items.some((i) => i.hit.prs?.length), [items]);
   const ids = useMemo(() => items.map((i) => i.hit.sessionId), [items]);
   const open = items.find((i) => i.hit.sessionId === peek);
   const older = groups.find((g) => g.key === "older");
@@ -399,6 +406,7 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
                 const row = {
                   active: id === active,
                   open: id === peek,
+                  prCol,
                   tokens,
                   onClick: () => {
                     pair.clicked(i.hit);

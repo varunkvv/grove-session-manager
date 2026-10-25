@@ -19,6 +19,7 @@ import { bytes, fileWord, isImage } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
+import { prsKey } from "../logic/prs.ts";
 import { queuedRows, same } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
@@ -30,6 +31,7 @@ import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { PrMark } from "./Pr.tsx";
 import { QUIET, QueuedRows, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -505,7 +507,8 @@ export function ChatApp() {
             was.title === hit.title &&
             was.description === hit.description &&
             was.where === hit.where &&
-            t.project === hit.project
+            t.project === hit.project &&
+            prsKey(was.prs) === prsKey(hit.prs)
           )
             return t;
           const { project: _, ...rest } = t;
@@ -1296,6 +1299,7 @@ export function ChatApp() {
             {session.title}
           </h1>
         )}
+        <PrMark prs={session.prs} />
         {s.asks.length > 0 ? (
           <StateLabel state="turn" within="panel" />
         ) : (

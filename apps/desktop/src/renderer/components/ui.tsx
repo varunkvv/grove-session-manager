@@ -27,6 +27,7 @@ import {
   type GavelRect,
 } from "../gavel/scene.generated.ts";
 import "../gavel/gavel.css";
+import type { PrGlyphKind, PrLook } from "../logic/prs.ts";
 import type { Slice } from "../logic/usage.ts";
 import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
 import { optionId } from "../state/actions.ts";
@@ -1750,6 +1751,10 @@ export interface MenuItem {
   mark?: ReactNode;
   /** the key that does the same, on the right */
   keys?: string;
+  /** a line above it: the start of another kind of row */
+  divider?: boolean;
+  /** done with, still there to pick: a merged PR */
+  dim?: boolean;
 }
 
 /**
@@ -1844,7 +1849,8 @@ export function Menu({
           }
         }}
       >
-        {items.map((it, i) => (
+        {items.map((it, i) => [
+          it.divider && <div key={`${it.key}-line`} className="mx-2 my-1 border-t border-line" />,
           <button
             key={it.key}
             type="button"
@@ -1858,9 +1864,11 @@ export function Menu({
             onClick={() => onPick(it.key)}
             className="fade flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left data-[active]:bg-raised"
           >
-            {marks && <span className="flex h-5 w-1.5 shrink-0 items-center">{it.mark}</span>}
+            {marks && <span className="flex h-5 min-w-1.5 shrink-0 items-center">{it.mark}</span>}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-body text-fg">{it.label}</span>
+              <span className={cx("block truncate text-body", it.dim ? "text-fg-4" : "text-fg")}>
+                {it.label}
+              </span>
               {it.description && <span className="block text-sm text-fg-4">{it.description}</span>}
             </span>
             {it.keys && (
@@ -1871,8 +1879,8 @@ export function Menu({
             <span className="flex h-5 w-3.5 items-center">
               {it.checked && <Icon name="check" size={12} className="text-fg-2" />}
             </span>
-          </button>
-        ))}
+          </button>,
+        ])}
         {children}
         {footer && (
           <p className="mt-1 border-t border-line px-2 pt-1.5 pb-0.5 text-meta text-fg-4">
@@ -1881,6 +1889,39 @@ export function Menu({
         )}
       </div>
     </Overlay>
+  );
+}
+
+const PR_PATH: Record<PrGlyphKind, string> = {
+  open: "M4.5 5.1v5.8M11.5 10.9V6.5a2 2 0 0 0-2-2H7.4M8.9 3 7.4 4.5 8.9 6",
+  draft: "M4.5 5.1v5.8M11.5 3.2v.01M11.5 7.2v.01",
+  merged: "M4.5 5.1v5.8M4.5 5.1c0 2.6 2.2 3.9 5.4 3.9",
+  closed: "M4.5 5.1v5.8M11.5 10.9V8M10 2.5l3 3M13 2.5l-3 3",
+};
+
+/** the git glyph, coloured by how it is going. merged moves its third node up beside the line */
+const PR_TONE = { green: "text-hue-green", red: "text-hue-red", faint: "text-faint" } as const;
+
+export function PrGlyph({ look, size = 12 }: { look: PrLook; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cx("shrink-0", PR_TONE[look.tone])}
+      aria-hidden
+      data-glyph={look.glyph}
+    >
+      <circle cx="4.5" cy="3.5" r="1.6" />
+      <circle cx="4.5" cy="12.5" r="1.6" />
+      <circle cx="11.5" cy={look.glyph === "merged" ? 9 : 12.5} r="1.6" />
+      <path d={PR_PATH[look.glyph]} />
+    </svg>
   );
 }
 

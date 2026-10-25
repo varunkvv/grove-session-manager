@@ -30,6 +30,7 @@ import { type Section, useStore } from "../state/store.ts";
 import { Ask } from "./Asks.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { PrSection } from "./Pr.tsx";
 import { StepFold, StepList, Thought } from "./Steps.tsx";
 import {
   Button,
@@ -595,6 +596,7 @@ function SessionCard({
   editor: string;
 }) {
   const [host, setHost] = useState<ChatStatus | null>(null);
+  const now = useStore((s) => s.now);
   const [reply, setReply] = useState("");
   const [error, setError] = useState<string>();
   const key = session.key;
@@ -748,6 +750,7 @@ function SessionCard({
           ))}
         </div>
       )}
+      <PrSection prs={session.prs} now={now} />
       {agents.length > 0 && (
         <button
           type="button"
