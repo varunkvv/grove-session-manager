@@ -43,6 +43,7 @@ import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier, toldTurn } from "./services/notify.ts";
 import { ProjectsService } from "./services/projects.ts";
+import { PrService, resolveGhBin } from "./services/prs.ts";
 import { RecapService, Slots } from "./services/recaps.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
@@ -73,6 +74,8 @@ registerAppScheme();
 electron.app.enableSandbox();
 
 let win: BrowserWindow | null = null;
+/** a PR on a row quiet longer than this is not asked about */
+const PR_RECENT_MS = 7 * 24 * 60 * 60_000;
 /** the chat window a notification or tray click just opened, and when */
 let landed: { sessionId: string; at: number } | null = null;
 /** how long after a landing an `activate` is taken to be the same click's */
@@ -185,12 +188,18 @@ async function start(): Promise<void> {
     row: (key) => sessions.get(key),
   });
 
+  // made once loginEnv is: a row is built before then, with no PR status yet
+  let prs: PrService | undefined;
   const sessions = new SessionService({
     projectsDir,
     cacheDir: appEnv.stateDir,
     maxParsed: settings.maxParsedSessions,
-    onChange: () => projects.sessionsChanged(),
+    onChange: () => {
+      projects.sessionsChanged();
+      prs?.poke();
+    },
     named: (record) => titles.named(record),
+    prStatus: (url) => prs?.get(url),
   });
 
   const reveals = new Reveals({ raise: showMain, notify: () => pusher.send("app:land", {}) });
@@ -314,6 +323,33 @@ async function start(): Promise<void> {
       sessions.setBackground(entries);
       live.applyBackground(entries);
     },
+  });
+
+  prs = new PrService({
+    stateFile: path.join(appEnv.stateDir, "prs.json"),
+    ghBin: () => resolveGhBin(appEnv.ghBinOverride),
+    env: () => loginEnv.get(),
+    // a test root never runs the real gh, only a stub it names
+    enabled: () => !appEnv.customRoot || appEnv.ghBinOverride !== undefined,
+    visible: () =>
+      electron.BrowserWindow.getAllWindows().some((w) => w.isVisible() && !w.isMinimized()),
+    // open rows only: live, or active in the last week. a PR never moves a row
+    wanted: () => {
+      const now = Date.now();
+      return sessions
+        .list()
+        .filter((r) => r.prs && (r.live || now - r.activityMs < PR_RECENT_MS))
+        .flatMap((r) => {
+          const busy = working(r.live, now);
+          return (r.prs ?? []).map((p) => ({ url: p.url, working: busy }));
+        });
+    },
+    onChange: () => sessions.prsChanged(),
+  });
+  const prService = prs;
+  void prService.load().then(() => {
+    sessions.prsChanged();
+    prService.kick();
   });
 
   const recaps = new RecapService({
@@ -707,6 +743,7 @@ async function start(): Promise<void> {
     recaps,
     decisioning,
     background,
+    prs: prService,
     reveals,
     notifier,
     editor,
@@ -777,11 +814,15 @@ async function start(): Promise<void> {
     void combos.syncAll();
     void live.syncUserHooks();
     void background.read();
+    prService.kick();
   });
   // the page follows the media query on its own. this is only the frame behind a chat window's
   electron.nativeTheme.on("updated", () => chatWindows.repaint());
   summon(settings);
-  electron.powerMonitor.on("resume", () => void sessions.refresh());
+  electron.powerMonitor.on("resume", () => {
+    void sessions.refresh();
+    prService.kick();
+  });
   // the backfill waits for AC power
   electron.powerMonitor.on("on-ac", () => decisioning.kick());
 
@@ -823,6 +864,7 @@ async function start(): Promise<void> {
     live.dispose();
     projects.dispose();
     void decisioning.dispose();
+    prService.dispose();
     void sessions.dispose();
   });
 }

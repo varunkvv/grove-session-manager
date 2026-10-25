@@ -17,7 +17,7 @@ export function rowHaystack(r: SessionRow): string {
       r.gitBranch,
       r.cwdBase,
       r.tag,
-      r.prNumber ? `#${r.prNumber} ${r.prRepo ?? ""}` : undefined,
+      ...(r.prs ?? []).map((p) => `#${p.number} ${p.repo} ${p.title ?? ""}`),
       r.sessionId,
       ...(r.usage ?? []).map((u) => modelLabel(u.model)),
     ]

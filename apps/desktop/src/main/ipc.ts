@@ -75,6 +75,7 @@ import type { LiveService } from "./services/live.ts";
 import { backgroundArgs, NEW_CONVERSATION_COMPANION } from "./services/newSession.ts";
 import type { Notifier } from "./services/notify.ts";
 import type { ProjectsService } from "./services/projects.ts";
+import type { PrService } from "./services/prs.ts";
 import type { RecapService } from "./services/recaps.ts";
 import {
   claudeScriptBody,
@@ -106,6 +107,8 @@ export interface Deps {
   decisioning: DecisioningService;
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
+  /** what github says of the PRs sessions linked */
+  prs: PrService;
   /** where a notification click or a tray row is taking the page */
   reveals: Reveals;
   notifier: Notifier;
@@ -805,6 +808,11 @@ function buildHandlers(deps: Deps): Handlers {
       const safe = externalUrl(url);
       if (!safe) throw new AppError("bad-link", "Only web links open from here.");
       await electron.shell.openExternal(safe);
+    },
+
+    async prChecks(url) {
+      if (typeof url !== "string") return [];
+      return deps.prs.failingChecks(url);
     },
 
     async reportCspViolation(detail) {

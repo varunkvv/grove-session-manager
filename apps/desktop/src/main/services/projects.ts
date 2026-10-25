@@ -474,6 +474,7 @@ export class ProjectsService {
       open: openPlanOf(runtime, row, this.o.chat?.running(row.sessionId)),
       recap: this.o.recaps?.view(row.key),
       ...(row.description ? { description: row.description } : {}),
+      ...(row.prs ? { prs: row.prs } : {}),
     };
   }
 

@@ -11,6 +11,8 @@ export interface AppEnv {
   /** stands in for /usr/bin/open in tests */
   openBin: string;
   claudeBinOverride?: string;
+  /** a stub gh for tests: under a test root the PR service is off without one */
+  ghBinOverride?: string;
   devServerUrl?: string;
   isDev: boolean;
 }
@@ -28,6 +30,7 @@ export function resolveAppEnv(
     customRoot: Boolean(env.GROVE_ROOT),
     openBin: env.GROVE_OPEN_BIN || "/usr/bin/open",
     claudeBinOverride: env.GROVE_CLAUDE_BIN || undefined,
+    ghBinOverride: env.GROVE_GH_BIN || undefined,
     devServerUrl,
     isDev: devServerUrl !== undefined,
   };

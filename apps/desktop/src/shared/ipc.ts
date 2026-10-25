@@ -4,6 +4,7 @@ import type {
   BranchSpec,
   ComboRelation,
   ConversationView,
+  FailingCheck,
   FolderMode,
   FolderOutcome,
   FolderState,
@@ -13,6 +14,8 @@ import type {
   LongWorkMode,
   ModelUsage,
   ProjectId,
+  PrReview,
+  PrState,
   Recap,
   Runtime,
   SessionAgent,
@@ -44,6 +47,26 @@ export interface BackgroundView {
   waitingFor?: string;
 }
 
+/**
+ * a pull request a session linked. the link is the transcript's, the rest github's: absent until
+ * gh answered, and for good when there is no gh
+ */
+export interface PrView {
+  url: string;
+  /** owner/name */
+  repo: string;
+  number: number;
+  title?: string;
+  state?: PrState;
+  review?: PrReview;
+  /** the checks rollup's own word: the failing checks the panel has are for this one */
+  rollup?: string;
+  updatedAt?: number;
+  checkedAt?: number;
+  /** the last ask failed: what is here is as of checkedAt */
+  stale?: true;
+}
+
 export interface SessionRow {
   key: SessionKey;
   sessionId: string;
@@ -63,8 +86,8 @@ export interface SessionRow {
   comboName?: string;
   comboRelation?: ComboRelation;
   tag?: string;
-  prNumber?: number;
-  prRepo?: string;
+  /** every pull request it linked, oldest first, with what github last said of it */
+  prs?: PrView[];
   entrypoint?: string;
   activityMs: number;
   parsed: boolean;
@@ -245,6 +268,7 @@ export interface SessionRef {
   open: OpenPlan;
   /** absent while recaps are off, and until one was asked for */
   recap?: RecapView;
+  prs?: PrView[];
 }
 
 /**
@@ -590,6 +614,8 @@ export interface Api {
   textSize(dir: -1 | 0 | 1): Promise<Outcome>;
   /** a link in an agent's output. only http(s), and only ever in the browser. */
   openExternal(url: string): Promise<Outcome>;
+  /** the failed checks of a failing PR a row links, for the session panel. [] for any other */
+  prChecks(url: string): Promise<FailingCheck[]>;
   reportCspViolation(detail: string): Promise<void>;
 }
 
@@ -634,6 +660,7 @@ export const INVOKE_CHANNELS = [
   "updateSettings",
   "textSize",
   "openExternal",
+  "prChecks",
   "reportCspViolation",
 ] as const satisfies ReadonlyArray<keyof Api>;
 
