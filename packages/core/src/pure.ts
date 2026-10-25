@@ -7,6 +7,7 @@ export * from "./decisioning/onejev.ts";
 export * from "./decisioning/rubric.ts";
 export * from "./decisioning/stub.ts";
 export * from "./git/branch.ts";
+export * from "./github/prs.ts";
 export * from "./project/derive.ts";
 export * from "./project/ids.ts";
 export * from "./project/inbox.ts";
