@@ -204,6 +204,12 @@ describe("the panel's second line", () => {
     expect(d.more).toBe(2);
   });
 
+  it("a merged or closed PR says no review", () => {
+    expect(prDetail({ title: "t", state: "merged", review: "approved" }, [], ago).words).toEqual([
+      "Merged",
+    ]);
+  });
+
   it("checks are only named while it fails", () => {
     expect(prDetail({ title: "t", state: "ready" }, [{ name: "a" }], ago).checks).toEqual([]);
   });

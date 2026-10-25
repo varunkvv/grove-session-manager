@@ -226,8 +226,10 @@ export function prDetail(
   ago: (at: number) => string,
 ): { words: string[]; checks: FailingCheck[]; more: number; updated?: string } {
   const failing = s.state === "failing" ? (checks ?? []) : [];
+  const done = s.state === "merged" || s.state === "closed";
   return {
-    words: [PR_STATE_WORD[s.state], ...(s.review ? [PR_REVIEW_WORD[s.review]] : [])],
+    // a merged or closed PR's review is history: the state says all of it
+    words: [PR_STATE_WORD[s.state], ...(s.review && !done ? [PR_REVIEW_WORD[s.review]] : [])],
     checks: failing.slice(0, CHECKS_SHOWN),
     more: Math.max(0, failing.length - CHECKS_SHOWN),
     ...(s.updatedAt ? { updated: `updated ${ago(s.updatedAt)}` } : {}),

@@ -154,11 +154,11 @@ function PrRow({ p, now, dim }: { p: PrView; now: number; dim: boolean }) {
         )}
       </div>
       {d && (
-        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-sm text-fg-3">
-          <span>{d.words.join(" · ")}</span>
+        <p className="mt-0.5 text-sm text-fg-3">
+          {d.words.join(" · ")}
           {d.checks.map((c, i) => (
-            <span key={c.url ?? c.name} className="contents">
-              <span>{i === 0 ? "·" : ","}</span>
+            <span key={c.url ?? c.name}>
+              {i === 0 ? " · " : ", "}
               {c.url ? (
                 <button
                   type="button"
@@ -176,12 +176,8 @@ function PrRow({ p, now, dim }: { p: PrView; now: number; dim: boolean }) {
               )}
             </span>
           ))}
-          {d.more > 0 && <span>+{d.more}</span>}
-          {p.stale && p.checkedAt ? (
-            <span>· as of {ago(p.checkedAt)}</span>
-          ) : (
-            d.updated && <span>· {d.updated}</span>
-          )}
+          {d.more > 0 && ` +${d.more}`}
+          {p.stale && p.checkedAt ? ` · as of ${ago(p.checkedAt)}` : d.updated && ` · ${d.updated}`}
         </p>
       )}
     </div>
