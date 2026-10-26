@@ -50,6 +50,8 @@ function setup() {
   const wanted: Array<[string, unknown]> = [];
   /** every name asked for: the session, and what its siblings are called */
   const named: Array<[string, readonly string[]]> = [];
+  /** what a session grove hosts left running, by its id, as its chat's stream says */
+  const hosted = new Map<string, SessionTask[]>();
   const got = {
     inbox: [] as InboxView[],
     sessions: 0,
@@ -106,6 +108,11 @@ function setup() {
         named.push([r.sessionId, siblings()]);
       },
     },
+    chat: {
+      hosts: (id) => hosted.has(id),
+      running: () => false,
+      tasks: (id) => hosted.get(id),
+    },
     onInbox: (v) => got.inbox.push(v),
     onSessions: () => got.sessions++,
     onStopped: (s) => got.stopped.push(s),
@@ -146,6 +153,7 @@ function setup() {
     recaps,
     wanted,
     named,
+    hosted,
     got,
   };
 }
@@ -910,6 +918,22 @@ describe("what a session left running", () => {
     // its Stop listed nothing more: it is a finished run in a subfolder again
     delete t.rows[0]?.tasks;
     expect(home()).toEqual(["s-ops", "s-script"]);
+  });
+
+  it("a session grove hosts goes by its chat's list, over what its hooks last said", () => {
+    const t = setup();
+    t.project("chat");
+    const old = { tasks: { at: 1, tasks: [task({ id: "b-gone" })] } };
+    t.rows.push(row("s-hosted", { ...inChat, ...old }));
+    t.hosted.set("s-hosted", [
+      task({ id: "b1", description: "watch the build" }),
+      task({ id: "b2", since: Date.now() - 5_000 }),
+    ]);
+    const hit = () => t.svc.listSessions("chat").find((h) => h.sessionId === "s-hosted");
+    // the hooks' b-gone ended, and b2 is under a minute old: the main window's rule
+    expect(hit()?.tasks?.map((x) => x.id)).toEqual(["b1"]);
+    t.hosted.set("s-hosted", []);
+    expect(hit()?.tasks).toBeUndefined();
   });
 
   it("says the lists changed when a task came, wrote another line, or went", () => {

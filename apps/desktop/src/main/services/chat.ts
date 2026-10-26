@@ -18,7 +18,14 @@ import type {
   UserDialogRequest,
   UserDialogResult,
 } from "@anthropic-ai/claude-agent-sdk";
-import { attachedFileText, editDiff, firstSentence, toolLabel, toolTarget } from "@grove/core";
+import {
+  attachedFileText,
+  editDiff,
+  firstSentence,
+  TASK_MIN_MS,
+  toolLabel,
+  toolTarget,
+} from "@grove/core";
 import type {
   ChatAgent,
   ChatAnswer,
@@ -37,6 +44,8 @@ import type { EffortChoice, ModelChoice } from "../../shared/newSession.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { PushTarget } from "../push.ts";
+import { type ChatTask, ChatTasks } from "./chatTasks.ts";
+import { taskView } from "./projects.ts";
 import { onPath, type Placed, place } from "./uploads.ts";
 
 /** an idle session with no window open is let go after this. the next send resumes it */
@@ -724,6 +733,10 @@ interface Hosted {
   watching?: FSWatcher;
   /** its subagents, by task id, as the task frames say */
   agents: Map<string, ChatAgent>;
+  /** what its claude left running: commands, Monitors, wake-ups */
+  tasks: ChatTasks;
+  /** the main window counts a command once it is a minute old: no frame says when that is */
+  taskMinute?: ReturnType<typeof setTimeout>;
   /** the task the tool under way runs as, once claude has made it one */
   toolTask?: string;
   /** `system/init.terminal_slash_commands`: commands for a terminal, not a chat window */
@@ -839,6 +852,7 @@ export class ChatHost {
         afterTurn: [],
         commands: [],
         agents: new Map(),
+        tasks: new ChatTasks(),
       };
       this.hosted.set(id, h);
     } else if (where && !h.q) {
@@ -1091,6 +1105,20 @@ export class ChatHost {
     await this.hosted.get(id)?.q?.reconnectMcpServer(name);
   }
 
+  /** what a session grove hosts left running, from its stream. undefined: no claude is up for it */
+  tasks(id: string): readonly ChatTask[] | undefined {
+    const h = this.hosted.get(id);
+    return h?.q ? h.tasks.tasks : undefined;
+  }
+
+  /** a background command or a Monitor stops. a wake-up has no stop: claude's own CronDelete is */
+  async stopTask(id: string, taskId: string): Promise<void> {
+    const h = this.hosted.get(id);
+    const t = h?.tasks.tasks.find((x) => x.id === taskId);
+    if (t?.kind !== "command") throw new Error("That is not running.");
+    await h?.q?.stopTask(taskId);
+  }
+
   /** one running subagent stops. the turn and the other agents go on */
   async stopAgent(id: string, agentId: string): Promise<void> {
     const h = this.hosted.get(id);
@@ -1284,7 +1312,13 @@ export class ChatHost {
   reap(): void {
     const now = this.now();
     const idle = [...this.hosted.values()].filter(
-      (h) => h.q && !h.status.running && h.windows.size === 0 && now - h.lastActive > REAP_MS,
+      // one watching something (a Monitor, a /loop's wake-up) would stop with it
+      (h) =>
+        h.q &&
+        !h.status.running &&
+        h.windows.size === 0 &&
+        now - h.lastActive > REAP_MS &&
+        h.tasks.tasks.length === 0,
     );
     if (idle.length > 0) this.o.letGo?.(idle.map((h) => h.id));
     for (const h of idle) h.q?.close();
@@ -1326,6 +1360,24 @@ export class ChatHost {
           // each one is stopped from its own row
           enableFileCheckpointing: true,
           perTaskStopAffordance: true,
+          // each turn's Stop says its wake-ups and crons whole (session_crons): no frame does.
+          // never throws and answers at once, or the turn's end would wait on it
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  async (input) => {
+                    try {
+                      if (h.tasks.stop(input, this.now())) this.tasksChanged(h);
+                    } catch (e) {
+                      log.warn(`chat ${h.id.slice(0, 8)}: stop hook`, e);
+                    }
+                    return {};
+                  },
+                ],
+              },
+            ],
+          },
           // an option's preview in markdown, as the terminal shows it: the card draws it beside the
           // list, never as html
           toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
@@ -1404,7 +1456,8 @@ export class ChatHost {
     h.waiting.clear();
     h.text = "";
     h.dirty = 0;
-    // its agents ran inside it
+    // its agents ran inside it, and what it left running
+    h.tasks.clear();
     for (const a of h.agents.values()) {
       if (a.state === "running") h.agents.set(a.id, { ...a, state: "stopped", ended: this.now() });
     }
@@ -1420,6 +1473,7 @@ export class ChatHost {
       thinking: undefined,
       queued: [],
       agents: [...h.agents.values()],
+      tasks: [],
       rev: h.status.rev + 1,
     });
     this.flushNow(h);
@@ -1429,6 +1483,8 @@ export class ChatHost {
 
   private take(h: Hosted, m: SDKMessage): void {
     h.lastActive = this.now();
+    // first: a wake-up firing is a command_lifecycle frame with no queued row, returned from below
+    if (h.tasks.take(m, h.lastActive)) this.tasksChanged(h);
     // what became of a message sent while a turn ran (probe): queued, then started (folded into
     // the turn, where the transcript shows it), completed, or cancelled. not in the sdk's types.
     // taken, its row stays as sent until the window reads it from the transcript: a read follows
@@ -1673,6 +1729,27 @@ export class ChatHost {
   /** a line of what claude said along the way, under the turn. the last few */
   private note(h: Hosted, n: ChatNote): void {
     this.set(h, { notes: [...(h.status.notes ?? []), n].slice(-NOTES_MAX) });
+  }
+
+  /** the pane's rows, and the main window's: a row there reads ChatHost.tasks */
+  private tasksChanged(h: Hosted): void {
+    this.set(h, {
+      tasks: h.tasks.tasks.map((t) => ({
+        ...taskView(t, undefined),
+        ...(t.monitor ? { monitor: true as const } : {}),
+        ...(t.recurring ? { recurring: true as const } : {}),
+        ...(t.command ? { command: t.command.slice(0, 300) } : {}),
+      })),
+    });
+    this.o.onChange?.();
+    clearTimeout(h.taskMinute);
+    const now = this.now();
+    const next = Math.min(
+      ...h.tasks.tasks
+        .filter((t) => t.kind === "command" && now - t.since < TASK_MIN_MS)
+        .map((t) => t.since + TASK_MIN_MS - now),
+    );
+    if (Number.isFinite(next)) h.taskMinute = setTimeout(() => this.o.onChange?.(), next + 50);
   }
 
   /**

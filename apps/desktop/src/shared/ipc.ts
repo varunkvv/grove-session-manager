@@ -291,6 +291,16 @@ export interface TaskView {
   status?: string;
 }
 
+/** a chat's task as its pane draws it: a row's, and what a command runs */
+export interface ChatTaskView extends TaskView {
+  /** a Monitor, not a plain background command */
+  monitor?: true;
+  /** a cron that fires again and again, not a one-off wake-up */
+  recurring?: true;
+  /** command: the command line, cut */
+  command?: string;
+}
+
 /** one session in a list, or found from the palette */
 export interface SessionHit extends SessionRef {
   /** absent for a session in no project */
@@ -908,6 +918,8 @@ export interface ChatStatus {
   notes?: ChatNote[];
   /** the subagents this claude started or heard of, as its task frames say: live state */
   agents?: ChatAgent[];
+  /** what it left running, from its own stream: every one at once, no one-minute rule */
+  tasks?: ChatTaskView[];
   /**
    * it is thinking now, since when. no token count: with the summary on, claude's estimate frames
    * come in one burst as the block ends (probe), so a count would read nothing until it is over
@@ -1069,6 +1081,8 @@ export interface ChatApi {
   chatAgent(id: string): Promise<TurnView | null>;
   /** a running subagent stops, the rest of the session goes on */
   chatStopAgent(id: string): Promise<Outcome>;
+  /** a background command or a Monitor it left running stops */
+  chatStopTask(id: string): Promise<Outcome>;
   /** what one of the session's edits changed, by its call's id. null: not an edit of its */
   chatStepDiff(toolUseId: string): Promise<string[] | null>;
   /** words onto the clipboard: an answer, a code block, the conversation */
@@ -1131,6 +1145,7 @@ export const CHAT_CHANNELS = [
   "chatAgents",
   "chatAgent",
   "chatStopAgent",
+  "chatStopTask",
   "chatStepDiff",
   "chatCopy",
   "chatUnqueue",

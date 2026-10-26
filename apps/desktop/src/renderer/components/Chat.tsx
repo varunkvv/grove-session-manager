@@ -29,6 +29,7 @@ import { useStore } from "../state/store.ts";
 import { AgentList, AgentViewer } from "./Agents.tsx";
 import { Ask } from "./Asks.tsx";
 import { CommandPalette, ShortcutSheet } from "./ChatPalette.tsx";
+import { TasksPane } from "./ChatTasks.tsx";
 import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
@@ -384,6 +385,7 @@ export function ChatApp() {
     | { kind: "files"; file?: string; diff?: boolean }
     | { kind: "agents"; agent?: string; call?: string }
     | { kind: "prs" }
+    | { kind: "tasks" }
     | null
   >(null);
   /** every agent of the session, read when the agents pane is open */
@@ -887,10 +889,16 @@ export function ChatApp() {
   const busy = (s.agents ?? []).filter((a) => a.state === "running");
   const runningWorkflows = busy.filter((a) => a.kind === "workflow").length;
   const runningAgents = busy.filter((a) => !a.kind && !a.workflow).length;
-  // the main window's word for it. this window knows its own asks and turn first: the row's
-  // watching (a background command or wake-up left running) is what is left
+  // the main window's word for it. this window knows its own asks, turn and tasks first (its
+  // claude's stream): the row's watching is for one not hosted here
   const headerState: SessionState | undefined =
-    s.asks.length > 0 ? "turn" : running || runningAgents ? "working" : stateOf(session);
+    s.asks.length > 0
+      ? "turn"
+      : running || runningAgents
+        ? "working"
+        : s.tasks?.length
+          ? "watching"
+          : stateOf(session);
   const runningWords = [
     runningWorkflows
       ? `${runningWorkflows} ${runningWorkflows === 1 ? "workflow" : "workflows"}`
@@ -904,6 +912,8 @@ export function ChatApp() {
       ? agents?.find((a) => a.id === pane.agent && a.kind !== "workflow")
       : undefined;
   const stopAgent = async (id: string) => setError(failed(await api().chatStopAgent(id)));
+  const stopTask = async (id: string) => setError(failed(await api().chatStopTask(id)));
+  const tasks = s.tasks ?? [];
   const openFile = async (file: string) => setError(failed(await api().chatOpenFile(file)));
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
@@ -1339,6 +1349,21 @@ export function ChatApp() {
             <StateLabel state={headerState} within="panel" />
             {running && s.since !== undefined && <Clock since={s.since} />}
           </span>
+        )}
+        {tasks.length > 0 && (
+          <Button
+            size="sm"
+            variant="quiet"
+            data-testid="chat-tasks"
+            title="What it left running"
+            aria-pressed={pane?.kind === "tasks"}
+            onClick={() => setPane(pane?.kind === "tasks" ? null : { kind: "tasks" })}
+          >
+            <TaskMark />
+            <span className="tabular-nums">
+              {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
+            </span>
+          </Button>
         )}
         {runningWords && (
           <Button
@@ -1795,6 +1820,13 @@ export function ChatApp() {
                 onChange={(file) => setPane({ kind: "files", file, diff: true })}
               />
             ))}
+          {pane?.kind === "tasks" && tasks.length > 0 && (
+            <TasksPane
+              tasks={tasks}
+              onStop={(id) => void stopTask(id)}
+              onClose={() => setPane(null)}
+            />
+          )}
           {pane?.kind === "prs" && !!session.prs?.length && (
             <PrPane prs={session.prs} onClose={() => setPane(null)} />
           )}

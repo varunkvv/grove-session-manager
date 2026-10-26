@@ -56,7 +56,7 @@ export interface ProjectsOptions {
   /** where to ask for a session's title and description. they come back on its row */
   titles?: Pick<TitleService, "want">;
   /** grove chat's host: the sessions grove runs itself, known by id before any registry is read */
-  chat?: Pick<ChatHost, "hosts" | "running">;
+  chat?: Pick<ChatHost, "hosts" | "running" | "tasks">;
   /** a row came, went or changed */
   onInbox?: (inbox: InboxView) => void;
   /** what a project's sessions list shows may have changed: the page asks again */
@@ -178,7 +178,9 @@ export class ProjectsService {
     if (this.inbox().rows.some((r) => r.sessionId === sessionId)) {
       return { view: "inbox", session: sessionId };
     }
-    return listed(row, false, true) ? { view: "sessions", project, session: sessionId } : undefined;
+    return listed(row, false, true, this.watching(row))
+      ? { view: "sessions", project, session: sessionId }
+      : undefined;
   }
 
   views(): { projects: ProjectView[]; problem?: string } {
@@ -452,13 +454,13 @@ export class ProjectsService {
     // archiving is about noise, never about muting: one that needs the person, runs or has left
     // something running still shows
     const quiet = (r: SessionRow) =>
-      !needs.has(r.sessionId) && !working(r.live, Date.now()) && !watching(r);
+      !needs.has(r.sessionId) && !working(r.live, Date.now()) && !this.watching(r);
     const hidden = (r: SessionRow) =>
       scope === null && !putAway && index.archived.has(r.comboName ?? "") && quiet(r);
     return [...index.rows.values()].filter(
       (r) =>
         (scope === null || r.comboName === name) &&
-        listed(r, needs.has(r.sessionId), !!projectOf(r, index)) &&
+        listed(r, needs.has(r.sessionId), !!projectOf(r, index), this.watching(r)) &&
         !hidden(r),
     );
   }
@@ -486,9 +488,7 @@ export class ProjectsService {
     // working as the menu bar has it: a turn over with its agents still at work counts
     const running = working(row.live, Date.now()) ? row.live : undefined;
     const asked = row.lastPrompt ?? row.firstPrompt;
-    const tasks = liveTasks(row.tasks, Date.now()).map((t) =>
-      taskView(t, this.o.live.taskLine(t.id)),
-    );
+    const tasks = this.tasksOf(row).map((t) => taskView(t, this.o.live.taskLine(t.id)));
     return {
       ...this.ref(row, index),
       project: projectOf(row, index),
@@ -501,6 +501,19 @@ export class ProjectsService {
       tasks: tasks.length ? tasks : undefined,
       snippet,
     };
+  }
+
+  /**
+   * what it left running that counts by now: a wake-up, or a command a minute old. a session grove
+   * hosts says it in its own stream, exact to the frame, so that is what counts for it
+   */
+  private tasksOf(row: SessionRow): SessionTask[] {
+    const own = this.o.chat?.tasks(row.sessionId);
+    return liveTasks(own ? { tasks: [...own], at: Date.now() } : row.tasks, Date.now());
+  }
+
+  private watching(row: SessionRow): boolean {
+    return this.tasksOf(row).length > 0;
   }
 
   /**
@@ -536,19 +549,21 @@ function siblings(row: SessionRow, index: Index): string[] {
     .map((r) => r.title ?? "");
 }
 
-/** it left something running that counts by now: a wake-up, or a command a minute old */
-const watching = (row: SessionRow): boolean => liveTasks(row.tasks, Date.now()).length > 0;
-
 /**
  * whether a list holds this session. always while it needs the person, runs or has left something
  * running. after that, one in a project when it was started in the project's folder, and one in no
  * project when a person started it: `claude -p` and SDK apps (`sdk-cli`, `sdk-ts`) are scripts,
  * and 28 of the 72 sessions outside a project on the machine this was measured on
  */
-const listed = (row: SessionRow, needsYou: boolean, inProject: boolean): boolean =>
+const listed = (
+  row: SessionRow,
+  needsYou: boolean,
+  inProject: boolean,
+  watching: boolean,
+): boolean =>
   needsYou ||
   working(row.live, Date.now()) ||
-  watching(row) ||
+  watching ||
   (inProject ? row.comboRelation === "root" : !row.entrypoint?.startsWith("sdk"));
 
 /** what /loop schedules its next wake-up with when it paces itself: a marker, not words */

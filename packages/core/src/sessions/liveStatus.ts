@@ -476,7 +476,7 @@ export function firedBy(tasks: SessionTasks | undefined, prompt: string | undefi
  * undefined when the payload has neither: one cut at the byte cap has lost them, and that must
  * read as unknown, never as nothing left
  */
-function leftRunning(payload: Record<string, unknown>): StatusEvent["tasks"] {
+export function leftRunning(payload: Record<string, unknown>): StatusEvent["tasks"] {
   const { background_tasks: shells, session_crons: crons } = payload;
   if (!Array.isArray(shells) && !Array.isArray(crons)) return undefined;
   const out: NonNullable<StatusEvent["tasks"]> = [];

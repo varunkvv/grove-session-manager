@@ -870,6 +870,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatSetEffort",
   "chatSetUltracode",
   "chatStopAgent",
+  "chatStopTask",
   "chatAnswer",
   "chatOpenInEditor",
 ]);
@@ -1479,6 +1480,11 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     async chatStopAgent(id, agentId) {
       if (!isText(agentId, 64)) throw new AppError("invalid", "That is not an agent.");
       await chat.stopAgent(id, agentId);
+    },
+
+    async chatStopTask(id, taskId) {
+      if (!isText(taskId, 64)) throw new AppError("invalid", "That is not a task.");
+      await chat.stopTask(id, taskId);
     },
 
     async chatAnswer(id, askId, raw) {
