@@ -1799,6 +1799,12 @@ export function Menu({
   useEffect(() => box.current?.focus(), []);
   // the rows came in after it opened (claude was starting): the keyboard starts on the checked one
   useEffect(() => setActive(at), [at]);
+  // a menu taller than the window scrolls: the keyboard's row stays in sight
+  useEffect(() => {
+    box.current
+      ?.querySelectorAll<HTMLElement>('[data-testid="menu-item"]')
+      [active]?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
   /** a column for the marks when any row has one, so the labels line up with or without */
   const marks = items.some((i) => i.mark);
   return (
@@ -1812,11 +1818,16 @@ export function Menu({
               left: Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8)),
               top: anchor.bottom + 6,
               width,
+              // a long one (the model menu with More models open) scrolls within the window
+              maxHeight: window.innerHeight - anchor.bottom - 14,
+              overflowY: "auto",
             }
           : {
               left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
               bottom: window.innerHeight - anchor.top + 6,
               width,
+              maxHeight: anchor.top - 14,
+              overflowY: "auto",
             }
       }
     >
