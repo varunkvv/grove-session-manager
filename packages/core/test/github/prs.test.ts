@@ -4,9 +4,11 @@ import {
   chunk,
   type PrRef,
   parseFailingChecks,
+  parsePrInfo,
   parsePrResponse,
   parsePrUrl,
   prDetail,
+  prInfoQuery,
   prQuery,
   prState,
 } from "../../src/github/prs.ts";
@@ -212,5 +214,142 @@ describe("the panel's second line", () => {
 
   it("checks are only named while it fails", () => {
     expect(prDetail({ title: "t", state: "ready" }, [{ name: "a" }], ago).checks).toEqual([]);
+  });
+});
+
+describe("the PR pane's one PR", () => {
+  const ref: PrRef = {
+    host: "github.com",
+    owner: "o",
+    repo: "r",
+    number: 7,
+    url: "https://github.com/o/r/pull/7",
+  };
+  const answer = (pr: Record<string, unknown>) =>
+    JSON.stringify({ data: { repository: { pullRequest: pr } } });
+  const pr = {
+    title: "add the pane",
+    state: "OPEN",
+    isDraft: false,
+    mergedAt: null,
+    updatedAt: "2026-10-26T10:00:00Z",
+    reviewDecision: "CHANGES_REQUESTED",
+    baseRefName: "main",
+    headRefName: "pr-pane",
+    additions: 120,
+    deletions: 8,
+    changedFiles: 5,
+    mergeable: "CONFLICTING",
+    comments: { totalCount: 3 },
+    latestReviews: {
+      nodes: [
+        { state: "APPROVED", author: { login: "ana" } },
+        { state: "CHANGES_REQUESTED", author: { login: "bo" } },
+        { state: "DISMISSED", author: { login: "cy" } },
+        { state: "COMMENTED", author: { login: "di" } },
+      ],
+    },
+    reviewRequests: {
+      nodes: [
+        { requestedReviewer: { __typename: "User", login: "di" } },
+        { requestedReviewer: { __typename: "Team", name: "cdit" } },
+        { requestedReviewer: null },
+      ],
+    },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              state: "FAILURE",
+              contexts: {
+                nodes: [
+                  {
+                    __typename: "CheckRun",
+                    name: "lint",
+                    status: "COMPLETED",
+                    conclusion: "SUCCESS",
+                    detailsUrl: "https://x/lint",
+                  },
+                  {
+                    __typename: "CheckRun",
+                    name: "e2e",
+                    status: "IN_PROGRESS",
+                    conclusion: null,
+                    detailsUrl: "",
+                  },
+                  {
+                    __typename: "CheckRun",
+                    name: "test",
+                    status: "COMPLETED",
+                    conclusion: "FAILURE",
+                    detailsUrl: "https://x/test",
+                  },
+                  {
+                    __typename: "CheckRun",
+                    name: "release",
+                    status: "COMPLETED",
+                    conclusion: "SKIPPED",
+                  },
+                  {
+                    __typename: "StatusContext",
+                    context: "ci/legacy",
+                    state: "PENDING",
+                    targetUrl: "https://x/l",
+                  },
+                  { __typename: "StatusContext", context: "ci/old", state: "ERROR" },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  it("asks for that one PR", () => {
+    const q = prInfoQuery(ref);
+    expect(q).toContain('repository(owner: "o", name: "r")');
+    expect(q).toContain("pullRequest(number: 7)");
+    expect(q).toContain("reviewRequests");
+  });
+
+  it("reads its branches, size, merge, reviewers and every check, failed ones first", () => {
+    const info = parsePrInfo(answer(pr));
+    expect(info).toMatchObject({
+      title: "add the pane",
+      state: "failing",
+      review: "changes",
+      rollup: "FAILURE",
+      base: "main",
+      head: "pr-pane",
+      additions: 120,
+      deletions: 8,
+      files: 5,
+      conflicts: true,
+      comments: 3,
+    });
+    // a dismissed review is not an opinion. asked again: the ask is what shows
+    expect(info?.reviewers).toEqual([
+      { login: "ana", state: "approved" },
+      { login: "bo", state: "changes" },
+      { login: "di", state: "requested" },
+      { login: "cdit", state: "requested" },
+    ]);
+    expect(info?.checks.map((c) => [c.name, c.group, c.url])).toEqual([
+      ["test", "failing", "https://x/test"],
+      ["ci/old", "failing", undefined],
+      ["e2e", "pending", undefined],
+      ["ci/legacy", "pending", "https://x/l"],
+      ["lint", "passed", "https://x/lint"],
+      ["release", "passed", undefined],
+    ]);
+  });
+
+  it("merging still being worked out says nothing, and no PR is null", () => {
+    expect(parsePrInfo(answer({ ...pr, mergeable: "UNKNOWN" }))?.conflicts).toBeUndefined();
+    expect(parsePrInfo(answer({ ...pr, mergeable: "MERGEABLE" }))?.conflicts).toBe(false);
+    expect(parsePrInfo(JSON.stringify({ data: { repository: { pullRequest: null } } }))).toBeNull();
+    expect(parsePrInfo("not json")).toBeNull();
   });
 });

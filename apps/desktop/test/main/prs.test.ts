@@ -301,3 +301,26 @@ describe("failing checks for the panel", () => {
     expect(t.graphql()).toHaveLength(3);
   });
 });
+
+describe("the PR pane's ask", () => {
+  const info: ClaudeRun = {
+    code: 0,
+    stdout: JSON.stringify({
+      data: { repository: { pullRequest: { ...node(1), baseRefName: "main", headRefName: "x" } } },
+    }),
+    stderr: "",
+  };
+
+  it("asks fresh each time, and only for a PR a session linked", async () => {
+    const t = setup({
+      reply: (args) => (args[3]?.includes("baseRefName") ? info : answer({ p1: node(1) })),
+    });
+    // not known yet: nothing linked it
+    expect(await t.prs.info(A)).toBeNull();
+    await t.prs.tick();
+    expect(await t.prs.info(A)).toMatchObject({ title: "pr 1", base: "main", head: "x" });
+    await t.prs.info(A);
+    expect(t.graphql().filter((c) => c[3]?.includes("baseRefName"))).toHaveLength(2);
+    expect(await t.prs.info("https://github.com/evil/repo/pull/9")).toBeNull();
+  });
+});

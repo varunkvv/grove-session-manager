@@ -32,7 +32,7 @@ import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { PrMark } from "./Pr.tsx";
+import { PrMark, PrPane } from "./Pr.tsx";
 import { QUIET, QueuedRows, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -379,6 +379,7 @@ export function ChatApp() {
   const [pane, setPane] = useState<
     | { kind: "files"; file?: string; diff?: boolean }
     | { kind: "agents"; agent?: string; call?: string }
+    | { kind: "prs" }
     | null
   >(null);
   /** every agent of the session, read when the agents pane is open */
@@ -1317,7 +1318,11 @@ export function ChatApp() {
             {session.title}
           </h1>
         )}
-        <PrMark prs={session.prs} />
+        <PrMark
+          prs={session.prs}
+          pressed={pane?.kind === "prs"}
+          onOpen={() => setPane(pane?.kind === "prs" ? null : { kind: "prs" })}
+        />
         {s.asks.length > 0 ? (
           <StateLabel state="turn" within="panel" />
         ) : (
@@ -1783,6 +1788,9 @@ export function ChatApp() {
                 onChange={(file) => setPane({ kind: "files", file, diff: true })}
               />
             ))}
+          {pane?.kind === "prs" && !!session.prs?.length && (
+            <PrPane prs={session.prs} onClose={() => setPane(null)} />
+          )}
           {pane?.kind === "agents" &&
             (shownAgent ? (
               <AgentViewer

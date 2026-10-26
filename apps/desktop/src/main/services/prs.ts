@@ -4,11 +4,14 @@ import {
   checksQuery,
   chunk,
   type FailingCheck,
+  type PrInfo,
   type PrRef,
   type PrStatus,
   parseFailingChecks,
+  parsePrInfo,
   parsePrResponse,
   parsePrUrl,
+  prInfoQuery,
   prQuery,
   writeFileAtomic,
 } from "@grove/core";
@@ -108,6 +111,7 @@ export class PrService {
   private gone = new Set<string>();
   private checks = new Map<string, { rollup?: string; list: FailingCheck[] }>();
   private asking = new Map<string, Promise<FailingCheck[]>>();
+  private infoAsking = new Map<string, Promise<PrInfo | null>>();
   private hosts: Set<string> | null = null;
   private off: { why: string; at: number } | null = null;
   private failures = 0;
@@ -308,6 +312,32 @@ export class PrService {
       return list ?? [];
     })().finally(() => this.asking.delete(url));
     this.asking.set(url, p);
+    return p;
+  }
+
+  /**
+   * all the PR pane shows of one PR a session linked, asked fresh each time the pane asks (when it
+   * opens, when the PR's rollup moves, when the window comes back). never polled. null: gh is off,
+   * or did not answer
+   */
+  async info(url: string): Promise<PrInfo | null> {
+    const ref = parsePrUrl(url);
+    // only one a transcript linked: the renderer does not get to point gh anywhere
+    if (!ref || !this.statuses.has(url) || !this.opts.enabled() || this.off) return null;
+    const pending = this.infoAsking.get(url);
+    if (pending) return pending;
+    const p = (async () => {
+      const args = ["api", "graphql", "-f", `query=${prInfoQuery(ref)}`];
+      if (ref.host !== "github.com") args.push("--hostname", ref.host);
+      const out = await this.exec(args);
+      const info = parsePrInfo(out.stdout);
+      if (!info)
+        this.problem(
+          `pr info exit ${out.code}: ${(out.stderr || out.stdout).trim().slice(0, 200)}`,
+        );
+      return info;
+    })().finally(() => this.infoAsking.delete(url));
+    this.infoAsking.set(url, p);
     return p;
   }
 }

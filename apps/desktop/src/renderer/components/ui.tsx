@@ -9,6 +9,7 @@ import {
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,
+  type HTMLAttributes,
   type MouseEvent,
   type ReactNode,
   type Ref,
@@ -1912,6 +1913,31 @@ const PR_PATH: Record<PrGlyphKind, string> = {
 
 /** the git glyph, coloured by how it is going. merged moves its third node up beside the line */
 const PR_TONE = { green: "text-hue-green", red: "text-hue-red", faint: "text-faint" } as const;
+
+/** words in a PR's colours: green for good news (approved, lines added), red for bad */
+export function PrWords({
+  tone,
+  children,
+  className,
+  ...rest
+}: {
+  tone: "green" | "red";
+  children: ReactNode;
+  className?: string;
+} & HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span className={cx(PR_TONE[tone], className)} {...rest}>
+      {children}
+    </span>
+  );
+}
+
+const DOT_TONE = { green: "bg-hue-green", red: "bg-hue-red", faint: "bg-faint" } as const;
+
+/** a check's dot: red failed, faint still going, green passed */
+export function CheckDot({ tone }: { tone: "green" | "red" | "faint" }) {
+  return <span className={cx("size-2 shrink-0 rounded-full", DOT_TONE[tone])} />;
+}
 
 export function PrGlyph({ look, size = 12 }: { look: PrLook; size?: number }) {
   return (

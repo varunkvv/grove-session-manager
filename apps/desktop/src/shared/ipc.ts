@@ -13,6 +13,7 @@ import type {
   LiveStatus,
   LongWorkMode,
   ModelUsage,
+  PrInfo,
   ProjectId,
   PrReview,
   PrState,
@@ -623,6 +624,8 @@ export interface Api {
   openExternal(url: string): Promise<Outcome>;
   /** the failed checks of a failing PR a row links, for the session panel. [] for any other */
   prChecks(url: string): Promise<FailingCheck[]>;
+  /** all the PR pane shows of a PR a session links, asked fresh. null: gh is off or did not answer */
+  prInfo(url: string): Promise<PrInfo | null>;
   reportCspViolation(detail: string): Promise<void>;
 }
 
@@ -668,6 +671,7 @@ export const INVOKE_CHANNELS = [
   "textSize",
   "openExternal",
   "prChecks",
+  "prInfo",
   "reportCspViolation",
 ] as const satisfies ReadonlyArray<keyof Api>;
 

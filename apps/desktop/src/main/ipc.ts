@@ -822,6 +822,11 @@ function buildHandlers(deps: Deps): Handlers {
       return deps.prs.failingChecks(url);
     },
 
+    async prInfo(url) {
+      if (typeof url !== "string") return null;
+      return deps.prs.info(url);
+    },
+
     async reportCspViolation(detail) {
       log.warn("csp violation:", detail);
     },

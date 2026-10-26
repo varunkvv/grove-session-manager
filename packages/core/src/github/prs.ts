@@ -235,3 +235,122 @@ export function prDetail(
     ...(s.updatedAt ? { updated: `updated ${ago(s.updatedAt)}` } : {}),
   };
 }
+
+/** one check of the last commit, for the PR pane: failed, still going, or done fine (or skipped) */
+export interface PrCheck {
+  name: string;
+  url?: string;
+  group: "failing" | "pending" | "passed";
+}
+
+/** someone on a PR's review: what they said last, or that they are asked to */
+export interface PrReviewer {
+  login: string;
+  state: "approved" | "changes" | "commented" | "requested";
+}
+
+/** everything the PR pane shows of one PR. asked for when it opens, never polled */
+export interface PrInfo extends PrStatus {
+  base: string;
+  head: string;
+  additions: number;
+  deletions: number;
+  files: number;
+  /** github's word on merging into base. absent while github is still working it out */
+  conflicts?: boolean;
+  comments: number;
+  reviewers: PrReviewer[];
+  checks: PrCheck[];
+}
+
+const INFO_FIELDS =
+  "title url state isDraft mergedAt updatedAt reviewDecision baseRefName headRefName " +
+  "additions deletions changedFiles mergeable comments{totalCount} " +
+  "latestReviews(first:20){nodes{state author{login}}} " +
+  "reviewRequests(first:20){nodes{requestedReviewer{__typename ... on User{login} " +
+  "... on Team{name} ... on Bot{login} ... on Mannequin{login}}}} " +
+  "commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:100){nodes{__typename " +
+  "... on CheckRun{name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}}}}}}}";
+
+/** one PR, all of what the pane shows */
+export function prInfoQuery(ref: PrRef): string {
+  return (
+    `query { repository(owner: "${ref.owner}", name: "${ref.repo}") { ` +
+    `pullRequest(number: ${ref.number}) { ${INFO_FIELDS} } } }`
+  );
+}
+
+const PASSED_RUN = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
+
+function checkOf(n: Record<string, unknown>): PrCheck | null {
+  if (typeof n.name === "string") {
+    const url = typeof n.detailsUrl === "string" && n.detailsUrl ? { url: n.detailsUrl } : {};
+    // a run not COMPLETED has no conclusion yet
+    const c = String(n.conclusion);
+    const group = FAILED_RUN.has(c) ? "failing" : PASSED_RUN.has(c) ? "passed" : "pending";
+    return { name: n.name, ...url, group };
+  }
+  if (typeof n.context === "string") {
+    const url = typeof n.targetUrl === "string" && n.targetUrl ? { url: n.targetUrl } : {};
+    const s = String(n.state);
+    const group = FAILED_STATUS.has(s) ? "failing" : s === "SUCCESS" ? "passed" : "pending";
+    return { name: n.context, ...url, group };
+  }
+  return null;
+}
+
+const REVIEWED: Record<string, PrReviewer["state"]> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes",
+  COMMENTED: "commented",
+};
+
+const nodesOf = (v: unknown): Record<string, unknown>[] =>
+  isObject(v) && Array.isArray(v.nodes) ? v.nodes.filter(isObject) : [];
+
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+/** null when stdout has no PR in it */
+export function parsePrInfo(stdout: string): PrInfo | null {
+  const data = dataOf(stdout);
+  const repo = data?.repository;
+  const pr = isObject(repo) && isObject(repo.pullRequest) ? repo.pullRequest : undefined;
+  if (!pr) return null;
+  const reviewers: PrReviewer[] = [];
+  for (const r of nodesOf(pr.latestReviews)) {
+    const login = isObject(r.author) ? r.author.login : undefined;
+    const state = REVIEWED[String(r.state)];
+    if (typeof login === "string" && state) reviewers.push({ login, state });
+  }
+  // asked again after reviewing: the ask is the news
+  for (const r of nodesOf(pr.reviewRequests)) {
+    const who = isObject(r.requestedReviewer) ? r.requestedReviewer : {};
+    const login = typeof who.login === "string" ? who.login : who.name;
+    if (typeof login !== "string") continue;
+    const at = reviewers.findIndex((x) => x.login === login);
+    if (at >= 0) reviewers.splice(at, 1);
+    reviewers.push({ login, state: "requested" });
+  }
+  const order = { failing: 0, pending: 1, passed: 2 };
+  const checks = nodesOf(rollupOf(pr)?.contexts)
+    .map(checkOf)
+    .filter((c): c is PrCheck => !!c)
+    .sort((a, b) => order[a.group] - order[b.group]);
+  const comments = isObject(pr.comments) ? num(pr.comments.totalCount) : 0;
+  return {
+    ...statusOf(pr),
+    base: typeof pr.baseRefName === "string" ? pr.baseRefName : "",
+    head: typeof pr.headRefName === "string" ? pr.headRefName : "",
+    additions: num(pr.additions),
+    deletions: num(pr.deletions),
+    files: num(pr.changedFiles),
+    ...(pr.mergeable === "CONFLICTING"
+      ? { conflicts: true }
+      : pr.mergeable === "MERGEABLE"
+        ? { conflicts: false }
+        : {}),
+    comments,
+    reviewers,
+    checks,
+  };
+}
