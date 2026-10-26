@@ -7,6 +7,10 @@ Fixed:
 - in a grove chat, Claude in Chrome actions were denied with `<model> is temporarily unavailable, so auto mode cannot
   determine the safety of ...`, and waiting never helped. Grove's setting for clearing old reads also reached auto
   mode's safety check, and the API refused it there every time. it no longer does
+- when auto mode's safety check fails, the chat now says what the API said, not that the model is temporarily
+  unavailable
+- if that error is about Grove's setting for clearing old reads, Claude restarts in that chat without it once the turn
+  ends, as it already did when the API refused a whole turn
 - clearing old reads past 150k works as before
 
 Keep in mind:

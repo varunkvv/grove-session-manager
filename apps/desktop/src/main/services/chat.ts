@@ -2,7 +2,7 @@
 // so it outlives the window it was opened from. no electron import: a window is a PushTarget.
 import { randomUUID } from "node:crypto";
 import { type FSWatcher, statSync, watch } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type {
@@ -336,6 +336,8 @@ export interface ChatHostOptions {
    * not one: its PermissionRequest hook says it
    */
   onCard?: (id: string, asks: string | null) => void;
+  /** claude code's projects folder: a failed auto mode check leaves the api's error in it */
+  projectsDir?: string;
 }
 
 /** what a card no hook announces asks, as its own label says it. undefined for a tool's ask */
@@ -461,6 +463,28 @@ export function refusedClearing(m: { type: string }): boolean {
   const status = r.api_error_status ?? /^API Error: (\d+)/.exec(r.result)?.[1] ?? "";
   return String(status) === "400" && r.result.includes("context_management");
 }
+
+/** what claude code leaves in a session's folder when auto mode's check failed (2.1.310) */
+export const CLASSIFIER_ERROR_FILE = "auto-mode-classifier-error.txt";
+
+/**
+ * the api's error in that file: `400 {"type":"error","error":{"message":...}}` -> "400 <message>".
+ * claude code itself only says the classifier's model is "temporarily unavailable"
+ */
+export function classifierError(file: string): string | undefined {
+  const line = /=== ERROR ===\n(.+)/.exec(file)?.[1]?.trim();
+  if (!line) return undefined;
+  const [, status, body] = /^(\d{3}) (.*)$/.exec(line) ?? [];
+  try {
+    const message = JSON.parse(body ?? "")?.error?.message;
+    if (typeof message === "string") return cut(`${status} ${message}`, 300);
+  } catch {}
+  return cut(line, 300);
+}
+
+/** a classifier error about grove's extra body: every later check fails the same way */
+export const refusedClearingCheck = (error: string): boolean =>
+  /^400 /.test(error) && /context_management|clear_(thinking|tool_uses)_\d+/.test(error);
 
 /** the chat's error line once claude was started again without clearing */
 export const CLEARING_REFUSED =
@@ -1436,10 +1460,13 @@ export class ChatHost {
         } else if (m.subtype === "permission_denied") {
           // turned down without asking (don't ask, auto): nothing would say so otherwise
           const why = firstSentence(m.decision_reason || m.message, 200);
-          this.note(h, {
-            kind: "denied",
-            text: `${toolLabel(m.tool_name)} was turned down. ${why}`,
-          });
+          const text = `${toolLabel(m.tool_name)} was turned down. ${why}`;
+          if (
+            m.decision_reason_type === "classifier" &&
+            /unavailable/i.test(`${m.decision_reason} ${m.message}`)
+          )
+            void this.checkFailed(h, toolLabel(m.tool_name), text);
+          else this.note(h, { kind: "denied", text });
         } else if (m.subtype === "model_refusal_fallback") {
           // the model turned it down and the turn ran again on another
           if (m.scope !== "local") {
@@ -1580,6 +1607,44 @@ export class ChatHost {
     await this.warm(h.id, h.where).catch(() => {});
     // after the start: it clears the error line
     if (h.status.live) this.set(h, { error: CLEARING_REFUSED });
+  }
+
+  /**
+   * auto mode's check failed, and claude code says only that its model is unavailable: the api's
+   * own error is in the file it left in the session's folder. one about the extra body fails every
+   * check the same way, so claude starts again without it once the turn is over
+   */
+  private async checkFailed(h: Hosted, tool: string, otherwise: string): Promise<void> {
+    const error = await this.lastCheckError(h.id);
+    this.note(h, {
+      kind: "denied",
+      text: error
+        ? `${tool} was turned down: auto mode's check failed. The API said ${error}`
+        : otherwise,
+    });
+    if (!error || !h.clearing || !refusedClearingCheck(error)) return;
+    // once, however many checks fail before the turn ends
+    h.clearing = false;
+    // a message sent meanwhile runs as the next turn: closing this claude would lose it
+    const restart = () => {
+      if (h.status.running || h.status.queued.length) h.afterTurn.push(restart);
+      else void this.unclear(h);
+    };
+    restart();
+  }
+
+  /** the error of a check that just failed, from the session's folder under any project */
+  private async lastCheckError(id: string): Promise<string | undefined> {
+    const dir = this.o.projectsDir;
+    if (!dir) return undefined;
+    for (const project of await readdir(dir).catch(() => [])) {
+      const file = path.join(dir, project, id, CLASSIFIER_ERROR_FILE);
+      const at = await stat(file).catch(() => undefined);
+      // an old one is some earlier check's
+      if (!at || Date.now() - at.mtimeMs > 60_000) continue;
+      return classifierError(await readFile(file, "utf8").catch(() => ""));
+    }
+    return undefined;
   }
 
   /**

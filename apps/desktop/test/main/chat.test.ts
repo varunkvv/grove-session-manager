@@ -18,8 +18,10 @@ import { agentsOf } from "../../src/main/ipc.ts";
 import {
   ATTACH,
   ChatHost,
+  CLASSIFIER_ERROR_FILE,
   CLEARING,
   CLEARING_REFUSED,
+  classifierError,
   clearingEnv,
   dialogOf,
   hostEnv,
@@ -28,6 +30,7 @@ import {
   parseAttachments,
   REAP_MS,
   refusedClearing,
+  refusedClearingCheck,
   retryLine,
 } from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
@@ -152,6 +155,7 @@ function setup(
     }),
     now: () => now.at,
     claudeSettings: path.join(claudeDir, "settings.json"),
+    projectsDir: path.join(claudeDir, "projects"),
     ...(onReset ? { onReset } : {}),
     letGo: (ids) => letGo.push(ids),
     onCard: (id, asks) => cards.push([id, asks]),
@@ -1118,6 +1122,75 @@ describe("grove chat's host", () => {
     await until(() => s.host.text(SESSION).length > 0, "the count");
     expect(s.host.status(SESSION).notes).toEqual([]);
     await s.host.interrupt(SESSION);
+  });
+
+  it("says why auto mode's check failed, and starts claude without clearing when it was the extra body", async () => {
+    // claude code 2.1.310's frame for a check that failed, as grove's 0.34 body made every one fail
+    const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
+    const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
+    const denied = {
+      type: "system",
+      subtype: "permission_denied",
+      tool_name: "mcp__claude-in-chrome__tabs_context_mcp",
+      tool_use_id: "t1",
+      decision_reason_type: "classifier",
+      decision_reason: "Classifier unavailable",
+      message:
+        "claude-sonnet-5[1m] is temporarily unavailable, so auto mode cannot determine the safety of mcp__claude-in-chrome__tabs_context_mcp right now. Wait a moment and then try this action again.",
+    };
+    const lines = readFileSync(path.join(fixtures, "turn.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((l) => {
+        const o = JSON.parse(l);
+        if (o.msg?.type !== "system" || o.msg.subtype !== "init") return [l];
+        return [l, JSON.stringify({ t: o.t, dir: "out", msg: denied })];
+      });
+    writeFileSync(path.join(dir, "turn.jsonl"), `${lines.join("\n")}\n`);
+    const s = setup(2, false, dir);
+    // claude code's file of what the api said, in the session's folder
+    const folder = path.join(path.dirname(s.transcript), SESSION);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      path.join(folder, CLASSIFIER_ERROR_FILE),
+      '=== ERROR ===\n400 {"type":"error","error":{"type":"invalid_request_error","message":"`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive"},"request_id":"req_1"}\n\n=== CONTEXT COMPARISON ===\n',
+    );
+    s.host.attach(SESSION, s.window);
+    await s.host.send(SESSION, s.where, HELLO);
+    await until(() => s.host.status(SESSION).error === CLEARING_REFUSED, "the restart said");
+    expect(s.host.status(SESSION).notes).toContainEqual({
+      kind: "denied",
+      text: "tabs_context_mcp was turned down: auto mode's check failed. The API said 400 `clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive",
+    });
+    const starts = s.log().filter((l) => l.argv) as Array<{ env: Record<string, string> }>;
+    expect(starts.map((l) => l.env.extraBody !== undefined)).toEqual([true, false]);
+  });
+
+  it("reads the api's error out of claude code's file, and knows one about the extra body", () => {
+    const file = (line: string) =>
+      `=== ERROR ===\n${line}\n\n=== CONTEXT COMPARISON ===\nmodel: x\n`;
+    const thinking = classifierError(
+      file(
+        '400 {"type":"error","error":{"type":"invalid_request_error","message":"`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive"}}',
+      ),
+    );
+    expect(thinking).toBe(
+      "400 `clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive",
+    );
+    expect(refusedClearingCheck(thinking ?? "")).toBe(true);
+    expect(refusedClearingCheck("400 context_management: Extra inputs are not permitted")).toBe(
+      true,
+    );
+    // no json: the line as it is
+    expect(classifierError(file("Request timed out."))).toBe("Request timed out.");
+    expect(classifierError("nothing here")).toBeUndefined();
+    for (const other of [
+      "529 Overloaded",
+      "400 prompt is too long",
+      "Request timed out.",
+      "500 clear_thinking_20251015 went wrong",
+    ])
+      expect(refusedClearingCheck(other), other).toBe(false);
   });
 
   it("/clear moves the same claude to a new session id, and its windows with it", async () => {

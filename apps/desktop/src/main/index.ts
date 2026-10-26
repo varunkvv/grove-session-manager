@@ -381,6 +381,7 @@ async function start(): Promise<void> {
     // where a session runs moved: its rows say Grove, or no longer do
     onChange: () => projects.sessionsChanged(),
     claudeSettings: path.join(path.dirname(projectsDir), "settings.json"),
+    projectsDir,
     // /clear: a new session in the same window, made as cmd-N makes one, until its transcript lands
     onReset: (from, to, where) => {
       const project = fresh.get(from)?.project ?? projects.hitFor(from)?.project;
