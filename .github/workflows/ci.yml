@@ -149,11 +149,12 @@ jobs:
 
       - name: publish
         run: |
+          # this release's notes only: the file's first section. the file is the running history
+          awk '/^## /{n++} n==1' .github/release-notes.md > "$RUNNER_TEMP/notes.md"
           gh release create "v${{ steps.version.outputs.version }}" apps/desktop/dist/*.dmg \
             --target "${{ github.sha }}" \
             --title "Grove ${{ steps.version.outputs.version }}" \
-            --notes-file .github/release-notes.md \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/notes.md"
 
       - name: keep the five newest releases
         run: |
