@@ -848,7 +848,10 @@ test("where the api refuses clearing old reads, claude starts again without it a
     env: { extraBody?: string };
   }>;
   expect(starts).toHaveLength(2);
-  expect(JSON.parse(starts[0]?.env.extraBody ?? "{}").context_management.edits).toHaveLength(2);
+  // only the reads edit: auto mode's classifier gets the same body, and refuses a thinking one
+  expect(JSON.parse(starts[0]?.env.extraBody ?? "{}").context_management.edits).toEqual([
+    expect.objectContaining({ type: "clear_tool_uses_20250919" }),
+  ]);
   expect(starts[1]?.env.extraBody).toBeUndefined();
   expect(starts[1]?.argv).toContain(`--resume=${SID}`);
   // tried again, it answers, and the line goes with the turn it was about
