@@ -14,6 +14,7 @@ import type {
   ChatStatus,
   ChatTarget,
   Outcome,
+  SessionHit,
 } from "../../shared/ipc.ts";
 import { bytes, fileWord, isImage } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
@@ -21,7 +22,7 @@ import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
 import { splitModels } from "../logic/models.ts";
 import { prsKey } from "../logic/prs.ts";
-import { queuedRows, same } from "../logic/views.ts";
+import { queuedRows, type SessionState, same, stateOf } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
 import { useStore } from "../state/store.ts";
@@ -151,6 +152,9 @@ function limitWords(l: NonNullable<ChatStatus["limit"]>): string {
       : "";
   return when ? `${what} · resets ${when}` : what;
 }
+
+/** which background tasks a row has: a new one or one gone redraws, a line of output does not */
+const tasksKey = (h: Pick<SessionHit, "tasks">) => (h.tasks ?? []).map((t) => t.id).join(" ");
 
 /** the model menu's row that shows the older models: no model's value is this */
 const OLDER = "more-models";
@@ -515,7 +519,10 @@ export function ChatApp() {
             was.description === hit.description &&
             was.where === hit.where &&
             t.project === hit.project &&
-            prsKey(was.prs) === prsKey(hit.prs)
+            prsKey(was.prs) === prsKey(hit.prs) &&
+            // its background tasks: the header says Watching while one runs
+            was.live === hit.live &&
+            tasksKey(was) === tasksKey(hit)
           )
             return t;
           const { project: _, ...rest } = t;
@@ -880,6 +887,10 @@ export function ChatApp() {
   const busy = (s.agents ?? []).filter((a) => a.state === "running");
   const runningWorkflows = busy.filter((a) => a.kind === "workflow").length;
   const runningAgents = busy.filter((a) => !a.kind && !a.workflow).length;
+  // the main window's word for it. this window knows its own asks and turn first: the row's
+  // watching (a background command or wake-up left running) is what is left
+  const headerState: SessionState | undefined =
+    s.asks.length > 0 ? "turn" : running || runningAgents ? "working" : stateOf(session);
   const runningWords = [
     runningWorkflows
       ? `${runningWorkflows} ${runningWorkflows === 1 ? "workflow" : "workflows"}`
@@ -1323,15 +1334,11 @@ export function ChatApp() {
           pressed={pane?.kind === "prs"}
           onOpen={() => setPane(pane?.kind === "prs" ? null : { kind: "prs" })}
         />
-        {s.asks.length > 0 ? (
-          <StateLabel state="turn" within="panel" />
-        ) : (
-          running && (
-            <span className="flex items-center gap-1.5">
-              <StateLabel state="working" within="panel" />
-              {s.since !== undefined && <Clock since={s.since} />}
-            </span>
-          )
+        {headerState && (
+          <span className="flex items-center gap-1.5" data-testid="chat-state">
+            <StateLabel state={headerState} within="panel" />
+            {running && s.since !== undefined && <Clock since={s.since} />}
+          </span>
         )}
         {runningWords && (
           <Button

@@ -64,7 +64,10 @@ export function projectHues(projects: readonly { id: ProjectId }[]): Map<Project
 export type SessionState = InboxKind | "working" | "watching";
 
 /** what a session is at: its inbox row's kind when it needs the person, else running or watching */
-export function stateOf(hit: SessionHit, row?: InboxRowView): SessionState | undefined {
+export function stateOf(
+  hit: Pick<SessionHit, "live" | "tasks">,
+  row?: InboxRowView,
+): SessionState | undefined {
   if (row) return row.kind;
   if (hit.live === "running") return "working";
   // its turn ended and something it started still runs: it is not done, and it asks nothing

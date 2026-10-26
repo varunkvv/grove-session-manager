@@ -966,7 +966,8 @@ export interface ChatAgent {
 
 /** the session a chat window is for */
 export interface ChatTarget {
-  session: SessionRef;
+  /** with what its row says it is at, for the header's word (a fresh one has neither) */
+  session: SessionRef & Partial<Pick<SessionHit, "live" | "tasks">>;
   project?: ProjectId;
   /** the folder it runs in: where a relative path in what it says is from */
   cwd: string;
