@@ -1108,8 +1108,12 @@ test("fast mode and thinking are switches on the models that have them, and the 
     "true",
   );
   await chat.getByTestId("model-menu").press("Escape");
-  // haiku 4.5 can answer without thinking
+  // haiku 4.5 can answer without thinking. it is under More models: haiku 5.5 is the newest haiku
   await chat.getByTestId("chat-model").click();
+  await expect(
+    chat.getByTestId("model-menu").locator('[data-key="claude-haiku-4-5-20251001"]'),
+  ).toHaveCount(0);
+  await chat.getByTestId("model-menu").locator('[data-key="more-models"]').click();
   await chat.getByTestId("model-menu").locator('[data-key="claude-haiku-4-5-20251001"]').click();
   await chat.getByTestId("chat-model").click();
   await chat.getByTestId("model-menu").getByTestId("thinking").click();

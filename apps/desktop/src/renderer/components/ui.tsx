@@ -1755,6 +1755,8 @@ export interface MenuItem {
   divider?: boolean;
   /** done with, still there to pick: a merged PR */
   dim?: boolean;
+  /** a row that shows more rows under it: its chevron points down while they show */
+  expands?: { open: boolean };
 }
 
 /**
@@ -1856,6 +1858,7 @@ export function Menu({
             type="button"
             role="menuitemradio"
             aria-checked={!!it.checked}
+            aria-expanded={it.expands?.open}
             data-testid="menu-item"
             data-key={it.key}
             data-active={i === active || undefined}
@@ -1878,6 +1881,14 @@ export function Menu({
             )}
             <span className="flex h-5 w-3.5 items-center">
               {it.checked && <Icon name="check" size={12} className="text-fg-2" />}
+              {it.expands && (
+                <Icon
+                  name="chevron"
+                  size={9}
+                  className={cx(it.expands.open && "rotate-90")}
+                  faint
+                />
+              )}
             </span>
           </button>,
         ])}

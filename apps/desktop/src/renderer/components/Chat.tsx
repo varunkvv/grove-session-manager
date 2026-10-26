@@ -19,6 +19,7 @@ import { bytes, fileWord, isImage } from "../logic/attach.ts";
 import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
+import { splitModels } from "../logic/models.ts";
 import { prsKey } from "../logic/prs.ts";
 import { queuedRows, same } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
@@ -150,6 +151,9 @@ function limitWords(l: NonNullable<ChatStatus["limit"]>): string {
       : "";
   return when ? `${what} · resets ${when}` : what;
 }
+
+/** the model menu's row that shows the older models: no model's value is this */
+const OLDER = "more-models";
 
 /** the menus: the toolbar's (+, mode, model, the ring) and the header …'s (its own, MCP, style) */
 type MenuKind = "mode" | "model" | "attach" | "more" | "context" | "mcp" | "style";
@@ -420,6 +424,8 @@ export function ChatApp() {
   } | null>(null);
   /** its claude's MCP servers, read when their menu opens */
   const [mcp, setMcp] = useState<Array<{ name: string; status: string; error?: string }>>();
+  /** the model menu's older models: shown or not. undefined: shown when the model is one of them */
+  const [olderModels, setOlderModels] = useState<boolean>();
   const moreButton = useRef<HTMLButtonElement>(null);
   /** /btw questions asked here, and their answers once they come: beside the conversation, not in it */
   const [sides, setSides] = useState<Array<{ q: string; a?: string }>>([]);
@@ -693,6 +699,16 @@ export function ChatApp() {
 
   /** the model it is on, as the menu lists it: claude reports the id a value like "opus" stands for */
   const current = s.models.find((m) => m.value === s.model || m.id === s.model);
+  /** the newest of each series, and the rest under More models */
+  const byAge = splitModels(s.models);
+  const onOlder = !!current && byAge.more.includes(current);
+  const showOlder = olderModels ?? onOlder;
+  const modelRow = (m: ChatStatus["models"][number]) => ({
+    key: m.value,
+    label: m.label,
+    ...(m.description ? { description: m.description } : {}),
+    checked: m === current,
+  });
 
   const warm = () => {
     if (warmed.current || readOnly || s.live || s.starting) return;
@@ -815,6 +831,7 @@ export function ChatApp() {
 
   const closeMenu = () => {
     setMenu(null);
+    setOlderModels(undefined);
     composer.current?.focus();
   };
 
@@ -824,6 +841,7 @@ export function ChatApp() {
   };
 
   const pickModel = async (model: string) => {
+    if (model === OLDER) return setOlderModels(!showOlder);
     closeMenu();
     if (model !== current?.value) setError(failed(await api().chatSetModel(model)));
   };
@@ -1902,12 +1920,25 @@ export function ChatApp() {
           onClose={closeMenu}
           onPick={(m) => void pickModel(m)}
           footer="For this session only"
-          items={s.models.map((m) => ({
-            key: m.value,
-            label: m.label,
-            ...(m.description ? { description: m.description } : {}),
-            checked: m === current,
-          }))}
+          items={[
+            ...byAge.top.map(modelRow),
+            ...(byAge.more.length
+              ? [
+                  {
+                    key: OLDER,
+                    label: "More models",
+                    // folded with the model in it: the row says which, as it has no check to show
+                    description:
+                      onOlder && !showOlder && current
+                        ? current.label
+                        : `${byAge.more.length} older ${byAge.more.length === 1 ? "model" : "models"}`,
+                    divider: true,
+                    expands: { open: showOlder },
+                  },
+                ]
+              : []),
+            ...(showOlder ? byAge.more.map(modelRow) : []),
+          ]}
         >
           {!s.live && <Starting error={s.error} />}
           {s.live && !!current?.efforts?.length && (
