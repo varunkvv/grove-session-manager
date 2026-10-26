@@ -300,11 +300,16 @@ describe("drafts from the renderer", () => {
         { path: path.join(dir, "missing"), mode: "reference" },
         { path: dir, mode: "worktree", branch: { kind: "new", name: "--force" } },
       ],
+      model: "opus",
+      effort: "nope",
     });
     expect(draft?.name).toBe("prod-debug");
     // the two folders that exist survive. a branch named "--force" is reported but not silently dropped.
     expect(draft?.folders).toHaveLength(2);
-    expect(problems).toHaveLength(3);
+    expect(problems).toHaveLength(4);
+    expect(draft?.model).toBe("opus");
+    expect(draft?.effort).toBeUndefined();
+    expect(problems.join(" ")).toContain("not an effort level");
     expect(problems.join(" ")).toContain("absolute path");
     expect(problems.join(" ")).toContain("does not exist");
   });

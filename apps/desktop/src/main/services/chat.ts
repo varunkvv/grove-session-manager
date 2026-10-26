@@ -33,6 +33,7 @@ import type {
   DialogChoice,
   ElicitField,
 } from "../../shared/ipc.ts";
+import type { EffortChoice, ModelChoice } from "../../shared/newSession.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { PushTarget } from "../push.ts";
@@ -212,6 +213,9 @@ export interface ChatWhere {
   dirs: string[];
   /** a session grove made (cmd-N) that has no transcript yet: claude starts it under this id */
   fresh?: boolean;
+  /** a fresh one's project's model and effort. a resumed session keeps its own */
+  model?: ModelChoice;
+  effort?: EffortChoice;
 }
 
 /** what the api takes, as Claude Code's own image paste sends it */
@@ -1334,7 +1338,13 @@ export class ChatHost {
           // claude's environment, and grove's own setting for claude code over it: the api clears
           // old reads out of context
           env: { ...hostEnv(env), ...clearing },
-          ...(h.model ? { model: h.model } : {}),
+          // a pick in the window's menu, else the project's, for a session it starts
+          ...(h.model
+            ? { model: h.model }
+            : h.where.fresh && h.where.model
+              ? { model: h.where.model }
+              : {}),
+          ...(h.where.fresh && h.where.effort ? { effort: h.where.effort } : {}),
           canUseTool: (tool, input, opts) => this.ask(h, tool, input, opts),
           // a refusal's fallback and auto's billed classifier come as cards, as in vs code
           onUserDialog: (req, opts) => this.dialog(h, req, opts.signal),

@@ -106,6 +106,10 @@ export function normalizeCombosFile(
     else delete combo.longWork;
     // put away or not: `true` is the one value that means anything
     if (item.archived !== true) delete combo.archived;
+    // a word claude takes as one argument. which words it takes is the app's to say
+    for (const k of ["model", "effort"] as const)
+      if (typeof item[k] !== "string" || !/^[a-z0-9][a-z0-9.-]{0,39}$/.test(item[k]))
+        delete combo[k];
     combos.push(combo);
   }
   return { combos, problems, rejected };

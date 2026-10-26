@@ -101,6 +101,8 @@ describe("draftOf", () => {
     const form: Form = {
       name: " auth ",
       goal: "  ",
+      model: "",
+      effort: "",
       repos: [
         repo({ path: "/c/web", mode: "reference" }),
         repo({ branchKind: "new", newBranch: " feat/sso ", as: " api2 " }),
@@ -119,11 +121,22 @@ describe("draftOf", () => {
       ],
     });
     expect(draftOf({ ...form, goal: " ship " })).toMatchObject({ note: "ship" });
+    // Default is no key at all, so a project saved with it reads as one that never had it
+    expect(draftOf({ ...form, model: "opus", effort: "xhigh" })).toMatchObject({
+      model: "opus",
+      effort: "xhigh",
+    });
   });
 });
 
 describe("changed", () => {
-  const initial: Form = { name: "auth", goal: "ship", repos: [repoOf(folder())] };
+  const initial: Form = {
+    name: "auth",
+    goal: "ship",
+    model: "",
+    effort: "",
+    repos: [repoOf(folder())],
+  };
   it("sees name, goal, mode, branch and as", () => {
     expect(changed(initial, { ...initial, name: " auth " })).toBe(false);
     expect(changed(initial, { ...initial, repos: [{ ...initial.repos[0]!, info: info() }] })).toBe(
@@ -131,6 +144,8 @@ describe("changed", () => {
     );
     expect(changed(initial, { ...initial, name: "auth2" })).toBe(true);
     expect(changed(initial, { ...initial, goal: "ship it" })).toBe(true);
+    expect(changed(initial, { ...initial, model: "sonnet" })).toBe(true);
+    expect(changed(initial, { ...initial, effort: "low" })).toBe(true);
     const r = initial.repos[0]!;
     expect(changed(initial, { ...initial, repos: [{ ...r, mode: "reference" }] })).toBe(true);
     expect(
@@ -151,7 +166,7 @@ describe("repoOf", () => {
 });
 
 describe("canSubmit", () => {
-  const form: Form = { name: "auth", goal: "", repos: [repo()] };
+  const form: Form = { name: "auth", goal: "", model: "", effort: "", repos: [repo()] };
   const ok = { mode: "new" as const, form, running: false };
 
   it("new: every rule", () => {

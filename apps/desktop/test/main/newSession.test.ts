@@ -6,9 +6,29 @@ import {
   editorPrompt,
   terminalArgs,
 } from "../../src/main/services/newSession.ts";
-import { EFFORTS, MODELS, PERMISSION_MODES } from "../../src/shared/newSession.ts";
+import { EFFORTS, MODELS, PERMISSION_MODES, startDefaults } from "../../src/shared/newSession.ts";
 
 const APPEND = "--append-system-prompt=";
+
+describe("a project's model and effort for its new sessions", () => {
+  it("are the ones claude takes, and anything else is claude's own default", () => {
+    expect(startDefaults({ model: "opus", effort: "max" })).toEqual({
+      model: "opus",
+      effort: "max",
+    });
+    expect(startDefaults({})).toEqual({});
+    expect(startDefaults({ model: "gpt", effort: "ludicrous" })).toEqual({});
+    expect(backgroundArgs(startDefaults({ model: "sonnet", effort: "low" }), "go")).toEqual([
+      "--bg",
+      "--model",
+      "sonnet",
+      "--effort",
+      "low",
+      "--",
+      "go",
+    ]);
+  });
+});
 
 describe("the flags a new CLI session starts with", () => {
   it("nothing picked passes nothing: the combo's own settings decide", () => {

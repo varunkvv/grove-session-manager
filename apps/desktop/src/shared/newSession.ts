@@ -37,6 +37,16 @@ export type ModelChoice = (typeof MODELS)[number]["value"];
 export type PermissionModeChoice = (typeof PERMISSION_MODES)[number]["value"];
 export type EffortChoice = (typeof EFFORTS)[number]["value"];
 
+/** a project's own model and effort for its new sessions, as far as they are ones claude takes */
+export function startDefaults(p: { model?: unknown; effort?: unknown }): {
+  model?: ModelChoice;
+  effort?: EffortChoice;
+} {
+  const model = MODELS.find((m) => m.value === p.model)?.value;
+  const effort = EFFORTS.find((e) => e.value === p.effort)?.value;
+  return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+}
+
 export interface NewSessionRequest {
   combo: string;
   where: NewSessionWhere;

@@ -10,6 +10,7 @@ import {
   type TeardownOutcome,
 } from "@grove/core";
 import type { FolderView, ToastMessage } from "../../shared/ipc.ts";
+import { type EffortChoice, type ModelChoice, startDefaults } from "../../shared/newSession.ts";
 
 /** a combo and its folders' state, as main keeps it. the page gets it inside a ProjectView */
 export interface ComboView {
@@ -19,6 +20,9 @@ export interface ComboView {
   workspaceFile: string;
   /** whether long autonomous work is handed to a background agent. can be flipped mid-session. */
   longWork: LongWorkMode;
+  /** what its new sessions start on */
+  model?: ModelChoice;
+  effort?: EffortChoice;
   folders: FolderView[];
   /** 'unknown' until the first reconcile lands, so nothing flashes drift it has not checked */
   status: "unknown" | "checking" | "known";
@@ -106,6 +110,7 @@ export function buildComboView(
     root: combo.root,
     workspaceFile,
     longWork: longWorkMode(combo),
+    ...startDefaults(combo),
     folders: buildFolderViews(combo, runtime),
     status: comboStatusOf(runtime),
   };

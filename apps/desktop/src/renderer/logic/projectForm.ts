@@ -7,6 +7,7 @@ import {
   validateBranchName,
 } from "@grove/core/pure";
 import type { FolderView, PathInfoView, ProjectDraft } from "../../shared/ipc.ts";
+import type { EffortChoice, ModelChoice } from "../../shared/newSession.ts";
 
 export type BranchKind = "detach" | "new" | "existing";
 
@@ -28,6 +29,9 @@ export interface Repo {
 export interface Form {
   name: string;
   goal: string;
+  /** what its new sessions start on. "": claude's own default */
+  model: ModelChoice | "";
+  effort: EffortChoice | "";
   repos: Repo[];
 }
 
@@ -55,6 +59,8 @@ export function draftOf(form: Form): ProjectDraft {
   return {
     name: form.name.trim(),
     note: form.goal.trim() || undefined,
+    ...(form.model ? { model: form.model } : {}),
+    ...(form.effort ? { effort: form.effort } : {}),
     folders: form.repos.map((r) => {
       if (r.mode === "reference") return { path: r.path, mode: "reference" };
       const branch: BranchSpec =

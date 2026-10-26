@@ -52,6 +52,7 @@ import type {
   SessionKey,
   SessionRow,
 } from "../shared/ipc.ts";
+import { startDefaults } from "../shared/newSession.ts";
 import type { ChatWindows } from "./chatWindows.ts";
 import type { AppEnv } from "./env.ts";
 import { AppError, toOutcomeError } from "./errors.ts";
@@ -488,7 +489,12 @@ function buildHandlers(deps: Deps): Handlers {
       const id = randomUUID();
       deps.fresh.set(id, {
         project,
-        where: { cwd: combo.root, dirs: workspaceFolders(combo).slice(1), fresh: true },
+        where: {
+          cwd: combo.root,
+          dirs: workspaceFolders(combo).slice(1),
+          fresh: true,
+          ...startDefaults(combo),
+        },
       });
       deps.chatWindows.open(id);
     },
@@ -565,7 +571,8 @@ function buildHandlers(deps: Deps): Handlers {
 
       // the project root as the cwd, so its CLAUDE.md and its hooks load
       // what the person typed, and nothing added: the project's CLAUDE.md says the rest
-      const args = backgroundArgs({}, req.prompt);
+      // and the project's model and effort, when it has them
+      const args = backgroundArgs(startDefaults(combo), req.prompt);
       if (req.throughTerminal) {
         await openInTerminal(
           deps,

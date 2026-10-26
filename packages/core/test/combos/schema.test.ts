@@ -122,6 +122,26 @@ describe("combo model", () => {
     expect(combos[2]?.longWork).toBe("foreground");
   });
 
+  it("a project's model and effort stay as words, and anything else is dropped", () => {
+    const { combos, problems } = normalizeCombosFile(
+      {
+        combos: [
+          { name: "set", model: "opus", effort: "xhigh", folders: [] },
+          { name: "odd", model: "--dangerously-skip-permissions", effort: 3, folders: [] },
+          { name: "plain", folders: [] },
+        ],
+      },
+      APP,
+    );
+    expect(problems).toEqual([]);
+    expect(combos.map((c) => [c.model, c.effort])).toEqual([
+      ["opus", "xhigh"],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
+    expect("model" in combos[1]!).toBe(false);
+  });
+
   it("a key grove no longer reads, like 0.10's card prefix, stays with its combo, and loading never writes", async () => {
     const app = makeSandbox("grove-schema-");
     const text = JSON.stringify({

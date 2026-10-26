@@ -3,10 +3,13 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { type BranchSpec, type ComboFolder, isObject, validateBranchName } from "@grove/core";
+import { type EffortChoice, type ModelChoice, startDefaults } from "../../shared/newSession.ts";
 
 export interface CleanDraft {
   name: string;
   note?: string;
+  model?: ModelChoice;
+  effort?: EffortChoice;
   folders: ComboFolder[];
 }
 
@@ -74,10 +77,15 @@ export async function parseDraft(
   const note =
     typeof raw.note === "string" ? raw.note.replace(/\s+/g, " ").trim() || undefined : undefined;
   if (note && note.length > 500) problems.push("Keep About under 500 characters.");
+  // absent is claude's own default. anything else has to be one the form offers
+  const start = startDefaults(raw);
+  if (raw.model !== undefined && !start.model) problems.push("That is not a model Claude offers.");
+  if (raw.effort !== undefined && !start.effort) problems.push("That is not an effort level.");
   return {
     draft: {
       name: raw.name.trim(),
       ...(note ? { note } : {}),
+      ...start,
       folders,
     },
     problems,

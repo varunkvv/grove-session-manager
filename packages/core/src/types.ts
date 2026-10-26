@@ -112,6 +112,9 @@ export interface Combo {
   longWork?: LongWorkMode;
   /** put away: out of the lists, with nothing on disk changed. only ever `true` */
   archived?: boolean;
+  /** what a new session in it starts on: a `claude --model` alias and a `--effort`. absent: claude's own */
+  model?: string;
+  effort?: string;
   folders: ComboFolder[];
   [extra: string]: unknown;
 }

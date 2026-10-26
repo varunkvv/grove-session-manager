@@ -12,6 +12,7 @@ import type {
   PathInfoView,
   ProjectView,
 } from "../../shared/ipc.ts";
+import { EFFORTS, MODELS } from "../../shared/newSession.ts";
 import {
   canSubmit,
   changed,
@@ -37,7 +38,7 @@ import {
   Spinner,
 } from "./ui.tsx";
 
-const EMPTY: Form = { name: "", goal: "", repos: [] };
+const EMPTY: Form = { name: "", goal: "", model: "", effort: "", repos: [] };
 const baseName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 /** the folder a working copy gets inside the project */
 const dirOf = (r: Repo) => (r.as.trim() || baseName(r.path)).toLowerCase();
@@ -302,7 +303,13 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
   const [original] = useState(() => (mode === "edit" ? live : undefined));
   const [initial] = useState<Form>(() =>
     original
-      ? { name: original.name, goal: original.goal ?? "", repos: original.folders.map(repoOf) }
+      ? {
+          name: original.name,
+          goal: original.goal ?? "",
+          model: original.model ?? "",
+          effort: original.effort ?? "",
+          repos: original.folders.map(repoOf),
+        }
       : EMPTY,
   );
   const [form, setForm] = useState(initial);
@@ -490,6 +497,43 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
               data-testid="project-goal"
             />
           </Field>
+
+          <div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Model">
+                <Select
+                  value={form.model}
+                  onChange={(e) => patch({ model: e.target.value as Form["model"] })}
+                  data-testid="project-model"
+                >
+                  <option value="">Default</option>
+                  {MODELS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Effort">
+                <Select
+                  value={form.effort}
+                  onChange={(e) => patch({ effort: e.target.value as Form["effort"] })}
+                  data-testid="project-effort"
+                >
+                  <option value="">Default</option>
+                  {EFFORTS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <p className="mt-1.5 text-sm text-fg-4">
+              What a new session here starts on. A chat's own model menu still changes it for that
+              session. The Claude panel in your editor picks its own.
+            </p>
+          </div>
 
           {/* not a Field: that is a label, and a click on its text would press the first control inside */}
           <fieldset>

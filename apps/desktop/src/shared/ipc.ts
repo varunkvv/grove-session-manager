@@ -25,6 +25,7 @@ import type {
   TitleSource,
   TurnView,
 } from "@grove/core/pure";
+import type { EffortChoice, ModelChoice } from "./newSession.ts";
 
 export type { ProjectId };
 
@@ -235,6 +236,9 @@ export interface ProjectView {
   syncProblem?: string;
   /** put away: under Archived in the sidebar, and its quiet sessions are off the home screen */
   archived?: boolean;
+  /** what its new sessions start on. absent: claude's own default */
+  model?: ModelChoice;
+  effort?: EffortChoice;
 }
 
 /**
@@ -363,6 +367,9 @@ export interface ProjectDraft {
   name: string;
   /** the goal */
   note?: string;
+  /** absent: claude's own default */
+  model?: ModelChoice;
+  effort?: EffortChoice;
   folders: FolderDraft[];
 }
 

@@ -390,6 +390,8 @@ export class ComboService {
       root,
       folders: draft.folders,
       ...(draft.note ? { note: draft.note } : {}),
+      ...(draft.model ? { model: draft.model } : {}),
+      ...(draft.effort ? { effort: draft.effort } : {}),
     };
     await this.save((combos) => [...combos, combo]);
     return this.find(draft.name);
@@ -421,8 +423,12 @@ export class ComboService {
       name: draft.name,
       folders: [...draft.folders, ...keptFolders],
       ...(draft.note ? { note: draft.note } : {}),
+      ...(draft.model ? { model: draft.model } : {}),
+      ...(draft.effort ? { effort: draft.effort } : {}),
     };
     if (!draft.note) delete next.note;
+    if (!draft.model) delete next.model;
+    if (!draft.effort) delete next.effort;
     await this.save((combos) => combos.map((c) => (c.root === before.root ? next : c)));
     return { combo: this.find(draft.name), kept };
   }

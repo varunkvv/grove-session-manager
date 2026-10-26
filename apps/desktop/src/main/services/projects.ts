@@ -197,6 +197,8 @@ export class ProjectsService {
           goal: p.goal,
           workspaceFile: v.workspaceFile,
           longWork: v.longWork,
+          ...(v.model ? { model: v.model } : {}),
+          ...(v.effort ? { effort: v.effort } : {}),
           folders: v.folders,
           status: v.status,
           checkedAt: v.checkedAt,

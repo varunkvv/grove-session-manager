@@ -1646,6 +1646,22 @@ describe("grove chat's host", () => {
     expect(third.env.extraBody).toBeUndefined();
   });
 
+  it("a session grove makes starts on its project's model and effort, a resumed one on its own", async () => {
+    const s = setup(2);
+    await s.host.warm(SESSION, { ...s.where, fresh: true, model: "sonnet", effort: "low" });
+    const other = "22222222-3333-4444-8555-666666666666";
+    await s.host.warm(other, { ...s.where, model: "sonnet", effort: "low" });
+    const starts = await until(() => {
+      const a = s.log().filter((l) => l.argv) as Array<{ argv: string[] }>;
+      return a.length >= 2 && a;
+    }, "both started");
+    const [fresh, resumed] = starts.map((x) => x.argv.join(" "));
+    expect(fresh).toContain("--model=sonnet");
+    expect(fresh).toContain("--effort=low");
+    expect(resumed).not.toContain("--model");
+    expect(resumed).not.toContain("--effort");
+  });
+
   it("a send claude could not start for is not sent again with the next one", async () => {
     const s = setup(2, true);
     await expect(s.host.send(SESSION, s.where, HELLO)).rejects.toThrow("no claude here");
