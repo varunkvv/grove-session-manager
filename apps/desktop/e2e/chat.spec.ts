@@ -1372,7 +1372,8 @@ test("the model is a menu with the model's own effort levels and ultracode, read
     { ultracode: true },
     { effortLevel: "high", ultracode: true },
   ]);
-  // a model with no effort and no ultracode: both leave the toolbar
+  // a model with no effort and no ultracode: both leave the toolbar. it is under More models
+  await menu.locator('[data-key="more-models"]').click();
   await menu.getByTestId("menu-item").filter({ hasText: "Haiku 4.5" }).click();
   await expect(menu).toHaveCount(0);
   await expect(button).toHaveText("Haiku 4.5");
