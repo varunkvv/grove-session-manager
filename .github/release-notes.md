@@ -1,3 +1,30 @@
+## 0.36
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.36 adds a PR pane and a background tasks pane to the grove chat window.
+
+New:
+
+- a grove chat's header PR mark opens a pane beside the conversation: the PR's branches, its size, whether it conflicts
+  with its base, who reviews it and what they said, and every check (failed ones first, click one to see it). a stack
+  lists its PRs first. it asks GitHub when it opens and when the window comes back, never on a timer
+- a grove chat that left something running (a background command, a Monitor, a wake-up) says how many in its header.
+  a click opens a pane with each one the moment it starts: what it runs, how long it has run or when it wakes, and a
+  Stop for commands and Monitors
+- a project can set the model and effort its new sessions start on (edit the project). grove chat and background
+  sessions use them. a chat's own model menu still changes it for that session
+- the model menu shows the newest of each model and puts older ones under More models
+
+Fixed:
+
+- a grove chat's header said nothing while the session watched a background command or a wake-up. it says Watching,
+  as the main window does
+- a grove chat with no window open is no longer stopped after a while when it still has background tasks running
+
+Keep in mind:
+
+- quitting Grove still stops what a grove chat left running, as before
+- the Claude panel in your editor picks its own model: a project's model does not reach it
+
 ## 0.35
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.35 fixes auto mode's safety check in grove chats.
