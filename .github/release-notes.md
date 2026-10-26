@@ -1,3 +1,19 @@
+## 0.35
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.35 fixes auto mode's safety check in grove chats.
+
+Fixed:
+
+- in a grove chat, Claude in Chrome actions were denied with `<model> is temporarily unavailable, so auto mode cannot
+  determine the safety of ...`, and waiting never helped. Grove's setting for clearing old reads also reached auto
+  mode's safety check, and the API refused it there every time. it no longer does
+- clearing old reads past 150k works as before
+
+Keep in mind:
+
+- on Haiku 4.5, Sonnet 4.5 and older, the API now keeps only the last turn's thinking in a grove chat. newer models
+  keep all of it, as before
+
 ## 0.34
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.34 shows where each session's pull requests are at.

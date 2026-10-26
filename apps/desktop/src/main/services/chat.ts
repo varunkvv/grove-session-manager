@@ -403,10 +403,13 @@ const isOn = (v: unknown): boolean =>
 
 /**
  * the env that has the api clear old reads, through claude code's CLAUDE_CODE_EXTRA_BODY. it
- * replaces claude code's own context_management, so the thinking edit goes too, first (the api
- * refuses it second). nothing where the api would refuse every request: experimental betas off,
- * a provider or gateway that does not get the context-management beta. nothing when the person
- * set an extra body of their own. `settings`: the env of claude code's settings.json
+ * replaces claude code's own context_management (only clear_thinking, keep all). no thinking edit:
+ * claude code sends the body with auto mode's classifier too, which runs with thinking off, and
+ * the api refuses clear_thinking there, so every classifier check fails closed. opus 4.5+,
+ * sonnet 4.6+ and haiku 5.5+ keep all thinking without it. nothing where the api would refuse
+ * every request: experimental betas off, a provider or gateway that does not get the
+ * context-management beta. nothing when the person set an extra body of their own. `settings`:
+ * the env of claude code's settings.json
  */
 export function clearingEnv(
   env: NodeJS.ProcessEnv,
@@ -422,7 +425,6 @@ export function clearingEnv(
   const base = typeof all.ANTHROPIC_BASE_URL === "string" ? all.ANTHROPIC_BASE_URL.trim() : "";
   if (base && !/^https:\/\/api\.anthropic\.com\/?$/.test(base)) return {};
   const edits = [
-    { type: "clear_thinking_20251015", keep: "all" },
     {
       type: "clear_tool_uses_20250919",
       trigger: { type: "input_tokens", value: n.trigger },

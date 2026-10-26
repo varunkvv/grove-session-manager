@@ -254,7 +254,8 @@ describe("grove chat's host", () => {
     // no mode is passed: the person's own settings pick it
     expect(argv.join(" ")).not.toContain("--permission-mode");
     // the parent's claude code session is not passed on: the sdk names itself. checkpoints on,
-    // as vs code has them. the api clears old reads: thinking's edit first, as it has to be
+    // as vs code has them. the api clears old reads, with no thinking edit: auto mode's
+    // classifier gets the same body with thinking off, and the api refuses it there
     expect(env).toEqual({
       entrypoint: "sdk-ts",
       checkpointing: "true",
@@ -263,7 +264,6 @@ describe("grove chat's host", () => {
     expect(JSON.parse(env.extraBody ?? "")).toEqual({
       context_management: {
         edits: [
-          { type: "clear_thinking_20251015", keep: "all" },
           {
             type: "clear_tool_uses_20250919",
             trigger: { type: "input_tokens", value: 150_000 },
@@ -1195,15 +1195,14 @@ describe("grove chat's host", () => {
     const body = (e: NodeJS.ProcessEnv, settings?: Record<string, unknown>) =>
       clearingEnv(e, settings).CLAUDE_CODE_EXTRA_BODY;
     const edits = JSON.parse(body({ HOME: "/Users/v" }) ?? "{}").context_management.edits;
-    expect(edits.map((e: { type: string }) => e.type)).toEqual([
-      "clear_thinking_20251015",
-      "clear_tool_uses_20250919",
-    ]);
-    expect(edits[1].keep.value).toBe(CLEARING.keep);
+    // no clear_thinking: the classifier runs with thinking off and the api 400s it, so auto mode
+    // and claude in chrome failed closed on every check
+    expect(edits.map((e: { type: string }) => e.type)).toEqual(["clear_tool_uses_20250919"]);
+    expect(edits[0].keep.value).toBe(CLEARING.keep);
     // the probe's numbers, through the same builder
     const small = clearingEnv({}, {}, { trigger: 30_000, keep: 20, atLeast: 2_000 });
     expect(
-      JSON.parse(small.CLAUDE_CODE_EXTRA_BODY ?? "{}").context_management.edits[1],
+      JSON.parse(small.CLAUDE_CODE_EXTRA_BODY ?? "{}").context_management.edits[0],
     ).toMatchObject({
       trigger: { value: 30_000 },
       clear_at_least: { value: 2_000 },
