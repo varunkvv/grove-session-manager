@@ -15,9 +15,11 @@ import path from "node:path";
 import { agentView, findAgentFile, readAgentTimeline } from "@grove/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentsOf } from "../../src/main/ipc.ts";
+import { KEEP_EVERY_MS } from "../../src/main/services/cacheKeeper.ts";
 import {
   ATTACH,
   ChatHost,
+  type ChatHostOptions,
   CLASSIFIER_ERROR_FILE,
   CLEARING,
   CLEARING_REFUSED,
@@ -85,6 +87,8 @@ interface Setup {
   /** what the fake got: argv and env once, then every stdin message */
   log: () => Array<Record<string, unknown>>;
   transcript: string;
+  /** the fake's CLAUDE_CONFIG_DIR */
+  claudeDir: string;
   window: {
     sent: Array<[string, unknown]>;
     isDestroyed(): boolean;
@@ -109,6 +113,7 @@ function setup(
   onReset?: (from: string, to: string) => void,
   /** more for the fake: GROVE_FAKE_CHAT_FOLD and the like */
   fake: Record<string, string> = {},
+  more: Partial<ChatHostOptions> = {},
 ): Setup {
   // real: /var/folders is /private/var/folders, and claude reports its cwd resolved
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-chat-")));
@@ -159,6 +164,7 @@ function setup(
     ...(onReset ? { onReset } : {}),
     letGo: (ids) => letGo.push(ids),
     onCard: (id, asks) => cards.push([id, asks]),
+    ...more,
   });
   hosts.push(host);
   const sent: Array<[string, unknown]> = [];
@@ -179,6 +185,7 @@ function setup(
       cwd.replace(/[^a-zA-Z0-9]/g, "-"),
       `${SESSION}.jsonl`,
     ),
+    claudeDir,
     window: { sent, isDestroyed: () => false, send: (c, p) => sent.push([c, p]) },
     now,
     letGo,
@@ -680,6 +687,89 @@ describe("grove chat's host", () => {
       now = true;
     });
     expect(now).toBe(true);
+  });
+
+  it("keeps an idle session's cache warm with a fork that resumes it and leaves no trace", async () => {
+    let hours: number | undefined = 3;
+    let changes = 0;
+    const s = setup(
+      2,
+      false,
+      undefined,
+      undefined,
+      {},
+      {
+        keepWarmHours: () => hours,
+        onChange: () => changes++,
+      },
+    );
+    await s.host.send(SESSION, s.where, COUNT);
+    // the recorded count waits for its interrupt: that ends the turn as any end does
+    await until(() => s.host.text(SESSION).length > 0, "the count");
+    await s.host.interrupt(SESSION);
+    await turnEnded(s);
+    await until(() => s.host.status(SESSION).context, "the context");
+    s.host.attach(SESSION, s.window);
+    const spawns = () => s.log().filter((l) => Array.isArray(l.argv));
+    // before the hour is nearly up: no fork
+    s.now.at += KEEP_EVERY_MS - 1000;
+    await s.host.keep();
+    expect(spawns()).toHaveLength(1);
+    // the window went, the session is reaped: it is still kept
+    s.host.detach(SESSION, s.window);
+    s.now.at += REAP_MS + 1;
+    s.host.reap();
+    await until(() => !s.host.hosts(SESSION), "the reap");
+    const before = { status: s.host.status(SESSION), sent: s.window.sent.length, changes };
+    // a fork's left-overs under its id, as claude leaves them: removed. the session's own stay
+    const leftover = path.join(s.claudeDir, "file-history");
+    mkdirSync(path.join(leftover, SESSION), { recursive: true });
+    await s.host.keep();
+    const [start, fork] = spawns() as Array<{ argv: string[]; cwd: string }>;
+    if (!start || !fork) throw new Error("no fork");
+    expect(fork.argv).toEqual(
+      expect.arrayContaining([
+        `--resume=${SESSION}`,
+        "--fork-session",
+        "--no-session-persistence",
+        "--max-turns=1",
+        "--include-partial-messages",
+      ]),
+    );
+    // the same prefix as the session's own claude: folders, settings, thinking
+    expect(fork.cwd).toBe(start.cwd);
+    for (const a of start.argv.filter((a) => /^--(add-dir|setting-sources|thinking)/.test(a)))
+      expect(fork.argv).toContain(a);
+    // no hook runs in it: grove's status and needs-you hooks among them. and it is on the effort
+    // the last turn ran at (the recording's medium). a model claude chose itself is not named
+    expect(fork.argv.join(" ")).toContain('"disableAllHooks":true');
+    expect(fork.argv).toContain("--effort=medium");
+    expect(fork.argv.join(" ")).not.toContain("--model");
+    // nothing of it shows: no status, no push to a window, no row change
+    expect(s.host.status(SESSION)).toEqual(before.status);
+    expect(s.window.sent.length).toBe(before.sent);
+    expect(changes).toBe(before.changes);
+    expect(existsSync(path.join(leftover, SESSION))).toBe(true);
+    // the recorded request wrote 37k: the prefix missed, so the session is not kept again
+    s.now.at += KEEP_EVERY_MS;
+    await s.host.keep();
+    expect(spawns()).toHaveLength(2);
+    // until a real turn, which starts its clock again. a model picked in the menu is named to it
+    await s.host.setModel(SESSION, "sonnet");
+    await s.host.send(SESSION, s.where, COUNT);
+    await until(() => s.host.text(SESSION).length > 0, "the second count");
+    await s.host.interrupt(SESSION);
+    await until(() => !s.host.running(SESSION), "the second turn to end");
+    s.now.at += KEEP_EVERY_MS;
+    hours = 0;
+    await s.host.keep();
+    // off is off
+    expect(spawns()).toHaveLength(3);
+    hours = undefined;
+    await s.host.keep();
+    // absent is the default's 3 hours
+    expect(spawns()).toHaveLength(4);
+    expect((spawns()[3] as { argv: string[] }).argv).toContain("--model=sonnet");
   });
 
   it("lets an idle session with no window go after ten minutes, never one mid-turn", async () => {

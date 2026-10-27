@@ -10,6 +10,7 @@ import type {
   EffortLevel,
   ElicitationRequest,
   ElicitationResult,
+  Options,
   PermissionResult,
   PermissionUpdate,
   Query,
@@ -44,6 +45,17 @@ import type { EffortChoice, ModelChoice } from "../../shared/newSession.ts";
 import { AppError } from "../errors.ts";
 import { log } from "../log.ts";
 import type { PushTarget } from "../push.ts";
+import {
+  type ForkRead,
+  forkOptions,
+  KEEP_MISS_TOKENS,
+  KEEP_PROMPT,
+  KEEP_TIMEOUT_MS,
+  keepDue,
+  keepHours,
+  readFork,
+  sweepFork,
+} from "./cacheKeeper.ts";
 import { type ChatTask, ChatTasks } from "./chatTasks.ts";
 import { taskView } from "./projects.ts";
 import { onPath, type Placed, place } from "./uploads.ts";
@@ -351,6 +363,10 @@ export interface ChatHostOptions {
   onCard?: (id: string, asks: string | null) => void;
   /** claude code's projects folder: a failed auto mode check leaves the api's error in it */
   projectsDir?: string;
+  /** the cache keeper's setting: hours after a session's last turn its cache is kept. 0 is off */
+  keepWarmHours?: () => number | undefined;
+  /** the keeper's fork, in place of the sdk's query: a test's */
+  fork?: typeof import("@anthropic-ai/claude-agent-sdk")["query"];
 }
 
 /** what a card no hook announces asks, as its own label says it. undefined for a tool's ask */
@@ -745,6 +761,17 @@ interface Hosted {
   sending?: Promise<void>;
   /** this claude was started with clearingEnv's extra body */
   clearing?: boolean;
+  /** the cache keeper's clock: when its last turn ended, and when a fork last read its cache */
+  lastTurn?: number;
+  lastWarm?: number;
+  /** a fork missed its cache: not kept again until a real turn */
+  keepOff?: boolean;
+  /**
+   * the model its claude was put on by name: a pick in the menu, or the project's for a session
+   * grove started. what claude chose itself is not named to a fork: "default" for the same opus
+   * as "opus" missed 1.2k of the cache (probe)
+   */
+  picked?: string;
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -825,10 +852,18 @@ export class ChatHost {
    * first message otherwise
    */
   private clearingOff = false;
+  /** the cache keeper's forks under way: one at a time */
+  private keeping?: Promise<void>;
+  /** the fork under way: grove quitting closes it */
+  private forking?: { close(): void };
+  private disposed = false;
 
   constructor(o: ChatHostOptions) {
     this.o = o;
-    this.reaper = setInterval(() => this.reap(), 60_000);
+    this.reaper = setInterval(() => {
+      this.reap();
+      void this.keep();
+    }, 60_000);
     this.reaper.unref?.();
   }
 
@@ -1143,6 +1178,7 @@ export class ChatHost {
 
   async setModel(id: string, model: string): Promise<void> {
     const h = this.entry(id);
+    h.picked = model;
     if (!h.q) {
       // picked before claude is up: it starts on it
       h.model = model;
@@ -1296,6 +1332,8 @@ export class ChatHost {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.forking?.close();
     clearInterval(this.reaper);
     // before the close: its SessionEnd can land while the app still drains
     const up = [...this.hosted.values()].filter((h) => h.q).map((h) => h.id);
@@ -1324,42 +1362,161 @@ export class ChatHost {
     for (const h of idle) h.q?.close();
   }
 
+  /**
+   * what a session's claude is started with that is in its prompt's cached prefix: the system
+   * prompt, the tools, the folders, thinking and the env. a start and the cache keeper's fork both
+   * build on it, so a fork reads the cache the session wrote (probe: read 148,904 of ~149k, wrote 0)
+   */
+  private async launch(h: Hosted): Promise<{
+    query: typeof import("@anthropic-ai/claude-agent-sdk")["query"];
+    options: Options;
+    clearing: boolean;
+  }> {
+    // only here: with grove chat off the sdk is never even loaded
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
+    const [bin, env, summaries, settings] = await Promise.all([
+      this.o.claudeBin(),
+      this.o.env(),
+      showsThinking(this.o.claudeSettings),
+      settingsEnv(this.o.claudeSettings),
+      // claude is told of it at launch: a folder added later has to be under one it knows
+      mkdir(this.o.uploads, { recursive: true }),
+    ]);
+    const clearing = this.clearingOff ? {} : clearingEnv(env, settings);
+    return {
+      query,
+      clearing: clearing.CLAUDE_CODE_EXTRA_BODY !== undefined,
+      options: {
+        pathToClaudeCodeExecutable: bin,
+        cwd: h.where.cwd,
+        // grove's uploads too: a Read of an attached file never asks, in any mode
+        additionalDirectories: [...h.where.dirs, this.o.uploads],
+        // CLAUDE.md, skills, hooks and the project's settings, as everywhere else. no mode: the
+        // settings' defaultMode decides, as it does in the terminal
+        settingSources: ["user", "project", "local"],
+        // claude code's own prompt, as the vs code extension passes it. left out, the sdk sends an
+        // empty one and the session runs without claude code's instructions
+        systemPrompt: { type: "preset", preset: "claude_code" },
+        // what the vs code extension starts every session with. checkpoints make grove's turns
+        // rewindable later. the stop affordance keeps a stop from killing background agents:
+        // each one is stopped from its own row
+        enableFileCheckpointing: true,
+        perTaskStopAffordance: true,
+        // an option's preview in markdown, as the terminal shows it: the card draws it beside the
+        // list, never as html. it is in AskUserQuestion's description, so in the prefix
+        toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
+        thinking: {
+          type: "enabled",
+          budgetTokens: THINKING_BUDGET,
+          ...(summaries ? { display: "summarized" as const } : {}),
+        },
+        includePartialMessages: true,
+        // claude's environment, and grove's own setting for claude code over it: the api clears
+        // old reads out of context
+        env: { ...hostEnv(env), ...clearing },
+        supportedDialogKinds: DIALOG_KINDS,
+        stderr: (data) => log.warn(`chat ${h.id.slice(0, 8)}:`, data.trimEnd()),
+      },
+    };
+  }
+
+  /**
+   * the cache keeper, from the reaper's tick: the sessions due a fork, one at a time. a closed
+   * window or a reaped claude does not stop it, a real turn starts its clock again
+   */
+  keep(): Promise<void> {
+    if (this.keeping) return this.keeping;
+    const hours = keepHours(this.o.keepWarmHours?.());
+    const now = this.now();
+    const due = [...this.hosted.values()].filter((h) =>
+      keepDue(
+        {
+          lastTurn: h.lastTurn,
+          lastWarm: h.lastWarm,
+          running: h.status.running || h.status.starting,
+          warming: false,
+          off: h.keepOff === true,
+          context: h.status.context?.used ?? 0,
+        },
+        now,
+        hours,
+      ),
+    );
+    if (due.length === 0) return Promise.resolve();
+    this.keeping = (async () => {
+      for (const h of due) {
+        if (this.disposed) break;
+        await this.warmCache(h).catch((e) => log.warn(`chat ${h.id.slice(0, 8)}: keep warm`, e));
+      }
+    })().finally(() => {
+      this.keeping = undefined;
+    });
+    return this.keeping;
+  }
+
+  /** one fork that reads the session's cached prefix and goes as its request starts */
+  private async warmCache(h: Hosted): Promise<void> {
+    // at the try, not the read: a fork that fails is tried again in ~55 minutes, not each tick
+    h.lastWarm = this.now();
+    const { query, options } = await this.launch(h);
+    const run = this.o.fork ?? query;
+    const q = run({
+      prompt: KEEP_PROMPT,
+      options: {
+        ...options,
+        ...forkOptions(h.id, { ...h.status, model: h.picked }),
+        stderr: () => {},
+      },
+    });
+    const read: ForkRead = {};
+    const timer = setTimeout(() => q.close(), KEEP_TIMEOUT_MS);
+    this.forking = q;
+    try {
+      // leaving the for-await closes it: no reply is written, no tool runs
+      for await (const m of q) if (readFork(read, m)) break;
+    } finally {
+      clearTimeout(timer);
+      this.forking = undefined;
+      q.close();
+    }
+    const claudeDir = this.o.projectsDir && path.dirname(this.o.projectsDir);
+    // never the session's own: a fork that came up under its id would take its checkpoints
+    if (read.fork && read.fork !== h.id && claudeDir) await sweepFork(claudeDir, read.fork);
+    const id = h.id.slice(0, 8);
+    if (!read.usage) {
+      log.warn(`chat ${id}: keep warm fork ended before its request`);
+      return;
+    }
+    log.info(`chat ${id}: kept warm, cache read ${read.usage.read}, write ${read.usage.write}`);
+    if (read.usage.write > KEEP_MISS_TOKENS) {
+      // the prefix did not match: forking again would write it again each time
+      h.keepOff = true;
+      log.warn(
+        `chat ${id}: keep warm missed the cache (wrote ${read.usage.write}), not kept again`,
+      );
+    }
+  }
+
   private async start(h: Hosted): Promise<void> {
     this.set(h, { starting: true, error: undefined });
     let q: Query | undefined;
     try {
-      // only here: with grove chat off the sdk is never even loaded
-      const { query } = await import("@anthropic-ai/claude-agent-sdk");
-      const [bin, env, summaries, settings] = await Promise.all([
-        this.o.claudeBin(),
-        this.o.env(),
-        showsThinking(this.o.claudeSettings),
-        settingsEnv(this.o.claudeSettings),
-        // claude is told of it at launch: a folder added later has to be under one it knows
-        mkdir(this.o.uploads, { recursive: true }),
-      ]);
-      const clearing = this.clearingOff ? {} : clearingEnv(env, settings);
-      h.clearing = clearing.CLAUDE_CODE_EXTRA_BODY !== undefined;
+      const { query, options, clearing } = await this.launch(h);
+      h.clearing = clearing;
+      if (!h.model && h.where.fresh && h.where.model) h.picked = h.where.model;
       q = query({
         prompt: h.prompts,
         options: {
-          pathToClaudeCodeExecutable: bin,
-          cwd: h.where.cwd,
-          // grove's uploads too: a Read of an attached file never asks, in any mode
-          additionalDirectories: [...h.where.dirs, this.o.uploads],
+          ...options,
           // a session grove made has no transcript to resume yet: claude starts one under its id
           ...(h.where.fresh ? { sessionId: h.id } : { resume: h.id }),
-          // CLAUDE.md, skills, hooks and the project's settings, as everywhere else. no mode: the
-          // settings' defaultMode decides, as it does in the terminal
-          settingSources: ["user", "project", "local"],
-          // claude code's own prompt, as the vs code extension passes it. left out, the sdk sends an
-          // empty one and the session runs without claude code's instructions
-          systemPrompt: { type: "preset", preset: "claude_code" },
-          // what the vs code extension starts every session with. checkpoints make grove's turns
-          // rewindable later. the stop affordance keeps a stop from killing background agents:
-          // each one is stopped from its own row
-          enableFileCheckpointing: true,
-          perTaskStopAffordance: true,
+          // a pick in the window's menu, else the project's, for a session it starts
+          ...(h.model
+            ? { model: h.model }
+            : h.where.fresh && h.where.model
+              ? { model: h.where.model }
+              : {}),
+          ...(h.where.fresh && h.where.effort ? { effort: h.where.effort } : {}),
           // each turn's Stop says its wake-ups and crons whole (session_crons): no frame does.
           // never throws and answers at once, or the turn's end would wait on it
           hooks: {
@@ -1378,25 +1535,6 @@ export class ChatHost {
               },
             ],
           },
-          // an option's preview in markdown, as the terminal shows it: the card draws it beside the
-          // list, never as html
-          toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
-          thinking: {
-            type: "enabled",
-            budgetTokens: THINKING_BUDGET,
-            ...(summaries ? { display: "summarized" as const } : {}),
-          },
-          includePartialMessages: true,
-          // claude's environment, and grove's own setting for claude code over it: the api clears
-          // old reads out of context
-          env: { ...hostEnv(env), ...clearing },
-          // a pick in the window's menu, else the project's, for a session it starts
-          ...(h.model
-            ? { model: h.model }
-            : h.where.fresh && h.where.model
-              ? { model: h.where.model }
-              : {}),
-          ...(h.where.fresh && h.where.effort ? { effort: h.where.effort } : {}),
           canUseTool: (tool, input, opts) => this.ask(h, tool, input, opts),
           // a refusal's fallback and auto's billed classifier come as cards, as in vs code
           onUserDialog: (req, opts) => this.dialog(h, req, opts.signal),
@@ -1652,6 +1790,9 @@ export class ChatHost {
         });
         this.o.onChange?.();
         for (const run of h.afterTurn.splice(0)) run();
+        // the cache keeper's clock starts again. the turn wrote its prefix, so a miss is forgotten
+        h.lastTurn = this.now();
+        h.keepOff = false;
         void this.contextUsage(h);
         if (h.clearing && refusedClearing(m)) void this.unclear(h);
         return;

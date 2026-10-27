@@ -36,6 +36,8 @@ export interface Settings {
   chat?: boolean;
   /** with grove chat on, the key that brings grove forward from anywhere. "none" is none */
   summonKey?: string;
+  /** grove chat keeps a session's prompt cache warm for this many hours after its last turn. absent is 3, 0 is off */
+  keepWarmHours?: number;
   /**
    * judgment day odds (beta), a decisioning feature: a local model judges the person's own prompts,
    * on this mac only, for the Usage screen. off unless true. each decisioning feature has its own
@@ -91,6 +93,14 @@ function clean(raw: unknown): Settings {
   }
   if (typeof raw.summonKey === "string" && raw.summonKey.trim() && raw.summonKey.length <= 64) {
     s.summonKey = raw.summonKey.trim();
+  }
+  if (
+    typeof raw.keepWarmHours === "number" &&
+    Number.isFinite(raw.keepWarmHours) &&
+    raw.keepWarmHours >= 0 &&
+    raw.keepWarmHours <= 24
+  ) {
+    s.keepWarmHours = raw.keepWarmHours;
   }
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {
     s.maxParsedSessions = Math.floor(raw.maxParsedSessions);

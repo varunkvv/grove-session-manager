@@ -6,6 +6,9 @@ import { archiveProject, startAgent } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { Button, cx, Field, inputClass, Modal, Mono, ProgressBar, Select, Switch } from "./ui.tsx";
 
+/** the cache keeper's choices, in hours after a chat's last turn. 0 is off */
+const KEEP_WARM_HOURS = [0, 1, 2, 3, 4, 6] as const;
+
 function baseName(p: string): string {
   return p.split("/").filter(Boolean).pop() ?? p;
 }
@@ -601,6 +604,34 @@ export function SettingsDialog() {
                 onChange={(k) => setDraft({ ...draft, summonKey: k })}
               />
             </div>
+          )}
+          {draft.chat === true && (
+            <>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="min-w-0 flex-1 text-sm text-fg-2">Keep chats warm</span>
+                <Select
+                  value={draft.keepWarmHours ?? 3}
+                  onChange={(e) => {
+                    const hours = Number(e.target.value);
+                    setDraft({ ...draft, keepWarmHours: hours === 3 ? undefined : hours });
+                  }}
+                  data-testid="setting-keep-warm"
+                >
+                  {KEEP_WARM_HOURS.map((h) => (
+                    <option key={h} value={h}>
+                      {h === 0
+                        ? "Off"
+                        : `${h} hour${h === 1 ? "" : "s"}${h === 3 ? " (default)" : ""}`}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <span className="mt-1 block text-meta text-fg-3">
+                Claude's prompt cache lasts an hour. For this long after a chat's last turn, Grove
+                reads it again just before the hour is up, so coming back later doesn't pay to write
+                the whole conversation again. A read costs about a fortieth of that.
+              </span>
+            </>
           )}
         </div>
         <div>

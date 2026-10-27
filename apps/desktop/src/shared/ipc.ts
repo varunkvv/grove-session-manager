@@ -191,6 +191,8 @@ export interface AppSettings {
   chat?: boolean;
   /** with grove chat on, the key that brings grove forward from anywhere. "none", or absent for the default */
   summonKey?: string;
+  /** grove chat keeps a session's prompt cache warm this many hours after its last turn. absent is 3, 0 is off */
+  keepWarmHours?: number;
   /** judgment day odds (beta): a local model judges your own prompts, on this mac. off unless switched on. */
   judgmentDayOdds?: boolean;
 }

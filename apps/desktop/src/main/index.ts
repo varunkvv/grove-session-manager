@@ -382,6 +382,8 @@ async function start(): Promise<void> {
     onChange: () => projects.sessionsChanged(),
     claudeSettings: path.join(path.dirname(projectsDir), "settings.json"),
     projectsDir,
+    // the cache keeper reads it each tick: a change in Settings counts from the next one
+    keepWarmHours: () => settings.keepWarmHours,
     // /clear: a new session in the same window, made as cmd-N makes one, until its transcript lands
     onReset: (from, to, where) => {
       const project = fresh.get(from)?.project ?? projects.hitFor(from)?.project;
