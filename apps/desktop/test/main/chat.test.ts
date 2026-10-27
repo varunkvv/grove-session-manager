@@ -692,6 +692,7 @@ describe("grove chat's host", () => {
   it("keeps an idle session's cache warm with a fork that resumes it and leaves no trace", async () => {
     let hours: number | undefined = 3;
     let changes = 0;
+    const keeperForks = new Set<string>();
     const s = setup(
       2,
       false,
@@ -700,6 +701,7 @@ describe("grove chat's host", () => {
       {},
       {
         keepWarmHours: () => hours,
+        keeperForks,
         onChange: () => changes++,
       },
     );
@@ -736,6 +738,9 @@ describe("grove chat's host", () => {
         "--include-partial-messages",
       ]),
     );
+    // under an id grove gave it, known before its process is in claude's registry
+    expect(keeperForks.size).toBe(1);
+    expect(fork.argv).toContain(`--session-id=${[...keeperForks][0]}`);
     // the same prefix as the session's own claude: folders, settings, thinking
     expect(fork.cwd).toBe(start.cwd);
     for (const a of start.argv.filter((a) => /^--(add-dir|setting-sources|thinking)/.test(a)))

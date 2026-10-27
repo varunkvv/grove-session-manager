@@ -59,7 +59,7 @@ describe("the cache keeper's rule", () => {
 
 describe("the cache keeper's fork", () => {
   it("resumes as a fork with no transcript and no hooks, on what the last turn ran on", () => {
-    const o = forkOptions("s1", {
+    const o = forkOptions("s1", "f1", {
       model: "opus",
       effort: "xhigh",
       style: "Explanatory",
@@ -69,6 +69,7 @@ describe("the cache keeper's fork", () => {
     expect(o).toMatchObject({
       resume: "s1",
       forkSession: true,
+      sessionId: "f1",
       persistSession: false,
       maxTurns: 1,
       model: "opus",
@@ -77,7 +78,7 @@ describe("the cache keeper's fork", () => {
       settings: { disableAllHooks: true, outputStyle: "Explanatory", ultracode: true },
     });
     // nothing claude decides on its own is pinned
-    const bare = forkOptions("s1", {});
+    const bare = forkOptions("s1", "f1", {});
     expect(bare).not.toHaveProperty("model");
     expect(bare).not.toHaveProperty("effort");
     expect(bare).not.toHaveProperty("thinking");
@@ -85,7 +86,7 @@ describe("the cache keeper's fork", () => {
   });
 
   it("denies any tool, in the hook and in canUseTool", async () => {
-    const o = forkOptions("s1", {});
+    const o = forkOptions("s1", "f1", {});
     const hook = o.hooks?.PreToolUse?.[0]?.hooks[0];
     const out = await hook?.({} as never, undefined, {
       signal: new AbortController().signal,

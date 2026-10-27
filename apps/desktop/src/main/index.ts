@@ -243,7 +243,11 @@ async function start(): Promise<void> {
   };
 
   const awake = keepAwake(electron.powerSaveBlocker);
+  // grove chat's cache keeper forks, by the id each is given: their process is in claude's registry
+  // for the few seconds one runs, and is nobody's session. live leaves them out
+  const keeperForks = new Set<string>();
   const live = new LiveService({
+    ignore: (id) => keeperForks.has(id),
     stateDir: appEnv.stateDir,
     claudeSettingsFile: path.join(path.dirname(projectsDir), "settings.json"),
     registryDir: sessionsRegistryDir(path.dirname(projectsDir)),
@@ -384,6 +388,7 @@ async function start(): Promise<void> {
     projectsDir,
     // the cache keeper reads it each tick: a change in Settings counts from the next one
     keepWarmHours: () => settings.keepWarmHours,
+    keeperForks,
     // /clear: a new session in the same window, made as cmd-N makes one, until its transcript lands
     onReset: (from, to, where) => {
       const project = fresh.get(from)?.project ?? projects.hitFor(from)?.project;

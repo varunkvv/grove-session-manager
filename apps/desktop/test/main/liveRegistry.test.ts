@@ -50,8 +50,9 @@ function machine() {
       JSON.stringify({ pid: process.pid, sessionId: S, kind: "interactive", ...o }),
     );
   const needs: LiveStatus[] = [];
-  const start = async () => {
+  const start = async (ignore?: (id: string) => boolean) => {
     const live = new LiveService({
+      ...(ignore ? { ignore } : {}),
       stateDir,
       claudeSettingsFile: path.join(dir, "claude", "settings.json"),
       registryDir,
@@ -111,4 +112,12 @@ describe("the registry in the live service", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(m.needs).toHaveLength(1);
   }, 40_000);
+
+  it("a cache keeper fork's process is read past: no status, not alive", async () => {
+    const m = machine();
+    m.register({ status: "busy", statusUpdatedAt: Date.now() });
+    const live = await m.start((id) => id === S);
+    expect(live.list().has(S)).toBe(false);
+    expect(live.isAlive(S)).toBe(false);
+  });
 });

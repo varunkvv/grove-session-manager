@@ -60,6 +60,8 @@ export interface LiveServiceOptions {
   claudeSettingsFile: string;
   /** `<claudeConfigDir>/sessions`, where every live process keeps a file. read-only. */
   registryDir: string;
+  /** a process the registry lists that is no session of the person's: grove chat's cache keeper forks */
+  ignore?: (sessionId: string) => boolean;
   onChange: (
     statuses: ReadonlyMap<string, LiveStatus>,
     agentRuns: ReadonlyMap<string, Readonly<Record<string, AgentRun>>>,
@@ -310,7 +312,10 @@ export class LiveService {
 
   /** the live processes, folded in under the hook state. see applyRegistry for who wins. */
   private async syncRegistry(): Promise<void> {
-    const entries = await readRegistry(this.opts.registryDir).catch(() => []);
+    const ignore = this.opts.ignore;
+    const entries = (await readRegistry(this.opts.registryDir).catch(() => [])).filter(
+      (e) => !ignore?.(e.sessionId),
+    );
     const shown = new Map(this.view());
     // an idle process changes no status, but a background agent of its can still be working
     const alive = new Set(entries.map((e) => e.sessionId));

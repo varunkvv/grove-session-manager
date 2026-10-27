@@ -55,11 +55,13 @@ export function keepHours(v: unknown): number {
  */
 export function forkOptions(
   id: string,
+  fork: string,
   status: Pick<ChatStatus, "model" | "effort" | "style" | "ultracode" | "thinkingOff">,
 ): Partial<Options> {
   return {
     resume: id,
     forkSession: true,
+    sessionId: fork,
     persistSession: false,
     maxTurns: 1,
     ...(status.model ? { model: status.model } : {}),

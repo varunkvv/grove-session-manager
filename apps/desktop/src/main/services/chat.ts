@@ -365,6 +365,11 @@ export interface ChatHostOptions {
   projectsDir?: string;
   /** the cache keeper's setting: hours after a session's last turn its cache is kept. 0 is off */
   keepWarmHours?: () => number | undefined;
+  /**
+   * the keeper's fork ids, each added before its fork starts and never taken out: claude lists a
+   * fork's process in its registry while it runs, and the live service reads past these
+   */
+  keeperForks?: Set<string>;
   /** the keeper's fork, in place of the sdk's query: a test's */
   fork?: typeof import("@anthropic-ai/claude-agent-sdk")["query"];
 }
@@ -1460,11 +1465,14 @@ export class ChatHost {
     h.lastWarm = this.now();
     const { query, options } = await this.launch(h);
     const run = this.o.fork ?? query;
+    // its id is grove's: known before its process is in the registry, so nothing shows it
+    const fork = randomUUID();
+    this.o.keeperForks?.add(fork);
     const q = run({
       prompt: KEEP_PROMPT,
       options: {
         ...options,
-        ...forkOptions(h.id, { ...h.status, model: h.picked }),
+        ...forkOptions(h.id, fork, { ...h.status, model: h.picked }),
         stderr: () => {},
       },
     });
@@ -1480,8 +1488,9 @@ export class ChatHost {
       q.close();
     }
     const claudeDir = this.o.projectsDir && path.dirname(this.o.projectsDir);
-    // never the session's own: a fork that came up under its id would take its checkpoints
-    if (read.fork && read.fork !== h.id && claudeDir) await sweepFork(claudeDir, read.fork);
+    if (claudeDir) await sweepFork(claudeDir, fork);
+    if (read.fork && read.fork !== fork)
+      log.warn(`chat ${h.id.slice(0, 8)}: keep warm fork ran as ${read.fork}`);
     const id = h.id.slice(0, 8);
     if (!read.usage) {
       log.warn(`chat ${id}: keep warm fork ended before its request`);
