@@ -1,3 +1,21 @@
+## 0.37
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.37 keeps a grove chat's prompt cache warm while you're away.
+
+New:
+
+- Claude's prompt cache lasts an hour. a grove chat you come back to after that pays to write the whole conversation
+  into the cache again (on a big chat, more than a turn usually costs). for 3 hours after a chat's last turn, Grove now
+  reads its cache again just before the hour is up, at about a fortieth of that. the read is a throwaway copy of the
+  session that is closed as its request starts: it writes nothing to the transcript, runs no hooks or tools and shows
+  nowhere in Grove
+- Settings > Chat > Keep chats warm sets how long: off, or 1 to 6 hours. 3 is the default
+
+Keep in mind:
+
+- it covers grove chats only, while Grove is running. a chat under 20k tokens of context is not kept (a rewrite is cheap)
+- if a read ever misses the cache and writes a lot instead, that chat is not kept again until its next turn
+
 ## 0.36
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.36 adds a PR pane and a background tasks pane to the grove chat window.
