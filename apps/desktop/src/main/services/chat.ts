@@ -1438,7 +1438,8 @@ export class ChatHost {
         {
           lastTurn: h.lastTurn,
           lastWarm: h.lastWarm,
-          running: h.status.running || h.status.starting,
+          // a card open is mid-turn already. said anyway: a fork must never resume half a tool call
+          running: h.status.running || h.status.starting || h.status.asks.length > 0,
           warming: false,
           off: h.keepOff === true,
           context: h.status.context?.used ?? 0,
