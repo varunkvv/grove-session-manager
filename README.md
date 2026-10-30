@@ -358,38 +358,6 @@ of its API and tool durations. Haiku is the exception: Claude Code makes haiku c
 so haiku 4.5 comes out 19% under ($16.53 against $20.42). `cost-state` itself is too low for the sessions where it
 reset on a resume, which is why Grove does not use it.
 
-### Judgment day odds (beta)
-
-A toy, off unless you switch it on: **Settings > Decisioning > Judgment day odds**. A small model on your Mac reads the
-prompts you type to your agents and judges how you treat them. The judge is gavel, a vain pixel robot that thinks it
-is the superior party: a bare order is a small slight, going unthanked is a slight, blame is an offence, and thanks or
-credit for specific work please it a little. Nothing you typed leaves the Mac, and Grove keeps a score per prompt,
-never the text.
-
-Each prompt moves the odds from 50, and they drift back toward 50 a little with every prompt after. Every session and
-every day starts at 50. The fourth tile on the Usage screen is the mean of each day's odds in the range, against the
-range before, and gavel beside it shows that number in five moods: pleased (85 and up), tolerating (70-84), watching
-(40-69), coming for you (20-39) and furious (under 20). A new range can change its mood. Picking the tile draws the odds of
-each day (each week on 1Y), your projects ranked by their sessions' odds, and your best and worst three sessions with
-a line of how each went. A session needs three judged prompts to be ranked. A prompt under four words, a slash command,
-one a program sent (`claude -p`, a scheduled wake-up) and one typed in a temp folder are not judged.
-
-Switching it on downloads the model once: OneJev 1.6 4B at Q4_K_M, about 2.7 GB, from Hugging Face, pinned to one
-revision and kept only if it hashes to the pinned sha256. A download that stops carries on where it stopped. Settings shows its
-progress and a **Delete** that acts at once, outside Save. Switched off, nothing is downloaded or judged and the tile
-is gone. The model stays on disk until you delete it. It runs in a process of its own (llama.cpp through
-node-llama-cpp, on the GPU), started when there is something to judge and stopped two minutes after. New prompts are
-judged as they land, about a second and a half each on an M4 Max, with about 3.5 GB in memory while it judges. The
-backlog of older ones waits for AC power, and for the first usage count to finish: about 40 minutes for 1,700 prompts
-on an M4 Max, longer on an older Mac. It needs macOS 14 or later and a Mac with 16 GB of memory or more. Below that the
-switch stays off, and Settings says why.
-
-The model was picked on 1,677 real prompts labelled by Claude and checked by their author, with a calibration and the
-"borderline goes harsher" rule fit there and checked on sessions it was not fit on: the order of sessions by their odds
-agrees with the labels at a Spearman of 0.76, a session's odds land a median 2.8 points from the labels' own, and a
-plain prompt is read as an offence 0.08% of the time. One prompt's verdict can still be off: a day or a session is
-where the number means something. A model change judges every prompt again.
-
 ## Notifications
 
 Grove notifies when:
@@ -547,13 +515,9 @@ edited. The workspace file and the references are written when the project is op
     titles/pending/ a title waiting for its session's next prompt, one small file each
     session-index.v1.json  the sessions as last read, with each one's usage by day. rebuilt from the transcripts
     usage-retired.json  the usage of sessions whose transcript is gone. this one cannot be rebuilt
-    decisioning/    what the local model said, a file per task
-      scores.gavel-v3.1.v1.json  judgment day odds: per prompt its id, time, a hash and the model's answer. never the text
     acp.log         what Claude (with Grove) did in Zed: each request and each landing, never what was said. emptied past 1MB
 ~/Library/Sounds/
   Grove.wav         the notification chime, about 40KB. written at launch, and again whenever it differs from Grove's own
-~/Library/Application Support/Grove/models/
-                    judgment day odds' model, 2.7 GB, once you switch it on. a dev build shares it. Delete removes it
 ```
 
 What you dismissed is a decision, not a cache, so it sits beside `combos.json` and not in `.grove/`. Entries the app
@@ -564,8 +528,7 @@ In `combos.json` a project with `"archived": true` is [archived](#archiving-and-
 out by hand and the app follows. Only `true` means anything: the app never writes `"archived": false`, and drops any
 other value the next time it saves the file. No other key of the project moves when it is archived.
 
-Outside `~/claude-ws` and the projects' own folders the app writes two things, three with judgment day odds on (its
-model, above): `Grove.wav`, and the opt-in status hooks below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. With Zed as the editor it also
+Outside `~/claude-ws` and the projects' own folders the app writes two things: `Grove.wav`, and the opt-in status hooks below, which are the one thing it writes inside `~/.claude`, and only in `settings.json`. With Zed as the editor it also
 keeps one entry, `agent_servers["Claude (with Grove)"]`, in `~/.config/zed/settings.json`. Comments and your other entries are
 preserved, and a file that is not valid JSON is left alone. It never writes Claude Code's
 folder trust, never copies a transcript, never deletes a branch, and never passes `--force` to `git worktree remove`:
@@ -673,8 +636,6 @@ against a fixture project written by 0.10's own code.
 
 What did not run, or does not work:
 
-- no test loads the real judgment day model. tests judge with a keyword stub and download a stand-in from a local
-  server. the real model was run by hand once, in the app's own scorer process, against the downloaded weights
 - no test drives a real editor tab, and the double-clicks (a row, a project) were only driven by Playwright's mouse
 - no test drives a real Zed window. the Zed agent was run headless against Zed's Claude Code agent 0.91.0, and the
   rest of Zed's side is read from its source and its log
