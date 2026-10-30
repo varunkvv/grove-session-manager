@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type {
   AppSettings,
   Bootstrap,
-  DecisioningStatus,
   EditorStatus,
   EnvInfo,
   InboxView,
@@ -47,8 +46,6 @@ export interface State {
   env: EnvInfo | null;
   settings: AppSettings | null;
   editor: EditorStatus | null;
-  /** decisioning's model and how far its judging got. null until main has said */
-  decisioning: DecisioningStatus | null;
   /** in combos.json order */
   projects: ProjectView[];
   projectsProblem?: string;
@@ -106,7 +103,6 @@ export const useStore = create<State>((set) => ({
   env: null,
   settings: null,
   editor: null,
-  decisioning: null,
   projects: [],
   project: null,
   section: "inbox",
@@ -241,7 +237,6 @@ export async function connect(): Promise<() => void> {
     window.grove.on("editor:status", (editor) => set({ editor })),
     // saved anywhere, the dialog or ⌘+ in any window: the store has it
     window.grove.on("settings:changed", (settings) => set({ settings })),
-    window.grove.on("decisioning:status", (decisioning) => set({ decisioning })),
     window.grove.on("toast", (t) => toast(t)),
     // a notification or a tray row was clicked: take where it lands, now that the page is here
     window.grove.on("app:land", () => {
@@ -262,10 +257,6 @@ export async function connect(): Promise<() => void> {
   });
   revs = { ...boot.revs };
   for (const replay of buffered.splice(0)) replay();
-  void window.grove.decisioningStatus().then(
-    (decisioning) => set({ decisioning }),
-    () => {},
-  );
   // the click that started the app, or one that came while the page was loading
   void takeLanding();
 

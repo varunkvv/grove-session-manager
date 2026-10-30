@@ -1,13 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  GAVEL_MOODS,
-  generate,
-  loadParts,
-  restFrame,
-  staticFrame,
-} from "../../scripts/gavelScene.ts";
 import { CANVAS } from "../../src/main/window.ts";
 
 const dir = path.join(import.meta.dirname, "../../src/renderer");
@@ -208,53 +201,6 @@ describe("design lint", () => {
           }
         }
       }
-    }
-  });
-
-  // gavel, the judgment day odds robot: its own colours, drawn by one primitive, that keep it
-  // readable on every tile in every palette
-  it("gavel's colours are tokens, and only ui.tsx draws them", () => {
-    const BOT = /\b(?:bg|text|border|fill|stroke)-bot-[a-z-]+\b/g;
-    for (const [f, src] of files) {
-      if (f === UI) continue;
-      expect(src.match(BOT) ?? [], `${f} draws gavel itself`).toEqual([]);
-    }
-    const defined = [...css.matchAll(/--color-(bot-[a-z-]+):/g)].map((m) => m[1]);
-    const ui = files.find(([f]) => f === UI)?.[1] ?? "";
-    const drawn = [...ui.matchAll(BOT)].map((m) => m[0].replace(/^[a-z]+-/, ""));
-    expect([...new Set(drawn)].sort()).toEqual([...new Set(defined)].sort());
-  });
-
-  it("gavel reads on every ground: its outline on light, its metal on dark, its lights on its screen", () => {
-    const LIGHT_GROUNDS = ["canvas", "chrome", "raised", "active", "overlay"];
-    for (const [name, tokens] of palettes()) {
-      const at = (token: string, half: "light" | "dark") => {
-        const v = halves(tokens.get(token) ?? "")?.[half] ?? "";
-        expect(v, `${name} ${half} ${token}`).toMatch(/^#[0-9a-f]{6}$/i);
-        return v;
-      };
-      for (const ground of LIGHT_GROUNDS) {
-        const light = contrast(at("bot-outline", "light"), at(ground, "light"));
-        expect(light, `${name}: gavel's outline on ${ground}`).toBeGreaterThanOrEqual(3);
-        const dark = contrast(at("bot-metal", "dark"), at(ground, "dark"));
-        expect(dark, `${name}: gavel's metal on dark ${ground}`).toBeGreaterThanOrEqual(3);
-      }
-      for (const half of ["light", "dark"] as const) {
-        for (const led of ["bot-shine", "bot-red", "bot-violet"]) {
-          const r = contrast(at(led, half), at("bot-screen", half));
-          expect(r, `${name} ${half}: ${led} on gavel's screen`).toBeGreaterThanOrEqual(3);
-        }
-      }
-    }
-  });
-
-  it("gavel is drawn from its art: the scene is up to date, and each mood stands as parts.txt places it", () => {
-    const parts = loadParts();
-    const scene = readFileSync(path.join(dir, "gavel/scene.generated.ts"), "utf8");
-    expect(scene, "run `node scripts/gavel.ts` in apps/desktop").toBe(generate(parts));
-    const text = readFileSync(path.join(dir, "gavel/parts.txt"), "utf8");
-    for (const mood of GAVEL_MOODS) {
-      expect(restFrame(parts, mood), mood).toEqual(staticFrame(text, parts, mood));
     }
   });
 

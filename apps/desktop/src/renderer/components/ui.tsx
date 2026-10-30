@@ -2,7 +2,6 @@ import {
   formatRelativeTime,
   highlightRanges,
   KIND_WORD,
-  type MoodId,
   type Recap,
   type Runtime,
 } from "@grove/core/pure";
@@ -20,14 +19,6 @@ import {
   useState,
 } from "react";
 import type { ChatMode, ProjectId } from "../../shared/ipc.ts";
-import {
-  GAVEL_SCENE,
-  GAVEL_SIZE,
-  type GavelGroup,
-  type GavelInk,
-  type GavelRect,
-} from "../gavel/scene.generated.ts";
-import "../gavel/gavel.css";
 import type { PrGlyphKind, PrLook } from "../logic/prs.ts";
 import type { Slice } from "../logic/usage.ts";
 import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
@@ -931,7 +922,6 @@ export function StatTile({
   selected,
   onSelect,
   testId,
-  aside,
 }: {
   label: string;
   value: string;
@@ -942,11 +932,6 @@ export function StatTile({
   selected: boolean;
   onSelect: () => void;
   testId: string;
-  /**
-   * drawn in the tile's bottom right corner, 84 x 66 (gavel). the words keep out of its column
-   * and the 8px beside it, so a long note ends in an ellipsis and never runs into a raised fist
-   */
-  aside?: ReactNode;
 }) {
   return (
     <button
@@ -958,13 +943,9 @@ export function StatTile({
       onClick={onSelect}
       className={cx(
         "no-drag fade flex min-w-0 flex-1 flex-col rounded-lg border px-4 pt-3 pb-3.5 text-left",
-        aside !== undefined && "relative pr-[104px]",
         selected ? "border-accent-line bg-accent-soft" : "border-line hover:bg-raised",
       )}
     >
-      {aside !== undefined && (
-        <span className="absolute right-3 bottom-1 h-[66px] w-[84px]">{aside}</span>
-      )}
       <span className={cx("truncate text-sm font-medium", selected ? "text-fg-2" : "text-fg-3")}>
         {label}
       </span>
@@ -979,235 +960,6 @@ export function StatTile({
         {note}
       </span>
     </button>
-  );
-}
-
-/** written out whole: tailwind only emits the classes it can see */
-const GAVEL_INK: Record<GavelInk, string> = {
-  K: "fill-bot-screen",
-  D: "fill-bot-outline",
-  O: "fill-bot-rim",
-  S: "fill-bot-shade",
-  M: "fill-bot-metal",
-  L: "fill-bot-light",
-  H: "fill-bot-shine",
-  R: "fill-bot-red",
-  r: "fill-bot-red-off",
-  V: "fill-bot-violet",
-  v: "fill-bot-violet-off",
-  g: "fill-bot-shadow",
-};
-
-function GavelNode({ node }: { node: GavelGroup | GavelRect }) {
-  if (Array.isArray(node)) {
-    const [x, y, w, ink] = node as GavelRect;
-    return <rect x={x} y={y} width={w} height={1} className={GAVEL_INK[ink]} />;
-  }
-  const g = node as GavelGroup;
-  return (
-    <g className={g.cls} data-mood={g.moods}>
-      {g.kids.map((k, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: the scene never changes
-        <GavelNode key={i} node={k} />
-      ))}
-    </g>
-  );
-}
-
-/** the whole scene once: the mood is a class on the svg, which shows its groups and moves them */
-const GAVEL_ART = GAVEL_SCENE.map((n, i) => (
-  // biome-ignore lint/suspicious/noArrayIndexKey: the scene never changes
-  <GavelNode key={i} node={n} />
-));
-
-/** the motion freezes while the window is hidden: a paused animation does not tick */
-function useHiddenPause() {
-  useEffect(() => {
-    const sync = () => document.documentElement.classList.toggle("gavel-paused", document.hidden);
-    sync();
-    document.addEventListener("visibilitychange", sync);
-    return () => document.removeEventListener("visibilitychange", sync);
-  }, []);
-}
-
-const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/**
- * gavel, the judgment day odds robot: 28 x 22 art px at 3x, in grove's own tokens. a new mood
- * comes in through the sprite's channel change (out 333ms, in 333ms), or at once under reduced
- * motion, which also stills it on its key pose. off screen or hidden, it stops ticking
- */
-export function Gavel({ mood, title }: { mood: MoodId; title?: string }) {
-  useHiddenPause();
-  const ref = useRef<SVGSVGElement>(null);
-  const [shown, setShown] = useState<{ mood: MoodId; phase: "" | "gavel-out" | "gavel-in" }>({
-    mood,
-    phase: "",
-  });
-  const on = useRef(mood);
-  const [offscreen, setOffscreen] = useState(false);
-
-  useEffect(() => {
-    if (mood === on.current || reduced()) {
-      on.current = mood;
-      setShown({ mood, phase: "" });
-      return;
-    }
-    setShown((s) => ({ mood: s.mood, phase: "gavel-out" }));
-    const swap = setTimeout(() => {
-      on.current = mood;
-      setShown({ mood, phase: "gavel-in" });
-    }, 333);
-    const land = setTimeout(() => setShown({ mood, phase: "" }), 667);
-    return () => {
-      clearTimeout(swap);
-      clearTimeout(land);
-    };
-  }, [mood]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([e]) => setOffscreen(!e?.isIntersecting));
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  return (
-    <svg
-      ref={ref}
-      className={cx("gavel", `gavel-${shown.mood}`, shown.phase, offscreen && "gavel-paused")}
-      width={GAVEL_SIZE.w * 3}
-      height={GAVEL_SIZE.h * 3}
-      viewBox={`0 0 ${GAVEL_SIZE.w} ${GAVEL_SIZE.h}`}
-      overflow="visible"
-      shapeRendering="crispEdges"
-      role="img"
-      aria-label={title ?? "Gavel"}
-      data-testid="gavel"
-      data-shown={shown.mood}
-    >
-      {title && <title>{title}</title>}
-      {GAVEL_ART}
-    </svg>
-  );
-}
-
-/** a project's hue as a line: a session's sparkline */
-const PROJECT_STROKE = [
-  "stroke-project-1",
-  "stroke-project-2",
-  "stroke-project-3",
-  "stroke-project-4",
-  "stroke-project-5",
-  "stroke-project-6",
-  "stroke-project-7",
-  "stroke-project-8",
-  "stroke-project-9",
-];
-
-function useSliceStroke(slice: Slice): string {
-  const hue = useStore((s) =>
-    typeof slice === "string" ? 0 : (projectHues(s.projects).get(slice.project) ?? 0),
-  );
-  if (slice === "other") return "stroke-line-strong";
-  return hue ? (PROJECT_STROKE[hue - 1] ?? "stroke-faint") : "stroke-faint";
-}
-
-/**
- * one session's odds after each of its prompts, from 50, in its project's colour. every sparkline
- * has the same 0-100 scale and the same 50 line, so two rows compare at a glance
- */
-export function Sparkline({ series, slice }: { series: readonly number[]; slice: Slice }) {
-  const stroke = useSliceStroke(slice);
-  const W = 64;
-  const H = 18;
-  const all = [50, ...series];
-  const x = (i: number) => (all.length > 1 ? (i / (all.length - 1)) * (W - 3) + 1.5 : W / 2);
-  const y = (v: number) => 1.5 + (1 - v / 100) * (H - 3);
-  const last = all.length - 1;
-  return (
-    <svg
-      width={W}
-      height={H}
-      viewBox={`0 0 ${W} ${H}`}
-      aria-hidden="true"
-      className="shrink-0 overflow-visible"
-      data-testid="sparkline"
-    >
-      <line
-        x1={0}
-        x2={W}
-        y1={y(50)}
-        y2={y(50)}
-        className="stroke-line-strong"
-        strokeWidth={1}
-        strokeDasharray="2 2"
-      />
-      <polyline
-        points={all.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
-        fill="none"
-        className={stroke}
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      <circle
-        cx={x(last)}
-        cy={y(all[last] ?? 50)}
-        r={2}
-        className={cx(stroke, "fill-canvas")}
-        strokeWidth={1.5}
-      />
-    </svg>
-  );
-}
-
-/**
- * the odds line over a plot the caller lays out: a point per slot, joined across the empty ones,
- * in the accent (the line is what the selected tile draws). `hot` is the slot pointed at
- */
-export function OddsLine({
-  points,
-  hot,
-}: {
-  points: ReadonlyArray<number | null>;
-  hot: number | null;
-}) {
-  const n = points.length;
-  const at = points.flatMap((v, i) => (v === null ? [] : [{ i, v }]));
-  const x = (i: number) => ((i + 0.5) / n) * 100;
-  return (
-    <>
-      <svg
-        className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <polyline
-          points={at.map(({ i, v }) => `${x(i)},${100 - v}`).join(" ")}
-          fill="none"
-          className="stroke-accent"
-          strokeWidth={2}
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-          data-testid="odds-line"
-        />
-      </svg>
-      {at.map(({ i, v }) => (
-        <span
-          key={i}
-          aria-hidden="true"
-          data-testid="odds-dot"
-          className={cx(
-            "pointer-events-none absolute -translate-x-1/2 translate-y-1/2 rounded-full border-2 border-accent bg-canvas",
-            hot === i ? "size-3" : "size-2",
-          )}
-          style={{ left: `${x(i)}%`, bottom: `${v}%` }}
-        />
-      ))}
-    </>
   );
 }
 
