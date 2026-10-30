@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -15,7 +14,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { claudeProjectSlug, weightsFileName } from "@grove/core";
+import { claudeProjectSlug } from "@grove/core";
 
 export interface Fixture {
   dir: string;
@@ -559,12 +558,6 @@ export interface UsageDaySpec {
   cacheWrite1h?: number;
   /** how long the turn works. a response every ten minutes at most, so all of it counts */
   minutes?: number;
-  /**
-   * what the person typed that day, a minute apart, before the turn's answer. made up, always:
-   * decisioning's keyword stub reads them (core's decisioning/stub.ts). absent: one prompt,
-   * `work of N days ago`
-   */
-  prompts?: string[];
 }
 
 /**
@@ -594,7 +587,7 @@ export function writeUsage(
     const t0 = start.getTime();
     const stamp = (min: number) => new Date(t0 + min * 60_000).toISOString();
     const id = `${o.agent ?? "main"}_${d.back}_${d.hour ?? 9}`;
-    const said = d.prompts ?? [`work of ${d.back} days ago`];
+    const said = [`work of ${d.back} days ago`];
     said.forEach((text, i) => {
       lines.push({
         type: "user",
@@ -645,17 +638,3 @@ export function writeUsage(
   return file;
 }
 
-/**
- * decisioning's model as if it had been downloaded: a stand-in file where the weights go under the
- * test root, already checked. the env says what it is, so the app takes it for the model. a test
- * root judges with the keyword stub and never loads it
- */
-export function writeFakeModel(fx: Fixture): Record<string, string> {
-  const dir = path.join(fx.root, ".grove", "models");
-  mkdirSync(dir, { recursive: true });
-  const body = Buffer.from("not a model: a test root judges with the stub\n");
-  const sha = createHash("sha256").update(body).digest("hex");
-  writeFileSync(path.join(dir, weightsFileName(sha)), body);
-  writeFileSync(path.join(dir, `${weightsFileName(sha)}.sha256`), `${sha}\n`);
-  return { GROVE_MODEL_SHA256: sha, GROVE_MODEL_SIZE: String(body.length) };
-}

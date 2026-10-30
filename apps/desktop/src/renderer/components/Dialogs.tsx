@@ -4,7 +4,7 @@ import { type AppSettings, DEFAULT_SUMMON_KEY } from "../../shared/ipc.ts";
 import { acceleratorOf, keyLabel } from "../logic/keys.ts";
 import { archiveProject, startAgent } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Button, cx, Field, inputClass, Modal, Mono, ProgressBar, Select, Switch } from "./ui.tsx";
+import { Button, cx, Field, inputClass, Modal, Mono, Select, Switch } from "./ui.tsx";
 
 /** the cache keeper's choices, in hours after a chat's last turn. 0 is off */
 const KEEP_WARM_HOURS = [0, 1, 2, 3, 4, 6] as const;
@@ -268,107 +268,10 @@ function KeyRecorder({ value, onChange }: { value: string; onChange: (key: strin
   );
 }
 
-const megabytes = (n: number): string =>
-  n > 0 && n < 1e6 ? "less than 1 MB" : `${Math.round(n / 1e6).toLocaleString("en-US")} MB`;
-
-/**
- * decisioning's model: what is on disk, the download's progress, and Download / Delete. these act
- * at once, outside the dialog's Save: a download is not a setting
- */
-function DecisioningModel({ draftOn, savedOn }: { draftOn: boolean; savedOn: boolean }) {
-  const status = useStore((s) => s.decisioning);
-  const toast = useStore((s) => s.toast);
-  if (!status) return null;
-  const m = status.model;
-  if (!status.supported) {
-    return (
-      <p className="mt-2 text-sm text-fg-4" data-testid="decisioning-unsupported">
-        {status.unsupported ?? "Needs macOS 14 or later."}
-      </p>
-    );
-  }
-  if (!draftOn && m.state === "missing") return null;
-  const run = async (call: () => Promise<{ ok: boolean; error?: { message: string } }>) => {
-    const res = await call();
-    if (!res.ok) toast({ level: "error", title: "Decisioning", body: res.error?.message });
-  };
-  const words =
-    m.state === "ready"
-      ? `${megabytes(m.size)} on this Mac`
-      : m.state === "downloading"
-        ? `${megabytes(m.got ?? 0)} of ${megabytes(m.size)}`
-        : savedOn
-          ? megabytes(m.size)
-          : `${megabytes(m.size)}, downloads when you save`;
-  return (
-    <div
-      className="mt-2 space-y-2 rounded-md border border-line px-3 py-2.5"
-      data-testid="decisioning-model"
-      data-state={m.state}
-    >
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-sm text-fg-2">{m.label}</span>
-        <span className="shrink-0 text-sm tabular-nums text-fg-4" data-testid="decisioning-size">
-          {words}
-        </span>
-        {(m.state === "missing" || m.state === "failed") && savedOn && (
-          <Button
-            size="sm"
-            onClick={() => void run(() => window.grove.downloadModel())}
-            data-testid="decisioning-download"
-          >
-            {m.state === "failed" ? "Try again" : "Download"}
-          </Button>
-        )}
-        {(m.state === "ready" || m.state === "downloading") && (
-          <Button
-            size="sm"
-            variant="quiet"
-            onClick={() => void run(() => window.grove.deleteModel())}
-            data-testid="decisioning-delete"
-          >
-            Delete
-          </Button>
-        )}
-      </div>
-      <p className="text-meta text-fg-4">
-        The model every decisioning feature shares. It downloads when one of them is on.
-      </p>
-      {m.state === "downloading" && (
-        <ProgressBar
-          value={m.got ?? 0}
-          max={m.size}
-          label="Downloading the model"
-          testId="decisioning-progress"
-        />
-      )}
-      {m.state === "failed" && m.error && (
-        <p className="text-sm text-danger" data-testid="decisioning-error">
-          {m.error}
-        </p>
-      )}
-      {m.state === "ready" && status.stalled && (
-        <p className="text-sm text-danger" data-testid="decisioning-stalled">
-          Judging stopped: {status.stalled} It tries again in a minute.
-        </p>
-      )}
-      {m.state === "ready" && status.prompts > 0 && (
-        <p className="text-sm tabular-nums text-fg-4" data-testid="decisioning-progress-words">
-          {status.scored === status.prompts
-            ? `${status.prompts.toLocaleString("en-US")} prompts judged`
-            : `${status.scored.toLocaleString("en-US")} of ${status.prompts.toLocaleString("en-US")} prompts judged`}
-          {status.waiting === "battery" ? ". The rest waits for power" : ""}
-        </p>
-      )}
-    </div>
-  );
-}
-
 export function SettingsDialog() {
   const dialog = useStore((s) => s.dialog);
   const settings = useStore((s) => s.settings);
   const editor = useStore((s) => s.editor);
-  const decisioning = useStore((s) => s.decisioning);
   const set = useStore((s) => s.set);
   const open = dialog?.kind === "settings";
   const [draft, setDraft] = useState<AppSettings>({ editor: "vscode", appearance: "system" });
@@ -633,28 +536,6 @@ export function SettingsDialog() {
               </span>
             </>
           )}
-        </div>
-        <div>
-          <span className="mb-1.5 block text-sm font-medium text-fg-2">Decisioning</span>
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 text-sm text-fg-2">Judgment day odds (beta)</span>
-            <Switch
-              checked={draft.judgmentDayOdds === true}
-              onChange={(v) => setDraft({ ...draft, judgmentDayOdds: v })}
-              label="Judgment day odds (beta)"
-              testId="setting-judgment-day-odds"
-              disabled={decisioning?.supported === false}
-            />
-          </div>
-          <span className="mt-1 block text-meta text-fg-3">
-            A small model on this Mac reads the prompts you type and judges how you treat your
-            agents, for a tile on the Usage screen. Nothing leaves the Mac, and Grove keeps the
-            scores, never what you typed. Judging the backlog waits for power.
-          </span>
-          <DecisioningModel
-            draftOn={draft.judgmentDayOdds === true}
-            savedOn={settings?.judgmentDayOdds === true}
-          />
         </div>
         {error && <p className="text-danger">{error}</p>}
       </div>
