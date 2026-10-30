@@ -637,4 +637,3 @@ export function writeUsage(
   writeFileSync(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   return file;
 }
-

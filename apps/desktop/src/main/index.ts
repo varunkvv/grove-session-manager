@@ -1,11 +1,7 @@
 import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
-  DEFAULT_MODEL,
-  GAVEL,
   loadSettings,
-  modelUrl,
   needing,
   pendingTitlesDir,
   projectIdOf,
@@ -16,11 +12,9 @@ import {
   saveSettings,
   sessionsRegistryDir,
   stepTextScale,
-  wantsModel,
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
-import type { FromScorer } from "../scorer/protocol.ts";
 import { DEFAULT_SUMMON_KEY, type MenuCommandId } from "../shared/ipc.ts";
 import { ChatWindows } from "./chatWindows.ts";
 import { CHIME, installChime } from "./chime.ts";
@@ -37,7 +31,6 @@ import { Pusher } from "./push.ts";
 import { BackgroundService } from "./services/background.ts";
 import { ChatHost } from "./services/chat.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
-import { DecisioningService, decisioningSetup } from "./services/decisioning.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
@@ -473,41 +466,6 @@ async function start(): Promise<void> {
 
   const reviewed = new ReviewedService(appEnv.appRoot);
 
-  // decisioning (beta): judgment day odds. a test root never downloads or loads a real model: it
-  // judges with the keyword stub, and fetches only from the stand-in server GROVE_MODEL_URL names
-  /** under a test root, how many scorer processes started: none while the switch is off */
-  let scorerSpawns = 0;
-  const decided = decisioningSetup({
-    env: process.env,
-    customRoot: appEnv.customRoot,
-    stateDir: appEnv.stateDir,
-    appData: electron.app.getPath("appData"),
-    model: DEFAULT_MODEL,
-    url: modelUrl(DEFAULT_MODEL),
-    platform: process.platform,
-    systemVersion: process.getSystemVersion(),
-    totalMemory: os.totalmem(),
-  });
-  const decisioning = new DecisioningService({
-    ...decided,
-    rubric: GAVEL,
-    enabled: () => wantsModel(settings),
-    transcripts: () => sessions.transcripts(),
-    onBattery: () =>
-      appEnv.customRoot
-        ? process.env.GROVE_ON_BATTERY === "1"
-        : electron.powerMonitor.isOnBatteryPower(),
-    busy: () => sessions.usageCounting(),
-    spawn: () => {
-      scorerSpawns += 1;
-      return electron.utilityProcess.fork(path.join(outDir, "scorer", "index.cjs"), [], {
-        serviceName: "Grove scorer",
-      });
-    },
-    fetch: (url, init) => electron.net.fetch(url, init),
-    onStatus: (s) => pusher.send("decisioning:status", s),
-  });
-
   /** the last tray menu and title. kept so a test root can read and click them with no tray */
   let trayMenu: MenuItemConstructorOptions[] = [];
   let trayTitle = "";
@@ -568,8 +526,6 @@ async function start(): Promise<void> {
     // a session started or stopped working, or was renamed
     onSessions: () => {
       pusher.send("sessions:changed", {});
-      // a transcript grew: a new prompt to judge, maybe
-      decisioning.kick();
       showTray();
       // a session made in grove chat is in the list now: its window shows it as any other
       for (const id of fresh.keys()) {
@@ -602,26 +558,6 @@ async function start(): Promise<void> {
       /** the key a summon would be held on, and the summon itself: a test root holds no key */
       summonKey: () => summonKeyOf(settings),
       summon: summonMain,
-      /** decisioning's scorer: how many processes started, and whether one runs now */
-      scorer: () => ({ spawned: scorerSpawns, running: decisioning.scorerRunning }),
-      /** the packaged app's check: the scorer's process starts and its native runtime loads. no model */
-      probeScorer: () =>
-        new Promise<FromScorer>((resolve) => {
-          const child = electron.utilityProcess.fork(path.join(outDir, "scorer", "index.cjs"));
-          const done = (m: FromScorer) => {
-            clearTimeout(timer);
-            child.kill();
-            resolve(m);
-          };
-          const timer = setTimeout(
-            () => done({ type: "probed", gpu: false, error: "no answer in 60s" }),
-            60_000,
-          );
-          child.on("message", (m: FromScorer) => {
-            if (m.type === "probed") done(m);
-          });
-          child.postMessage({ type: "probe" });
-        }),
     };
   }
 
@@ -707,7 +643,6 @@ async function start(): Promise<void> {
     const recapsMoved = (s.recaps !== false) !== (settings.recaps !== false);
     const renamesMoved = (s.renameSessions !== false) !== (settings.renameSessions !== false);
     const chatMoved = (s.chat === true) !== (settings.chat === true);
-    const decisioningMoved = wantsModel(s) !== wantsModel(settings);
     const lookMoved =
       s.appearance !== settings.appearance ||
       s.palette !== settings.palette ||
@@ -721,7 +656,6 @@ async function start(): Promise<void> {
     // the main window has no frame colour to repaint: it is the desktop's material, and the page
     // paints the rest
     if (lookMoved) chatWindows.appearance(s.appearance);
-    if (decisioningMoved) decisioning.switched(wantsModel(s));
     if (recapsMoved) projects.recapsSwitched();
     if (recapsMoved || renamesMoved) {
       sessions.retitle();
@@ -749,7 +683,6 @@ async function start(): Promise<void> {
     combos,
     projects,
     recaps,
-    decisioning,
     background,
     prs: prService,
     reveals,
@@ -801,7 +734,6 @@ async function start(): Promise<void> {
     combos.watchFile();
     void combos.reconcileAll();
     void editor.status(true).then((status) => pusher.send("editor:status", status));
-    void decisioning.load().catch((e) => log.warn("decisioning:", e));
     void (async () => {
       await live.start().catch((e) => log.warn("session status:", e));
       // stopped and finished background sessions have no process, so the registry never says
@@ -831,8 +763,6 @@ async function start(): Promise<void> {
     void sessions.refresh();
     prService.kick();
   });
-  // the backfill waits for AC power
-  electron.powerMonitor.on("on-ac", () => decisioning.kick());
 
   electron.app.on("web-contents-created", (_event, contents) => {
     lockDown(contents, (url) => isTrustedUrl(url, appEnv.devServerUrl));
@@ -871,7 +801,6 @@ async function start(): Promise<void> {
     combos.dispose();
     live.dispose();
     projects.dispose();
-    void decisioning.dispose();
     prService.dispose();
     void sessions.dispose();
   });

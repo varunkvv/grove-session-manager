@@ -192,8 +192,6 @@ export interface AppSettings {
   summonKey?: string;
   /** grove chat keeps a session's prompt cache warm this many hours after its last turn. absent is 3, 0 is off */
   keepWarmHours?: number;
-  /** judgment day odds (beta): a local model judges your own prompts, on this mac. off unless switched on. */
-  judgmentDayOdds?: boolean;
 }
 
 /**
@@ -433,66 +431,6 @@ export interface UsageView {
   /** how many of the sessions on disk are counted. fewer than `total` only during the first count */
   counted: number;
   total: number;
-  /** judgment day odds: only while decisioning is on and its model is ready */
-  odds?: OddsView;
-}
-
-/** a local day's odds: the ledger from 50 over the day's judged prompts, in time order */
-export interface OddsDay {
-  day: string;
-  odds: number;
-  prompts: number;
-}
-
-/** a session's ledger: its odds after each judged prompt, from 50. never what was said */
-export interface OddsSession {
-  key: SessionKey;
-  title: string;
-  /** null is in no project */
-  project: ProjectId | null;
-  /** the local day and time of its last judged prompt */
-  day: string;
-  at: number;
-  series: number[];
-}
-
-/** what judgment day odds draws from, built in main from the scores grove keeps */
-export interface OddsView {
-  /** the oldest first, only days with a judged prompt */
-  days: OddsDay[];
-  sessions: OddsSession[];
-  /** the session judged last, and its odds after its latest prompt: what the robot shows */
-  current?: { key: SessionKey; odds: number; at: number };
-  /** prompts long enough to judge, and how many of them have been */
-  prompts: number;
-  scored: number;
-}
-
-/** decisioning's model and its work, for the Settings row and the Usage screen */
-export interface DecisioningStatus {
-  /** a feature that needs the model is on */
-  on: boolean;
-  /** macOS 14 or later, and the memory the model asks for */
-  supported: boolean;
-  /** why not, when it is not: what Settings says in place of the model */
-  unsupported?: string;
-  model: {
-    label: string;
-    /** bytes */
-    size: number;
-    state: "missing" | "downloading" | "ready" | "failed";
-    /** bytes on disk so far, while it downloads */
-    got?: number;
-    /** why the last download or load failed */
-    error?: string;
-  };
-  /** prompts long enough to judge, and how many of them have been */
-  prompts: number;
-  scored: number;
-  /** what holds the backfill back: the mac is on battery */
-  waiting?: "battery";
-  /** the scorer's last failure (the model would not load, its process died). tried again in a minute */
-  stalled?: string;
 }
 
 export type MenuCommandId =
@@ -585,12 +523,6 @@ export interface Api {
    * disk for it. asked when the screen opens and while it is open, never otherwise
    */
   usage(): Promise<UsageView>;
-  /** decisioning: the model's state and how far the judging has got */
-  decisioningStatus(): Promise<DecisioningStatus>;
-  /** fetch the model, or carry on where a download stopped. progress comes as `decisioning:status` */
-  downloadModel(): Promise<Outcome>;
-  /** the weights off the disk, now. the switch stays as it is */
-  deleteModel(): Promise<Outcome>;
 
   /** a landing the page has not taken yet. taken once. */
   takeLanding(): Promise<Landing | null>;
@@ -656,9 +588,6 @@ export const INVOKE_CHANNELS = [
   "writeRecap",
   "nameSessions",
   "usage",
-  "decisioningStatus",
-  "downloadModel",
-  "deleteModel",
   "takeLanding",
   "setVisibleProject",
   "validateProjectName",
@@ -696,8 +625,6 @@ export interface PushEvents {
   /** what a sessions list shows moved: `listSessions` has the new list */
   "sessions:changed": Record<string, never>;
   "editor:status": EditorStatus;
-  /** decisioning's model or its judging moved: a download's progress, a score */
-  "decisioning:status": DecisioningStatus;
   "menu:command": { id: MenuCommandId };
   toast: ToastMessage;
   /** somewhere to land: `takeLanding` says where */
@@ -759,7 +686,6 @@ export const PUSH_CHANNELS = [
   "inbox:changed",
   "sessions:changed",
   "editor:status",
-  "decisioning:status",
   "menu:command",
   "toast",
   "app:land",

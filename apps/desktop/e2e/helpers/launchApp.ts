@@ -86,8 +86,6 @@ interface GroveTest {
   notifications(): Array<{ title: string; body: string; at: number }>;
   summonKey(): string | null;
   summon(): void;
-  scorer(): { spawned: number; running: boolean };
-  probeScorer(): { type: "probed"; gpu: string | false; error?: string };
 }
 
 type Main = { groveTest: GroveTest };
@@ -118,10 +116,6 @@ export function groveTest(app: ElectronApplication) {
     summonKey: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.summonKey()),
     /** what the summon key does */
     summon: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.summon()),
-    /** decisioning's scorer processes: started so far, and whether one runs */
-    scorer: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.scorer()),
-    /** starts the scorer's process and loads its native runtime, no model: what it answers */
-    probeScorer: () => app.evaluate(() => (globalThis as unknown as Main).groveTest.probeScorer()),
   };
 }
 
