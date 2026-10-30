@@ -38,19 +38,9 @@ export interface Settings {
   summonKey?: string;
   /** grove chat keeps a session's prompt cache warm for this many hours after its last turn. absent is 3, 0 is off */
   keepWarmHours?: number;
-  /**
-   * judgment day odds (beta), a decisioning feature: a local model judges the person's own prompts,
-   * on this mac only, for the Usage screen. off unless true. each decisioning feature has its own
-   * switch, and the model they share comes down when any of them is on (`wantsModel`)
-   */
-  judgmentDayOdds?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
-
-/** a decisioning feature is on: the local model they share is downloaded and kept */
-export const wantsModel = (s: Pick<Settings, "judgmentDayOdds">): boolean =>
-  s.judgmentDayOdds === true;
 
 export function settingsFilePath(appRoot: string): string {
   return path.join(appRoot, "settings.json");
@@ -87,7 +77,6 @@ function clean(raw: unknown): Settings {
     "renameSessions",
     "keepAwake",
     "chat",
-    "judgmentDayOdds",
   ] as const) {
     if (typeof raw[key] === "boolean") s[key] = raw[key];
   }

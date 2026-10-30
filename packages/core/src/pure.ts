@@ -1,11 +1,5 @@
 // modules with no node: imports. safe for the app's renderer and anything else without fs.
 export * from "./combos/folders.ts";
-export * from "./decisioning/clean.ts";
-export * from "./decisioning/eval.ts";
-export * from "./decisioning/models.ts";
-export * from "./decisioning/onejev.ts";
-export * from "./decisioning/rubric.ts";
-export * from "./decisioning/stub.ts";
 export * from "./git/branch.ts";
 export * from "./github/prs.ts";
 export * from "./project/derive.ts";
