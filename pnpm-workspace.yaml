@@ -8,12 +8,6 @@ onlyBuiltDependencies:
   - esbuild
   - "@biomejs/biome"
 
-# its postinstall downloads or builds llama.cpp when no prebuilt binary fits. the mac arm64 metal
-# prebuilt comes in as an optional dependency (@node-llama-cpp/mac-arm64-metal), and the app loads
-# it with build: "never", so the script never has anything to do
-ignoredBuiltDependencies:
-  - node-llama-cpp
-
 catalog:
   "@biomejs/biome": ^2.5.14
   "@types/node": ^22.0.0
