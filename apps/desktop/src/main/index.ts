@@ -31,6 +31,7 @@ import { Pusher } from "./push.ts";
 import { BackgroundService } from "./services/background.ts";
 import { ChatHost } from "./services/chat.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
+import { removeDecisioningLeftovers } from "./services/decisioningLeftovers.ts";
 import { EditorService } from "./services/editor.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
@@ -62,6 +63,15 @@ const userData = userDataDirFor(appEnv, {
   productName: electron.app.getName(),
 });
 if (userData) electron.app.setPath("userData", userData);
+
+// one-time: removes the judgment day odds model and score files. can go in a later release
+void removeDecisioningLeftovers({
+  scoresDir: path.join(appEnv.stateDir, "decisioning"),
+  // a test root never downloaded to appData
+  modelsDir: appEnv.customRoot
+    ? undefined
+    : path.join(electron.app.getPath("appData"), "Grove", "models"),
+}).catch((e) => log.warn("decisioning leftovers:", e));
 
 registerAppScheme();
 electron.app.enableSandbox();
