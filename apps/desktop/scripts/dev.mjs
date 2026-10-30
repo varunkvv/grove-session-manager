@@ -5,13 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { context } from "esbuild";
 import { createServer } from "vite";
-import {
-  desktopDir,
-  mainOptions,
-  preloadOptions,
-  scorerOptions,
-  viteConfigFile,
-} from "./shared.mjs";
+import { desktopDir, mainOptions, preloadOptions, viteConfigFile } from "./shared.mjs";
 
 // even with --real-root a dev build leaves what 0.10 installed in real projects alone (main/index.ts)
 if (!process.env.GROVE_ROOT && !process.argv.includes("--real-root")) {
@@ -85,8 +79,6 @@ function respawnOnEnd(name) {
 const contexts = await Promise.all([
   context({ ...mainOptions(), plugins: [respawnOnEnd("main")] }),
   context({ ...preloadOptions(), plugins: [respawnOnEnd("preload")] }),
-  // a new scorer process loads the new build: nothing to restart
-  context(scorerOptions()),
 ]);
 await Promise.all(contexts.map((c) => c.watch()));
 

@@ -7,7 +7,7 @@ export const viteConfigFile = path.join(desktopDir, "vite.config.ts");
 /**
  * main and preload are each ONE cjs file. @grove/core is TypeScript source and gets
  * bundled in. electron is the only thing left to require at runtime, which is also all a
- * sandboxed preload is allowed to require. the scorer adds node-llama-cpp (below)
+ * sandboxed preload is allowed to require.
  */
 function nodeBundle(entry, outfile) {
   return {
@@ -38,16 +38,6 @@ export const mainOptions = () => ({
   },
 });
 export const preloadOptions = () => nodeBundle("src/preload/index.ts", "preload/index.cjs");
-/**
- * decisioning's scorer, an electron utility process (main/services/scorer.ts starts it).
- * node-llama-cpp is the one package that ships as itself rather than bundled: it is an es module
- * with a native addon, and loads its prebuilt binaries from node_modules (app.asar.unpacked when
- * packaged). the scorer imports it lazily, so a test root's stub never loads it
- */
-export const scorerOptions = () => ({
-  ...nodeBundle("src/scorer/main.ts", "scorer/index.cjs"),
-  external: ["electron", "node-llama-cpp"],
-});
 /**
  * the agent zed runs, under whatever `node` zed finds rather than electron, so it needs nothing
  * from the app and runs on an older node. `.cjs`: Resources/ has no package.json to say otherwise

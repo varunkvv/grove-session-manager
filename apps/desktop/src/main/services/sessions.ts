@@ -503,20 +503,6 @@ export class SessionService {
     return this.rows.get(key);
   }
 
-  /** every top-level transcript, for decisioning's reader: where it is and how long it is */
-  transcripts(): Array<{ path: string; size: number }> {
-    return this.index
-      .list()
-      .filter((r) => !r.stub)
-      .map((r) => ({ path: r.path, size: r.size }));
-  }
-
-  /** the usage count is still reading transcripts it has not counted */
-  usageCounting(): boolean {
-    const p = this.index.usageProgress();
-    return p.counted < p.total;
-  }
-
   private rebuild(): void {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);

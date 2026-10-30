@@ -8,7 +8,6 @@
     "src/main",
     "src/acp-proxy",
     "src/preload",
-    "src/scorer",
     "src/shared",
     "scripts",
     "e2e",

@@ -1,12 +1,7 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import {
-  type Fixture,
-  makeFixture,
-  makePlainDir,
-  writeUsage,
-} from "./helpers/fixture.ts";
+import { type Fixture, makeFixture, makePlainDir, writeUsage } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 

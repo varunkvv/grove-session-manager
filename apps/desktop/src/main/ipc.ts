@@ -27,7 +27,6 @@ import {
   type Settings,
   saveSettings,
   type TimelineState,
-  wantsModel,
   workspaceFolders,
   ZED_AGENT_LINK,
   ZED_AGENT_LINK_DELAY_MS,
@@ -68,7 +67,6 @@ import {
   parseAttachments,
 } from "./services/chat.ts";
 import type { ComboService } from "./services/combos.ts";
-import type { DecisioningService } from "./services/decisioning.ts";
 import { parseDraft } from "./services/draft.ts";
 import { compareVersions, type EditorService } from "./services/editor.ts";
 import { frequentFolders } from "./services/frequentFolders.ts";
@@ -104,8 +102,6 @@ export interface Deps {
   combos: ComboService;
   projects: ProjectsService;
   recaps: RecapService;
-  /** judgment day odds: a local model judging the person's prompts */
-  decisioning: DecisioningService;
   /** Claude Code's supervisor, through its own commands */
   background: BackgroundService;
   /** what github says of the PRs sessions linked */
@@ -158,8 +154,6 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "installCompanion",
   "updateSettings",
   "openExternal",
-  "downloadModel",
-  "deleteModel",
 ]);
 
 function toAppSettings(s: Settings): AppSettings {
@@ -621,30 +615,7 @@ function buildHandlers(deps: Deps): Handlers {
 
     async usage() {
       const { projects: list } = projects.views();
-      const view = sessions.usage(new Map(list.map((p) => [p.name, p.id])));
-      // titles and projects as the lists say them: one hit per session id
-      const hits = new Map(projects.listSessions(null).map((h) => [h.sessionId, h]));
-      const odds = deps.decisioning.odds((key) => {
-        const row = sessions.get(key);
-        const hit = row && hits.get(row.sessionId);
-        return hit ? { title: hit.title, project: hit.project ?? null } : null;
-      });
-      return odds ? { ...view, odds } : view;
-    },
-
-    async decisioningStatus() {
-      return deps.decisioning.status();
-    },
-
-    async downloadModel() {
-      if (!wantsModel(deps.settings())) {
-        throw new AppError("decisioning-off", "No feature that needs the model is switched on.");
-      }
-      void deps.decisioning.fetchModel();
-    },
-
-    async deleteModel() {
-      await deps.decisioning.deleteModel();
+      return sessions.usage(new Map(list.map((p) => [p.name, p.id])));
     },
 
     async takeLanding() {
