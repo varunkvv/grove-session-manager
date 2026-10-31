@@ -14,6 +14,7 @@ import {
   findAgentFile,
   isValidSessionId,
   MESSAGE_MAX,
+  openFileInEditor,
   openInEditor,
   prepareFolderOpen,
   projectIdOf,
@@ -824,6 +825,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatSide",
   "chatReadFile",
   "chatOpenFile",
+  "chatOpenFileInEditor",
   "chatWatch",
   "chatWarm",
   "chatSend",
@@ -887,10 +889,8 @@ async function whereOf(deps: Pick<Deps, "combos">, row: SessionRow): Promise<Cha
  * and the temp folder. none for a session with no window open, so nothing else can be reached
  * through the session schemes
  */
-export async function chatRoots(
-  deps: Pick<Deps, "sessions" | "combos" | "chatWindows" | "fresh"> & {
-    chat: Pick<ChatHost, "uploads">;
-  },
+export async function chatFolders(
+  deps: Pick<Deps, "sessions" | "combos" | "chatWindows" | "fresh">,
   id: string,
 ): Promise<string[] | null> {
   if (!deps.chatWindows.has(id)) return null;
@@ -898,7 +898,17 @@ export async function chatRoots(
   const where = row
     ? await whereOf(deps, row).catch(() => null)
     : (deps.fresh.get(id)?.where ?? null);
-  return where ? [where.cwd, ...where.dirs, deps.chat.uploads, ...TEMP_ROOTS] : null;
+  return where ? [where.cwd, ...where.dirs] : null;
+}
+
+export async function chatRoots(
+  deps: Pick<Deps, "sessions" | "combos" | "chatWindows" | "fresh"> & {
+    chat: Pick<ChatHost, "uploads">;
+  },
+  id: string,
+): Promise<string[] | null> {
+  const folders = await chatFolders(deps, id);
+  return folders ? [...folders, deps.chat.uploads, ...TEMP_ROOTS] : null;
 }
 
 /** the folder's files, as `git ls-files` has them, or a few levels of it when it is no repo */
@@ -1240,6 +1250,17 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       // what went wrong comes back as words, never as a throw
       const why = await electron.shell.openPath(real);
       if (why) throw new AppError("open-failed", why);
+    },
+
+    async chatOpenFileInEditor(id, file) {
+      const real = await allowed(id, file);
+      // the project's folder: the session's own first, else the folder of the root it is in
+      const folders = (await chatFolders(deps, id)) ?? [];
+      const folder = folders.find((r) => real.startsWith(`${r}${path.sep}`)) ?? path.dirname(real);
+      // zed gets the person's shell env, as in editorEnv
+      const env = editor.current().id === "zed" ? await deps.shellEnv() : undefined;
+      const launched = await openFileInEditor(editor.current(), folder, real, env);
+      if (!launched.ok) throw new AppError(launched.error.code, launched.error.message);
     },
 
     async chatWatch(id, file) {

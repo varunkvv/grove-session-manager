@@ -155,6 +155,8 @@ export function Viewer({
   diff,
   onList,
   onOpen,
+  editor,
+  onEditor,
   onClose,
 }: {
   file: string;
@@ -163,6 +165,9 @@ export function Viewer({
   onList: () => void;
   /** in the app the Mac opens it with */
   onOpen: (file: string) => void;
+  /** the configured editor's name, and opening the file there, in its project's window */
+  editor: string;
+  onEditor: (file: string) => void;
   onClose: () => void;
 }) {
   const scope = useChatScope();
@@ -205,6 +210,18 @@ export function Viewer({
           >
             <Icon name="external" size={12} />
             Open
+          </Button>
+        )}
+        {!diff && (
+          <Button
+            size="sm"
+            variant="quiet"
+            title={`Open in ${editor}, in this project's window`}
+            data-testid="viewer-editor"
+            onClick={() => onEditor(file)}
+          >
+            <Icon name="external" size={12} />
+            {editor}
           </Button>
         )}
         <IconButton label="Close" onClick={onClose} data-testid="viewer-close">

@@ -11,6 +11,11 @@ Keep in mind:
 
 - the Usage screen is back to three tiles: cost, agent time and tokens
 
+New since 0.40:
+
+- a file Claude names in a chat, in `code` or in plain text (`src/a.ts`, notes.md:12), opens in the file viewer beside the conversation on a click. before, only markdown links did
+- **Open in VS Code** (or Cursor, or Zed, whichever you set) in the viewer's header opens the file in that editor's window of the project folder it is in
+
 ## 0.39
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.39 takes out the long work switch.

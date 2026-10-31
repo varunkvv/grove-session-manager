@@ -17,6 +17,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { blocks } from "../logic/blocks.ts";
+import { remarkFileRefs } from "../logic/fileRefs.ts";
 import { highlight, highlighted, type Run } from "../logic/highlight.ts";
 import { localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
@@ -158,7 +159,7 @@ const components: Components = {
   code: ({ className, children }) => <Code className={className}>{children}</Code>,
 };
 
-const plugins = [remarkGfm];
+const plugins = [remarkGfm, remarkFileRefs];
 
 /** one part of a message: parsed once, and again only when its own text moves */
 const Part = memo(function Part({ text }: { text: string }) {

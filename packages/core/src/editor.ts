@@ -160,6 +160,23 @@ export function openInEditor(
   return runDetached(editor.bin, editorLaunchArgs(editor, target), env);
 }
 
+/**
+ * a file in its project's window. vs code and cursor: the folder, then `--goto` the file, so it
+ * lands in the window that has the folder (or opens one). zed: the folder and the file, no `-n`
+ */
+export function editorFileArgs(editor: EditorTarget, folder: string, file: string): string[] {
+  return editor.id === "zed" ? [folder, file] : [folder, "--goto", file];
+}
+
+export function openFileInEditor(
+  editor: EditorTarget,
+  folder: string,
+  file: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<Result<{ bin: string; args: string[] }>> {
+  return runDetached(editor.bin, editorFileArgs(editor, folder, file), env);
+}
+
 export function buildSessionUri(uriScheme: string, sessionId: string, prompt?: string): string {
   if (!isValidSessionId(sessionId)) throw new Error("not a session id");
   const params = new URLSearchParams({ session: sessionId });

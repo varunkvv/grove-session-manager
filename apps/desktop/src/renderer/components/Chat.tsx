@@ -915,6 +915,8 @@ export function ChatApp() {
   const stopTask = async (id: string) => setError(failed(await api().chatStopTask(id)));
   const tasks = s.tasks ?? [];
   const openFile = async (file: string) => setError(failed(await api().chatOpenFile(file)));
+  const openFileInEditor = async (file: string) =>
+    setError(failed(await api().chatOpenFileInEditor(file)));
   const toggle = (kind: "files" | "agents") =>
     setPane(pane?.kind === kind && !("file" in pane && pane.file) ? null : { kind });
 
@@ -1810,6 +1812,8 @@ export function ChatApp() {
                 diff={pane.diff}
                 onList={() => setPane({ kind: "files" })}
                 onOpen={(file) => void openFile(file)}
+                editor={target.editor}
+                onEditor={(file) => void openFileInEditor(file)}
                 onClose={() => setPane(null)}
               />
             ) : (
