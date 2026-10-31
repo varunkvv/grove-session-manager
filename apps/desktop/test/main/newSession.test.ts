@@ -1,14 +1,6 @@
-import { longWorkPromptLine, longWorkSessionPolicy } from "@grove/core";
 import { describe, expect, it } from "vitest";
-import {
-  backgroundArgs,
-  cliFlags,
-  editorPrompt,
-  terminalArgs,
-} from "../../src/main/services/newSession.ts";
+import { backgroundArgs, cliFlags, terminalArgs } from "../../src/main/services/newSession.ts";
 import { EFFORTS, MODELS, PERMISSION_MODES, startDefaults } from "../../src/shared/newSession.ts";
-
-const APPEND = "--append-system-prompt=";
 
 describe("a project's model and effort for its new sessions", () => {
   it("are the ones claude takes, and anything else is claude's own default", () => {
@@ -43,7 +35,6 @@ describe("the flags a new CLI session starts with", () => {
       model: "haiku",
       mode: "plan",
       effort: "low",
-      longWork: "foreground",
       name: "nightly tidy",
     } as const;
     const flags = [
@@ -53,7 +44,6 @@ describe("the flags a new CLI session starts with", () => {
       "plan",
       "--effort",
       "low",
-      `${APPEND}${longWorkSessionPolicy("foreground")}`,
       "--name=nightly tidy",
     ];
     expect(cliFlags(all)).toEqual(flags);
@@ -73,16 +63,6 @@ describe("the flags a new CLI session starts with", () => {
     expect(terminalArgs({}, "-p hi")).toEqual(["--", "-p hi"]);
   });
 
-  it("the long-work override is the whole policy for that mode, in one argument", () => {
-    for (const mode of ["background", "foreground"] as const) {
-      const [arg, ...rest] = cliFlags({ longWork: mode });
-      expect(rest).toEqual([]);
-      expect(arg?.startsWith(APPEND)).toBe(true);
-      expect(arg?.slice(APPEND.length)).toBe(longWorkSessionPolicy(mode));
-      expect(arg).toContain("overrides .claude/long-work.md");
-    }
-  });
-
   it("a permission mode only when one was picked, never skip-permissions", () => {
     for (const s of [{}, { model: "opus" as const }, { effort: "max" as const }, { name: "n" }]) {
       expect(backgroundArgs(s, "x").join(" ")).not.toMatch(/permission|dangerously|skip/);
@@ -100,17 +80,5 @@ describe("the flags a new CLI session starts with", () => {
     // the two the CLI has that are left out on purpose
     expect(PERMISSION_MODES.map((m) => m.value)).not.toContain("manual");
     expect(PERMISSION_MODES.map((m) => m.value)).not.toContain("dontAsk");
-  });
-});
-
-describe("the prompt the editor gets", () => {
-  it("as typed, with the long-work override as a first line the person sees before sending", () => {
-    expect(editorPrompt("look at the logs")).toBe("look at the logs");
-    expect(editorPrompt("")).toBe("");
-    expect(editorPrompt("look at the logs", "foreground")).toBe(
-      `${longWorkPromptLine("foreground")}\n\nlook at the logs`,
-    );
-    // no dangling blank line under the override when nothing was typed
-    expect(editorPrompt("", "background")).toBe(longWorkPromptLine("background"));
   });
 });

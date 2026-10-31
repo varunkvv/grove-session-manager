@@ -18,7 +18,6 @@ describe("archiving a project", () => {
           name: "notes",
           root: `${app}/notes`,
           prefix: "NOTE",
-          longWork: "foreground",
           folders: [],
         },
         // an entry grove could not load is kept aside and written back

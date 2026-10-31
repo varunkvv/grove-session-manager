@@ -27,7 +27,6 @@ const project = (id: string, archived?: boolean): ProjectView => ({
   name: id,
   root: `/ws/${id}`,
   workspaceFile: `/ws/${id}/${id}.code-workspace`,
-  longWork: "foreground",
   folders: [],
   status: "known",
   rootExists: true,

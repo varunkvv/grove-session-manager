@@ -101,15 +101,10 @@ export interface ComboFolder {
   [extra: string]: unknown;
 }
 
-/** where long autonomous work runs: handed to a background agent, or done in the conversation */
-export type LongWorkMode = "background" | "foreground";
-
 export interface Combo {
   name: string;
   root: string;
   note?: string;
-  /** absent means background */
-  longWork?: LongWorkMode;
   /** put away: out of the lists, with nothing on disk changed. only ever `true` */
   archived?: boolean;
   /** what a new session in it starts on: a `claude --model` alias and a `--effort`. absent: claude's own */

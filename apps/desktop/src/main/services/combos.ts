@@ -11,7 +11,6 @@ import {
   ensureWorktrees,
   type FolderOutcome,
   type FolderStatus,
-  type LongWorkMode,
   loadCombos,
   type PrepareOptions,
   type ProjectId,
@@ -23,7 +22,6 @@ import {
   samePath,
   syncComboFiles,
   syncComboSettings,
-  syncLongWorkPolicy,
   type TeardownOutcome,
   targetDirFor,
   teardownCombo,
@@ -431,17 +429,6 @@ export class ComboService {
     if (!draft.effort) delete next.effort;
     await this.save((combos) => combos.map((c) => (c.root === before.root ? next : c)));
     return { combo: this.find(draft.name), kept };
-  }
-
-  /**
-   * a running session reads the policy file right before long work, so this takes effect on its
-   * next long task. nothing restarts.
-   */
-  async setLongWork(name: string, mode: LongWorkMode): Promise<void> {
-    const before = this.find(name);
-    const next: Combo = { ...before, longWork: mode };
-    await this.save((combos) => combos.map((c) => (c.root === before.root ? next : c)));
-    await syncLongWorkPolicy(this.find(name));
   }
 
   /**

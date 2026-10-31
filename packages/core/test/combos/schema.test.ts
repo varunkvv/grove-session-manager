@@ -108,7 +108,7 @@ describe("combo model", () => {
         combos: [
           { name: "away", prefix: "AWAY", colour: "teal", archived: true, folders: [] },
           { name: "said-no", archived: false, folders: [] },
-          { name: "said-yes", archived: "yes", longWork: "foreground", folders: [] },
+          { name: "said-yes", archived: "yes", folders: [] },
           { name: "plain", folders: [] },
         ],
       },
@@ -119,7 +119,6 @@ describe("combo model", () => {
     // a value that is not `true` does not stay as a key that reads as one
     expect(combos.map((c) => "archived" in c)).toEqual([true, false, false, false]);
     expect(combos[0]).toMatchObject({ prefix: "AWAY", colour: "teal" });
-    expect(combos[2]?.longWork).toBe("foreground");
   });
 
   it("a project's model and effort stay as words, and anything else is dropped", () => {

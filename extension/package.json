@@ -38,10 +38,6 @@
       {
         "command": "grove.repairCombo",
         "title": "Grove: Repair This Combo"
-      },
-      {
-        "command": "grove.toggleLongWork",
-        "title": "Grove: Toggle Background Long Work"
       }
     ],
     "keybindings": [

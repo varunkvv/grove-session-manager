@@ -6,7 +6,6 @@ import { getStateDir } from "../paths.ts";
 import { syncComboStatusHooks } from "../sessions/liveStatus.ts";
 import { type Combo, err, type FolderOutcome, ok, type Result, type Warning } from "../types.ts";
 import { ensureRoot } from "./claudeMd.ts";
-import { syncLongWorkPolicy } from "./longWork.ts";
 import { type SyncResult, syncAdditionalDirectories } from "./settingsSync.ts";
 import { writeWorkspaceFile } from "./workspace.ts";
 
@@ -47,7 +46,6 @@ export async function prepareComboOpen(
 ): Promise<PrepareReport> {
   const warnings: Warning[] = [];
   const { created } = await ensureRoot(combo);
-  await syncLongWorkPolicy(combo);
   const outcomes = await ensureWorktrees(combo, {
     gitPath: opts.gitPath,
     repairStale: opts.repairStale,

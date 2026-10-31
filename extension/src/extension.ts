@@ -17,7 +17,7 @@ import {
   searchSessions,
 } from "@grove/core";
 import * as vscode from "vscode";
-import { openCombo, openSession, toggleLongWork } from "./commands.ts";
+import { openCombo, openSession } from "./commands.ts";
 import type { Deps, StatusView } from "./deps.ts";
 import { drainIntents } from "./drain.ts";
 import { checkDrift, currentCombo, runStartup } from "./startup.ts";
@@ -230,7 +230,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand("grove.findSession", () => findSession(deps)),
     vscode.commands.registerCommand("grove.openCombo", () => pickCombo(deps)),
-    vscode.commands.registerCommand("grove.toggleLongWork", () => toggleLongWork(deps)),
     vscode.commands.registerCommand("grove.repairCombo", async () => {
       const combo = await currentCombo(deps);
       if (!combo) return void deps.info("This window is not a combo.");

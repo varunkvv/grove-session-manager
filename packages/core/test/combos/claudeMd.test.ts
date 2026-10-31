@@ -1,12 +1,7 @@
 import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  ensureRoot,
-  longTaskAgentPath,
-  renderClaudeMdStub,
-  renderLongTaskAgent,
-} from "../../src/combos/claudeMd.ts";
+import { ensureRoot, renderClaudeMdStub } from "../../src/combos/claudeMd.ts";
 import type { Combo } from "../../src/types.ts";
 import { makeSandbox } from "../helpers/transcript.ts";
 
@@ -60,38 +55,11 @@ describe("combo root and CLAUDE.md", () => {
     expect(md.length).toBeLessThan(3200);
   });
 
-  it("long work is sent to an agent that always runs in the background", async () => {
+  it("says nothing of long work, and makes no agent", async () => {
     const c = combo();
     await ensureRoot(c);
-    const agent = readFileSync(longTaskAgentPath(c), "utf8");
-    expect(longTaskAgentPath(c)).toBe(path.join(c.root, ".claude", "agents", "long-task.md"));
-    expect(agent).toBe(renderLongTaskAgent(c));
-    // frontmatter claude code 2.1.278 recognises. `background` is what makes it the default.
-    expect(agent).toMatch(
-      /^---\nname: long-task\ndescription: .+\nbackground: true\nmodel: inherit\n---\n/,
-    );
-    // it starts without the conversation, so it is sent to where the context was written down
-    expect(agent).toContain("read the plan file you were given, then `context/`");
-    expect(agent).toContain("`context/in-progress.md`");
-    expect(agent).toContain("do not stop to ask");
-    // the agent never volunteers itself: whether long work goes to it is the policy file's call
-    expect(agent).toContain("Use it only when .claude/long-work.md says");
-    // CLAUDE.md is read once per session, so it only points at the file that can change
-    const md = renderClaudeMdStub(c);
-    expect(md).toContain("`.claude/long-work.md`");
-    expect(md).toContain("read it each time");
-    expect(md).not.toContain("`long-task`");
-  });
-
-  it("the agent file is the person's after creation, like everything else in the root", async () => {
-    const c = combo();
-    await ensureRoot(c);
-    writeFileSync(longTaskAgentPath(c), "my own agent\n");
-    await ensureRoot(c);
-    expect(readFileSync(longTaskAgentPath(c), "utf8")).toBe("my own agent\n");
-    unlinkSync(longTaskAgentPath(c));
-    await ensureRoot(c);
-    expect(existsSync(longTaskAgentPath(c))).toBe(false);
+    expect(renderClaudeMdStub(c)).not.toMatch(/long work|long-work|long-task/i);
+    expect(existsSync(path.join(c.root, ".claude"))).toBe(false);
   });
 
   it("the shared folders are made once, with the root, and never put back", async () => {

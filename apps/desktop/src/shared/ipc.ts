@@ -11,7 +11,6 @@ import type {
   InboxKind,
   LiveState,
   LiveStatus,
-  LongWorkMode,
   ModelUsage,
   PrInfo,
   ProjectId,
@@ -228,7 +227,6 @@ export interface ProjectView {
   /** combo.note */
   goal?: string;
   workspaceFile: string;
-  longWork: LongWorkMode;
   folders: FolderView[];
   /** the folder reconcile, as ComboView's */
   status: "unknown" | "checking" | "known";
@@ -624,8 +622,6 @@ export interface Api {
   repairProject(id: ProjectId): Promise<Outcome<FolderOutcome[]>>;
   /** the project's window in the editor, without landing on a session */
   openProject(id: ProjectId): Promise<Outcome<OpenReport>>;
-  /** rewrites the project's long-work policy file, which a running session reads before long work */
-  setLongWork(id: ProjectId, mode: LongWorkMode): Promise<Outcome>;
 
   editorStatus(refresh?: boolean): Promise<EditorStatus>;
   installCompanion(): Promise<Outcome>;
@@ -676,7 +672,6 @@ export const INVOKE_CHANNELS = [
   "setArchived",
   "repairProject",
   "openProject",
-  "setLongWork",
   "editorStatus",
   "installCompanion",
   "updateSettings",

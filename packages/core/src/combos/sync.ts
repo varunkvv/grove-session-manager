@@ -1,7 +1,6 @@
 import { stat } from "node:fs/promises";
 import type { HookSyncStatus } from "../sessions/liveStatus.ts";
 import type { Combo, Warning } from "../types.ts";
-import { syncLongWorkPolicy } from "./longWork.ts";
 import { cleanRecordFiles, syncComboSettings } from "./recordCleanup.ts";
 
 export interface ComboSyncReport {
@@ -14,8 +13,7 @@ export interface ComboSyncReport {
 }
 
 /**
- * everything grove keeps current in one project folder: the long-work policy and the status
- * hooks. `cleanRecord` also takes out what 0.10 installed for the record: the app passes it when
+ * everything grove keeps current in one project folder: the status hooks. `cleanRecord` also takes out what 0.10 installed for the record: the app passes it when
  * the projects are its own to edit, a dev build next to the installed app never does
  */
 export async function syncComboFiles(
@@ -35,7 +33,6 @@ export async function syncComboFiles(
     () => false,
   );
   if (!rootIsDir) return { ...report, skipped: "no-root" };
-  await syncLongWorkPolicy(combo);
   if (opts.cleanRecord) report.cleaned = await cleanRecordFiles(combo);
   const settings = await syncComboSettings(appRoot, combo, opts.cleanRecord === true);
   report.settings = settings.status;

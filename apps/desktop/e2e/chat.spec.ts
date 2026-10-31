@@ -1229,7 +1229,6 @@ test("the files pane lists what is not committed, each opening its diff", async 
   const chat = await chatWindow(electron, SID);
   await chat.getByTestId("chat-files").click();
   const changes = chat.getByTestId("changes");
-  // grove's own .claude/long-work.md is new in it too
   await expect(changes.getByTestId("change-item").filter({ hasText: "retry.ts" })).toContainText(
     "+1 -1",
   );

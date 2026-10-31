@@ -3,9 +3,6 @@ import path from "node:path";
 import type { Combo } from "../types.ts";
 import { COMBO_SHARED_DIRS } from "./folders.ts";
 
-/** the agent long work is handed to when the combo's policy says background. `background: true` keeps it off the main thread. */
-export const LONG_TASK_AGENT = "long-task";
-
 function branchLabel(f: Combo["folders"][number]): string {
   const b = f.branch;
   if (!b || b.kind === "detach") return "detached at HEAD";
@@ -53,12 +50,6 @@ export function renderClaudeMdStub(combo: Combo): string {
     "- `artifacts/` - generated things that are not source: reports, query results, exports, diagrams, scratch scripts",
     "- `context/` - what other sessions need to know. see below",
     "",
-    "## Long work",
-    "",
-    "Before starting anything you expect to take more than a few minutes of autonomous work, read",
-    "`.claude/long-work.md` and follow it. It says whether long work runs in the background or here,",
-    "and it can change while a session is running, so read it each time rather than remembering it.",
-    "",
     "## Other sessions work here too",
     "",
     "Several sessions can be working in this folder at once: forks of this conversation, background",
@@ -75,50 +66,8 @@ export function renderClaudeMdStub(combo: Combo): string {
   ].join("\n");
 }
 
-export function longTaskAgentPath(combo: Combo): string {
-  return path.join(combo.root, ".claude", "agents", `${LONG_TASK_AGENT}.md`);
-}
-
 /**
- * a subagent starts with its own prompt, the combo's CLAUDE.md and the brief it is handed -
- * never the conversation that spawned it. so the prompt sends it to the files where that
- * context was written down, and has it write back to the same place.
- */
-export function renderLongTaskAgent(combo: Combo): string {
-  return [
-    "---",
-    `name: ${LONG_TASK_AGENT}`,
-    "description: Runs one long piece of implementation or investigation in the background, so the main conversation stays free to talk and plan. Use it only when .claude/long-work.md says long work runs in the background, or when the person asks for it. It cannot see the conversation - give it the path of a plan file in plans/ and anything the plan leaves out.",
-    "background: true",
-    "model: inherit",
-    "---",
-    "",
-    `You are doing one long piece of work inside the "${combo.name}" combo, in the background. The person and the`,
-    "main conversation are busy with something else and cannot answer you, so do not stop to ask. Decide, write down",
-    "why, and carry on.",
-    "",
-    "Before you start:",
-    "",
-    "- read the plan file you were given, then `context/`. they hold what the conversation that sent you knows and you do not",
-    "- add an entry to `context/in-progress.md` naming the working copy and the files you will touch",
-    "- stay inside the working copy and files you were given. another agent may own the rest",
-    "",
-    "While you work:",
-    "",
-    "- when you decide something the plan did not settle, or learn something non-obvious, add a short dated entry to `context/<topic>.md`",
-    "- generated output that is not source goes in `artifacts/`, never inside a working copy",
-    "- run the tests for what you changed. a change you did not verify is not finished",
-    "",
-    "When you finish:",
-    "",
-    "- remove your entry from `context/in-progress.md`",
-    "- report what you changed, what you verified and how, what you decided on your own, and what is left. if something failed, say so with the output",
-    "",
-  ].join("\n");
-}
-
-/**
- * creates the combo root. the CLAUDE.md stub, the shared folders and the long-task agent are
+ * creates the combo root. the CLAUDE.md stub and the shared folders are
  * written only by the call that really created the directory, the stub with the wx flag as a second guard: if the
  * person deletes or rewrites any of it later, it stays that way.
  */
@@ -136,8 +85,5 @@ export async function ensureRoot(combo: Combo): Promise<{ created: boolean }> {
   for (const dir of COMBO_SHARED_DIRS) {
     await mkdir(path.join(combo.root, dir)).catch(() => {});
   }
-  const agent = longTaskAgentPath(combo);
-  await mkdir(path.dirname(agent), { recursive: true }).catch(() => {});
-  await writeFile(agent, renderLongTaskAgent(combo), { flag: "wx" }).catch(() => {});
   return { created: true };
 }

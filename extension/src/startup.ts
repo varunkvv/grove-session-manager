@@ -8,7 +8,6 @@ import {
   samePath,
   syncAdditionalDirectories,
   syncComboStatusHooks,
-  syncLongWorkPolicy,
 } from "@grove/core";
 import type { Deps } from "./deps.ts";
 import { drainIntents } from "./drain.ts";
@@ -67,7 +66,6 @@ export async function runStartup(deps: Deps): Promise<{ combo?: string }> {
   }
   deps.setStatus({ combo: combo.name });
 
-  await syncLongWorkPolicy(combo).catch((e) => deps.log(`long-work policy: ${String(e)}`));
   await syncComboStatusHooks(deps.appRoot, combo).catch((e) =>
     deps.log(`status hooks: ${String(e)}`),
   );

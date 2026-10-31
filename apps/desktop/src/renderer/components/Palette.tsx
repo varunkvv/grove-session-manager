@@ -196,15 +196,6 @@ function Open({ windows }: { windows: readonly ChatWindowView[] }) {
         // a dialog takes the keyboard itself
         case "start-background":
           return set({ overlay: null, dialog: { kind: "start", project: p.id } });
-        case "long-work": {
-          const next = p.longWork === "background" ? "foreground" : "background";
-          void window.grove.setLongWork(p.id, next).then((res) => {
-            if (!report("Could not change that", res)) return;
-            const where = next === "background" ? "background" : "conversation";
-            toast({ level: "info", title: `Long work runs in the ${where} in ${p.name}` });
-          });
-          break;
-        }
         case "repair":
           // main says what it did to each working copy
           void window.grove

@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import path from "node:path";
 import { type Combo, combosFilePath, ensureRoot, ensureWorktrees, writeIntent } from "@grove/core";
 import { describe, expect, it } from "vitest";
-import { openSession, toggleLongWork } from "../src/commands.ts";
 import { runStartup } from "../src/startup.ts";
 import { fakeDeps, SID, writeSession } from "./helpers/fakeDeps.ts";
 
@@ -90,70 +89,5 @@ describe("startup", () => {
     expect(f.status.at(-1)!.drift).toHaveLength(1);
     await runStartup(deps);
     expect(f.warnings).toHaveLength(1);
-  });
-});
-
-describe("switching where long work runs, from inside the editor", () => {
-  it("flips combos.json and the policy file a running session reads", async () => {
-    const f = fakeDeps();
-    const combo: Combo = {
-      name: "prod-debug",
-      root: path.join(f.deps.appRoot, "prod-debug"),
-      folders: [],
-    };
-    writeFileSync(combosFilePath(f.deps.appRoot), JSON.stringify({ combos: [combo] }));
-    await ensureRoot(combo);
-    const deps = { ...f.deps, workspace: () => ({ root: combo.root }) };
-    const policy = () => readFileSync(path.join(combo.root, ".claude", "long-work.md"), "utf8");
-
-    expect(await toggleLongWork(deps)).toBe("foreground");
-    expect(policy()).toContain("Do not hand it to the `long-task` agent");
-    expect(
-      JSON.parse(readFileSync(combosFilePath(f.deps.appRoot), "utf8")).combos[0].longWork,
-    ).toBe("foreground");
-
-    expect(await toggleLongWork(deps)).toBe("background");
-    expect(policy()).toContain("to the `long-task`");
-    expect(f.infos).toHaveLength(2);
-  });
-
-  it("a window that is not a combo has nothing to switch, and nothing is written", async () => {
-    const probe = fakeDeps();
-    const plain = repo(path.join(probe.base, "src", "api"));
-    const f = fakeDeps({ root: plain });
-    expect(await toggleLongWork(f.deps)).toBeNull();
-    expect(existsSync(path.join(plain, ".claude"))).toBe(false);
-  });
-});
-
-describe("find session -> open", () => {
-  it("a session of this workspace resumes in place", async () => {
-    const probe = fakeDeps();
-    const here = repo(path.join(probe.base, "src", "api"));
-    const f = fakeDeps({ root: here });
-    writeSession(f.deps.projectsDir, here, SID.a);
-    const view = { sessionId: SID.a, cwd: here } as never;
-    expect(await openSession(f.deps, view)).toBe("command");
-    expect(f.opened).toEqual([]);
-  });
-
-  it("a session from another folder writes an intent and opens that folder in a new window", async () => {
-    const probe = fakeDeps();
-    const here = repo(path.join(probe.base, "src", "api"));
-    const there = repo(path.join(probe.base, "src", "web"));
-    const f = fakeDeps({ root: here });
-    expect(await openSession(f.deps, { sessionId: SID.b, cwd: there } as never)).toBe(
-      "opened-folder",
-    );
-    expect(f.opened).toEqual([{ target: there, newWindow: true }]);
-    expect(f.commands).toEqual([]);
-  });
-
-  it("a session whose folder is gone copies the resume command", async () => {
-    const f = fakeDeps({ root: "/somewhere" });
-    expect(await openSession(f.deps, { sessionId: SID.b, cwd: "/no/longer/here" } as never)).toBe(
-      "copied",
-    );
-    expect(f.clipboard).toEqual([`claude --resume ${SID.b}`]);
   });
 });

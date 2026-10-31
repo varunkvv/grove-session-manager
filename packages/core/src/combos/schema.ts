@@ -100,10 +100,8 @@ export function normalizeCombosFile(
       continue;
     }
     const combo: Combo = { ...item, name, root, folders };
-    // anything but the two known values falls back to the default instead of failing the combo
-    if (item.longWork === "background" || item.longWork === "foreground")
-      combo.longWork = item.longWork;
-    else delete combo.longWork;
+    // a key an older grove wrote for where long work went: gone
+    delete (combo as Record<string, unknown>).longWork;
     // put away or not: `true` is the one value that means anything
     if (item.archived !== true) delete combo.archived;
     // a word claude takes as one argument. which words it takes is the app's to say

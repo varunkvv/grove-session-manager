@@ -20,7 +20,6 @@ const project = (id: string, partial: Partial<ProjectView> = {}): ProjectView =>
   root: `/w/${id}`,
   goal: "ship it",
   workspaceFile: `/w/${id}/${id}.code-workspace`,
-  longWork: "foreground",
   folders: [],
   status: "known",
   rootExists: true,
@@ -69,7 +68,6 @@ describe("paletteItems", () => {
       "project:data",
       "new-session",
       "start-background",
-      "long-work",
       "archive-project",
       "delete-project",
       "settings",
@@ -133,17 +131,6 @@ describe("paletteItems", () => {
       );
     expect(ids(ctx({ project: project("auth", { folders: [folder("ok")] }) }))).not.toContain(
       "repair",
-    );
-  });
-
-  it("the long-work label says what choosing it does", () => {
-    const label = (c: PaletteContext) =>
-      paletteItems(c, "")
-        .sections.flatMap((s) => s.items)
-        .find((i) => i.id === "long-work")?.label;
-    expect(label(ctx())).toBe("Run long work in the background");
-    expect(label(ctx({ project: project("auth", { longWork: "background" }) }))).toBe(
-      "Run long work in the conversation",
     );
   });
 

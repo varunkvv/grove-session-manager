@@ -1,3 +1,15 @@
+## 0.39
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.39 takes out the long work switch.
+
+Removed:
+
+- the setting that sent long work to a background `long-task` agent, with its `.claude/long-work.md` file, the `long-task` agent file a new project got, the "Long work" paragraph in a new project's `CLAUDE.md`, the palette row and the editor command `Grove: Toggle Background Long Work`. every long task was a new agent that started from nothing, and its cache expired after 5 minutes whenever it waited on something. Claude does long work in the conversation again, or wherever you tell it to
+
+Keep in mind:
+
+- Grove does not delete the files it wrote into projects you already have. remove `.claude/long-work.md`, `.claude/agents/long-task.md` and the "Long work" paragraph of `CLAUDE.md` by hand where they are
+
 ## 0.38
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.38 takes out the clearing of old reads that 0.28 added.

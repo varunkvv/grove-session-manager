@@ -155,7 +155,6 @@ const OUTCOME_METHODS: ReadonlySet<keyof Api> = new Set<keyof Api>([
   "setArchived",
   "repairProject",
   "openProject",
-  "setLongWork",
   "installCompanion",
   "updateSettings",
   "openExternal",
@@ -773,13 +772,6 @@ function buildHandlers(deps: Deps): Handlers {
 
     async openProject(id) {
       return openWindow(combos.byId(id));
-    },
-
-    async setLongWork(id, mode) {
-      if (mode !== "background" && mode !== "foreground") {
-        throw new AppError("invalid", "Long work is either background or foreground.");
-      }
-      await combos.setLongWork(combos.byId(id).name, mode);
     },
 
     async editorStatus(refresh) {

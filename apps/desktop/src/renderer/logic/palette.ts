@@ -130,15 +130,6 @@ function commands(ctx: PaletteContext): PaletteItem[] {
         mine("start-background", "Start a background session…", "new agent claude bg"),
       );
     }
-    items.push(
-      mine(
-        "long-work",
-        p.longWork === "background"
-          ? "Run long work in the conversation"
-          : "Run long work in the background",
-        "long work background",
-      ),
-    );
     if (p.folders.some((f) => REPAIRABLE.has(f.state)))
       items.push(mine("repair", "Repair working copies", "worktree fix drift"));
     items.push(

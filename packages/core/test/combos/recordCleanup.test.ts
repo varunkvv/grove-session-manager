@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { renderClaudeMdStub, renderLongTaskAgent } from "../../src/combos/claudeMd.ts";
+import { renderClaudeMdStub } from "../../src/combos/claudeMd.ts";
 import {
   recordPrefixes,
   removeRecordRuntime,
@@ -74,7 +74,6 @@ describe("a project as 0.10 left it", () => {
     const report = await p.clean();
     expect(report).toMatchObject({ settings: "written", warnings: [] });
     expect(report.cleaned.sort()).toEqual([
-      ".claude/agents/long-task.md",
       ".claude/rules/grove-record.md",
       ".mcp.json",
       "CLAUDE.md",
@@ -90,10 +89,7 @@ describe("a project as 0.10 left it", () => {
     expect(p.read(".claude/settings.local.json")).not.toMatch(/grove-record|bin\/record|mcp__/);
     // what a new project gets today, byte for byte
     expect(p.read("CLAUDE.md")).toBe(renderClaudeMdStub(p.combo));
-    expect(p.read(".claude/agents/long-task.md")).toBe(renderLongTaskAgent(p.combo));
-    for (const name of ["CLAUDE.md", ".claude/agents/long-task.md"]) {
-      expect(p.read(name), name).not.toMatch(/record_state|conclusion_record|comment_add|card/i);
-    }
+    expect(p.read("CLAUDE.md")).not.toMatch(/record_state|conclusion_record|comment_add|card/i);
 
     // the person's: their cards and conclusions, the project file, the long-work policy
     const after = snapshot(p.root);
@@ -137,14 +133,9 @@ describe("a project as 0.10 left it", () => {
     // the stub was edited above and below the paragraph grove wrote, and one agent line reworded
     const md = `${p.read("CLAUDE.md").replace("# auth-sso", "# auth-sso (okta)")}\n## Mine\n\nnotes\n`;
     writeFileSync(p.file("CLAUDE.md"), md);
-    const agent = p
-      .read(".claude/agents/long-task.md")
-      .replace("- call `record_state`. work under", "- first call `record_state`. work under");
-    writeFileSync(p.file(".claude/agents/long-task.md"), agent);
 
     const report = await p.clean();
     expect(report.cleaned.sort()).toEqual([
-      ".claude/agents/long-task.md",
       ".claude/rules/grove-record.md",
       ".mcp.json",
       "CLAUDE.md",
@@ -174,11 +165,6 @@ describe("a project as 0.10 left it", () => {
     expect(cleaned.endsWith("\n## Mine\n\nnotes\n")).toBe(true);
     expect(cleaned).toContain("The files in `context/` are the only\nmemory you have in common.");
     expect(cleaned).not.toContain("record_state");
-    // the line that was reworded is the person's now. the two still grove's are swapped
-    const kept = p.read(".claude/agents/long-task.md");
-    expect(kept).toContain("- first call `record_state`. work under");
-    expect(kept).toContain("- remove your entry from `context/in-progress.md`");
-    expect(kept).not.toMatch(/conclusion_record|comment_add/);
 
     const after = snapshot(p.root);
     expect(await p.clean()).toMatchObject({ settings: "unchanged", cleaned: [] });

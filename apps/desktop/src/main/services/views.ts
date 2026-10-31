@@ -1,14 +1,6 @@
 // combo state -> what the renderer draws. pure: no electron, no fs.
 import path from "node:path";
-import {
-  type Combo,
-  type ComboFolder,
-  type FolderOutcome,
-  type FolderStatus,
-  type LongWorkMode,
-  longWorkMode,
-  type TeardownOutcome,
-} from "@grove/core";
+import type { Combo, ComboFolder, FolderOutcome, FolderStatus, TeardownOutcome } from "@grove/core";
 import type { FolderView, ToastMessage } from "../../shared/ipc.ts";
 import { type EffortChoice, type ModelChoice, startDefaults } from "../../shared/newSession.ts";
 
@@ -19,7 +11,6 @@ export interface ComboView {
   note?: string;
   workspaceFile: string;
   /** whether long autonomous work is handed to a background agent. can be flipped mid-session. */
-  longWork: LongWorkMode;
   /** what its new sessions start on */
   model?: ModelChoice;
   effort?: EffortChoice;
@@ -109,7 +100,6 @@ export function buildComboView(
     name: combo.name,
     root: combo.root,
     workspaceFile,
-    longWork: longWorkMode(combo),
     ...startDefaults(combo),
     folders: buildFolderViews(combo, runtime),
     status: comboStatusOf(runtime),

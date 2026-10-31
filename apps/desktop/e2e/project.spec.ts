@@ -384,8 +384,8 @@ test("a project as 0.10 left it: the record is taken out at launch, and what was
   expect(JSON.parse(settings()).hooks.Stop[0].hooks[0].command).toContain(
     path.join(fx.root, ".grove", "events"),
   );
-  // its stub and its agent say `context/` again, and name no tool that is gone
-  for (const name of ["CLAUDE.md", ".claude/agents/long-task.md"]) {
+  // its stub says `context/` again, and names no tool that is gone
+  for (const name of ["CLAUDE.md"]) {
     const text = readFileSync(path.join(root, name), "utf8");
     expect(text, name).toContain("context/");
     expect(text, name).not.toMatch(/record_state|conclusion_record|comment_add/);

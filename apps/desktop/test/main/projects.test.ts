@@ -65,7 +65,6 @@ function setup() {
           name: c.name,
           root: c.root,
           workspaceFile: path.join(c.root, `${c.name}.code-workspace`),
-          longWork: "background",
           folders: [],
           status: "known",
         })),

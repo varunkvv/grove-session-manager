@@ -24,12 +24,6 @@ Nothing below belongs inside a working copy. Keep those clean, so nothing lands 
 - `artifacts/` - generated things that are not source: reports, query results, exports, diagrams, scratch scripts
 - `context/` - what other sessions need to know. see below
 
-## Long work
-
-Before starting anything you expect to take more than a few minutes of autonomous work, read
-`.claude/long-work.md` and follow it. It says whether long work runs in the background or here,
-and it can change while a session is running, so read it each time rather than remembering it.
-
 ## Other sessions work here too
 
 Several sessions can be working in this folder at once: forks of this conversation, background

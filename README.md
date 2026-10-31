@@ -76,24 +76,6 @@ plans and generated artifacts go (`plans/`, `artifacts/` - never inside a workin
 memory sessions have in common: read it before a task, add a short dated entry when something is decided or learned.
 It is written once and is yours after that.
 
-### Long work in the background, as a switch
-
-By default a project tells Claude to hand long autonomous work to a background agent, so the conversation stays free
-to answer questions and plan. It takes these files:
-
-- `.claude/agents/long-task.md` - an agent with `background: true` in its frontmatter. A subagent never sees the
-  conversation that spawned it, which is what the plan file is for: the plan in `plans/` is its brief, and it writes
-  what it decides to `context/`
-- `.claude/long-work.md` - the policy: background, or here in the conversation. The app owns this file
-- `CLAUDE.md` only says "read `.claude/long-work.md` before long work, every time"
-
-`CLAUDE.md` is read once, when a session starts, so a switch written there could never reach a session that is already
-running. The policy file is read at the moment of decision, so flipping it takes effect on a running session's next
-long task. Flip it from `⌘K` (**Run long work in the conversation** / **in the background**) or from the editor
-(`Grove: Toggle Background Long Work`). Saying "do this one here" in the chat overrules it for a single task.
-
-It is a default by instruction, not an enforcement: Claude still decides what counts as long.
-
 A turn that ends while a background subagent it started is still working is your turn: what it ended on (often a
 question) is under Needs you. The subagent keeps the Mac awake while its tool calls keep coming in, and once you have
 answered or dismissed that row the session is under Working while it does. When it finishes, its result starts a short
@@ -234,7 +216,7 @@ numbers is shown anywhere else in the app. [Usage](#usage) says where they come 
 Grove could not write the project's files, why. At its foot, away from Save, are **Archive** (or **Unarchive**) and
 **Delete...**.
 
-`⌘K` opens the palette: go to All sessions, Usage or a project, start a session there or in the background, switch long work,
+`⌘K` opens the palette: go to All sessions, Usage or a project, start a session there or in the background,
 repair working copies, archive or unarchive the project, delete it, settings. Archived projects are not in its list
 of projects. They are a section of their own, **Archived**, once you type part of a name. Typing also searches every
 Claude Code session on the machine, in a project or not: titles and prompts first, then everything that was said in
@@ -537,9 +519,7 @@ prompt shows up as a Needs permission row.
 ~/claude-ws/<project>/
   CLAUDE.md                   written once when the project is created. yours after that
   plans/  artifacts/  context/  made once, with the root. where sessions keep what outlives them
-  .claude/agents/long-task.md written once. `background: true`, so long work never blocks the conversation
   <project>.code-workspace    generated. only `folders` is ours, the rest is preserved
-  .claude/long-work.md        generated. whether long work goes to that agent. flips mid-session
   .claude/settings.local.json only our entries are touched. see below
   <repo>/                     working copies
 ```
@@ -654,7 +634,7 @@ that:
 - in `.claude/settings.local.json`: the `SessionStart` hook marked `# grove-record`, `grove` in
   `enabledMcpjsonServers`, and the allow rules `mcp__grove` and `Bash(<launcher>:*)`. The status hooks stay
 - `.claude/rules/grove-record.md`, when it is the file Grove generated
-- the record paragraphs in `CLAUDE.md` and `.claude/agents/long-task.md`, swapped back to the `context/` text, only
+- the record paragraphs in `CLAUDE.md`, swapped back to the `context/` text, only
   where they are still exactly what Grove wrote
 - `~/claude-ws/.grove/bin/record` and `record.cjs`
 

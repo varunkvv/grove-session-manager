@@ -106,7 +106,6 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
     "project:billing-export",
     "new-session",
     "start-background",
-    "long-work",
     "archive-project",
     "delete-project",
     "settings",
@@ -219,19 +218,11 @@ test("No matches. waits for the session search to answer", async () => {
   await expect(page.getByTestId("palette-empty")).toHaveText("No matches.");
 });
 
-test("what the screens have no button for: long work, delete, settings", async () => {
+test("what the screens have no button for: delete, settings", async () => {
   app = await launchApp(seed());
   const { page } = app;
   await ready(page);
   await project(page, "auth-sso");
-
-  // the row says what choosing it does, the toast what it did
-  await ask(page, "long");
-  await expect(item(page, "long-work")).toHaveText("Run long work in the conversation");
-  await page.keyboard.press("Enter");
-  await expect(toast(page, "Long work runs in the conversation in auth-sso")).toBeVisible();
-  await ask(page, "long");
-  await expect(item(page, "long-work")).toHaveText("Run long work in the background");
 
   await input(page).fill("delete");
   await page.keyboard.press("Enter");

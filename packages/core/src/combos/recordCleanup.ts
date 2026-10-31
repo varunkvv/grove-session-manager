@@ -144,20 +144,6 @@ const CLAUDE_MD: ReadonlyArray<readonly [string, string]> = [
     ].join("\n"),
   ],
 ];
-const LONG_TASK: ReadonlyArray<readonly [string, string]> = [
-  [
-    "- call `record_state`. work under the card your brief names. the session that started you holds it. do not claim, release or finish a card yourself (the rules' Subagents section says the same)",
-    "- add an entry to `context/in-progress.md` naming the working copy and the files you will touch",
-  ],
-  [
-    '- when you decide something the plan did not settle, find something out, or judge an approach, record it with `conclusion_record` and pass `as: "long-task"`. a question you would have asked goes on the card with `question_ask`, with what you assumed',
-    "- when you decide something the plan did not settle, or learn something non-obvious, add a short dated entry to `context/<topic>.md`",
-  ],
-  [
-    "- put your report on the card with `comment_add`, and list what you made in `artifacts`. the session that started you marks the card done",
-    "- remove your entry from `context/in-progress.md`",
-  ],
-];
 
 async function swapLines(
   file: string,
@@ -182,8 +168,6 @@ export async function cleanRecordFiles(combo: Combo): Promise<string[]> {
   if (await cleanMcpJson(combo.root)) cleaned.push(".mcp.json");
   if (await removeRules(combo.root)) cleaned.push(RULES_FILE);
   if (await swapLines(path.join(combo.root, "CLAUDE.md"), CLAUDE_MD)) cleaned.push("CLAUDE.md");
-  const agent = path.join(".claude", "agents", "long-task.md");
-  if (await swapLines(path.join(combo.root, agent), LONG_TASK)) cleaned.push(agent);
   return cleaned;
 }
 

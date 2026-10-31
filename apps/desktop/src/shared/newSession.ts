@@ -1,6 +1,5 @@
 // what a new session can be started with. the lists are the only values main passes to claude as
 // flags, so they live where both sides read the same ones. nothing here may import node or electron.
-import type { LongWorkMode } from "@grove/core/pure";
 
 /** the editor (VS Code or Cursor), a Terminal window, or Claude Code's own supervisor */
 export type NewSessionWhere = "editor" | "terminal" | "background";
@@ -52,8 +51,6 @@ export interface NewSessionRequest {
   where: NewSessionWhere;
   /** background: required, sent. terminal: optional, sent. editor: optional, never sent. */
   prompt: string;
-  /** where long work goes for this session only. absent: whatever the combo says. */
-  longWork?: LongWorkMode;
   /** the CLI targets only. the Claude panel picks its own model and mode. */
   model?: ModelChoice;
   mode?: PermissionModeChoice;
