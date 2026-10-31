@@ -827,39 +827,6 @@ test("a refusal is a card that switches models or gives the prompt back, and a f
   );
 });
 
-test("where the api refuses clearing old reads, claude starts again without it and the message can be tried again", async () => {
-  const s = seed(true);
-  // the fake answers every message as the api does a context_management it does not take
-  const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_REFUSE_EXTRA_BODY: "1" });
-  await openRow(page, s.id);
-  const chat = await chatWindow(electron, SID);
-  const composer = chat.getByTestId("composer");
-  await composer.fill(HELLO);
-  await composer.press("Enter");
-  await expect(chat.getByTestId("turn-note").last()).toContainText(
-    "API Error: 400 context_management",
-  );
-  await expect(chat.getByTestId("chat-error")).toContainText(
-    "The API refused clearing old reads here, so Claude restarted without it.",
-  );
-  // the first claude had the extra body, the one after it does not, on the same session
-  const starts = sentToClaude(s.chatLog).filter((l) => l.argv) as Array<{
-    argv: string[];
-    env: { extraBody?: string };
-  }>;
-  expect(starts).toHaveLength(2);
-  // only the reads edit: auto mode's classifier gets the same body, and refuses a thinking one
-  expect(JSON.parse(starts[0]?.env.extraBody ?? "{}").context_management.edits).toEqual([
-    expect.objectContaining({ type: "clear_tool_uses_20250919" }),
-  ]);
-  expect(starts[1]?.env.extraBody).toBeUndefined();
-  expect(starts[1]?.argv).toContain(`--resume=${SID}`);
-  // tried again, it answers, and the line goes with the turn it was about
-  await chat.getByTestId("turn-retry").click();
-  await expect(chat.getByTestId("panel-text").last()).toContainText("hello from the spike");
-  await expect(chat.getByTestId("chat-error")).toHaveCount(0);
-});
-
 test("a long tool offers to run in the background, and goes there", async () => {
   const s = seed(true);
   const { app: electron, page } = await launch(s);

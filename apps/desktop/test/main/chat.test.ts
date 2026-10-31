@@ -21,18 +21,13 @@ import {
   ChatHost,
   type ChatHostOptions,
   CLASSIFIER_ERROR_FILE,
-  CLEARING,
-  CLEARING_REFUSED,
   classifierError,
-  clearingEnv,
   dialogOf,
   hostEnv,
   modesFor,
   parseAnswer,
   parseAttachments,
   REAP_MS,
-  refusedClearing,
-  refusedClearingCheck,
   retryLine,
 } from "../../src/main/services/chat.ts";
 import type { ChatAsk, ChatStatus } from "../../src/shared/ipc.ts";
@@ -265,26 +260,8 @@ describe("grove chat's host", () => {
     // no mode is passed: the person's own settings pick it
     expect(argv.join(" ")).not.toContain("--permission-mode");
     // the parent's claude code session is not passed on: the sdk names itself. checkpoints on,
-    // as vs code has them. the api clears old reads, with no thinking edit: auto mode's
-    // classifier gets the same body with thinking off, and the api refuses it there
-    expect(env).toEqual({
-      entrypoint: "sdk-ts",
-      checkpointing: "true",
-      extraBody: expect.any(String),
-    });
-    expect(JSON.parse(env.extraBody ?? "")).toEqual({
-      context_management: {
-        edits: [
-          {
-            type: "clear_tool_uses_20250919",
-            trigger: { type: "input_tokens", value: 150_000 },
-            keep: { type: "tool_uses", value: 20 },
-            clear_at_least: { type: "input_tokens", value: 20_000 },
-            clear_tool_inputs: false,
-          },
-        ],
-      },
-    });
+    // as vs code has them. no extra body: claude code's own context management applies
+    expect(env).toEqual({ entrypoint: "sdk-ts", checkpointing: "true" });
     // vs code's thinking: a budget, and the summary text because the settings ask for it
     expect(argv).toEqual(
       expect.arrayContaining(["--max-thinking-tokens=31999", "--thinking-display=summarized"]),
@@ -1219,7 +1196,7 @@ describe("grove chat's host", () => {
     await s.host.interrupt(SESSION);
   });
 
-  it("says why auto mode's check failed, and starts claude without clearing when it was the extra body", async () => {
+  it("says why auto mode's check failed", async () => {
     // claude code 2.1.310's frame for a check that failed, as grove's 0.34 body made every one fail
     const dir = mkdtempSync(path.join(os.tmpdir(), "grove-chat-rec-"));
     const fixtures = path.join(import.meta.dirname, "../fixtures/chat");
@@ -1252,16 +1229,14 @@ describe("grove chat's host", () => {
     );
     s.host.attach(SESSION, s.window);
     await s.host.send(SESSION, s.where, HELLO);
-    await until(() => s.host.status(SESSION).error === CLEARING_REFUSED, "the restart said");
+    await until(() => (s.host.status(SESSION).notes?.length ?? 0) > 0, "the note");
     expect(s.host.status(SESSION).notes).toContainEqual({
       kind: "denied",
       text: "tabs_context_mcp was turned down: auto mode's check failed. The API said 400 `clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive",
     });
-    const starts = s.log().filter((l) => l.argv) as Array<{ env: Record<string, string> }>;
-    expect(starts.map((l) => l.env.extraBody !== undefined)).toEqual([true, false]);
   });
 
-  it("reads the api's error out of claude code's file, and knows one about the extra body", () => {
+  it("reads the api's error out of claude code's file", () => {
     const file = (line: string) =>
       `=== ERROR ===\n${line}\n\n=== CONTEXT COMPARISON ===\nmodel: x\n`;
     const thinking = classifierError(
@@ -1272,20 +1247,9 @@ describe("grove chat's host", () => {
     expect(thinking).toBe(
       "400 `clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive",
     );
-    expect(refusedClearingCheck(thinking ?? "")).toBe(true);
-    expect(refusedClearingCheck("400 context_management: Extra inputs are not permitted")).toBe(
-      true,
-    );
     // no json: the line as it is
     expect(classifierError(file("Request timed out."))).toBe("Request timed out.");
     expect(classifierError("nothing here")).toBeUndefined();
-    for (const other of [
-      "529 Overloaded",
-      "400 prompt is too long",
-      "Request timed out.",
-      "500 clear_thinking_20251015 went wrong",
-    ])
-      expect(refusedClearingCheck(other), other).toBe(false);
   });
 
   it("/clear moves the same claude to a new session id, and its windows with it", async () => {
@@ -1359,54 +1323,7 @@ describe("grove chat's host", () => {
     expect(modesFor(undefined)).toEqual(["default", "acceptEdits", "plan"]);
   });
 
-  it("has the api clear old reads, except where it would refuse every request or the person set their own", () => {
-    const body = (e: NodeJS.ProcessEnv, settings?: Record<string, unknown>) =>
-      clearingEnv(e, settings).CLAUDE_CODE_EXTRA_BODY;
-    const edits = JSON.parse(body({ HOME: "/Users/v" }) ?? "{}").context_management.edits;
-    // no clear_thinking: the classifier runs with thinking off and the api 400s it, so auto mode
-    // and claude in chrome failed closed on every check
-    expect(edits.map((e: { type: string }) => e.type)).toEqual(["clear_tool_uses_20250919"]);
-    expect(edits[0].keep.value).toBe(CLEARING.keep);
-    // the probe's numbers, through the same builder
-    const small = clearingEnv({}, {}, { trigger: 30_000, keep: 20, atLeast: 2_000 });
-    expect(
-      JSON.parse(small.CLAUDE_CODE_EXTRA_BODY ?? "{}").context_management.edits[0],
-    ).toMatchObject({
-      trigger: { value: 30_000 },
-      clear_at_least: { value: 2_000 },
-    });
-    // anthropic's own api, said out loud, is still it
-    expect(body({ ANTHROPIC_BASE_URL: "https://api.anthropic.com/" })).toBeDefined();
-    // a flag turned off is off
-    expect(body({ CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "0" })).toBeDefined();
-    expect(body({ CLAUDE_CODE_USE_BEDROCK: "false" })).toBeDefined();
-    for (const e of [
-      // claude code drops the beta and still sends the body: a 400 on every request (probe o3)
-      { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1" },
-      { CLAUDE_CODE_USE_BEDROCK: "1" },
-      { CLAUDE_CODE_USE_VERTEX: "true" },
-      { CLAUDE_CODE_USE_FOUNDRY: "1" },
-      // a gateway: claude code does not send it the first-party betas
-      { ANTHROPIC_BASE_URL: "https://llm-gateway.example.com" },
-      // the person's own: theirs stays
-      { CLAUDE_CODE_EXTRA_BODY: '{"metadata":{}}' },
-    ]) {
-      expect(body(e), JSON.stringify(e)).toBeUndefined();
-      // claude code's settings.json env counts as much as the process's
-      expect(body({}, e), `settings ${JSON.stringify(e)}`).toBeUndefined();
-    }
-    // its settings win over the process env, as in claude code
-    expect(
-      body(
-        { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "0" },
-        { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1" },
-      ),
-    ).toBeUndefined();
-    // a value of another type in the settings is not a crash
-    expect(body({}, { CLAUDE_CODE_USE_BEDROCK: 1, ANTHROPIC_BASE_URL: null })).toBeDefined();
-  });
-
-  it("reads claude code's settings.json env for it, a number typed there too, and still starts", async () => {
+  it("starts with a claude code settings.json whose env holds numbers and objects", async () => {
     const s = setup();
     // the fake claude's config folder: where its transcripts go
     const settings = path.join(s.transcript.split("/projects/")[0] as string, "settings.json");
@@ -1421,29 +1338,6 @@ describe("grove chat's host", () => {
     expect(s.host.status(SESSION).live).toBe(true);
     const { env } = s.log()[0] as { env: Record<string, string> };
     expect(env.extraBody).toBeUndefined();
-  });
-
-  it("knows a turn the api refused for the extra body from any other failed one", () => {
-    const result = (o: Record<string, unknown>) => ({ type: "result", subtype: "success", ...o });
-    const extra = "API Error: 400 context_management: Extra inputs are not permitted";
-    const order =
-      "API Error: 400 context_management: `clear_thinking_20251015` must be the first strategy in `context_management.edits` when provided";
-    expect(refusedClearing(result({ is_error: true, api_error_status: 400, result: extra }))).toBe(
-      true,
-    );
-    // without the status field, its text says it
-    expect(refusedClearing(result({ is_error: true, result: order }))).toBe(true);
-    for (const other of [
-      result({
-        is_error: true,
-        api_error_status: 400,
-        result: "API Error: 400 prompt is too long",
-      }),
-      result({ is_error: true, api_error_status: 529, result: "API Error: 529 Overloaded" }),
-      result({ is_error: false, result: "context_management is a thing" }),
-      { type: "assistant", is_error: true, result: extra },
-    ])
-      expect(refusedClearing(other), JSON.stringify(other)).toBe(false);
   });
 
   it("passes nothing of a parent claude code session on", () => {
@@ -1701,44 +1595,6 @@ describe("grove chat's host", () => {
     // the copy takes a moment, the second has nothing to copy: it still goes second
     const sent = await until(() => userContents(s).length >= 2 && userContents(s), "both sends");
     expect(sent.map((c) => c.at(-1)?.text)).toEqual([HELLO, AFTER]);
-  });
-
-  it("starts claude again without clearing when the api refuses it, says so once, and leaves it off", async () => {
-    const s = setup(2, false, undefined, undefined, { GROVE_FAKE_CHAT_REFUSE_EXTRA_BODY: "1" });
-    // a session grove just made: its first claude starts it, the second resumes it
-    const where = { ...s.where, fresh: true };
-    await s.host.send(SESSION, where, HELLO);
-    await until(() => s.host.status(SESSION).error === CLEARING_REFUSED, "the refusal said");
-    expect(s.host.status(SESSION).live).toBe(true);
-    const starts = s.log().filter((l) => l.argv) as Array<{
-      argv: string[];
-      env: Record<string, string>;
-    }>;
-    expect(starts).toHaveLength(2);
-    const [first, second] = starts as [(typeof starts)[0], (typeof starts)[0]];
-    expect(first.env.extraBody).toBeDefined();
-    expect(first.argv).toContain(`--session-id=${SESSION}`);
-    expect(second.env.extraBody).toBeUndefined();
-    expect(second.argv).toContain(`--resume=${SESSION}`);
-    // the turn that failed is in the transcript as the api error it was: its "Try again" re-sends it
-    const lines = readFileSync(s.transcript, "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    expect(lines.filter((l) => l.isApiErrorMessage)).toHaveLength(1);
-    // tried again, it runs, and the line is gone with the turn it was about
-    await s.host.send(SESSION, s.where, HELLO);
-    await turnEnded(s);
-    expect(readFileSync(s.transcript, "utf8")).toContain("hello from the spike");
-    expect(s.host.status(SESSION).error).toBeUndefined();
-    // another chat of this grove starts without it: it would only be refused again
-    const other = "22222222-3333-4444-8555-666666666666";
-    await s.host.warm(other, s.where);
-    const third = s
-      .log()
-      .filter((l) => l.argv)
-      .at(-1) as { env: Record<string, string> };
-    expect(third.env.extraBody).toBeUndefined();
   });
 
   it("a session grove makes starts on its project's model and effort, a resumed one on its own", async () => {

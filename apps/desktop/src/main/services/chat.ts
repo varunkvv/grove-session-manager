@@ -425,79 +425,6 @@ export function hostEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !PARENT_SESSION.has(k)));
 }
 
-/**
- * when the api clears old tool results out of what claude sees: past 150k tokens of input, every
- * result but the newest 20, and only when that frees 20k or more. 20 because a turn reads several
- * files at once and a result cleared in the request it arrives in gets read again
- */
-export const CLEARING = { trigger: 150_000, keep: 20, atLeast: 20_000 };
-
-const isOn = (v: unknown): boolean =>
-  typeof v === "string" &&
-  !!v.trim() &&
-  !["0", "false", "no", "off"].includes(v.trim().toLowerCase());
-
-/**
- * the env that has the api clear old reads, through claude code's CLAUDE_CODE_EXTRA_BODY. it
- * replaces claude code's own context_management (only clear_thinking, keep all). no thinking edit:
- * claude code sends the body with auto mode's classifier too, which runs with thinking off, and
- * the api refuses clear_thinking there, so every classifier check fails closed. opus 4.5+,
- * sonnet 4.6+ and haiku 5.5+ keep all thinking without it. nothing where the api would refuse
- * every request: experimental betas off, a provider or gateway that does not get the
- * context-management beta. nothing when the person set an extra body of their own. `settings`:
- * the env of claude code's settings.json
- */
-export function clearingEnv(
-  env: NodeJS.ProcessEnv,
-  settings: Record<string, unknown> = {},
-  n = CLEARING,
-): NodeJS.ProcessEnv {
-  // claude code puts its settings' env over its own, as here
-  const all: Record<string, unknown> = { ...env, ...settings };
-  if (all.CLAUDE_CODE_EXTRA_BODY !== undefined) return {};
-  if (isOn(all.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)) return {};
-  for (const k of ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"])
-    if (isOn(all[k])) return {};
-  const base = typeof all.ANTHROPIC_BASE_URL === "string" ? all.ANTHROPIC_BASE_URL.trim() : "";
-  if (base && !/^https:\/\/api\.anthropic\.com\/?$/.test(base)) return {};
-  const edits = [
-    {
-      type: "clear_tool_uses_20250919",
-      trigger: { type: "input_tokens", value: n.trigger },
-      keep: { type: "tool_uses", value: n.keep },
-      clear_at_least: { type: "input_tokens", value: n.atLeast },
-      clear_tool_inputs: false,
-    },
-  ];
-  return { CLAUDE_CODE_EXTRA_BODY: JSON.stringify({ context_management: { edits } }) };
-}
-
-/** the env of claude code's settings.json, where a gateway's base url often is. {} without one */
-async function settingsEnv(file: string | undefined): Promise<Record<string, unknown>> {
-  if (!file) return {};
-  try {
-    const env = JSON.parse(await readFile(file, "utf8"))?.env;
-    // a value someone typed as a number still counts, as claude code reads it
-    if (!env || typeof env !== "object") return {};
-    return Object.fromEntries(
-      Object.entries(env).flatMap(([k, v]) =>
-        ["string", "number", "boolean"].includes(typeof v) ? [[k, String(v)]] : [],
-      ),
-    );
-  } catch {
-    return {};
-  }
-}
-
-/** a turn the api refused for the extra body: `API Error: 400 context_management: ...` */
-export function refusedClearing(m: { type: string }): boolean {
-  if (m.type !== "result") return false;
-  const r = m as { is_error?: boolean; result?: unknown; api_error_status?: unknown };
-  if (r.is_error !== true || typeof r.result !== "string") return false;
-  const status = r.api_error_status ?? /^API Error: (\d+)/.exec(r.result)?.[1] ?? "";
-  return String(status) === "400" && r.result.includes("context_management");
-}
-
 /** what claude code leaves in a session's folder when auto mode's check failed (2.1.310) */
 export const CLASSIFIER_ERROR_FILE = "auto-mode-classifier-error.txt";
 
@@ -515,14 +442,6 @@ export function classifierError(file: string): string | undefined {
   } catch {}
   return cut(line, 300);
 }
-
-/** a classifier error about grove's extra body: every later check fails the same way */
-export const refusedClearingCheck = (error: string): boolean =>
-  /^400 /.test(error) && /context_management|clear_(thinking|tool_uses)_\d+/.test(error);
-
-/** the chat's error line once claude was started again without clearing */
-export const CLEARING_REFUSED =
-  "The API refused clearing old reads here, so Claude restarted without it. Try that message again.";
 
 /** the pill's modes. bypass and the classifier modes only when the session started in one */
 export function modesFor(start: ChatMode | undefined): ChatMode[] {
@@ -764,8 +683,6 @@ interface Hosted {
   terminalOnly?: Set<string>;
   /** the send under way: its files are put on disk before it goes, and the next waits for it */
   sending?: Promise<void>;
-  /** this claude was started with clearingEnv's extra body */
-  clearing?: boolean;
   /** the cache keeper's clock: when its last turn ended, and when a fork last read its cache */
   lastTurn?: number;
   lastWarm?: number;
@@ -851,12 +768,6 @@ export class ChatHost {
   private reaper: NodeJS.Timeout;
   /** whether pdftoppm is on claude's PATH, looked up once: a Read of a pdf's pages needs it */
   private pdfPages?: Promise<boolean>;
-  /**
-   * the api refused the clearing once: no claude started from here on gets it, until grove starts
-   * again. a setup that refuses it (a project's settings, a gateway) would refuse every chat's
-   * first message otherwise
-   */
-  private clearingOff = false;
   /** the cache keeper's forks under way: one at a time */
   private keeping?: Promise<void>;
   /** the fork under way: grove quitting closes it */
@@ -1375,22 +1286,18 @@ export class ChatHost {
   private async launch(h: Hosted): Promise<{
     query: typeof import("@anthropic-ai/claude-agent-sdk")["query"];
     options: Options;
-    clearing: boolean;
   }> {
     // only here: with grove chat off the sdk is never even loaded
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
-    const [bin, env, summaries, settings] = await Promise.all([
+    const [bin, env, summaries] = await Promise.all([
       this.o.claudeBin(),
       this.o.env(),
       showsThinking(this.o.claudeSettings),
-      settingsEnv(this.o.claudeSettings),
       // claude is told of it at launch: a folder added later has to be under one it knows
       mkdir(this.o.uploads, { recursive: true }),
     ]);
-    const clearing = this.clearingOff ? {} : clearingEnv(env, settings);
     return {
       query,
-      clearing: clearing.CLAUDE_CODE_EXTRA_BODY !== undefined,
       options: {
         pathToClaudeCodeExecutable: bin,
         cwd: h.where.cwd,
@@ -1416,9 +1323,7 @@ export class ChatHost {
           ...(summaries ? { display: "summarized" as const } : {}),
         },
         includePartialMessages: true,
-        // claude's environment, and grove's own setting for claude code over it: the api clears
-        // old reads out of context
-        env: { ...hostEnv(env), ...clearing },
+        env: hostEnv(env),
         supportedDialogKinds: DIALOG_KINDS,
         stderr: (data) => log.warn(`chat ${h.id.slice(0, 8)}:`, data.trimEnd()),
       },
@@ -1511,8 +1416,7 @@ export class ChatHost {
     this.set(h, { starting: true, error: undefined });
     let q: Query | undefined;
     try {
-      const { query, options, clearing } = await this.launch(h);
-      h.clearing = clearing;
+      const { query, options } = await this.launch(h);
       if (!h.model && h.where.fresh && h.where.model) h.picked = h.where.model;
       q = query({
         prompt: h.prompts,
@@ -1804,32 +1708,14 @@ export class ChatHost {
         h.lastTurn = this.now();
         h.keepOff = false;
         void this.contextUsage(h);
-        if (h.clearing && refusedClearing(m)) void this.unclear(h);
         return;
       }
     }
   }
 
   /**
-   * the api refused the extra body, and refuses every request of this claude the same way: it is
-   * started again without it, on the same session. the turn that failed has its "Try again"
-   */
-  private async unclear(h: Hosted): Promise<void> {
-    this.clearingOff = true;
-    log.warn(`chat ${h.id.slice(0, 8)}: the api refused clearing old reads, restarting without it`);
-    h.q?.close();
-    await h.ended;
-    // a session grove made has its transcript now: the failed turn is in it, so it resumes
-    h.where = { ...h.where, fresh: false };
-    await this.warm(h.id, h.where).catch(() => {});
-    // after the start: it clears the error line
-    if (h.status.live) this.set(h, { error: CLEARING_REFUSED });
-  }
-
-  /**
    * auto mode's check failed, and claude code says only that its model is unavailable: the api's
-   * own error is in the file it left in the session's folder. one about the extra body fails every
-   * check the same way, so claude starts again without it once the turn is over
+   * own error is in the file it left in the session's folder
    */
   private async checkFailed(h: Hosted, tool: string, otherwise: string): Promise<void> {
     const error = await this.lastCheckError(h.id);
@@ -1839,15 +1725,6 @@ export class ChatHost {
         ? `${tool} was turned down: auto mode's check failed. The API said ${error}`
         : otherwise,
     });
-    if (!error || !h.clearing || !refusedClearingCheck(error)) return;
-    // once, however many checks fail before the turn ends
-    h.clearing = false;
-    // a message sent meanwhile runs as the next turn: closing this claude would lose it
-    const restart = () => {
-      if (h.status.running || h.status.queued.length) h.afterTurn.push(restart);
-      else void this.unclear(h);
-    };
-    restart();
   }
 
   /** the error of a check that just failed, from the session's folder under any project */
@@ -2034,8 +1911,6 @@ export class ChatHost {
     this.set(h, {
       running: true,
       since: this.now(),
-      // said once, for the turn that failed
-      ...(h.status.error === CLEARING_REFUSED ? { error: undefined } : {}),
     });
     this.o.onChange?.();
   }
