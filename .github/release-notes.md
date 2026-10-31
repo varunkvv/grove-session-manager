@@ -1,3 +1,16 @@
+## 0.38
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.38 takes out the clearing of old reads that 0.28 added.
+
+Changed:
+
+- Grove no longer sends Claude Code a setting to clear old tool results past 150k tokens. every clear made the API write the whole cached conversation again, which cost more than the tokens it freed. a grove chat now runs on Claude Code's own context management, like any other Claude Code window
+- if auto mode's check fails, the chat still says why with the API's own error. it no longer restarts Claude without clearing, since there is none
+
+Keep in mind:
+
+- a chat that is already running keeps its old setting until it is reopened
+
 ## 0.37
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.37 keeps a grove chat's prompt cache warm while you're away.
