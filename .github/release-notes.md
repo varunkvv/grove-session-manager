@@ -1,3 +1,16 @@
+## 0.40
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.40 takes out judgment day odds, the beta that scored your prompts on a local model.
+
+Removed:
+
+- judgment day odds: the Usage screen's fourth tile, gavel the robot, and Settings > Decisioning with its model download
+- the model (about 2.7 GB) and the score files it wrote. Grove deletes them the first time 0.40 starts, and nothing else
+
+Keep in mind:
+
+- the Usage screen is back to three tiles: cost, agent time and tokens
+
 ## 0.39
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.39 takes out the long work switch.
