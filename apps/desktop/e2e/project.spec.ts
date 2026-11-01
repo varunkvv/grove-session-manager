@@ -182,16 +182,21 @@ test("the first project: every repo a reference, and nothing of the record", asy
   }
   expect(existsSync(path.join(fx.root, ".grove", "bin"))).toBe(false);
 
-  // opening it: the root first, then the reference, which Claude may read
+  // opening it: the root first, then the references, which Claude may read
   await page.keyboard.press("Meta+o");
   await waitFor(async () => readExecLog(fx).length > 0);
   expect(readExecLog(fx)[0]?.argv).toEqual([path.join(root, "prod-debug.code-workspace")]);
   const ws = JSON.parse(readFileSync(path.join(root, "prod-debug.code-workspace"), "utf8"));
-  expect(ws.folders.map((f: { path: string }) => path.resolve(root, f.path))).toEqual([root, logs]);
+  expect(ws.folders.map((f: { path: string }) => path.resolve(root, f.path))).toEqual([
+    root,
+    apiRepo,
+    shared,
+    logs,
+  ]);
   expect(
     JSON.parse(readFileSync(path.join(root, ".claude", "settings.local.json"), "utf8")).permissions
       .additionalDirectories,
-  ).toEqual([logs]);
+  ).toEqual([apiRepo, shared, logs]);
 });
 
 test("the + beside Projects is the form, a taken name is refused, and Escape keeps a filled form", async () => {
