@@ -72,7 +72,7 @@ const rows = async (page: Page, list: string) =>
 
 /** the mode is set in Settings now, not on the Usage screen */
 async function setUsageMode(page: Page, mode: "api-equivalent" | "actual") {
-  await page.getByTestId("usage-mode-change").click();
+  await page.keyboard.press("Meta+,");
   await page.getByTestId("setting-usage-mode").selectOption(mode);
   await page.getByTestId("save-settings").click();
 }
@@ -275,7 +275,7 @@ test("Usage: a metered account opens on its own spend, the menu bar says it, and
   });
 
   await page.getByTestId("nav-usage").click();
-  await expect(page.getByTestId("usage-mode-change")).toContainText("Account limits and spend");
+  await expect(page.getByTestId("usage-mode")).toContainText("Account limits and spend");
   // only the cost tile changes with the mode: it is the account's spend, with its limit's bar
   const cost = page.getByTestId("tile-cost");
   await expect(cost).toHaveAttribute("aria-checked", "true");
@@ -301,7 +301,7 @@ test("Usage: a metered account opens on its own spend, the menu bar says it, and
   await app.close();
   app = await launchApp(f);
   await app.page.getByTestId("nav-usage").click();
-  await expect(app.page.getByTestId("usage-mode-change")).toContainText("API-equivalent cost");
+  await expect(app.page.getByTestId("usage-mode")).toContainText("API-equivalent cost");
   expect(await groveTest(app.app).trayTitle()).toBe("");
 });
 
@@ -321,7 +321,7 @@ test("Usage: a plan account opens on the API-equivalent, and Actual has its wind
   const { page } = app;
   const g = groveTest(app.app);
   await page.getByTestId("nav-usage").click();
-  await expect(page.getByTestId("usage-mode-change")).toContainText("API-equivalent cost");
+  await expect(page.getByTestId("usage-mode")).toContainText("API-equivalent cost");
   await expect(page.getByTestId("tile-cost")).toBeVisible();
   expect(await g.trayTitle()).toBe("");
 
@@ -350,7 +350,7 @@ test("Usage: Actual with nothing from Claude Code says where it comes from", asy
   app = await launchApp(seed());
   const { page } = app;
   await page.getByTestId("nav-usage").click();
-  await expect(page.getByTestId("usage-mode-change")).toContainText("API-equivalent cost");
+  await expect(page.getByTestId("usage-mode")).toContainText("API-equivalent cost");
   await setUsageMode(page, "actual");
   // the cost tile says where the numbers come from; the chart and tiles stay in actual mode
   const cost = page.getByTestId("tile-cost");

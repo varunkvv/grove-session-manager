@@ -497,15 +497,9 @@ export function Usage() {
       <div className="mx-auto max-w-[920px] px-6 pt-8 pb-16">
         <div className="flex items-center gap-3">
           <h1 className="text-title font-semibold">Usage</h1>
-          <button
-            type="button"
-            className="no-drag text-sm text-fg-3 hover:text-fg"
-            onClick={() => useStore.getState().set({ dialog: { kind: "settings" } })}
-            data-testid="usage-mode-change"
-          >
-            {mode === "actual" ? "Account limits and spend" : "API-equivalent cost"} · change in
-            Settings
-          </button>
+          <span className="text-sm text-fg-3" data-testid="usage-mode">
+            {mode === "actual" ? "Account limits and spend" : "API-equivalent cost"}
+          </span>
           {view && view.counted < view.total && (
             <span className="text-sm tabular-nums text-fg-4" data-testid="usage-counting">
               Counting {view.counted} of {view.total} sessions

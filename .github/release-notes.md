@@ -1,11 +1,11 @@
-## 0.45
+## 0.45.1
 
-Grove tells you which Claude Code agents need you, and gets you to them. 0.45 moves the usage choice into Settings, so the Usage screen shows only the one you picked.
+Grove tells you which Claude Code agents need you, and gets you to them. 0.45.1 takes the link out of the Usage screen: it only names the choice you made in Settings.
 
 New:
 
 - Settings has a Usage choice: API-equivalent cost, or your account's limits and spend. The menu bar follows it
-- the Usage screen has no toggle. It shows the choice you made, and a link opens Settings to change it
+- the Usage screen has no toggle. It shows the choice you made
 
 Keep in mind:
 
