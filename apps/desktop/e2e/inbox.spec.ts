@@ -7,6 +7,7 @@ import {
   makeFixture,
   makePlainDir,
   readExecLog,
+  writeAgent,
   writeSession,
 } from "./helpers/fixture.ts";
 import { groveTest, type LaunchedApp, launchApp, step, waitFor } from "./helpers/launchApp.ts";
@@ -643,4 +644,42 @@ test("a turn claude starts itself keeps the row in Needs you, working, and his o
   hookEvent(fx, SID.turn, "UserPromptSubmit", { prompt: "a dev tenant" });
   await ready(page, 3);
   await expect(row(page, "turn")).toHaveCount(0);
+});
+
+test("a row says how many agents run under it, and the panel lists them: running ones on the turn session, done ones on the one that waits", async () => {
+  const f = seed();
+  const agent = (sessionId: string, id: string, description: string, done: boolean) =>
+    writeAgent(f, {
+      cwd: root,
+      sessionId,
+      id,
+      agentType: "Explore",
+      description,
+      prompt: description,
+      startedAgoMs: done ? 600_000 : 60_000,
+      steps: [],
+      ...(done ? { result: { text: "found it", at: 5 } } : {}),
+    });
+  agent(SID.turn, "run1", "map the router", false);
+  agent(SID.turn, "run2", "read the config", false);
+  agent(SID.turn, "fin1", "old chore", true);
+  agent(SID.permission, "fin2", "check the logs", true);
+  app = await launchApp(f);
+  const { page } = app;
+  await ready(page);
+
+  const turn = row(page, "turn").getByTestId("agent-count");
+  await expect(turn).toHaveAttribute("data-running", "2", { timeout: 15_000 });
+  // every agent done under a session that waits: it is the one that is stuck
+  await expect(row(page, "permission").getByTestId("agent-count")).toHaveAttribute(
+    "data-done",
+    "1",
+  );
+  // a session with no agents has no chip
+  await expect(row(page, "failed").getByTestId("agent-count")).toHaveCount(0);
+
+  await row(page, "turn").click();
+  await expect(panel(page).getByTestId("panel-agents-count")).toHaveText(" · 2 running · 1 done");
+  await expect(panel(page).getByTestId("panel-agent")).toHaveCount(2);
+  await expect(panel(page).getByTestId("panel-agents")).toContainText("map the router");
 });

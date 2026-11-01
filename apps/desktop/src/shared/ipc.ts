@@ -259,6 +259,28 @@ export interface RecapView {
   writing?: boolean;
 }
 
+/** one agent a session has running, as a row's panel draws it. no clock that moves while it works */
+export interface AgentLineView {
+  id: string;
+  /** its kind: Explore, general-purpose, ... */
+  kind: string;
+  /** what it was asked, in a line: the label its parent gave it, else the start of its prompt */
+  text?: string;
+  background?: true;
+  startedAt: number;
+}
+
+/**
+ * a session's subagents, counted: how many work now and how many finished. a workflow's own agents
+ * are not in it. only the running ones are listed. nothing in it moves while they write, so a list
+ * is not sent again for every line an agent says
+ */
+export interface AgentsView {
+  running: number;
+  done: number;
+  lines: AgentLineView[];
+}
+
 /** a session as every list names it, and what opening it takes */
 export interface SessionRef {
   key: SessionKey;
@@ -272,6 +294,8 @@ export interface SessionRef {
   where: string;
   runtime: Runtime;
   branch?: string;
+  /** absent when it has had no agents */
+  agents?: AgentsView;
   open: OpenPlan;
   /** absent while recaps are off, and until one was asked for */
   recap?: RecapView;

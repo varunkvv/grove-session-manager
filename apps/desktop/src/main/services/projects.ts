@@ -12,6 +12,7 @@ import {
   type Runtime,
   recapLine,
   runtimeOf,
+  type SessionAgent,
   type SessionTask,
   snippetAround,
   squash,
@@ -19,6 +20,7 @@ import {
 } from "@grove/core";
 import { rowHaystack } from "../../shared/haystack.ts";
 import type {
+  AgentsView,
   InboxRowView,
   InboxView,
   LandingTarget,
@@ -478,6 +480,7 @@ export class ProjectsService {
       recap: this.o.recaps?.view(row.key),
       ...(row.description ? { description: row.description } : {}),
       ...(row.prs ? { prs: row.prs } : {}),
+      ...agentsViewField(row.agents),
     };
   }
 
@@ -592,3 +595,34 @@ export function taskView(t: SessionTask, line?: string): TaskView {
   const prompt = squash(t.description, 200);
   return view(LOOP.test(prompt) ? "Autonomous loop" : prompt || "Scheduled wake-up", when);
 }
+
+const AGENT_LINES = 3;
+
+/**
+ * its subagents as a row counts them. a workflow's own agents are left out, as the chat header
+ * leaves them. only running ones get a line: a finished one is a count. no times that move
+ */
+export function agentsView(agents: readonly SessionAgent[] | undefined): AgentsView | undefined {
+  const own = (agents ?? []).filter((a) => !a.workflow);
+  if (!own.length) return undefined;
+  const running = own.filter((a) => a.state === "running");
+  return {
+    running: running.length,
+    done: own.length - running.length,
+    lines: running.slice(0, AGENT_LINES).map((a) => {
+      const text = a.description ?? a.asked;
+      return {
+        id: a.id,
+        kind: a.agentType,
+        ...(text ? { text: squash(text, 200) } : {}),
+        ...(a.requestShape === "background" ? { background: true as const } : {}),
+        startedAt: a.startedAt,
+      };
+    }),
+  };
+}
+
+const agentsViewField = (agents: readonly SessionAgent[] | undefined) => {
+  const view = agentsView(agents);
+  return view ? { agents: view } : {};
+};

@@ -19,7 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChatMode, ProjectId } from "../../shared/ipc.ts";
+import type { AgentsView, ChatMode, ProjectId } from "../../shared/ipc.ts";
 import type { PrGlyphKind, PrLook } from "../logic/prs.ts";
 import type { Slice } from "../logic/usage.ts";
 import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
@@ -783,6 +783,46 @@ export function TaskMark() {
     >
       <circle cx="4" cy="4" r="3.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
+  );
+}
+
+/**
+ * how many agents a session has working, after its title: the green ring and `2 running` while any
+ * run, else `3 done` quiet. a list says only the running ones, but a row that needs him says the
+ * done too: agents all done under a session that waits is the one that is stuck
+ */
+export function AgentCount({
+  agents,
+  showDone,
+  ring = true,
+}: {
+  agents?: AgentsView;
+  showDone?: boolean;
+  /** a watching row's state already has the ring: two side by side read as one thing said twice */
+  ring?: boolean;
+}) {
+  if (!agents) return null;
+  const { running, done } = agents;
+  if (!running && !(showDone && done)) return null;
+  return (
+    <span
+      data-testid="agent-count"
+      data-running={running}
+      data-done={done}
+      title={`${running} running, ${done} done`}
+      className={cx(
+        "flex shrink-0 items-center gap-1.5 text-sm tabular-nums",
+        running ? "text-fg-3" : "text-fg-4",
+      )}
+    >
+      {running ? ring && <TaskMark /> : <Icon name="check" size={10} />}
+      <span>
+        {running || done}
+        <span className={ring ? "hidden @xl:inline" : undefined}>
+          {running ? " agents" : " agents done"}
+        </span>
+      </span>
+    </span>
   );
 }
 

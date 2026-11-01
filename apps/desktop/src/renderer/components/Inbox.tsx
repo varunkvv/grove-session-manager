@@ -4,6 +4,7 @@ import { openSession as open, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
 import { PrCell } from "./Pr.tsx";
 import {
+  AgentCount,
   Button,
   cx,
   Highlighted,
@@ -56,7 +57,7 @@ export function InboxRow({
       id={optionId(row.sessionId)}
       role="option"
       aria-selected={active}
-      aria-label={`${stateWord(row.kind)}: ${row.title}, in ${row.where}. ${row.summary}`}
+      aria-label={`${stateWord(row.kind)}: ${row.title}, in ${row.where}.${row.agents ? ` ${row.agents.running} agents running, ${row.agents.done} done.` : ""} ${row.summary}`}
       data-testid="inbox-row"
       data-kind={row.kind}
       data-id={row.sessionId}
@@ -82,6 +83,9 @@ export function InboxRow({
         <span className="min-w-0 flex-1 truncate font-medium text-fg" title={row.title}>
           <Highlighted text={row.title} tokens={tokens} />
         </span>
+        {/* a row that needs him says its done agents too: all done under a session that
+            waits is the one that is stuck */}
+        <AgentCount agents={row.agents} showDone />
         <StateLabel state={row.kind} within="list" className="@xl:w-[128px]" working={working} />
         {/* the buttons take its place under the mouse and on the keyboard's row */}
         <span className="flex shrink-0 items-center gap-3 group-hover:hidden group-data-[active]:hidden">

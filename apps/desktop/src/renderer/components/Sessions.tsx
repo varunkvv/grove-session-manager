@@ -26,6 +26,7 @@ import { InboxRow } from "./Inbox.tsx";
 import { PrCell } from "./Pr.tsx";
 import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
 import {
+  AgentCount,
   Button,
   cx,
   Highlighted,
@@ -121,7 +122,7 @@ function SessionRow({
       id={optionId(hit.sessionId)}
       role="option"
       aria-selected={active}
-      aria-label={state ? `${stateWord(state)}: ${hit.title}` : hit.title}
+      aria-label={`${state ? `${stateWord(state)}: ${hit.title}` : hit.title}${hit.agents?.running ? `, ${hit.agents.running} agents running` : ""}`}
       data-testid="session-row"
       data-id={hit.sessionId}
       data-state={state}
@@ -152,6 +153,7 @@ function SessionRow({
         <span className="min-w-0 flex-1 truncate text-fg" title={hit.title}>
           <Highlighted text={hit.title} tokens={tokens} />
         </span>
+        <AgentCount agents={hit.agents} ring={state !== "watching"} />
         {state && (
           <StateLabel
             state={state}

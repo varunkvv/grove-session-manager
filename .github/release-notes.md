@@ -1,3 +1,17 @@
+## 0.43
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.43 shows how many agents a session has running.
+
+New:
+
+- a row, on the home screen and in a project's list, says `2 agents` after its title (with the green ring) while the session has agents working. in Needs you a row whose agents all finished says `3 agents done`: a session that waits with nothing running under it is the one that is stuck
+- the session panel has an Agents block under the session's details: one line per running agent with its kind, what it was asked and how long it has run, and a count of the ones that finished
+
+Keep in mind:
+
+- an agent counts as done when Claude Code says it stopped, its session is gone, or it wrote nothing for a couple of minutes. one that hangs still says running until Grove next looks
+- the counts are subagents of the session. a workflow's own agents are not counted, and a session running only a workflow has no chip
+
 ## 0.42
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.42 shows your account's real usage limits on the Usage screen, beside the API-equivalent cost.

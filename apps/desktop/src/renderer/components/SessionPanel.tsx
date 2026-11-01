@@ -7,6 +7,7 @@ import {
 } from "@grove/core/pure";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
+  AgentsView,
   ChatStatus,
   InboxRowView,
   Outcome,
@@ -156,6 +157,53 @@ function Tasks({ tasks }: { tasks: readonly TaskView[] }) {
             )}
           </li>
         ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * what runs for the session: one line per running agent, what it was asked and how long it has
+ * run, and the finished ones as a count. above Tasks, so what works now and what it left behind sit
+ * together
+ */
+function AgentsBlock({ agents }: { agents: AgentsView }) {
+  const { running, done, lines } = agents;
+  const more = running - lines.length;
+  if (!running) {
+    // nothing runs: a line, not a heading over nothing
+    return (
+      <p className="mt-4 flex items-center gap-1.5 text-sm text-fg-4" data-testid="panel-agents">
+        <Icon name="check" size={10} />
+        <span data-testid="panel-agents-count">{` ${done} ${done === 1 ? "agent" : "agents"} done`}</span>
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4" data-testid="panel-agents">
+      <h3 className="text-sm font-medium text-fg-4">
+        Agents
+        <span className="font-normal text-fg-3" data-testid="panel-agents-count">
+          {` · ${running} running${done ? ` · ${done} done` : ""}`}
+        </span>
+      </h3>
+      <ul className="mt-1.5 space-y-1.5">
+        {lines.map((a) => (
+          <li
+            key={a.id}
+            className="flex items-center gap-2"
+            data-testid="panel-agent"
+            title={a.background ? "runs in the background" : undefined}
+          >
+            <TaskMark />
+            <span className="min-w-0 flex-1 truncate text-fg-2" title={a.text ?? a.kind}>
+              <span className="text-fg-3">{a.kind}</span>
+              {a.text ? ` \u00b7 ${a.text}` : ""}
+            </span>
+            <Time at={a.startedAt} since={a.startedAt} />
+          </li>
+        ))}
+        {more > 0 && <li className="pl-4 text-sm text-fg-4">{`and ${more} more`}</li>}
       </ul>
     </div>
   );
@@ -881,6 +929,10 @@ export function SessionPanel({
           <RuntimeChip runtime={session.runtime} />
           <Time at={at} />
         </div>
+        {/* a session grove hosts has its live agents in the session card, from its own stream */}
+        {session.agents && !(chat && session.runtime === "grove") && (
+          <AgentsBlock agents={session.agents} />
+        )}
         {!!tasks?.length && <Tasks tasks={tasks} />}
         {session.recap && (
           <Recap
