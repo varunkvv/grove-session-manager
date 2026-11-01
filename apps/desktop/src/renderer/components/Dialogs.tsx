@@ -89,9 +89,9 @@ export function DeleteProjectDialog() {
     >
       <div className="space-y-3 text-fg-2">
         <p>
-          Delete is for getting disk space back. The clean working copies are removed and the
-          project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones
-          and past sessions are not touched.
+          Delete is for getting disk space back. The clean working copies and the worktrees Claude
+          made in the project folder are removed, and the folder, with its CLAUDE.md, plans and
+          notes, goes to the Trash. Original clones and past sessions are not touched.
         </p>
         {project && (
           // exactly what goes to the Trash, whole: nobody has to guess which folder that is
@@ -107,7 +107,8 @@ export function DeleteProjectDialog() {
             className="rounded-md border border-line px-3 py-2 text-sm text-fg"
             data-testid="delete-blocked"
           >
-            Not deleted yet. These working copies could not be removed without losing work:
+            Not deleted yet. These working copies and worktrees could not be removed without losing
+            work:
             <ul className="mt-1 text-danger">
               {remaining.map((r) => (
                 <li key={r.target}>

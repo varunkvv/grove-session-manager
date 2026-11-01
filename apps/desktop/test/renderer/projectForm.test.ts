@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   canSubmit,
   changed,
-  defaultMode,
   draftOf,
   driftNote,
   type Form,
   nameHint,
+  newRepo,
   type Repo,
   repoNote,
   repoOf,
@@ -87,12 +87,12 @@ describe("nameHint", () => {
   });
 });
 
-describe("defaultMode", () => {
-  it("a working copy unless it cannot be one", () => {
-    expect(defaultMode(info())).toBe("worktree");
-    expect(defaultMode(info({ canBeWorktree: false }))).toBe("reference");
-    expect(defaultMode(info({ isGitRepo: false, canBeWorktree: false }))).toBe("reference");
-    expect(defaultMode(info({ exists: false }))).toBe("reference");
+describe("newRepo", () => {
+  it("is always a reference, never a new worktree", () => {
+    expect(newRepo("/c/api")).toMatchObject({ path: "/c/api", mode: "reference", locked: false });
+    expect(
+      draftOf({ name: "a", goal: "", model: "", effort: "", repos: [newRepo("/c/api")] }).folders,
+    ).toEqual([{ path: "/c/api", mode: "reference" }]);
   });
 });
 
@@ -175,11 +175,6 @@ describe("canSubmit", () => {
     expect(canSubmit({ ...ok, nameProblem: "taken" })).toBe(false);
     expect(canSubmit({ ...ok, form: { ...form, repos: [] } })).toBe(false);
     expect(canSubmit({ ...ok, form: { ...form, repos: [repo({ info: undefined })] } })).toBe(false);
-    const badBranch = repo({ branchKind: "new", newBranch: "a..b" });
-    expect(canSubmit({ ...ok, form: { ...form, repos: [badBranch] } })).toBe(false);
-    expect(
-      canSubmit({ ...ok, form: { ...form, repos: [{ ...badBranch, mode: "reference" }] } }),
-    ).toBe(true);
     expect(canSubmit({ ...ok, running: true })).toBe(false);
   });
 
@@ -208,13 +203,6 @@ describe("repoNote", () => {
   it("the first that applies", () => {
     const gone = { text: "This folder no longer exists.", tone: "text-danger" };
     expect(repoNote({ info: info({ exists: false, isGitRepo: false }) })).toEqual(gone);
-    expect(repoNote({ info: info({ isGitRepo: false, canBeWorktree: false }) })).toEqual({
-      text: "Not a git repository, so it can only be a reference.",
-      tone: "text-fg-4",
-    });
-    expect(repoNote({ info: info({ canBeWorktree: false }) })?.text).toBe(
-      "Not the top level of a repository, so it can only be a reference.",
-    );
     expect(repoNote({ info: info(), folder: folder({ state: "stale" }) })).toEqual({
       text: driftNote(folder({ state: "stale" })),
       tone: "text-danger",

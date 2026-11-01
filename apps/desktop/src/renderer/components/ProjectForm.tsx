@@ -1,222 +1,37 @@
-import {
-  COMBO_RESERVED_NAMES,
-  comboDirSlug,
-  shortPath,
-  validateBranchName,
-} from "@grove/core/pure";
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
-import type {
-  Api,
-  FolderView,
-  FrequentFolder,
-  PathInfoView,
-  ProjectView,
-} from "../../shared/ipc.ts";
+import { shortPath } from "@grove/core/pure";
+import { type FormEvent, useEffect, useState } from "react";
+import type { Api, FolderView, FrequentFolder, ProjectView } from "../../shared/ipc.ts";
 import { EFFORTS, MODELS } from "../../shared/newSession.ts";
 import {
   canSubmit,
   changed,
-  defaultMode,
   draftOf,
   type Form,
   nameHint,
+  newRepo,
   type Repo,
   repoNote,
   repoOf,
 } from "../logic/projectForm.ts";
 import { archiveProject, back, switchProject } from "../state/actions.ts";
 import { currentProject, useStore } from "../state/store.ts";
-import {
-  Button,
-  cx,
-  Field,
-  Icon,
-  IconButton,
-  inputClass,
-  Segmented,
-  Select,
-  Spinner,
-} from "./ui.tsx";
+import { Button, cx, Field, Icon, IconButton, inputClass, Select, Spinner } from "./ui.tsx";
 
 const EMPTY: Form = { name: "", goal: "", model: "", effort: "", repos: [] };
 const baseName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
-/** the folder a working copy gets inside the project */
-const dirOf = (r: Repo) => (r.as.trim() || baseName(r.path)).toLowerCase();
-// inputClass sets the body size. a path or a branch is mono, one size down
-const monoInput = cx(inputClass, "font-mono text-sm!");
-
-type NeedsName = "clash" | "reserved" | null;
-
-function BranchOption({
-  group,
-  checked,
-  onSelect,
-  title,
-  testId,
-  children,
-}: {
-  group: string;
-  checked: boolean;
-  onSelect: () => void;
-  title: string;
-  testId: string;
-  children?: ReactNode;
-}) {
-  return (
-    <label className="flex cursor-default items-start gap-2.5">
-      <input
-        type="radio"
-        name={group}
-        checked={checked}
-        onChange={onSelect}
-        className="mt-1"
-        data-testid={testId}
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block text-body text-fg">{title}</span>
-        <span className="block text-sm text-fg-4">{children}</span>
-      </span>
-    </label>
-  );
-}
-
-/** what a new working copy checks out, and its folder name when the repo's own is taken */
-function BranchChoice({
-  r,
-  info,
-  slug,
-  needsName,
-  onChange,
-}: {
-  r: Repo;
-  info: PathInfoView;
-  /** the project's folder name: what a new branch is called until the person says otherwise */
-  slug: string;
-  needsName: NeedsName;
-  onChange: (patch: Partial<Repo>) => void;
-}) {
-  const group = useId();
-  const error = validateBranchName(r.newBranch.trim());
-  const taken = info.branches.find((b) => b.name === r.newBranch.trim());
-  return (
-    <div className="space-y-2 border-t border-line px-2.5 py-3 pl-[35px]">
-      <BranchOption
-        group={group}
-        checked={r.branchKind === "detach"}
-        onSelect={() => onChange({ branchKind: "detach" })}
-        title="Detached at HEAD"
-        testId="branch-detach"
-      >
-        No branch is created, so it can never collide with another project.
-      </BranchOption>
-      <BranchOption
-        group={group}
-        checked={r.branchKind === "new"}
-        onSelect={() => onChange({ branchKind: "new", newBranch: r.newBranch || slug })}
-        title="New branch"
-        testId="branch-new"
-      >
-        {r.branchKind === "new" && (
-          <>
-            <input
-              className={cx(monoInput, "mt-1.5")}
-              value={r.newBranch}
-              spellCheck={false}
-              onChange={(e) => onChange({ newBranch: e.target.value })}
-              data-testid="new-branch-name"
-            />
-            {error ? (
-              <span className="mt-1 block text-danger">{error}</span>
-            ) : (
-              taken && (
-                <span className="mt-1 block">
-                  {taken.checkedOutAt
-                    ? `That branch is checked out at ${taken.checkedOutAt}. Pick another name.`
-                    : "That branch already exists. It will be checked out here instead of created."}
-                </span>
-              )
-            )}
-          </>
-        )}
-      </BranchOption>
-      <BranchOption
-        group={group}
-        checked={r.branchKind === "existing"}
-        onSelect={() =>
-          onChange({
-            branchKind: "existing",
-            existingBranch:
-              r.existingBranch || (info.branches.find((b) => !b.checkedOutAt)?.name ?? ""),
-          })
-        }
-        title="Existing branch"
-        testId="branch-existing"
-      >
-        {r.branchKind === "existing" && (
-          <Select
-            wrapClassName="mt-1.5"
-            className="font-mono text-sm!"
-            value={r.existingBranch}
-            onChange={(e) => onChange({ existingBranch: e.target.value })}
-            data-testid="existing-branch"
-          >
-            {info.branches.map((b) => (
-              // a branch can only be checked out in one worktree. that is git's rule
-              <option key={b.name} value={b.name} disabled={Boolean(b.checkedOutAt)}>
-                {b.name}
-                {b.checkedOutAt ? `  (checked out at ${b.checkedOutAt})` : ""}
-              </option>
-            ))}
-          </Select>
-        )}
-      </BranchOption>
-      {(needsName || r.as) && (
-        <Field
-          label="Folder name inside the project"
-          hint={
-            needsName === "clash"
-              ? "Two folders share this name. One of them needs another."
-              : needsName === "reserved"
-                ? "The project folder uses this name itself."
-                : undefined
-          }
-        >
-          <input
-            className={monoInput}
-            value={r.as}
-            spellCheck={false}
-            onChange={(e) => onChange({ as: e.target.value })}
-            data-testid="folder-as"
-          />
-        </Field>
-      )}
-    </div>
-  );
-}
 
 function RepoRow({
   r,
   home,
-  slug,
-  needsName,
   folder,
-  onChange,
   onRemove,
 }: {
   r: Repo;
   home?: string;
-  slug: string;
-  needsName: NeedsName;
   /** edit: the project's own view of a locked working copy, for its drift */
   folder?: FolderView;
-  onChange: (patch: Partial<Repo>) => void;
   onRemove: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const name = baseName(r.path);
-  const canBranch = r.info && r.mode === "worktree" && !r.locked;
-  // a folder name that is taken opens it by itself, and one the person typed keeps it open
-  const shown = canBranch && (open || needsName !== null || r.as !== "");
   const note = repoNote({ info: r.info, folder });
   return (
     <div
@@ -230,40 +45,7 @@ function RepoRow({
         <span className="min-w-0 flex-1 truncate font-mono text-sm text-fg" title={r.path}>
           {shortPath(r.path, undefined, home)}
         </span>
-        {r.info ? (
-          <Segmented
-            size="sm"
-            label={`Access for ${name}`}
-            value={r.mode}
-            disabled={r.locked}
-            onChange={(mode) => onChange({ mode })}
-            options={[
-              {
-                value: "worktree",
-                label: "Working copy",
-                disabled: !r.info.canBeWorktree,
-                testId: "mode-worktree",
-              },
-              { value: "reference", label: "Reference", testId: "mode-reference" },
-            ]}
-          />
-        ) : (
-          <Spinner />
-        )}
-        {canBranch ? (
-          <IconButton
-            label={`Branch options for ${name}`}
-            aria-expanded={shown}
-            onClick={() => setOpen(!shown)}
-            data-testid="branch-toggle"
-          >
-            <Icon name="chevron" size={8} className={shown ? "rotate-90" : ""} />
-          </IconButton>
-        ) : (
-          // the button's place is kept, so the access controls line up down the list and the one
-          // just clicked does not move from under the mouse
-          <span className="w-6 shrink-0" />
-        )}
+        {!r.info && <Spinner />}
         <IconButton label={`Remove ${r.path}`} onClick={onRemove} data-testid="repo-remove">
           <Icon name="x" size={11} />
         </IconButton>
@@ -272,9 +54,6 @@ function RepoRow({
         <p className={cx("-mt-1 pr-2.5 pb-2 pl-[35px] text-sm", note.tone)} data-testid="repo-note">
           {note.text}
         </p>
-      )}
-      {shown && r.info && (
-        <BranchChoice r={r} info={r.info} slug={slug} needsName={needsName} onChange={onChange} />
       )}
     </div>
   );
@@ -333,32 +112,13 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
 
   async function inspect(path: string) {
     const info = await window.grove.inspectPath(path);
-    setRepos((repos) =>
-      repos.map((r) =>
-        r.path !== path
-          ? r
-          : // a new repo is a working copy unless it cannot be one. after that the choice is the person's
-            { ...r, info, mode: r.locked || r.info ? r.mode : defaultMode(info) },
-      ),
-    );
+    setRepos((repos) => repos.map((r) => (r.path !== path ? r : { ...r, info })));
   }
 
   function addPaths(paths: string[]) {
     setRepos((repos) => [
       ...repos,
-      ...paths
-        .filter((p) => !repos.some((r) => r.path === p))
-        .map(
-          (path): Repo => ({
-            path,
-            mode: "worktree",
-            branchKind: "detach",
-            newBranch: "",
-            existingBranch: "",
-            as: "",
-            locked: false,
-          }),
-        ),
+      ...paths.filter((p) => !repos.some((r) => r.path === p)).map(newRepo),
     ]);
     for (const p of paths) void inspect(p);
   }
@@ -435,16 +195,6 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
   const offered = frequent.filter((f) => !form.repos.some((r) => r.path === f.path)).slice(0, 6);
   // two clones called "api" read as parent/api, so a chip is never ambiguous
   const twice = new Set(offered.map((f) => f.name).filter((n, i, all) => all.indexOf(n) !== i));
-  const dirs = form.repos.filter((r) => r.mode === "worktree").map(dirOf);
-  const clashes = new Set(dirs.filter((n, i) => dirs.indexOf(n) !== i));
-  const needsName = (r: Repo): NeedsName =>
-    r.mode !== "worktree" || r.locked
-      ? null
-      : clashes.has(dirOf(r))
-        ? "clash"
-        : COMBO_RESERVED_NAMES.has(dirOf(r))
-          ? "reserved"
-          : null;
   const removing = original?.folders.some(
     (f) =>
       f.mode === "worktree" && !form.repos.some((r) => r.path === f.path && r.mode === "worktree"),
@@ -586,14 +336,7 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
                       key={r.path}
                       r={r}
                       home={env?.home}
-                      slug={comboDirSlug(name)}
-                      needsName={needsName(r)}
                       folder={folder}
-                      onChange={(p) =>
-                        setRepos((repos) =>
-                          repos.map((x) => (x.path === r.path ? { ...x, ...p } : x)),
-                        )
-                      }
                       onRemove={() => setRepos((repos) => repos.filter((x) => x.path !== r.path))}
                     />
                   );
@@ -601,9 +344,8 @@ export function ProjectForm({ mode, first }: { mode: "new" | "edit"; first?: boo
               </div>
             )}
             <p className="mt-1.5 text-sm text-fg-4">
-              {mode === "new"
-                ? "A working copy is a fresh git worktree that agents edit. A reference is your own clone, read only."
-                : "To change how a repo is included, remove it and add it again."}
+              Each repo is your own clone. Claude reads it and makes a worktree in the project
+              folder for each change.
             </p>
             {removing && (
               <p className="mt-1 text-sm text-fg-4" data-testid="remove-warning">

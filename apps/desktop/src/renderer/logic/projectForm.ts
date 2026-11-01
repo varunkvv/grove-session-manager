@@ -1,11 +1,5 @@
 // the New and Edit project form's words and rules. pure: the form keeps the state, main validates.
-import {
-  type BranchSpec,
-  comboDirSlug,
-  type FolderMode,
-  shortPath,
-  validateBranchName,
-} from "@grove/core/pure";
+import { type BranchSpec, comboDirSlug, type FolderMode, shortPath } from "@grove/core/pure";
 import type { FolderView, PathInfoView, ProjectDraft } from "../../shared/ipc.ts";
 import type { EffortChoice, ModelChoice } from "../../shared/newSession.ts";
 
@@ -50,9 +44,17 @@ export function repoOf(f: FolderView): Repo {
   };
 }
 
-/** a working copy unless it cannot be one */
-export function defaultMode(info: PathInfoView): FolderMode {
-  return info.exists && info.canBeWorktree ? "worktree" : "reference";
+/** a repo added to the form: always a reference. Claude makes its own worktree per change */
+export function newRepo(path: string): Repo {
+  return {
+    path,
+    mode: "reference",
+    branchKind: "detach",
+    newBranch: "",
+    existingBranch: "",
+    as: "",
+    locked: false,
+  };
 }
 
 export function draftOf(form: Form): ProjectDraft {
@@ -84,11 +86,6 @@ export function changed(initial: Form, form: Form): boolean {
   return JSON.stringify(draftOf(initial)) !== JSON.stringify(draftOf(form));
 }
 
-const branchInvalid = (r: Repo) =>
-  r.mode === "worktree" &&
-  r.branchKind === "new" &&
-  validateBranchName(r.newBranch.trim()) !== null;
-
 export function canSubmit(i: {
   mode: "new" | "edit";
   form: Form;
@@ -101,7 +98,7 @@ export function canSubmit(i: {
   if (i.running || !form.name.trim() || i.nameProblem) return false;
   // a project that already has no repos can still be renamed or given a goal. a new one needs one
   const none = form.repos.length === 0 && !(i.mode === "edit" && i.initial?.repos.length === 0);
-  if (none || form.repos.some((r) => !r.info || branchInvalid(r))) return false;
+  if (none || form.repos.some((r) => !r.info)) return false;
   return i.mode === "new" || !i.initial || changed(i.initial, form);
 }
 
@@ -154,13 +151,6 @@ export function repoNote(i: {
 }): { text: string; tone: string } | null {
   if (i.info && !i.info.exists)
     return { text: "This folder no longer exists.", tone: "text-danger" };
-  if (i.info && !i.info.isGitRepo)
-    return { text: "Not a git repository, so it can only be a reference.", tone: "text-fg-4" };
-  if (i.info && !i.info.canBeWorktree)
-    return {
-      text: "Not the top level of a repository, so it can only be a reference.",
-      tone: "text-fg-4",
-    };
   const drift = i.folder && driftNote(i.folder);
   if (drift) return { text: drift, tone: "text-danger" };
   return null;

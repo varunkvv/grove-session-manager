@@ -1,3 +1,16 @@
+## 0.41
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.41 changes how projects use your repos.
+
+Changed:
+
+- every repo you add to a project is a reference: your own clone, which Claude reads. For each change Claude makes its own git worktree in the project folder, so one project can have several going at once. the New and Edit project forms no longer offer a Working copy
+- deleting a project also removes Claude's clean worktrees in its folder. one with uncommitted changes stops the delete, like a working copy does
+
+Keep in mind:
+
+- working copies you already have keep working as they are. existing projects pick up the new worktrees note in their `CLAUDE.md` the next time Grove syncs them
+
 ## 0.40
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.40 takes out judgment day odds, the beta that scored your prompts on a local model.
