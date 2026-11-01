@@ -1,5 +1,11 @@
 // the menu as data. no electron import, so the accelerators can be checked in a unit test.
-import { formatDuration, KIND_WORD } from "@grove/core";
+import {
+  formatDuration,
+  formatRelativeTime,
+  KIND_WORD,
+  type LimitHeadline,
+  resetWords,
+} from "@grove/core";
 import type { MenuItemConstructorOptions } from "electron";
 import type { InboxView, LandingTarget, MenuCommandId, SessionHit } from "../shared/ipc.ts";
 
@@ -143,6 +149,11 @@ export interface TrayView {
   awakeSince: number | null;
   /** the setting */
   keepAwake: boolean;
+  /**
+   * how much of the account's usage limit is used, when the Usage screen shows the actual numbers
+   * and there is a limit. absent or null: the menu bar says nothing of usage
+   */
+  limit?: LimitHeadline | null;
   now: number;
 }
 
@@ -208,10 +219,43 @@ function workingItems(v: TrayView, a: TrayActions): MenuItemConstructorOptions[]
   ];
 }
 
+/** rounded down, as Claude Code's /usage says it: 99.6 is not yet 100 */
+const percentOf = (l: LimitHeadline): string => `${Math.floor(l.percent)}%`;
+
+/** `21% of your $2,000 limit used`, and a plan window's next start after `sep` */
+function limitWords(l: LimitHeadline, now: number, sep: string): string {
+  const used = `${percentOf(l)} of your ${l.label.charAt(0).toLowerCase()}${l.label.slice(1)} used`;
+  return l.resetsAt === null ? used : `${used}${sep}${resetWords(l.resetsAt, now)}`;
+}
+
+/**
+ * beside the mark: how many need the person, then the share of the usage limit. `2  21%`, `21%`,
+ * `2`. a number fetched more than a day ago is left out: the menu and the tooltip still say it
+ */
+export function trayTitle(v: TrayView): string {
+  const n = v.inbox.rows.length;
+  return [n > 0 ? String(n) : "", v.limit && !v.limit.stale ? percentOf(v.limit) : ""]
+    .filter(Boolean)
+    .join("  ");
+}
+
+/** the same in words, with the time to a plan window's reset and how old the number is */
+export function trayTooltip(v: TrayView): string {
+  const n = v.inbox.rows.length;
+  return [
+    "Grove",
+    n > 0 && `${n} waiting on you`,
+    v.limit && limitWords(v.limit, v.now, ", "),
+    v.limit && `updated ${formatRelativeTime(v.limit.fetchedAt, v.now)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 /**
  * the menu bar item's menu: how many sessions need the person and the three newest of them across
- * every project, what is working or watching and whether that keeps the mac awake, then Open Grove
- * and Quit
+ * every project, what is working or watching and whether that keeps the mac awake, how much of the
+ * usage limit is used when the menu bar shows it, then Open Grove and Quit
  */
 export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOptions[] {
   const n = v.inbox.rows.length;
@@ -241,6 +285,17 @@ export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOp
     { type: "separator" },
     ...workingItems(v, a),
     { type: "separator" },
+    // the usage limit, and how old the number is: claude code fetched it, maybe hours ago
+    ...(v.limit
+      ? ([
+          {
+            label: limitWords(v.limit, v.now, " · "),
+            sublabel: `Updated ${formatRelativeTime(v.limit.fetchedAt, v.now)}`,
+            enabled: false,
+          },
+          { type: "separator" },
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
     { label: "Open Grove", click: a.showMain },
     { role: "quit" },
   ];

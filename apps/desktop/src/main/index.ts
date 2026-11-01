@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  headlineLimit,
   loadSettings,
   needing,
   pendingTitlesDir,
@@ -12,6 +13,7 @@ import {
   saveSettings,
   sessionsRegistryDir,
   stepTextScale,
+  usageModeOf,
 } from "@grove/core";
 import type { BrowserWindow, MenuItemConstructorOptions, Tray } from "electron";
 import * as electron from "electron";
@@ -23,7 +25,7 @@ import { chatRoots, type FreshChats, registerIpc } from "./ipc.ts";
 import { keepAwake, leftRunningCount, runningCount, watchingCount, working } from "./keepAwake.ts";
 import { log } from "./log.ts";
 import { installMenu } from "./menu.ts";
-import type { TrayView } from "./menuTemplate.ts";
+import { type TrayView, trayTitle as titleOf } from "./menuTemplate.ts";
 import { OpQueue } from "./opQueue.ts";
 import { APP_ENTRY_URL, entryUrl, isTrustedUrl } from "./origin.ts";
 import { registerAppScheme, serveRenderer, serveSessionFiles } from "./protocol.ts";
@@ -33,6 +35,7 @@ import { ChatHost } from "./services/chat.ts";
 import { ComboService, type Lane } from "./services/combos.ts";
 import { removeDecisioningLeftovers } from "./services/decisioningLeftovers.ts";
 import { EditorService } from "./services/editor.ts";
+import { claudeStateFile, LimitsService } from "./services/limits.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier, toldTurn } from "./services/notify.ts";
@@ -476,6 +479,17 @@ async function start(): Promise<void> {
 
   const reviewed = new ReviewedService(appEnv.appRoot);
 
+  // the account's usage limits, as Claude Code last fetched them into its state file. the Usage
+  // screen draws them, and the menu bar says how much is used while that screen shows them
+  const limits = new LimitsService({
+    file: claudeStateFile(path.dirname(projectsDir), appEnv.home),
+    onChange: (next) => {
+      pusher.send("usage:limits", { limits: next });
+      // the first read is before the menu bar is drawn at all
+      if (trayView) showTray();
+    },
+  });
+
   /** the last tray menu and title. kept so a test root can read and click them with no tray */
   let trayMenu: MenuItemConstructorOptions[] = [];
   let trayTitle = "";
@@ -491,6 +505,7 @@ async function start(): Promise<void> {
       const now = Date.now();
       // by the status, as the counts are: a turn that ended with an agent at work is working
       const busy = (id: string) => working(live.list().get(id), now);
+      const shown = limits.current();
       trayView = {
         inbox: projects.inbox(),
         working: listed.filter((s) => busy(s.sessionId)),
@@ -498,6 +513,8 @@ async function start(): Promise<void> {
         ...holding(now),
         awakeSince: awake.since(),
         keepAwake: settings.keepAwake !== false,
+        limit:
+          usageModeOf(settings.usageMode, shown) === "actual" ? headlineLimit(shown, now) : null,
         now,
       };
     } finally {
@@ -508,12 +525,14 @@ async function start(): Promise<void> {
       open: landOn,
       showMain,
     });
-    trayTitle = trayView.inbox.rows.length > 0 ? String(trayView.inbox.rows.length) : "";
-    electron.app.dock?.setBadge(trayTitle);
+    trayTitle = titleOf(trayView);
+    // the dock is only ever the count of what needs the person
+    const waiting = trayView.inbox.rows.length;
+    electron.app.dock?.setBadge(waiting > 0 ? String(waiting) : "");
   };
-  // "for 12m" is only as fresh as the menu's last build
+  // "for 12m", "resets in 2h" and "updated 8h ago" are only as fresh as the menu's last build
   const trayTick = setInterval(() => {
-    if (!trayView?.running && !trayView?.watchers) return;
+    if (!trayView?.running && !trayView?.watchers && !trayView?.limit) return;
     // a background agent that went quiet lets go of the mac with no event to say so
     const { running, left } = holding();
     awake.set(settings.keepAwake !== false && running + left > 0);
@@ -706,7 +725,12 @@ async function start(): Promise<void> {
     chatWindows,
     fresh,
     summonProblem,
+    limits: () => limits.current(),
   });
+
+  // before the window: the page's first snapshot has them
+  await limits.read();
+  limits.start();
 
   win = await createMainWindow({
     preload: preloadFile,
@@ -765,6 +789,7 @@ async function start(): Promise<void> {
     void live.syncUserHooks();
     void background.read();
     prService.kick();
+    void limits.read();
   });
   // the page follows the media query on its own. this is only the frame behind a chat window's
   electron.nativeTheme.on("updated", () => chatWindows.repaint());
@@ -812,6 +837,7 @@ async function start(): Promise<void> {
     live.dispose();
     projects.dispose();
     prService.dispose();
+    limits.dispose();
     void sessions.dispose();
   });
 }

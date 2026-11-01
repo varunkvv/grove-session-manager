@@ -1,3 +1,19 @@
+## 0.42
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.42 shows your account's real usage limits on the Usage screen, beside the API-equivalent cost.
+
+New:
+
+- a switch at the top of the Usage screen: **API-equivalent** (the cost, agent time and tokens it always had) or **Actual**, your account's own limits and how much of each is used, the numbers Claude Code's `/usage` shows. Grove keeps the choice. a usage-based (metered) account opens on Actual, any other on API-equivalent
+- Actual on a metered account is what was spent against the cap. on a plan it is each window (5-hour, weekly, weekly Opus or Sonnet) with when it starts over. a bar turns orange close to its limit and red at it
+- with Actual picked, the menu bar shows the share used beside the count, `2  21%`. its tooltip and a line in its menu say it in words, with how old it is and when a plan's window resets. a number more than a day old leaves the menu bar's title. API-equivalent adds nothing to the menu bar, and the dock badge is still only the count
+
+Keep in mind:
+
+- Grove reads what Claude Code last fetched into `~/.claude.json` (inside `CLAUDE_CONFIG_DIR` when that is set) and never asks for it itself, so the screen says how old it is. it can be hours old. running `/usage` in Claude Code fetches it again
+- a metered account's numbers carry no date its period ends, so there is no "days left"
+- the plan windows follow Claude Code's own schema. no plan account's file was seen, so they are untested on a real one
+
 ## 0.41
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.41 changes how projects use your repos.

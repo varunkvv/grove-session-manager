@@ -37,6 +37,18 @@ describe("settings", () => {
     expect((await loadSettings(app)).palette).toBeUndefined();
   });
 
+  it("what the Usage screen shows is one of the two, absent for anything else", async () => {
+    const app = makeSandbox("grove-settings-");
+    expect((await loadSettings(app)).usageMode).toBeUndefined();
+    expect((await saveSettings(app, { usageMode: "actual" })).usageMode).toBe("actual");
+    expect((await loadSettings(app)).usageMode).toBe("actual");
+    expect((await saveSettings(app, { usageMode: "api-equivalent" })).usageMode).toBe(
+      "api-equivalent",
+    );
+    writeFileSync(settingsFilePath(app), JSON.stringify({ usageMode: "both" }));
+    expect((await loadSettings(app)).usageMode).toBeUndefined();
+  });
+
   it("the text size is one of its steps, absent for 100 and for anything else", async () => {
     const app = makeSandbox("grove-settings-");
     expect((await loadSettings(app)).textScale).toBeUndefined();

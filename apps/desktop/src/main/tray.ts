@@ -1,8 +1,15 @@
-// the menu bar item: the grove mark (trayMark.ts), the count of what waits on the person, and a
-// native menu built from the inbox and what is working (menuTemplate.ts's trayTemplate).
+// the menu bar item: the grove mark (trayMark.ts), the count of what waits on the person and, when
+// the Usage screen shows the actual numbers, the share of the usage limit used, and a native menu
+// built from the inbox and what is working (menuTemplate.ts's trayTemplate).
 import type { MenuItemConstructorOptions, NativeImage, Tray } from "electron";
 import * as electron from "electron";
-import { type TrayActions, type TrayView, trayTemplate } from "./menuTemplate.ts";
+import {
+  type TrayActions,
+  type TrayView,
+  trayTemplate,
+  trayTitle,
+  trayTooltip,
+} from "./menuTemplate.ts";
 import { MARK_SIZE, markAlpha } from "./trayMark.ts";
 
 /**
@@ -39,9 +46,8 @@ export function updateTray(
 ): MenuItemConstructorOptions[] {
   const template = trayTemplate(view, a);
   if (tray && !tray.isDestroyed()) {
-    const n = view.inbox.rows.length;
-    tray.setTitle(n > 0 ? String(n) : "");
-    tray.setToolTip(n > 0 ? `Grove, ${n} waiting on you` : "Grove");
+    tray.setTitle(trayTitle(view));
+    tray.setToolTip(trayTooltip(view));
     tray.setContextMenu(electron.Menu.buildFromTemplate(template));
   }
   return template;

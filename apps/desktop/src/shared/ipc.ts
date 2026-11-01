@@ -24,6 +24,8 @@ import type {
   TextScale,
   TitleSource,
   TurnView,
+  UsageLimits,
+  UsageMode,
 } from "@grove/core/pure";
 import type { EffortChoice, ModelChoice } from "./newSession.ts";
 
@@ -192,6 +194,8 @@ export interface AppSettings {
   summonKey?: string;
   /** grove chat keeps a session's prompt cache warm this many hours after its last turn. absent is 3, 0 is off */
   keepWarmHours?: number;
+  /** what the Usage screen shows, as last picked there. absent: the account's own numbers when it is billed by use */
+  usageMode?: UsageMode;
 }
 
 /**
@@ -463,6 +467,8 @@ export interface Bootstrap {
   projects: ProjectView[];
   projectsProblem?: string;
   inbox: InboxView;
+  /** the account's usage limits as Claude Code last fetched them. null: none it can show */
+  limits: UsageLimits | null;
 }
 
 /** request/response. every call resolves quickly or reports progress through the push events below. */
@@ -653,6 +659,8 @@ export interface PushEvents {
   "chat:host": { sessionId: string; status: ChatStatus };
   /** the main window: the settings were saved, from its dialog or elsewhere (⌘+ in any window) */
   "settings:changed": AppSettings;
+  /** the main window: Claude Code fetched the account's usage limits again, or they are gone */
+  "usage:limits": { limits: UsageLimits | null };
 }
 
 /**
@@ -699,6 +707,7 @@ export const PUSH_CHANNELS = [
   "chat:session",
   "chat:host",
   "settings:changed",
+  "usage:limits",
 ] as const satisfies ReadonlyArray<keyof PushEvents>;
 
 // ---------- grove chat: a session grove runs itself, through the agent sdk, in a window of its own

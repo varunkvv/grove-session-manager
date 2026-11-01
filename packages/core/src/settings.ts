@@ -1,6 +1,7 @@
 import path from "node:path";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "./fsx.ts";
 import { isTextScale, type TextScale } from "./textScale.ts";
+import type { UsageMode } from "./usageLimits.ts";
 
 /** shared by the app and the extension. a GUI app launched from Finder sees no shell env, so this is a file. */
 export type Appearance = "system" | "light" | "dark";
@@ -38,6 +39,8 @@ export interface Settings {
   summonKey?: string;
   /** grove chat keeps a session's prompt cache warm for this many hours after its last turn. absent is 3, 0 is off */
   keepWarmHours?: number;
+  /** what the Usage screen shows, as last picked there. absent: the account's own numbers when it is billed by use */
+  usageMode?: UsageMode;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -90,6 +93,9 @@ function clean(raw: unknown): Settings {
     raw.keepWarmHours <= 24
   ) {
     s.keepWarmHours = raw.keepWarmHours;
+  }
+  if (raw.usageMode === "api-equivalent" || raw.usageMode === "actual") {
+    s.usageMode = raw.usageMode;
   }
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {
     s.maxParsedSessions = Math.floor(raw.maxParsedSessions);

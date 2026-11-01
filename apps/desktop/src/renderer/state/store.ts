@@ -1,3 +1,4 @@
+import type { UsageLimits } from "@grove/core/pure";
 import { create } from "zustand";
 import type {
   AppSettings,
@@ -89,6 +90,8 @@ export interface State {
   toasts: Toast[];
   /** the banner reason that was dismissed. it comes back when its reason changes */
   bannerDismissed: string | null;
+  /** the account's usage limits as Claude Code last fetched them. null: none to show */
+  limits: UsageLimits | null;
   now: number;
 
   set(patch: Partial<State>): void;
@@ -120,6 +123,7 @@ export const useStore = create<State>((set) => ({
   dialog: null,
   toasts: [],
   bannerDismissed: null,
+  limits: null,
   now: Date.now(),
 
   set: (patch) => set(patch),
@@ -238,6 +242,7 @@ export async function connect(): Promise<() => void> {
     // saved anywhere, the dialog or ⌘+ in any window: the store has it
     window.grove.on("settings:changed", (settings) => set({ settings })),
     window.grove.on("toast", (t) => toast(t)),
+    window.grove.on("usage:limits", (p) => set({ limits: p.limits })),
     // a notification or a tray row was clicked: take where it lands, now that the page is here
     window.grove.on("app:land", () => {
       if (revs) void takeLanding();
@@ -253,6 +258,7 @@ export async function connect(): Promise<() => void> {
     projects: boot.projects,
     projectsProblem: boot.projectsProblem,
     inbox: boot.inbox,
+    limits: boot.limits,
     project: startProject(boot.projects, rememberedProject()),
   });
   revs = { ...boot.revs };

@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { type Fixture, makeFixture, makePlainDir, writeUsage } from "./helpers/fixture.ts";
-import { type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
+import { groveTest, type LaunchedApp, launchApp } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 
 const AUTH = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -222,4 +222,125 @@ test("a deleted transcript's numbers are still there after a rescan, and after a
   await range(page, "1M");
   await expect(tile(page, "cost")).toHaveText("$71", { timeout: 20_000 });
   expect(await rows(page, "by-project")).toEqual(["billing", "auth-sso"]);
+});
+
+const HOUR = 3_600_000;
+
+/**
+ * Claude Code's state file in the fixture's config folder, with the account's limits as it last
+ * fetched them, 90 minutes ago. under CLAUDE_CONFIG_DIR it is inside that folder
+ */
+function writeLimits(f: Fixture, utilization: Record<string, unknown>): void {
+  writeFileSync(
+    path.join(f.claudeDir, ".claude.json"),
+    JSON.stringify({
+      numStartups: 2,
+      cachedUsageUtilization: { fetchedAtMs: Date.now() - 1.5 * HOUR, utilization },
+    }),
+  );
+}
+
+const money = (minor: number) => ({ amount_minor: minor, currency: "USD", exponent: 2 });
+
+test("Usage: a metered account opens on its own spend, the menu bar says it, and the choice is kept", async () => {
+  const f = makeFixture({ withCompanion: true });
+  writeProject(f, { name: "auth-sso" });
+  writeLimits(f, {
+    five_hour: null,
+    seven_day: null,
+    spend: {
+      used: money(41031),
+      limit: money(200000),
+      percent: 21,
+      severity: "normal",
+      enabled: true,
+    },
+  });
+  app = await launchApp(f);
+  const { page } = app;
+  const g = groveTest(app.app);
+  // the menu bar has it before the screen is opened
+  await expect.poll(() => g.trayTitle(), { timeout: 15_000 }).toBe("21%");
+  const menu = await g.trayMenu();
+  expect(menu.find((i) => i.label === "21% of your $2,000 limit used")).toMatchObject({
+    sublabel: "Updated 1h ago",
+    enabled: false,
+  });
+
+  await page.getByTestId("nav-usage").click();
+  await expect(page.getByTestId("usage-mode-actual")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("actual")).toHaveAttribute("data-kind", "metered");
+  const spend = page.getByTestId("limit-spend");
+  await expect(spend.getByTestId("limit-value")).toHaveText("$410.31");
+  await expect(spend).toContainText("of $2,000");
+  await expect(spend.getByTestId("limit-note")).toHaveText("21% used");
+  await expect(spend.getByTestId("limit-bar")).toHaveAttribute("aria-valuenow", "21");
+  await expect(spend.getByTestId("limit-bar")).toHaveAttribute("data-severity", "normal");
+  await expect(page.getByTestId("actual-updated")).toContainText("Updated 1h ago");
+  // the range is the API-equivalent's
+  await expect(page.getByTestId("range-1W")).toHaveCount(0);
+
+  // the API-equivalent: the tiles, and nothing of usage in the menu bar
+  await page.getByTestId("usage-mode-api").click();
+  await expect(page.getByTestId("tile-cost")).toBeVisible();
+  await expect(page.getByTestId("actual")).toHaveCount(0);
+  await expect.poll(() => g.trayTitle()).toBe("");
+  const settings = path.join(f.root, "settings.json");
+  await expect
+    .poll(() => existsSync(settings) && JSON.parse(readFileSync(settings, "utf8")).usageMode)
+    .toBe("api-equivalent");
+
+  // and the next launch opens on it
+  await app.close();
+  app = await launchApp(f);
+  await app.page.getByTestId("nav-usage").click();
+  await expect(app.page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
+  expect(await groveTest(app.app).trayTitle()).toBe("");
+});
+
+test("Usage: a plan account opens on the API-equivalent, and Actual has its windows and their resets", async () => {
+  const f = makeFixture({ withCompanion: true });
+  writeProject(f, { name: "auth-sso" });
+  writeLimits(f, {
+    five_hour: {
+      utilization: 42,
+      resets_at: new Date(Date.now() + 2 * HOUR + 30 * 60_000).toISOString(),
+    },
+    seven_day: { utilization: 63, resets_at: new Date(Date.now() + 72 * HOUR).toISOString() },
+    seven_day_opus: null,
+    some_window_nobody_knows: { utilization: 99, resets_at: null },
+  });
+  app = await launchApp(f);
+  const { page } = app;
+  const g = groveTest(app.app);
+  await page.getByTestId("nav-usage").click();
+  await expect(page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("tile-cost")).toBeVisible();
+  expect(await g.trayTitle()).toBe("");
+
+  await page.getByTestId("usage-mode-actual").click();
+  await expect(page.getByTestId("actual")).toHaveAttribute("data-kind", "plan");
+  const five = page.getByTestId("limit-five_hour");
+  await expect(five.getByTestId("limit-value")).toHaveText("42%");
+  await expect(five.getByTestId("limit-note")).toHaveText(/^Resets in 2h (29|30)m$/);
+  const week = page.getByTestId("limit-seven_day");
+  await expect(week.getByTestId("limit-value")).toHaveText("63%");
+  await expect(week.getByTestId("limit-note")).toHaveText(/^Resets in (2d 23h|3d)$/);
+  await expect(page.getByTestId("limit-bar")).toHaveCount(2);
+  await expect(page.getByTestId("limit-spend")).toHaveCount(0);
+
+  // the window nearest its limit, with its reset in words
+  await expect.poll(() => g.trayTitle()).toBe("63%");
+  const labels = (await g.trayMenu()).map((i) => i.label ?? "");
+  expect(labels.some((l) => /^63% of your weekly limit used · resets in /.test(l))).toBe(true);
+});
+
+test("Usage: Actual with nothing from Claude Code says where it comes from", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await page.getByTestId("nav-usage").click();
+  await expect(page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("usage-mode-actual").click();
+  await expect(page.getByTestId("actual-empty")).toContainText("Running /usage in Claude Code");
+  await expect(page.getByTestId("usage-chart")).toHaveCount(0);
 });

@@ -1,6 +1,12 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, it } from "vitest";
-import { buildMenuTemplate, type TrayView, trayTemplate } from "../../src/main/menuTemplate.ts";
+import {
+  buildMenuTemplate,
+  type TrayView,
+  trayTemplate,
+  trayTitle,
+  trayTooltip,
+} from "../../src/main/menuTemplate.ts";
 import type { InboxRowView, LandingTarget, MenuCommandId } from "../../src/shared/ipc.ts";
 
 function items(
@@ -373,5 +379,88 @@ describe("the tray menu", () => {
   it("a row with no summary is the project name alone", () => {
     const { items } = menu([row({ sessionId: "s1", kind: "turn", title: "session" })]);
     expect(items[1]?.sublabel).toBe("Chat features");
+  });
+
+  // a metered account's spend, fetched 8 hours ago, and a plan's weekly window
+  const SPEND = {
+    percent: 21,
+    label: "$2,000 limit",
+    resetsAt: null,
+    fetchedAt: NOW - 8 * 3_600_000,
+    stale: false,
+  };
+  const WEEK = {
+    percent: 63.5,
+    label: "Weekly limit",
+    resetsAt: NOW + 2 * 3_600_000 + 10 * 60_000,
+    fetchedAt: NOW - 5 * 60_000,
+    stale: false,
+  };
+  /** the same spend, fetched 27 hours ago */
+  const OLD = { ...SPEND, fetchedAt: NOW - 27 * 3_600_000, stale: true };
+  const view = (rows: InboxRowView[], limit: TrayView["limit"]): TrayView => ({
+    inbox: { rows },
+    working: [],
+    running: 0,
+    watching: [],
+    watchers: 0,
+    awakeSince: null,
+    keepAwake: true,
+    limit,
+    now: NOW,
+  });
+
+  it("the title is the count, then the share of the usage limit when there is one", () => {
+    expect(trayTitle(view(ROWS.slice(0, 2), null))).toBe("2");
+    expect(trayTitle(view(ROWS.slice(0, 2), SPEND))).toBe("2  21%");
+    expect(trayTitle(view([], SPEND))).toBe("21%");
+    expect(trayTitle(view([], null))).toBe("");
+    expect(trayTitle(view([], undefined))).toBe("");
+  });
+
+  it("the share is rounded down, as /usage says it", () => {
+    expect(trayTitle(view([], WEEK))).toBe("63%");
+    expect(trayTitle(view([], { ...SPEND, percent: 99.6 }))).toBe("99%");
+    expect(trayTitle(view([], { ...SPEND, percent: 20.5155 }))).toBe("20%");
+  });
+
+  it("a number fetched more than a day ago leaves the title, and the menu and tooltip still say it", () => {
+    expect(trayTitle(view(ROWS.slice(0, 2), OLD))).toBe("2");
+    expect(trayTitle(view([], OLD))).toBe("");
+    expect(trayTooltip(view([], OLD))).toBe("Grove, 21% of your $2,000 limit used, updated 1d ago");
+    expect(menu([], { limit: OLD }).items.at(-4)).toEqual({
+      label: "21% of your $2,000 limit used",
+      sublabel: "Updated 1d ago",
+      enabled: false,
+    });
+  });
+
+  it("the tooltip says the same in words, how old it is, and when a plan's window starts over", () => {
+    expect(trayTooltip(view([], null))).toBe("Grove");
+    expect(trayTooltip(view(ROWS.slice(0, 2), null))).toBe("Grove, 2 waiting on you");
+    expect(trayTooltip(view(ROWS.slice(0, 2), SPEND))).toBe(
+      "Grove, 2 waiting on you, 21% of your $2,000 limit used, updated 8h ago",
+    );
+    expect(trayTooltip(view([], WEEK))).toBe(
+      "Grove, 63% of your weekly limit used, resets in 2h 10m, updated 5m ago",
+    );
+  });
+
+  it("a row for the usage limit before Open Grove, with how old the number is", () => {
+    const metered = menu([], { limit: SPEND }).items;
+    expect(metered.slice(-4)).toEqual([
+      { label: "21% of your $2,000 limit used", sublabel: "Updated 8h ago", enabled: false },
+      { type: "separator" },
+      { label: "Open Grove", click: expect.any(Function) },
+      { role: "quit" },
+    ]);
+    const plan = menu([], { limit: WEEK }).items;
+    expect(plan.at(-4)).toEqual({
+      label: "63% of your weekly limit used · resets in 2h 10m",
+      sublabel: "Updated 5m ago",
+      enabled: false,
+    });
+    // with none, the menu is as it always was
+    expect(menu([], { limit: null }).items).toHaveLength(6);
   });
 });

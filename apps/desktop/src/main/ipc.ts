@@ -28,6 +28,7 @@ import {
   type Settings,
   saveSettings,
   type TimelineState,
+  type UsageLimits,
   workspaceFolders,
   ZED_AGENT_LINK,
   ZED_AGENT_LINK_DELAY_MS,
@@ -124,6 +125,8 @@ export interface Deps {
   fresh: FreshChats;
   /** why grove cannot hold this summon key, or null when it can */
   summonProblem: (key: string) => string | null;
+  /** the account's usage limits as Claude Code last fetched them */
+  limits: () => UsageLimits | null;
 }
 
 /** a session grove made, by id, and where it runs, until its transcript is in the list */
@@ -370,6 +373,7 @@ function buildHandlers(deps: Deps): Handlers {
         projects: list,
         ...(problem ? { projectsProblem: problem } : {}),
         inbox,
+        limits: deps.limits(),
       };
     },
 

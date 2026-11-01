@@ -1,3 +1,12 @@
+import {
+  formatMoney,
+  formatRelativeTime,
+  type LimitSeverity,
+  resetWords,
+  type UsageLimits,
+  type UsageMode,
+  usageModeOf,
+} from "@grove/core/pure";
 import { type CSSProperties, type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import type { UsageView } from "../../shared/ipc.ts";
 import {
@@ -16,19 +25,21 @@ import {
   usageModel,
 } from "../logic/usage.ts";
 import { useStore } from "../state/store.ts";
-import { cx, Segmented, SliceFill, SliceMark, StatTile } from "./ui.tsx";
+import { cx, LimitBar, Segmented, SliceFill, SliceMark, StatTile } from "./ui.tsx";
 
 /** main is asked again at most this often, however fast the sessions move */
 const ASK_EVERY_MS = 3000;
 
 /**
- * main's view, asked for while this screen is open and never otherwise: when it opens, when the
- * sessions move, and every half minute for the agents that are working. the first count after an
- * upgrade reads every transcript, so until it is through it is asked for again and again
+ * main's view, asked for while this screen is open on the API-equivalent and never otherwise: when
+ * it opens, when the sessions move, and every half minute for the agents that are working. the
+ * first count after an upgrade reads every transcript, so until it is through it is asked for
+ * again and again
  */
-function useUsage(): UsageView | null {
+function useUsage(enabled: boolean): UsageView | null {
   const [view, setView] = useState<UsageView | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let open = true;
     let asked = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -53,7 +64,7 @@ function useUsage(): UsageView | null {
       clearInterval(tick);
       clearTimeout(timer);
     };
-  }, []);
+  }, [enabled]);
   return view;
 }
 
@@ -333,14 +344,173 @@ function Extra({
   );
 }
 
+const MODES: Array<{ value: UsageMode; label: string; testId: string }> = [
+  { value: "api-equivalent", label: "API-equivalent", testId: "usage-mode-api" },
+  { value: "actual", label: "Actual", testId: "usage-mode-actual" },
+];
+
+/** saved as the Usage screen's setting, so the menu bar follows it and the next launch opens on it */
+function pickMode(mode: UsageMode) {
+  const { settings, limits, set, toast } = useStore.getState();
+  if (!settings || usageModeOf(settings.usageMode, limits) === mode) return;
+  set({ settings: { ...settings, usageMode: mode } });
+  void window.grove.updateSettings({ usageMode: mode }).then((res) => {
+    if (res.ok) return;
+    set({ settings });
+    toast({ level: "error", title: "Could not save the choice", body: res.error.message });
+  });
+}
+
+/** rounded down, as Claude Code's /usage says it: 99.6 is not yet 100 */
+const percentWords = (p: number): string => `${Math.floor(p)}%`;
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** one limit: what it is, how much of it is used as a number and as a bar, and when it starts over */
+function LimitCard({
+  label,
+  value,
+  of,
+  percent,
+  severity,
+  note,
+  reset,
+  testId,
+}: {
+  label: string;
+  value: string;
+  /** beside the value: what it is out of */
+  of?: string;
+  /** 0 to 100. null: no limit, and no bar */
+  percent: number | null;
+  severity: LimitSeverity;
+  note?: string;
+  /** the window started over since the fetch: its number is from before, so it is quiet and has no bar */
+  reset?: boolean;
+  testId: string;
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-lg border border-line px-4 pt-3 pb-3.5"
+      data-testid={testId}
+      data-reset={reset || undefined}
+    >
+      <div className="truncate text-sm font-medium text-fg-3">{label}</div>
+      <div className="mt-1.5 flex items-baseline gap-1.5">
+        {/* proportional figures, as a stat tile's */}
+        <span
+          className={cx("truncate text-figure font-semibold", reset ? "text-fg-4" : "text-fg")}
+          data-testid="limit-value"
+        >
+          {value}
+        </span>
+        {of && <span className="shrink-0 text-sm tabular-nums text-fg-4">{of}</span>}
+      </div>
+      {percent !== null && !reset && (
+        <LimitBar
+          className="mt-2.5"
+          percent={percent}
+          severity={severity}
+          label={of ? `${label}: ${value} ${of}` : `${label}: ${value}`}
+        />
+      )}
+      <div
+        className="mt-1.5 h-[18px] truncate text-sm tabular-nums text-fg-4"
+        data-testid="limit-note"
+      >
+        {note}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * the account's own numbers, as Claude Code last fetched them into its state file: a plan's
+ * windows, each with when it starts over, and what was spent against the cap. grove asks nothing
+ * itself, so it says how old they are
+ */
+function Actual({ limits }: { limits: UsageLimits | null }) {
+  const now = useStore((s) => s.now);
+  if (!limits) {
+    return (
+      <div
+        className="mt-6 flex h-[242px] flex-col items-center justify-center gap-1 text-center"
+        data-testid="actual-empty"
+      >
+        <p className="text-fg-3">No usage limits from Claude Code yet</p>
+        <p className="max-w-[420px] text-sm text-fg-4">
+          Grove shows the limits Claude Code last fetched for your account. Running /usage in Claude
+          Code fetches them.
+        </p>
+      </div>
+    );
+  }
+  const { spend, windows } = limits;
+  return (
+    <section className="mt-5" data-testid="actual" data-kind={limits.kind}>
+      {windows.length > 0 && (
+        <div className="grid gap-3 min-[700px]:grid-cols-2">
+          {windows.map((w) => (
+            <LimitCard
+              key={w.key}
+              testId={`limit-${w.key}`}
+              label={w.label}
+              value={percentWords(w.percent)}
+              percent={w.percent}
+              severity={w.severity}
+              note={w.resetsAt === null ? undefined : capital(resetWords(w.resetsAt, now))}
+              // the menu bar leaves such a window out too
+              reset={w.resetsAt !== null && w.resetsAt <= now}
+            />
+          ))}
+        </div>
+      )}
+      {spend && (
+        <div className={cx(windows.length > 0 && "mt-3")}>
+          <LimitCard
+            testId="limit-spend"
+            label="Spend"
+            value={formatMoney(spend.used, spend.currency, spend.digits)}
+            of={
+              spend.limit === null
+                ? undefined
+                : `of ${formatMoney(spend.limit, spend.currency, spend.digits)}`
+            }
+            percent={spend.percent}
+            severity={spend.severity}
+            note={
+              spend.limit === null
+                ? "No limit"
+                : spend.percent === null
+                  ? `Capped at ${formatMoney(spend.limit, spend.currency, spend.digits)}`
+                  : `${percentWords(spend.percent)} used`
+            }
+          />
+        </div>
+      )}
+      <p
+        className="mt-4 text-sm text-fg-4"
+        data-testid="actual-updated"
+        title={new Date(limits.fetchedAt).toLocaleString()}
+      >
+        Updated {formatRelativeTime(limits.fetchedAt, now)}, as Claude Code last fetched it for your
+        account
+      </p>
+    </section>
+  );
+}
+
 /**
  * what the machine's agents used: three numbers for a range, and the one picked drawn as bars by
  * project. every transcript Claude Code has kept counts, and so does every one it has deleted
- * since grove first read it. nothing on this screen is shown anywhere else in the app
+ * since grove first read it. nothing of that is shown anywhere else in the app. or, with Actual
+ * picked, the account's own limits and what is used of them, which the menu bar says too
  */
 export function Usage() {
-  const view = useUsage();
   const projects = useStore((s) => s.projects);
+  const limits = useStore((s) => s.limits);
+  const saved = useStore((s) => s.settings?.usageMode);
+  const mode = usageModeOf(saved, limits);
+  const view = useUsage(mode === "api-equivalent");
   // the range ends today: a new day is a new last bar
   const today = useStore((s) => new Date(s.now).toDateString());
   const [range, setRange] = useState<Range>("1W");
@@ -356,21 +526,31 @@ export function Usage() {
       <div className="mx-auto max-w-[920px] px-6 pt-8 pb-16">
         <div className="flex items-center gap-3">
           <h1 className="text-title font-semibold">Usage</h1>
-          {view && view.counted < view.total && (
+          <Segmented
+            label="What Usage shows"
+            size="sm"
+            value={mode}
+            onChange={pickMode}
+            options={MODES}
+          />
+          {mode === "api-equivalent" && view && view.counted < view.total && (
             <span className="text-sm tabular-nums text-fg-4" data-testid="usage-counting">
               Counting {view.counted} of {view.total} sessions
             </span>
           )}
           <span className="ml-auto" />
-          <Segmented
-            label="Range"
-            size="sm"
-            value={range}
-            onChange={setRange}
-            options={RANGES.map((r) => ({ value: r, label: r, testId: `range-${r}` }))}
-          />
+          {mode === "api-equivalent" && (
+            <Segmented
+              label="Range"
+              size="sm"
+              value={range}
+              onChange={setRange}
+              options={RANGES.map((r) => ({ value: r, label: r, testId: `range-${r}` }))}
+            />
+          )}
         </div>
-        {model && (
+        {mode === "actual" && <Actual limits={limits} />}
+        {mode === "api-equivalent" && model && (
           <>
             <div role="radiogroup" aria-label="What the chart measures" className="mt-5 flex gap-3">
               {METRICS.map((m) => {

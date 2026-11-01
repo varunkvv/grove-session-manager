@@ -212,6 +212,12 @@ has the keyboard. Under it are the same range **By project** and **By model**, a
 sessions, subagents, cache hit rate, the most agents working at once, and the longest single turn. None of these
 numbers is shown anywhere else in the app. [Usage](#usage) says where they come from.
 
+A switch beside the title picks what the screen shows: **API-equivalent** is all of the above, **Actual** is your
+account's own usage limits and how much of each is used, the numbers Claude Code's `/usage` shows. On a usage-based
+(metered) account that is what was spent against the cap. On a plan it is each window, 5-hour and weekly, with when it
+starts over. A bar there is grey, orange close to its limit and red at it. Grove keeps the choice. With none made, a
+metered account opens on Actual and any other on API-equivalent. [Actual usage](#actual-usage) says where it comes from.
+
 **New project** and **Edit project** are one form: name, about, repos. Edit project also shows drift per repo and, when
 Grove could not write the project's files, why. At its foot, away from Save, are **Archive** (or **Unarchive**) and
 **Delete...**.
@@ -227,6 +233,13 @@ you`, and lists the three newest by title, each with its project and what it ask
 finished turn says so first: `Needs permission`, `Failed` or `Stopped`. Then what is working, then **Open Grove** and
 **Quit**. A click on one that needs you opens the window on its row in All sessions, with the panel open, and
 `and 2 more` opens All sessions. Closing the window hides it: the app stays in the menu bar until it is quit.
+
+While the Usage screen is on **Actual** and the account has a limit, the menu bar shows how much of it is used beside
+the count: `2  21%`, or `21%` with nothing waiting. On a plan that is the window nearest its limit. The tooltip and a
+line above **Open Grove** say it in words, `21% of your $2,000 limit used`, with how long ago Claude Code fetched it, and
+on a plan when that window resets: `63% of your weekly limit used · resets in 2d 4h`. A number Claude Code fetched
+more than a day ago leaves the title, and the tooltip and the menu still say it with its age. The share is rounded
+down, as `/usage` rounds it. On **API-equivalent** the menu bar says nothing of usage.
 
 What is working starts with one line that says whether Grove is keeping the Mac awake, how many sessions are working
 or watching and for how long it has held: `Keeping the Mac awake · 3 working · 1 watching · for 1h 12m`,
@@ -358,6 +371,18 @@ of its API and tool durations. Haiku is the exception: Claude Code makes haiku c
 so haiku 4.5 comes out 19% under ($16.53 against $20.42). `cost-state` itself is too low for the sessions where it
 reset on a resume, which is why Grove does not use it.
 
+### Actual usage
+
+**Actual** is what Claude Code last fetched of your account's limits, the same call its `/usage` makes. Claude Code
+keeps the answer in its state file, `~/.claude.json` (inside `CLAUDE_CONFIG_DIR` when that is set), and Grove reads it
+from there: once on launch, then whenever the file changed, looked at once a minute and when the window comes forward.
+Grove never asks for it itself and never writes the file, so the screen says how old the numbers are, and they can be
+hours old. Running `/usage` in Claude Code fetches them again. A cache that belongs to another account than the one
+signed in is not shown, as Claude Code drops it too.
+
+A metered account's numbers say what was spent and the cap, not when the period ends, so Grove does not say how many
+days are left. Nothing documents the file: Grove reads the fields it knows and leaves the rest.
+
 ## Notifications
 
 Grove notifies when:
@@ -379,7 +404,7 @@ sessions that project. What stopped while Grove was closed shows under Needs you
 A click opens the window on that session with its panel open: its row under Needs you in All sessions when it has
 one, else its row in its project's sessions. With grove chat on it opens the session's chat window, in front. A session
 that is in neither, or in no project, opens in the editor. Landing on a session does not take it out of Needs you
-(opening it from the main window does). The dock badge carries the same count as the menu bar. **Notifications** in
+(opening it from the main window does). The dock badge carries the same count as the menu bar, never the usage. **Notifications** in
 Settings switches them off.
 
 A notification plays a short chime of Grove's own. macOS decides whether it sounds: System Settings, Notifications,
@@ -690,6 +715,8 @@ What did not run, or does not work:
   copy
 - past six projects or models in a range, the smallest are one row and one grey part of a bar, `Other`
 - the Usage screen was run against fixture transcripts by Playwright, and its numbers against one real machine
+- **Actual** was checked against one metered account's file. a plan account's windows were built from Claude Code's own
+  schema and fixtures, never a real plan's file
 - background tasks were checked on the built app with hand-written hook events: the hold, the menu bar, the row and
   the panel. no real `/loop` or Monitor session was watched through Grove from start to end
 - a `/loop`'s wake-up was read in Claude Code's hook schema, not seen in a run. a cron was

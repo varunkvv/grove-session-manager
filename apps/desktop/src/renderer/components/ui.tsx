@@ -2,6 +2,7 @@ import {
   formatRelativeTime,
   highlightRanges,
   KIND_WORD,
+  type LimitSeverity,
   type Recap,
   type Runtime,
 } from "@grove/core/pure";
@@ -521,6 +522,53 @@ export function ProgressBar({
       <div
         className="h-full rounded-full bg-fg-3 transition-[width] duration-200 motion-reduce:transition-none"
         style={{ width: `${share * 100}%` }}
+      />
+    </div>
+  );
+}
+
+/** the fill of a usage limit's bar, by how close it is: grey while fine, then the state hues */
+const LIMIT_FILL: Record<LimitSeverity, string> = {
+  normal: "bg-fg-3",
+  warning: "bg-hue-orange",
+  critical: "bg-hue-red",
+};
+
+/**
+ * how much of a usage limit is used: a track and its fill. neutral like a progress bar while the
+ * account says it is fine, and a state's colour only close to the limit or at it
+ */
+export function LimitBar({
+  percent,
+  severity,
+  label,
+  className,
+}: {
+  /** 0 to 100 */
+  percent: number;
+  severity: LimitSeverity;
+  label: string;
+  className?: string;
+}) {
+  const share = Math.min(100, Math.max(0, percent));
+  return (
+    <div
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.floor(share)}
+      data-testid="limit-bar"
+      data-severity={severity}
+      className={cx("h-2 w-full overflow-hidden rounded-full bg-line-strong", className)}
+    >
+      <div
+        className={cx(
+          "h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none",
+          share > 0 && "min-w-[2px]",
+          LIMIT_FILL[severity],
+        )}
+        style={{ width: `${share}%` }}
       />
     </div>
   );
