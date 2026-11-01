@@ -451,7 +451,7 @@ async function start(): Promise<void> {
     cleanRecord,
     onSynced: (combo, report) => {
       if (report.cleaned.length) {
-        log.info(`took 0.10's record out of ${combo.name}:`, report.cleaned.join(", "));
+        log.info(`updated record files in ${combo.name}:`, report.cleaned.join(", "));
       }
       // a file grove could not write
       pushProjects();

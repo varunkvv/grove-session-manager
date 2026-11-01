@@ -261,14 +261,14 @@ describe("task worktrees", () => {
   });
 
   it("finds the worktrees inside worktrees/ and ignores the rest", async () => {
-    const found = await taskWorktrees(combo);
+    const { folders: found } = await taskWorktrees(combo);
     expect(found.map((f) => f.as).sort()).toEqual(["worktrees/api-clean", "worktrees/api-dirty"]);
     expect(found.every((f) => f.mode === "worktree" && f.path === api)).toBe(true);
     expect(existsSync(path.join(root, "worktrees", "api-clean"))).toBe(true);
   });
 
   it("removes a clean one and refuses a dirty one", async () => {
-    const found = await taskWorktrees(combo);
+    const { folders: found } = await taskWorktrees(combo);
     const outcomes = await teardownCombo({ ...combo, folders: [...combo.folders, ...found] });
     const byAs = Object.fromEntries(outcomes.map((o) => [o.folder.as ?? "", o.action]));
     expect(byAs).toMatchObject({
@@ -279,5 +279,39 @@ describe("task worktrees", () => {
     expect(existsSync(path.join(dirty, "wip.txt"))).toBe(true);
     expect(existsSync(outside)).toBe(true);
     expect(existsSync(api)).toBe(true);
+  });
+});
+
+describe("task worktrees of a project with working copies only", () => {
+  const base = makeSandbox("grove-wt-task-legacy-");
+  const api = path.join(base, "src", "api");
+  const root = path.join(base, "ws", "gamma");
+  const combo = makeCombo(root, [worktree(api)]);
+  const dirty = path.join(root, "worktrees", "api-dirty");
+
+  beforeAll(async () => {
+    await makeRepo(api);
+    await git(api, "worktree", "add", dirty, "-b", "task/dirty");
+    writeFileSync(path.join(dirty, "wip.txt"), "unsaved\n");
+  });
+
+  it("finds them through the working copy's clone, and git refuses the dirty one", async () => {
+    const { folders, unchecked } = await taskWorktrees(combo);
+    expect(unchecked).toEqual([]);
+    expect(folders.map((f) => f.as)).toEqual(["worktrees/api-dirty"]);
+    const outcomes = await teardownCombo({ ...combo, folders: [...combo.folders, ...folders] });
+    expect(outcomes.find((o) => o.folder.as === "worktrees/api-dirty")?.action).toBe(
+      "skipped-dirty",
+    );
+    expect(existsSync(path.join(dirty, "wip.txt"))).toBe(true);
+  });
+
+  it("names a clone it could not list while worktrees/ has something in it", async () => {
+    const gone = path.join(base, "src", "gone");
+    const lost = { ...combo, folders: [{ path: gone, mode: "reference" as const }] };
+    expect((await taskWorktrees(lost)).unchecked.map((u) => u.repo)).toEqual([gone]);
+    // nothing in worktrees/: nothing to lose
+    const empty = { ...lost, root: path.join(base, "ws", "empty") };
+    expect((await taskWorktrees(empty)).unchecked).toEqual([]);
   });
 });

@@ -454,9 +454,25 @@ export class ComboService {
   async remove(name: string): Promise<{ remaining: TeardownOutcome[] }> {
     const combo = this.find(name);
     // the worktrees claude made under worktrees/ are found now, never stored
-    const tasks = await taskWorktrees(combo, { gitPath: this.opts.gitPath });
+    const { folders: tasks, unchecked } = await taskWorktrees(combo, {
+      gitPath: this.opts.gitPath,
+    });
     const outcomes = await this.teardown(combo, tasks);
-    const remaining = outcomes.filter(isRemaining);
+    const isTask = (o: TeardownOutcome) =>
+      tasks.some((t) => t.as === o.folder.as && samePath(t.path, o.folder.path));
+    // a task worktree git would not take out, for any reason, is work the Trash would hide.
+    // a clone git could not list may hold some too: it blocks as well
+    const remaining = [
+      ...outcomes.filter((o) => (isTask(o) ? o.action !== "removed" : isRemaining(o))),
+      ...unchecked.map(
+        ({ repo, message }): TeardownOutcome => ({
+          folder: { path: repo, mode: "reference" },
+          target: repo,
+          action: "failed",
+          message: `could not check ${repo} for worktrees in worktrees/: ${message}`,
+        }),
+      ),
+    ];
     if (remaining.length > 0) return { remaining };
     await this.save((combos) => combos.filter((c) => c.root !== combo.root));
     // its folder is about to go to the Trash: nothing of ours keeps watching it there

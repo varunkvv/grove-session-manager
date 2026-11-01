@@ -6,7 +6,7 @@ import { gitMessage, runGit } from "../git/exec.ts";
 import { listWorktrees } from "../git/inspect.ts";
 import { samePath } from "../paths.ts";
 import type { Combo, ComboFolder } from "../types.ts";
-import { branchLabel } from "./claudeMd.ts";
+import { branchLabel, referenceMemberLine } from "./claudeMd.ts";
 import { cleanRecordFiles } from "./recordCleanup.ts";
 import { targetDirFor } from "./schema.ts";
 import { updateCombos } from "./store.ts";
@@ -42,9 +42,6 @@ function oldMemberLine(f: ComboFolder): string {
   const dir = f.as ?? path.basename(f.path);
   return `- \`${dir}/\` - working copy. a git worktree of \`${f.path}\`, ${branchLabel(f)}.`;
 }
-
-const newMemberLine = (f: ComboFolder) =>
-  `- \`${f.path}\` - reference. read it for context, do not change it.`;
 
 async function isWorktreeOf(origin: string, dir: string): Promise<boolean> {
   const isDir = await stat(dir).then(
@@ -128,7 +125,7 @@ export async function migrateReferences(
         const f = combo.folders[i];
         if (!f) continue;
         const line = oldMemberLine(f);
-        if (text.includes(line)) next = next.replace(line, () => newMemberLine(f));
+        if (text.includes(line)) next = next.replace(line, () => referenceMemberLine(f));
         else entry.claudeMd.push(`member line of ${f.path} was edited or is gone, left alone`);
       }
       if (next !== text) {

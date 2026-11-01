@@ -200,6 +200,35 @@ describe("a project as 0.10 left it", () => {
     expect(snapshot(p.root)).toEqual(after);
   });
 
+  it("swaps a reference's member line only next to the worktrees block", async () => {
+    const p = project();
+    const combo: Combo = {
+      ...p.combo,
+      folders: [{ path: "/Users/you/src/api", mode: "reference" }],
+    };
+    const stub = renderClaudeMdStub(combo);
+    const oldLine = "- `/Users/you/src/api` - reference. read it for context, do not change it.";
+    const line = stub.split("\n").find((l) => l.includes("/Users/you/src/api"))!;
+    const run = () => syncComboFiles(p.appRoot, combo, { cleanRecord: true });
+
+    // the block is already there: the line moves, and a second run changes nothing
+    writeFileSync(p.file("CLAUDE.md"), stub.replace(line, oldLine));
+    expect((await run()).cleaned).toContain("CLAUDE.md");
+    expect(p.read("CLAUDE.md")).toBe(stub);
+    const after = snapshot(p.root);
+    expect((await run()).cleaned).toEqual([]);
+    expect(snapshot(p.root)).toEqual(after);
+
+    // a person edited the old block: nothing of the migration is applied, no half-migrated file
+    const edited = stub
+      .replace(line, oldLine)
+      .replace("## Worktrees", "## Working copies")
+      .replace("inside a worktree.", "inside a working copy.");
+    writeFileSync(p.file("CLAUDE.md"), edited);
+    await run();
+    expect(p.read("CLAUDE.md")).toBe(edited);
+  });
+
   it("a server the person called grove is theirs, with its name and its tool rule", async () => {
     const p = project();
     const own = { mcpServers: { grove: { command: "/usr/local/bin/grove-notes", args: [] } } };

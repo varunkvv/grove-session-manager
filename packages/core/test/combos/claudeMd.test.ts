@@ -38,14 +38,12 @@ describe("combo root and CLAUDE.md", () => {
   });
 
   it("says what a worktree is, where plans and artifacts go, and how sessions leave word for each other", async () => {
-    const md = renderClaudeMdStub(combo());
-    // what this is
     const c = combo();
-    const md2 = renderClaudeMdStub(c);
-    expect(md2).toContain("## Worktrees");
-    expect(md2).toContain(`worktree add ${c.root}/worktrees/<repo>-<task> -b <branch>`);
-    expect(md2).not.toContain("Grove owns their lifecycle");
-    expect(md2).not.toContain("A working copy is a git worktree");
+    const md = renderClaudeMdStub(c);
+    expect(md).toContain("## Worktrees");
+    expect(md).toContain(`worktree add ${c.root}/worktrees/<repo>-<task> -b <branch>`);
+    expect(md).not.toContain("Grove owns their lifecycle");
+    expect(md).not.toContain("A working copy is a git worktree");
     expect(md).toContain("detached at HEAD");
     expect(md).toContain("on branch `prod-debug`");
     // where things go

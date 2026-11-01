@@ -588,26 +588,40 @@ export async function teardownCombo(
 }
 
 /**
- * the worktrees claude made under `<root>/worktrees/`, found by asking each reference's repo.
- * for delete time only: nothing here is stored or looked at when a project is opened or synced.
- * they come back as worktree folders, so teardownCombo takes them as it takes a working copy.
+ * the worktrees claude made under `<root>/worktrees/`, found by asking each distinct clone in the
+ * combo (listWorktrees is repo-wide, so one call per clone). for delete time only: nothing here is
+ * stored or looked at when a project is opened or synced. they come back as worktree folders, so
+ * teardownCombo takes them as it takes a working copy.
+ *
+ * `unchecked` is each clone git would not list while `worktrees/` has something in it: delete
+ * fails closed on those, because what is in there could not be told from a stray folder.
  */
-export async function taskWorktrees(combo: Combo, opts: GitOptions = {}): Promise<ComboFolder[]> {
+export async function taskWorktrees(
+  combo: Combo,
+  opts: GitOptions = {},
+): Promise<{ folders: ComboFolder[]; unchecked: { repo: string; message: string }[] }> {
   const dir = path.join(combo.root, "worktrees");
   const known = new Set(combo.folders.map((f) => realpathLoose(targetDirFor(combo, f))));
   const seen = new Set<string>();
-  const found: ComboFolder[] = [];
-  for (const ref of combo.folders.filter((f) => f.mode === "reference")) {
-    const listed = await listWorktrees(ref.path, opts);
-    if (!listed.ok) continue;
+  const folders: ComboFolder[] = [];
+  const failed: { repo: string; message: string }[] = [];
+  const repos = new Map<string, string>();
+  for (const f of combo.folders) repos.set(realpathLoose(f.path), f.path);
+  for (const repo of repos.values()) {
+    const listed = await listWorktrees(repo, opts);
+    if (!listed.ok) {
+      failed.push({ repo, message: listed.error.message });
+      continue;
+    }
     for (const entry of listed.value) {
       const real = realpathLoose(entry.path);
       if (entry.bare || pathRelation(entry.path, dir) !== "inside") continue;
       if (seen.has(real) || known.has(real)) continue;
       seen.add(real);
       const rel = path.relative(realpathLoose(combo.root), real).split(path.sep).join("/");
-      found.push({ path: ref.path, mode: "worktree", as: rel });
+      folders.push({ path: repo, mode: "worktree", as: rel });
     }
   }
-  return found;
+  const inThere = failed.length > 0 && (await readdir(dir).catch(() => [])).length > 0;
+  return { folders, unchecked: inThere ? failed : [] };
 }

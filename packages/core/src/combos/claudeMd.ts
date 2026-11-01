@@ -24,6 +24,10 @@ export function worktreesBlock(root: string): string[] {
   ];
 }
 
+export function referenceMemberLine(f: Combo["folders"][number]): string {
+  return `- \`${f.path}\` - reference. your own clone: read it and make worktrees from it, never edit it directly.`;
+}
+
 /**
  * every session started in the combo root loads this file, forks and background agents included.
  * so it carries the three things none of them can work out alone: what this folder is, where
@@ -33,7 +37,7 @@ export function worktreesBlock(root: string): string[] {
 export function renderClaudeMdStub(combo: Combo): string {
   const members = combo.folders.map((f) => {
     if (f.mode === "reference") {
-      return `- \`${f.path}\` - reference. read it for context, do not change it.`;
+      return referenceMemberLine(f);
     }
     const dir = f.as ?? path.basename(f.path);
     return `- \`${dir}/\` - working copy. a git worktree of \`${f.path}\`, ${branchLabel(f)}.`;

@@ -13,7 +13,7 @@ import { getStateDir } from "../paths.ts";
 import { projectIdOf } from "../project/ids.ts";
 import { type HookSyncStatus, syncComboStatusHooks } from "../sessions/liveStatus.ts";
 import type { Combo, Warning } from "../types.ts";
-import { worktreesBlock } from "./claudeMd.ts";
+import { referenceMemberLine, worktreesBlock } from "./claudeMd.ts";
 
 const SERVER = "grove";
 /** on the record's SessionStart hook */
@@ -146,7 +146,7 @@ const CLAUDE_MD: ReadonlyArray<readonly [string, string]> = [
   ],
 ];
 
-/** the 0.10 swaps, then what moves a project from one working copy per repo to task worktrees */
+/** the 0.10 swaps, then the block that moves a project from one working copy per repo to task worktrees */
 const claudeMdSwaps = (combo: Combo): ReadonlyArray<readonly [string, string]> => [
   ...CLAUDE_MD,
   [
@@ -160,18 +160,33 @@ const claudeMdSwaps = (combo: Combo): ReadonlyArray<readonly [string, string]> =
     ].join("\n"),
     ["## Worktrees", "", ...worktreesBlock(combo.root)].join("\n"),
   ],
+];
+
+/** single lines that only make sense next to the Worktrees block: a file without it is left as it is */
+const worktreesLineSwaps = (combo: Combo): ReadonlyArray<readonly [string, string]> => [
   ["Nothing below belongs inside a working copy.", "Nothing below belongs inside a worktree."],
   ["before a large edit in a working copy,", "before a large edit in a worktree,"],
+  ...combo.folders
+    .filter((f) => f.mode === "reference")
+    .map((f): readonly [string, string] => [
+      `- \`${f.path}\` - reference. read it for context, do not change it.`,
+      referenceMemberLine(f),
+    ]),
 ];
 
 async function swapLines(
   file: string,
   swaps: ReadonlyArray<readonly [string, string]>,
+  /** applied only once the file has the Worktrees block, from these swaps or already */
+  afterBlock: ReadonlyArray<readonly [string, string]> = [],
 ): Promise<boolean> {
   const text = await readFile(file, "utf8").catch(() => null);
   if (text === null) return false;
   let next = text;
   for (const [from, to] of swaps) next = next.replace(from, () => to);
+  if (next.includes("\n## Worktrees\n")) {
+    for (const [from, to] of afterBlock) next = next.replace(from, () => to);
+  }
   if (next === text) return false;
   // the person's file: never half written, and with the mode they gave it
   await writeFileAtomic(file, next, (await stat(file)).mode & 0o777);
@@ -186,7 +201,8 @@ export async function cleanRecordFiles(combo: Combo): Promise<string[]> {
   const cleaned: string[] = [];
   if (await cleanMcpJson(combo.root)) cleaned.push(".mcp.json");
   if (await removeRules(combo.root)) cleaned.push(RULES_FILE);
-  if (await swapLines(path.join(combo.root, "CLAUDE.md"), claudeMdSwaps(combo)))
+  const claudeMd = path.join(combo.root, "CLAUDE.md");
+  if (await swapLines(claudeMd, claudeMdSwaps(combo), worktreesLineSwaps(combo)))
     cleaned.push("CLAUDE.md");
   return cleaned;
 }

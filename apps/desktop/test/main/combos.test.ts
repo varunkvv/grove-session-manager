@@ -1,4 +1,11 @@
-import { mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -53,5 +60,31 @@ describe("archiving a project", () => {
     expect(saved()).toEqual(before);
     expect(told).toEqual({ projects: 2, model: 2 });
     await expect(svc.setArchived("no-such", true)).rejects.toMatchObject({ code: "no-combo" });
+  });
+});
+
+describe("deleting a project", () => {
+  it("is blocked, naming the repo, when a clone cannot be checked and worktrees/ has something in it", async () => {
+    const app = realpathSync(mkdtempSync(path.join(os.tmpdir(), "grove-combos-")));
+    const root = `${app}/auth-sso`;
+    const gone = `${app}/src/gone`;
+    mkdirSync(`${root}/worktrees/gone-task`, { recursive: true });
+    const combo = { name: "auth-sso", root, folders: [{ path: gone, mode: "reference" }] };
+    writeFileSync(path.join(app, "combos.json"), JSON.stringify({ combos: [combo] }));
+    const svc = new ComboService({
+      appRoot: app,
+      queue: new OpQueue({ mutate: 1, read: 4 }),
+      onCombosChanged: () => {},
+      onFolders: () => {},
+      onToast: () => {},
+      onModelChanged: () => {},
+    });
+    await svc.load();
+
+    const { remaining } = await svc.remove("auth-sso");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({ action: "failed", target: gone });
+    expect(remaining[0]?.message).toContain(gone);
+    expect(svc.list().map((c) => c.name)).toEqual(["auth-sso"]);
   });
 });

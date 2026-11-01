@@ -108,7 +108,9 @@ describe("migrateReferences", () => {
     const s = await setup();
     await migrateReferences(s.app, await load(s.app), { apply: true });
     const md = readFileSync(path.join(s.root, "CLAUDE.md"), "utf8");
-    expect(md).toContain(`- \`${s.api}\` - reference. read it for context, do not change it.`);
+    expect(md).toContain(
+      `- \`${s.api}\` - reference. your own clone: read it and make worktrees from it, never edit it directly.`,
+    );
     expect(md).not.toContain("working copy. a git worktree of");
     expect(md).toContain("## Worktrees");
 
