@@ -586,3 +586,28 @@ export async function teardownCombo(
   }
   return outcomes;
 }
+
+/**
+ * the worktrees claude made under `<root>/worktrees/`, found by asking each reference's repo.
+ * for delete time only: nothing here is stored or looked at when a project is opened or synced.
+ * they come back as worktree folders, so teardownCombo takes them as it takes a working copy.
+ */
+export async function taskWorktrees(combo: Combo, opts: GitOptions = {}): Promise<ComboFolder[]> {
+  const dir = path.join(combo.root, "worktrees");
+  const known = new Set(combo.folders.map((f) => realpathLoose(targetDirFor(combo, f))));
+  const seen = new Set<string>();
+  const found: ComboFolder[] = [];
+  for (const ref of combo.folders.filter((f) => f.mode === "reference")) {
+    const listed = await listWorktrees(ref.path, opts);
+    if (!listed.ok) continue;
+    for (const entry of listed.value) {
+      const real = realpathLoose(entry.path);
+      if (entry.bare || pathRelation(entry.path, dir) !== "inside") continue;
+      if (seen.has(real) || known.has(real)) continue;
+      seen.add(real);
+      const rel = path.relative(realpathLoose(combo.root), real).split(path.sep).join("/");
+      found.push({ path: ref.path, mode: "worktree", as: rel });
+    }
+  }
+  return found;
+}

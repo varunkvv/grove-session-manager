@@ -6,6 +6,7 @@ import {
   ensureWorktrees,
   gitLog,
   reconcileCombo,
+  taskWorktrees,
   teardownCombo,
 } from "../../src/git/worktrees.ts";
 import type { TeardownOutcome } from "../../src/types.ts";
@@ -239,5 +240,44 @@ describe("teardownCombo", () => {
     // the root and what the app keeps in it outlive every teardown
     expect(readFileSync(path.join(root, "CLAUDE.md"), "utf8")).toBe("# alpha\n");
     expect(existsSync(path.join(root, ".claude", "settings.json"))).toBe(true);
+  });
+});
+
+describe("task worktrees", () => {
+  const base = makeSandbox("grove-wt-task-");
+  const api = path.join(base, "src", "api");
+  const root = path.join(base, "ws", "beta");
+  const combo = makeCombo(root, [reference(api)]);
+  const clean = path.join(root, "worktrees", "api-clean");
+  const dirty = path.join(root, "worktrees", "api-dirty");
+  const outside = path.join(base, "elsewhere", "api-outside");
+
+  beforeAll(async () => {
+    await makeRepo(api);
+    await git(api, "worktree", "add", clean, "-b", "task/clean");
+    await git(api, "worktree", "add", dirty, "-b", "task/dirty");
+    await git(api, "worktree", "add", outside, "-b", "task/outside");
+    writeFileSync(path.join(dirty, "wip.txt"), "unsaved\n");
+  });
+
+  it("finds the worktrees inside worktrees/ and ignores the rest", async () => {
+    const found = await taskWorktrees(combo);
+    expect(found.map((f) => f.as).sort()).toEqual(["worktrees/api-clean", "worktrees/api-dirty"]);
+    expect(found.every((f) => f.mode === "worktree" && f.path === api)).toBe(true);
+    expect(existsSync(path.join(root, "worktrees", "api-clean"))).toBe(true);
+  });
+
+  it("removes a clean one and refuses a dirty one", async () => {
+    const found = await taskWorktrees(combo);
+    const outcomes = await teardownCombo({ ...combo, folders: [...combo.folders, ...found] });
+    const byAs = Object.fromEntries(outcomes.map((o) => [o.folder.as ?? "", o.action]));
+    expect(byAs).toMatchObject({
+      "worktrees/api-clean": "removed",
+      "worktrees/api-dirty": "skipped-dirty",
+    });
+    expect(existsSync(clean)).toBe(false);
+    expect(existsSync(path.join(dirty, "wip.txt"))).toBe(true);
+    expect(existsSync(outside)).toBe(true);
+    expect(existsSync(api)).toBe(true);
   });
 });

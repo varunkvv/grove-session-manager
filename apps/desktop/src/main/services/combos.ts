@@ -24,6 +24,7 @@ import {
   syncComboSettings,
   type TeardownOutcome,
   targetDirFor,
+  taskWorktrees,
   teardownCombo,
   updateCombos,
   validateComboName,
@@ -303,11 +304,13 @@ export class ComboService {
     });
   }
 
-  teardown(combo: Combo): Promise<TeardownOutcome[]> {
+  /** `extra`: folders to tear down that are not in the combo, as the task worktrees on delete */
+  teardown(combo: Combo, extra: ComboFolder[] = []): Promise<TeardownOutcome[]> {
     this.setBusyAll(combo, "removing");
     return this.mutate(async () => {
       try {
-        return await teardownCombo(combo, { gitPath: this.opts.gitPath });
+        const folders = [...combo.folders, ...extra];
+        return await teardownCombo({ ...combo, folders }, { gitPath: this.opts.gitPath });
       } finally {
         this.clearBusy(combo);
         void this.reconcile(combo, true);
@@ -450,7 +453,9 @@ export class ComboService {
   /** removes clean worktrees first and refuses while any remain: nothing is left orphaned */
   async remove(name: string): Promise<{ remaining: TeardownOutcome[] }> {
     const combo = this.find(name);
-    const outcomes = await this.teardown(combo);
+    // the worktrees claude made under worktrees/ are found now, never stored
+    const tasks = await taskWorktrees(combo, { gitPath: this.opts.gitPath });
+    const outcomes = await this.teardown(combo, tasks);
     const remaining = outcomes.filter(isRemaining);
     if (remaining.length > 0) return { remaining };
     await this.save((combos) => combos.filter((c) => c.root !== combo.root));
