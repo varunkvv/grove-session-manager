@@ -224,7 +224,7 @@ test("what the screens have no button for: delete, settings", async () => {
   await ready(page);
   await project(page, "auth-sso");
 
-  await input(page).fill("delete");
+  await ask(page, "delete");
   await page.keyboard.press("Enter");
   await expect(palette(page)).toHaveCount(0);
   await expect(page.getByTestId("delete-dialog")).toHaveAttribute("aria-label", "Delete auth-sso?");
