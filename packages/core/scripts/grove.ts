@@ -2,6 +2,8 @@
 //   pnpm grove list | search <query>         sessions            [--json] [--cache] [--stubs]
 //   pnpm grove combos | reconcile <combo>    combos and their folder states
 //   pnpm grove open <combo> [--session <id>] [--no-launch]
+//   pnpm grove migrate-references [--apply]  working copies -> references + task worktrees (dry run unless --apply)
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import {
   assignCombos,
@@ -13,6 +15,7 @@ import {
   getStateDir,
   loadCombos,
   loadSettings,
+  migrateReferences,
   openInEditor,
   prepareComboOpen,
   reconcileCombo,
@@ -112,9 +115,39 @@ if (cmd === "list" || cmd === "search") {
     });
     console.log(res.ok ? `launched ${res.value.bin}` : `could not launch: ${res.error.message}`);
   }
+} else if (cmd === "migrate-references") {
+  const apply = flags.has("--apply");
+  if (apply) {
+    // the app edits combos.json too
+    const running = (() => {
+      try {
+        return execFileSync("pgrep", ["-x", "Grove"]).length > 0;
+      } catch {
+        return false;
+      }
+    })();
+    if (running) {
+      console.error("Grove.app is running and edits combos.json. quit it, then run this again.");
+      process.exit(1);
+    }
+  }
+  const report = await migrateReferences(getAppRoot(), await loadCombosIfAny(), { apply });
+  for (const c of report.combos) {
+    if (!c.folders.length && !c.claudeMd.length) continue;
+    console.log(c.combo);
+    for (const f of c.folders)
+      console.log(
+        `  ${f.action.padEnd(7)} ${f.path}  ${f.from}${f.to ? ` -> ${f.to}` : ""}  ${f.message}`,
+      );
+    for (const m of c.claudeMd) console.log(`  CLAUDE.md  ${m}`);
+  }
+  console.log(
+    `\n${apply ? "" : "dry run, nothing changed. "}${apply ? "moved" : "would move"} ${report.moved} worktrees, flipped ${report.flipped} folders, ${report.kept} left as is`,
+  );
+  if (!apply) console.log("run with --apply to do it");
 } else {
   console.error(
-    "usage: grove list | search <query> | combos | reconcile <combo> | open <combo> [--session <id>] [--no-launch]",
+    "usage: grove list | search <query> | combos | reconcile <combo> | open <combo> [--session <id>] [--no-launch] | migrate-references [--apply]",
   );
   process.exit(2);
 }

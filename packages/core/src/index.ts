@@ -1,4 +1,5 @@
 export * from "./combos/claudeMd.ts";
+export * from "./combos/migrateReferences.ts";
 export * from "./combos/prepare.ts";
 export * from "./combos/recordCleanup.ts";
 export * from "./combos/rules.ts";

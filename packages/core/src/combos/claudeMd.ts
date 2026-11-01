@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Combo } from "../types.ts";
 import { COMBO_SHARED_DIRS } from "./folders.ts";
 
-function branchLabel(f: Combo["folders"][number]): string {
+export function branchLabel(f: Combo["folders"][number]): string {
   const b = f.branch;
   if (!b || b.kind === "detach") return "detached at HEAD";
   return b.kind === "new" ? `on branch \`${b.name}\`` : `on existing branch \`${b.name}\``;
