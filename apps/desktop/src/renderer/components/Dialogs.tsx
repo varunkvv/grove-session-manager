@@ -1,4 +1,10 @@
-import { shortPath, TEXT_SCALES, type TeardownOutcome, type TextScale } from "@grove/core/pure";
+import {
+  shortPath,
+  TEXT_SCALES,
+  type TeardownOutcome,
+  type TextScale,
+  usageModeOf,
+} from "@grove/core/pure";
 import { useEffect, useState } from "react";
 import { type AppSettings, DEFAULT_SUMMON_KEY } from "../../shared/ipc.ts";
 import { acceleratorOf, keyLabel } from "../logic/keys.ts";
@@ -273,10 +279,12 @@ export function SettingsDialog() {
   const dialog = useStore((s) => s.dialog);
   const settings = useStore((s) => s.settings);
   const editor = useStore((s) => s.editor);
+  const limits = useStore((s) => s.limits);
   const set = useStore((s) => s.set);
   const open = dialog?.kind === "settings";
   const [draft, setDraft] = useState<AppSettings>({ editor: "vscode", appearance: "system" });
   const [error, setError] = useState<string>();
+  const usageMode = usageModeOf(draft.usageMode, limits);
 
   useEffect(() => {
     if (open && settings) setDraft(settings);
@@ -385,6 +393,25 @@ export function SettingsDialog() {
             <option value="vscode">VS Code</option>
             <option value="cursor">Cursor</option>
             <option value="zed">Zed</option>
+          </Select>
+        </Field>
+        <Field
+          label="Usage"
+          hint={
+            usageMode === "actual"
+              ? "Your account's own limit and spend, as Claude Code last fetched them. The menu bar shows it too."
+              : "What your sessions would cost at API prices, from their transcripts."
+          }
+        >
+          <Select
+            value={usageMode}
+            onChange={(e) =>
+              setDraft({ ...draft, usageMode: e.target.value as AppSettings["usageMode"] })
+            }
+            data-testid="setting-usage-mode"
+          >
+            <option value="api-equivalent">API-equivalent cost</option>
+            <option value="actual">Account limits and spend</option>
           </Select>
         </Field>
         <Field

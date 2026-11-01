@@ -70,6 +70,13 @@ const rows = async (page: Page, list: string) =>
     (t) => t.split("\n")[0],
   );
 
+/** the mode is set in Settings now, not on the Usage screen */
+async function setUsageMode(page: Page, mode: "api-equivalent" | "actual") {
+  await page.getByTestId("usage-mode-change").click();
+  await page.getByTestId("setting-usage-mode").selectOption(mode);
+  await page.getByTestId("save-settings").click();
+}
+
 test("Usage: the sidebar opens it, and each range has its totals, its bars and its lists", async () => {
   app = await launchApp(seed());
   const { page } = app;
@@ -268,7 +275,7 @@ test("Usage: a metered account opens on its own spend, the menu bar says it, and
   });
 
   await page.getByTestId("nav-usage").click();
-  await expect(page.getByTestId("usage-mode-actual")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("usage-mode-change")).toContainText("Account limits and spend");
   // only the cost tile changes with the mode: it is the account's spend, with its limit's bar
   const cost = page.getByTestId("tile-cost");
   await expect(cost).toHaveAttribute("aria-checked", "true");
@@ -281,7 +288,7 @@ test("Usage: a metered account opens on its own spend, the menu bar says it, and
   await expect(page.getByTestId("range-1W")).toBeVisible();
 
   // the API-equivalent: the tiles, and nothing of usage in the menu bar
-  await page.getByTestId("usage-mode-api").click();
+  await setUsageMode(page, "api-equivalent");
   await expect(page.getByTestId("tile-cost").getByTestId("tile-value")).not.toHaveText("$410.31");
   await expect(page.getByTestId("limit-bar")).toHaveCount(0);
   await expect.poll(() => g.trayTitle()).toBe("");
@@ -294,7 +301,7 @@ test("Usage: a metered account opens on its own spend, the menu bar says it, and
   await app.close();
   app = await launchApp(f);
   await app.page.getByTestId("nav-usage").click();
-  await expect(app.page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
+  await expect(app.page.getByTestId("usage-mode-change")).toContainText("API-equivalent cost");
   expect(await groveTest(app.app).trayTitle()).toBe("");
 });
 
@@ -314,11 +321,11 @@ test("Usage: a plan account opens on the API-equivalent, and Actual has its wind
   const { page } = app;
   const g = groveTest(app.app);
   await page.getByTestId("nav-usage").click();
-  await expect(page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("usage-mode-change")).toContainText("API-equivalent cost");
   await expect(page.getByTestId("tile-cost")).toBeVisible();
   expect(await g.trayTitle()).toBe("");
 
-  await page.getByTestId("usage-mode-actual").click();
+  await setUsageMode(page, "actual");
   // the cost tile shows the window nearest its limit, with when it starts over
   const cost = page.getByTestId("tile-cost");
   await expect(cost.getByTestId("tile-value")).toHaveText("63%");
@@ -343,8 +350,8 @@ test("Usage: Actual with nothing from Claude Code says where it comes from", asy
   app = await launchApp(seed());
   const { page } = app;
   await page.getByTestId("nav-usage").click();
-  await expect(page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("usage-mode-actual").click();
+  await expect(page.getByTestId("usage-mode-change")).toContainText("API-equivalent cost");
+  await setUsageMode(page, "actual");
   // the cost tile says where the numbers come from; the chart and tiles stay in actual mode
   const cost = page.getByTestId("tile-cost");
   await expect(cost.getByTestId("tile-value")).toHaveText("-");

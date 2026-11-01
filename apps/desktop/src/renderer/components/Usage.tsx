@@ -5,7 +5,6 @@ import {
   type LimitSeverity,
   resetWords,
   type UsageLimits,
-  type UsageMode,
   usageModeOf,
 } from "@grove/core/pure";
 import { type CSSProperties, type KeyboardEvent, useEffect, useMemo, useState } from "react";
@@ -345,23 +344,6 @@ function Extra({
   );
 }
 
-const MODES: Array<{ value: UsageMode; label: string; testId: string }> = [
-  { value: "api-equivalent", label: "API-equivalent", testId: "usage-mode-api" },
-  { value: "actual", label: "Actual", testId: "usage-mode-actual" },
-];
-
-/** saved as the Usage screen's setting, so the menu bar follows it and the next launch opens on it */
-function pickMode(mode: UsageMode) {
-  const { settings, limits, set, toast } = useStore.getState();
-  if (!settings || usageModeOf(settings.usageMode, limits) === mode) return;
-  set({ settings: { ...settings, usageMode: mode } });
-  void window.grove.updateSettings({ usageMode: mode }).then((res) => {
-    if (res.ok) return;
-    set({ settings });
-    toast({ level: "error", title: "Could not save the choice", body: res.error.message });
-  });
-}
-
 /** rounded down, as Claude Code's /usage says it: 99.6 is not yet 100 */
 const percentWords = (p: number): string => `${Math.floor(p)}%`;
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -515,13 +497,15 @@ export function Usage() {
       <div className="mx-auto max-w-[920px] px-6 pt-8 pb-16">
         <div className="flex items-center gap-3">
           <h1 className="text-title font-semibold">Usage</h1>
-          <Segmented
-            label="What Usage shows"
-            size="sm"
-            value={mode}
-            onChange={pickMode}
-            options={MODES}
-          />
+          <button
+            type="button"
+            className="no-drag text-sm text-fg-3 hover:text-fg"
+            onClick={() => useStore.getState().set({ dialog: { kind: "settings" } })}
+            data-testid="usage-mode-change"
+          >
+            {mode === "actual" ? "Account limits and spend" : "API-equivalent cost"} · change in
+            Settings
+          </button>
           {view && view.counted < view.total && (
             <span className="text-sm tabular-nums text-fg-4" data-testid="usage-counting">
               Counting {view.counted} of {view.total} sessions
