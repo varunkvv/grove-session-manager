@@ -1,6 +1,7 @@
 import {
   formatMoney,
   formatRelativeTime,
+  headlineLimit,
   type LimitSeverity,
   resetWords,
   type UsageLimits,
@@ -424,79 +425,65 @@ function LimitCard({
 }
 
 /**
- * the account's own numbers, as Claude Code last fetched them into its state file: a plan's
- * windows, each with when it starts over, and what was spent against the cap. grove asks nothing
- * itself, so it says how old they are
+ * the cost tile in account mode: what the account spent or how much of its limit is used, as Claude
+ * Code last fetched it. a metered account has a monthly cap; a plan has windows, and the tighter open
+ * one is shown with when it starts over. nothing fetched yet: a dash and where to get the numbers
  */
-function Actual({ limits }: { limits: UsageLimits | null }) {
-  const now = useStore((s) => s.now);
-  if (!limits) {
-    return (
-      <div
-        className="mt-6 flex h-[242px] flex-col items-center justify-center gap-1 text-center"
-        data-testid="actual-empty"
-      >
-        <p className="text-fg-3">No usage limits from Claude Code yet</p>
-        <p className="max-w-[420px] text-sm text-fg-4">
-          Grove shows the limits Claude Code last fetched for your account. Running /usage in Claude
-          Code fetches them.
-        </p>
-      </div>
-    );
+function accountCost(
+  limits: UsageLimits | null,
+  now: number,
+): Omit<Parameters<typeof StatTile>[0], "selected" | "onSelect" | "testId"> {
+  const head = headlineLimit(limits, now);
+  const spend = limits?.spend;
+  const age = limits ? `updated ${formatRelativeTime(limits.fetchedAt, now)}` : "";
+  if (!limits || !head) {
+    return {
+      label: "Cost",
+      value: "-",
+      note: "Run /usage in Claude Code",
+      hint: "Claude Code has not fetched your account's limits yet",
+    };
   }
-  const { spend, windows } = limits;
-  return (
-    <section className="mt-5" data-testid="actual" data-kind={limits.kind}>
-      {windows.length > 0 && (
-        <div className="grid gap-3 min-[700px]:grid-cols-2">
-          {windows.map((w) => (
-            <LimitCard
-              key={w.key}
-              testId={`limit-${w.key}`}
-              label={w.label}
-              value={percentWords(w.percent)}
-              percent={w.percent}
-              severity={w.severity}
-              note={w.resetsAt === null ? undefined : capital(resetWords(w.resetsAt, now))}
-              // the menu bar leaves such a window out too
-              reset={w.resetsAt !== null && w.resetsAt <= now}
-            />
-          ))}
-        </div>
-      )}
-      {spend && (
-        <div className={cx(windows.length > 0 && "mt-3")}>
-          <LimitCard
-            testId="limit-spend"
-            label="Spend"
-            value={formatMoney(spend.used, spend.currency, spend.digits)}
-            of={
-              spend.limit === null
-                ? undefined
-                : `of ${formatMoney(spend.limit, spend.currency, spend.digits)}`
-            }
+  if (spend && limits.kind === "metered") {
+    return {
+      label: "Spend this month",
+      value: formatMoney(spend.used, spend.currency, spend.digits),
+      note: [
+        spend.limit === null
+          ? "no limit"
+          : `of ${formatMoney(spend.limit, spend.currency, spend.digits)} · ${percentWords(head.percent)}`,
+        age,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      hint: `Your account's spend, as Claude Code last fetched it (${age})`,
+      footer:
+        spend.percent === null || spend.limit === null ? undefined : (
+          <LimitBar
+            className="mt-2.5"
             percent={spend.percent}
             severity={spend.severity}
-            note={
-              spend.limit === null
-                ? "No limit"
-                : spend.percent === null
-                  ? `Capped at ${formatMoney(spend.limit, spend.currency, spend.digits)}`
-                  : `${percentWords(spend.percent)} used`
-            }
+            label={`Spend: ${formatMoney(spend.used, spend.currency, spend.digits)} of ${formatMoney(spend.limit, spend.currency, spend.digits)}`}
           />
-        </div>
-      )}
-      <p
-        className="mt-4 text-sm text-fg-4"
-        data-testid="actual-updated"
-        title={new Date(limits.fetchedAt).toLocaleString()}
-      >
-        Updated {formatRelativeTime(limits.fetchedAt, now)}, as Claude Code last fetched it for your
-        account
-      </p>
-    </section>
-  );
+        ),
+    };
+  }
+  return {
+    label: "Plan usage",
+    value: percentWords(head.percent),
+    note: [head.resetsAt === null ? head.label : resetWords(head.resetsAt, now), age]
+      .filter(Boolean)
+      .join(" · "),
+    hint: `${head.label} as Claude Code last fetched it (${age})`,
+    footer: (
+      <LimitBar
+        className="mt-2.5"
+        percent={head.percent}
+        severity={limits.windows.find((w) => w.label === head.label)?.severity ?? "normal"}
+        label={`${head.label}: ${percentWords(head.percent)} used`}
+      />
+    ),
+  };
 }
 
 /**
@@ -510,9 +497,11 @@ export function Usage() {
   const limits = useStore((s) => s.limits);
   const saved = useStore((s) => s.settings?.usageMode);
   const mode = usageModeOf(saved, limits);
-  const view = useUsage(mode === "api-equivalent");
+  // the transcripts are read in both modes: only the cost panel above the tiles changes with the toggle
+  const view = useUsage(true);
   // the range ends today: a new day is a new last bar
   const today = useStore((s) => new Date(s.now).toDateString());
+  const now = useStore((s) => s.now);
   const [range, setRange] = useState<Range>("1W");
   const [metric, setMetric] = useState<Metric>("cost");
   // biome-ignore lint/correctness/useExhaustiveDependencies: `today` is when to count the days again
@@ -533,39 +522,58 @@ export function Usage() {
             onChange={pickMode}
             options={MODES}
           />
-          {mode === "api-equivalent" && view && view.counted < view.total && (
+          {view && view.counted < view.total && (
             <span className="text-sm tabular-nums text-fg-4" data-testid="usage-counting">
               Counting {view.counted} of {view.total} sessions
             </span>
           )}
           <span className="ml-auto" />
-          {mode === "api-equivalent" && (
-            <Segmented
-              label="Range"
-              size="sm"
-              value={range}
-              onChange={setRange}
-              options={RANGES.map((r) => ({ value: r, label: r, testId: `range-${r}` }))}
-            />
-          )}
+          <Segmented
+            label="Range"
+            size="sm"
+            value={range}
+            onChange={setRange}
+            options={RANGES.map((r) => ({ value: r, label: r, testId: `range-${r}` }))}
+          />
         </div>
-        {mode === "actual" && <Actual limits={limits} />}
-        {mode === "api-equivalent" && model && (
+        {mode === "actual" && limits && limits.windows.length > 0 && (
+          <div className="mt-3 grid gap-3 min-[700px]:grid-cols-2" data-testid="actual">
+            {limits.windows.map((w) => (
+              <LimitCard
+                key={w.key}
+                testId={`limit-${w.key}`}
+                label={w.label}
+                value={percentWords(w.percent)}
+                percent={w.percent}
+                severity={w.severity}
+                note={w.resetsAt === null ? undefined : capital(resetWords(w.resetsAt, now))}
+                // the menu bar leaves such a window out too
+                reset={w.resetsAt !== null && w.resetsAt <= now}
+              />
+            ))}
+          </div>
+        )}
+        {model && (
           <>
             <div role="radiogroup" aria-label="What the chart measures" className="mt-5 flex gap-3">
               {METRICS.map((m) => {
                 const tile = model.tiles[m];
+                // the cost tile is the account's own numbers in account mode, and the rest stay the same
+                const account = mode === "actual" && m === "cost" ? accountCost(limits, now) : null;
                 return (
                   <StatTile
                     key={m}
-                    label={METRIC_WORDS[m].label}
-                    hint={METRIC_WORDS[m].hint}
-                    value={formatValue(tile.total, m)}
+                    label={account?.label ?? METRIC_WORDS[m].label}
+                    hint={account?.hint ?? METRIC_WORDS[m].hint}
+                    value={account?.value ?? formatValue(tile.total, m)}
                     note={
-                      tile.change === undefined
-                        ? undefined
-                        : `${formatChange(tile.change)} vs ${model.before}`
+                      account
+                        ? account.note
+                        : tile.change === undefined
+                          ? undefined
+                          : `${formatChange(tile.change)} vs ${model.before}`
                     }
+                    footer={account?.footer}
                     selected={m === metric}
                     onSelect={() => setMetric(m)}
                     testId={`tile-${m}`}

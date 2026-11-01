@@ -529,7 +529,8 @@ export function ProgressBar({
 
 /** the fill of a usage limit's bar, by how close it is: grey while fine, then the state hues */
 const LIMIT_FILL: Record<LimitSeverity, string> = {
-  normal: "bg-fg-3",
+  // grove's accent while the account is fine: the same purple as the menu bar's bar
+  normal: "bg-accent-solid",
   warning: "bg-hue-orange",
   critical: "bg-hue-red",
 };
@@ -1009,6 +1010,7 @@ export function StatTile({
   hint,
   selected,
   onSelect,
+  footer,
   testId,
 }: {
   label: string;
@@ -1019,6 +1021,8 @@ export function StatTile({
   hint: string;
   selected: boolean;
   onSelect: () => void;
+  /** under the note: a limit's bar, in account mode */
+  footer?: ReactNode;
   testId: string;
 }) {
   return (
@@ -1047,6 +1051,7 @@ export function StatTile({
       >
         {note}
       </span>
+      {footer}
     </button>
   );
 }

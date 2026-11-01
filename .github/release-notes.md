@@ -1,3 +1,18 @@
+## 0.44
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.44 puts your usage limit in the menu bar as a bar, and makes the cost on the Usage screen follow your account.
+
+New:
+
+- the menu bar's usage row has a bar in grove's purple, amber from 90% of the limit. clicking the row opens grove
+- on the Usage screen, in account mode, the cost tile shows your account's spend this month with its limit's bar (or the plan window nearest its limit, with when it starts over). the windows of a plan are still listed under the tiles
+- time, tokens, the chart and the extras stay on the screen in both modes. only the cost changes with the toggle
+
+Keep in mind:
+
+- the numbers are the ones Claude Code last fetched, so they can be hours old. the tile says how long ago
+- the bar in the menu bar is drawn when the menu is built, so a change of system appearance shows on the next menu update
+
 ## 0.43
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.43 shows how many agents a session has running.

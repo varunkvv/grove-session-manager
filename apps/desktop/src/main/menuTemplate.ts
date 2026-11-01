@@ -257,7 +257,11 @@ export function trayTooltip(v: TrayView): string {
  * every project, what is working or watching and whether that keeps the mac awake, how much of the
  * usage limit is used when the menu bar shows it, then Open Grove and Quit
  */
-export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOptions[] {
+export function trayTemplate(
+  v: TrayView,
+  a: TrayActions,
+  limitIcon?: MenuItemConstructorOptions["icon"],
+): MenuItemConstructorOptions[] {
   const n = v.inbox.rows.length;
   const more = n - TRAY_NEEDS;
   const rows = v.inbox.rows.slice(0, TRAY_NEEDS).map(
@@ -291,7 +295,9 @@ export function trayTemplate(v: TrayView, a: TrayActions): MenuItemConstructorOp
           {
             label: limitWords(v.limit, v.now, " · "),
             sublabel: `Updated ${formatRelativeTime(v.limit.fetchedAt, v.now)}`,
-            enabled: false,
+            // enabled, or macOS dims the bar: the click opens grove, where the Usage screen is
+            icon: limitIcon ?? undefined,
+            click: a.showMain,
           },
           { type: "separator" },
         ] satisfies MenuItemConstructorOptions[])

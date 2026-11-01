@@ -262,28 +262,28 @@ test("Usage: a metered account opens on its own spend, the menu bar says it, and
   // the menu bar has it before the screen is opened
   await expect.poll(() => g.trayTitle(), { timeout: 15_000 }).toBe("21%");
   const menu = await g.trayMenu();
+  // enabled, so macOS keeps its bar bright: the click opens grove
   expect(menu.find((i) => i.label === "21% of your $2,000 limit used")).toMatchObject({
     sublabel: "Updated 1h ago",
-    enabled: false,
   });
 
   await page.getByTestId("nav-usage").click();
   await expect(page.getByTestId("usage-mode-actual")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("actual")).toHaveAttribute("data-kind", "metered");
-  const spend = page.getByTestId("limit-spend");
-  await expect(spend.getByTestId("limit-value")).toHaveText("$410.31");
-  await expect(spend).toContainText("of $2,000");
-  await expect(spend.getByTestId("limit-note")).toHaveText("21% used");
-  await expect(spend.getByTestId("limit-bar")).toHaveAttribute("aria-valuenow", "21");
-  await expect(spend.getByTestId("limit-bar")).toHaveAttribute("data-severity", "normal");
-  await expect(page.getByTestId("actual-updated")).toContainText("Updated 1h ago");
-  // the range is the API-equivalent's
-  await expect(page.getByTestId("range-1W")).toHaveCount(0);
+  // only the cost tile changes with the mode: it is the account's spend, with its limit's bar
+  const cost = page.getByTestId("tile-cost");
+  await expect(cost).toHaveAttribute("aria-checked", "true");
+  await expect(cost.getByTestId("tile-value")).toHaveText("$410.31");
+  await expect(cost.getByTestId("tile-note")).toHaveText("of $2,000 · 21% · updated 1h ago");
+  await expect(cost.getByTestId("limit-bar")).toHaveAttribute("aria-valuenow", "21");
+  await expect(cost.getByTestId("limit-bar")).toHaveAttribute("data-severity", "normal");
+  // the tiles, the range and the chart stay
+  await expect(page.getByTestId("tile-tokens")).toBeVisible();
+  await expect(page.getByTestId("range-1W")).toBeVisible();
 
   // the API-equivalent: the tiles, and nothing of usage in the menu bar
   await page.getByTestId("usage-mode-api").click();
-  await expect(page.getByTestId("tile-cost")).toBeVisible();
-  await expect(page.getByTestId("actual")).toHaveCount(0);
+  await expect(page.getByTestId("tile-cost").getByTestId("tile-value")).not.toHaveText("$410.31");
+  await expect(page.getByTestId("limit-bar")).toHaveCount(0);
   await expect.poll(() => g.trayTitle()).toBe("");
   const settings = path.join(f.root, "settings.json");
   await expect
@@ -319,17 +319,21 @@ test("Usage: a plan account opens on the API-equivalent, and Actual has its wind
   expect(await g.trayTitle()).toBe("");
 
   await page.getByTestId("usage-mode-actual").click();
-  await expect(page.getByTestId("actual")).toHaveAttribute("data-kind", "plan");
+  // the cost tile shows the window nearest its limit, with when it starts over
+  const cost = page.getByTestId("tile-cost");
+  await expect(cost.getByTestId("tile-value")).toHaveText("63%");
+  await expect(cost.getByTestId("tile-note")).toHaveText(
+    /^resets in (2d 23h|3d) · updated 1h ago$/,
+  );
+  await expect(cost.getByTestId("limit-bar")).toHaveAttribute("aria-valuenow", "63");
+  // and every window of the plan, with its reset
   const five = page.getByTestId("limit-five_hour");
   await expect(five.getByTestId("limit-value")).toHaveText("42%");
   await expect(five.getByTestId("limit-note")).toHaveText(/^Resets in 2h (29|30)m$/);
   const week = page.getByTestId("limit-seven_day");
   await expect(week.getByTestId("limit-value")).toHaveText("63%");
   await expect(week.getByTestId("limit-note")).toHaveText(/^Resets in (2d 23h|3d)$/);
-  await expect(page.getByTestId("limit-bar")).toHaveCount(2);
-  await expect(page.getByTestId("limit-spend")).toHaveCount(0);
 
-  // the window nearest its limit, with its reset in words
   await expect.poll(() => g.trayTitle()).toBe("63%");
   const labels = (await g.trayMenu()).map((i) => i.label ?? "");
   expect(labels.some((l) => /^63% of your weekly limit used · resets in /.test(l))).toBe(true);
@@ -341,6 +345,9 @@ test("Usage: Actual with nothing from Claude Code says where it comes from", asy
   await page.getByTestId("nav-usage").click();
   await expect(page.getByTestId("usage-mode-api")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("usage-mode-actual").click();
-  await expect(page.getByTestId("actual-empty")).toContainText("Running /usage in Claude Code");
-  await expect(page.getByTestId("usage-chart")).toHaveCount(0);
+  // the cost tile says where the numbers come from; the chart and tiles stay in actual mode
+  const cost = page.getByTestId("tile-cost");
+  await expect(cost.getByTestId("tile-value")).toHaveText("-");
+  await expect(cost.getByTestId("tile-note")).toHaveText("Run /usage in Claude Code");
+  await expect(page.getByTestId("usage-chart")).toBeVisible();
 });

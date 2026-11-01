@@ -3,6 +3,7 @@
 // built from the inbox and what is working (menuTemplate.ts's trayTemplate).
 import type { MenuItemConstructorOptions, NativeImage, Tray } from "electron";
 import * as electron from "electron";
+import { BAR_HEIGHT, BAR_WIDTH, limitBarPixels } from "./limitBar.ts";
 import {
   type TrayActions,
   type TrayView,
@@ -29,6 +30,18 @@ export function trayImage(): NativeImage {
   return image;
 }
 
+/**
+ * the usage limit's bar for the menu row, in grove's accent: a colour bitmap, so it is not a
+ * template and it follows the appearance it was drawn for
+ */
+export function limitIcon(percent: number): NativeImage {
+  const image = electron.nativeImage.createFromBitmap(
+    limitBarPixels(percent, electron.nativeTheme.shouldUseDarkColors),
+    { width: BAR_WIDTH, height: BAR_HEIGHT, scaleFactor: 2 },
+  );
+  return image;
+}
+
 export function createTray(): Tray {
   const tray = new electron.Tray(trayImage());
   tray.setToolTip("Grove");
@@ -44,7 +57,7 @@ export function updateTray(
   view: TrayView,
   a: TrayActions,
 ): MenuItemConstructorOptions[] {
-  const template = trayTemplate(view, a);
+  const template = trayTemplate(view, a, view.limit ? limitIcon(view.limit.percent) : undefined);
   if (tray && !tray.isDestroyed()) {
     tray.setTitle(trayTitle(view));
     tray.setToolTip(trayTooltip(view));

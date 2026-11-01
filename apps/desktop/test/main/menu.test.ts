@@ -144,7 +144,11 @@ describe("the tray menu", () => {
     row({ sessionId: "s8", kind: "failed", title: "fourth" }),
   ];
   const NOW = 10 * 3_600_000;
-  const menu = (rows: InboxRowView[], view: Partial<TrayView> = {}) => {
+  const menu = (
+    rows: InboxRowView[],
+    view: Partial<TrayView> = {},
+    limitIcon?: Electron.NativeImage,
+  ) => {
     const landed: LandingTarget[] = [];
     const opened: string[] = [];
     let shown = 0;
@@ -161,6 +165,7 @@ describe("the tray menu", () => {
         ...view,
       },
       { land: (t) => landed.push(t), open: (id) => opened.push(id), showMain: () => shown++ },
+      limitIcon,
     );
     const click = (i: number) => (items[i]?.click as (() => void) | undefined)?.();
     return { items, landed, opened, click, shown: () => shown };
@@ -428,10 +433,9 @@ describe("the tray menu", () => {
     expect(trayTitle(view(ROWS.slice(0, 2), OLD))).toBe("2");
     expect(trayTitle(view([], OLD))).toBe("");
     expect(trayTooltip(view([], OLD))).toBe("Grove, 21% of your $2,000 limit used, updated 1d ago");
-    expect(menu([], { limit: OLD }).items.at(-4)).toEqual({
+    expect(menu([], { limit: OLD }).items.at(-4)).toMatchObject({
       label: "21% of your $2,000 limit used",
       sublabel: "Updated 1d ago",
-      enabled: false,
     });
   });
 
@@ -449,17 +453,23 @@ describe("the tray menu", () => {
   it("a row for the usage limit before Open Grove, with how old the number is", () => {
     const metered = menu([], { limit: SPEND }).items;
     expect(metered.slice(-4)).toEqual([
-      { label: "21% of your $2,000 limit used", sublabel: "Updated 8h ago", enabled: false },
+      {
+        label: "21% of your $2,000 limit used",
+        sublabel: "Updated 8h ago",
+        click: expect.any(Function),
+      },
       { type: "separator" },
       { label: "Open Grove", click: expect.any(Function) },
       { role: "quit" },
     ]);
     const plan = menu([], { limit: WEEK }).items;
-    expect(plan.at(-4)).toEqual({
+    expect(plan.at(-4)).toMatchObject({
       label: "63% of your weekly limit used · resets in 2h 10m",
       sublabel: "Updated 5m ago",
-      enabled: false,
     });
+    // the bar is the row's icon when the tray passes one, and the row is enabled so macOS keeps it bright
+    const icon = { isEmpty: () => false } as unknown as Electron.NativeImage;
+    expect(menu([], { limit: SPEND }, icon).items.at(-4)).toMatchObject({ icon });
     // with none, the menu is as it always was
     expect(menu([], { limit: null }).items).toHaveLength(6);
   });
