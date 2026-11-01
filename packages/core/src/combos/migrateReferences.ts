@@ -43,14 +43,17 @@ function oldMemberLine(f: ComboFolder): string {
   return `- \`${dir}/\` - working copy. a git worktree of \`${f.path}\`, ${branchLabel(f)}.`;
 }
 
-async function isWorktreeOf(origin: string, dir: string): Promise<boolean> {
-  const isDir = await stat(dir).then(
-    (s) => s.isDirectory(),
+/** "missing" only when nothing is there: anything else git does not vouch for is left alone */
+async function lookAt(origin: string, dir: string): Promise<"missing" | "ours" | "unknown"> {
+  const there = await stat(dir).then(
+    () => true,
     () => false,
   );
-  if (!isDir) return false;
+  if (!there) return "missing";
   const listed = await listWorktrees(origin);
-  return listed.ok && listed.value.some((e) => !e.isMain && samePath(e.path, dir));
+  return listed.ok && listed.value.some((e) => !e.isMain && samePath(e.path, dir))
+    ? "ours"
+    : "unknown";
 }
 
 /**
@@ -81,7 +84,16 @@ export async function migrateReferences(
       if (f.mode !== "worktree") continue;
       const from = targetDirFor(combo, f);
       const base = { combo: combo.name, path: f.path, from };
-      if (!(await isWorktreeOf(f.path, from))) {
+      const seen = await lookAt(f.path, from);
+      if (seen === "unknown") {
+        entry.folders.push({
+          ...base,
+          action: "kept",
+          message: "something is there that git does not list as this repo's worktree, left alone",
+        });
+        continue;
+      }
+      if (seen === "missing") {
         entry.folders.push({
           ...base,
           action: "flipped",
@@ -116,7 +128,8 @@ export async function migrateReferences(
     }
     flips.set(combo.name, done);
 
-    // the stub: member lines of the folders that flip. the swaps follow once combos.json is written
+    // the stub: member lines of the folders that flip, written before combos.json (a rerun
+    // recovers if that write fails). the swaps follow once combos.json is written
     const claudeMd = path.join(combo.root, "CLAUDE.md");
     const text = await readFile(claudeMd, "utf8").catch(() => null);
     if (text !== null) {

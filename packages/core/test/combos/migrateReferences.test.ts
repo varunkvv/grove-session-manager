@@ -83,6 +83,16 @@ describe("migrateReferences", () => {
     expect((await load(s.app))[0]?.folders[0]?.mode).toBe("reference");
   });
 
+  it("leaves alone a directory git does not list as the repo's worktree", async () => {
+    const s = await setup({ create: false });
+    mkdirSync(s.dir, { recursive: true });
+    writeFileSync(path.join(s.dir, "keep.txt"), "mine\n");
+    const report = await migrateReferences(s.app, await load(s.app), { apply: true });
+    expect(report).toMatchObject({ moved: 0, flipped: 0, kept: 1 });
+    expect(readFileSync(path.join(s.dir, "keep.txt"), "utf8")).toBe("mine\n");
+    expect((await load(s.app))[0]?.folders[0]?.mode).toBe("worktree");
+  });
+
   it("leaves a folder as a worktree when git cannot move it", async () => {
     const s = await setup();
     await git(s.api, "worktree", "lock", s.dir);
