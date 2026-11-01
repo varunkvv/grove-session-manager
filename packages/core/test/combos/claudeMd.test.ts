@@ -40,14 +40,19 @@ describe("combo root and CLAUDE.md", () => {
   it("says what a worktree is, where plans and artifacts go, and how sessions leave word for each other", async () => {
     const md = renderClaudeMdStub(combo());
     // what this is
-    expect(md).toContain("A working copy is a git worktree");
+    const c = combo();
+    const md2 = renderClaudeMdStub(c);
+    expect(md2).toContain("## Worktrees");
+    expect(md2).toContain(`worktree add ${c.root}/worktrees/<repo>-<task> -b <branch>`);
+    expect(md2).not.toContain("Grove owns their lifecycle");
+    expect(md2).not.toContain("A working copy is a git worktree");
     expect(md).toContain("detached at HEAD");
     expect(md).toContain("on branch `prod-debug`");
-    expect(md).toContain("never remove a working copy");
     // where things go
     expect(md).toContain("`plans/`");
     expect(md).toContain("`artifacts/`");
-    expect(md).toContain("Nothing below belongs inside a working copy");
+    expect(md).toContain("Nothing below belongs inside a worktree");
+    expect(md).toContain("before a large edit in a worktree,");
     // forks and background agents do not share a conversation
     expect(md).toContain("forks of this conversation");
     expect(md).toContain("`context/in-progress.md`");

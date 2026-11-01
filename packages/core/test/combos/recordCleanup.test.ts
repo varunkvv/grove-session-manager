@@ -171,6 +171,35 @@ describe("a project as 0.10 left it", () => {
     expect(snapshot(p.root)).toEqual(after);
   });
 
+  it("swaps the old working copy block for the worktrees block, once", async () => {
+    const p = project();
+    const old = [
+      "A working copy is a git worktree: a second checkout of the original clone, sharing its `.git`.",
+      "",
+      "- commits and branches made here show up in the original clone straight away, and the other way round",
+      "- it started clean. uncommitted work in the original clone is not here",
+      "- a branch can be checked out in one worktree at a time. when `git checkout <branch>` refuses, that is why",
+      "- never remove a working copy with `rm -rf` or `git worktree remove`. Grove owns their lifecycle",
+    ].join("\n");
+    const stub = renderClaudeMdStub(p.combo);
+    const start = stub.indexOf("## Worktrees");
+    const end = stub.indexOf("## Where things go");
+    const person = "## Mine\n\nnotes\n";
+    const before = `${stub.slice(0, start)}${old}\n\n${stub
+      .slice(end)
+      .replace("inside a worktree.", "inside a working copy.")
+      .replace("edit in a worktree,", "edit in a working copy,")}\n${person}`;
+    writeFileSync(p.file("CLAUDE.md"), before);
+
+    expect((await p.clean()).cleaned).toContain("CLAUDE.md");
+    expect(p.read("CLAUDE.md")).toBe(`${stub}\n${person}`);
+    expect(p.read("CLAUDE.md")).toContain(`worktree add ${p.root}/worktrees/<repo>-<task>`);
+
+    const after = snapshot(p.root);
+    expect((await p.clean()).cleaned).toEqual([]);
+    expect(snapshot(p.root)).toEqual(after);
+  });
+
   it("a server the person called grove is theirs, with its name and its tool rule", async () => {
     const p = project();
     const own = { mcpServers: { grove: { command: "/usr/local/bin/grove-notes", args: [] } } };

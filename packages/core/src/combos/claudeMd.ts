@@ -9,6 +9,21 @@ function branchLabel(f: Combo["folders"][number]): string {
   return b.kind === "new" ? `on branch \`${b.name}\`` : `on existing branch \`${b.name}\``;
 }
 
+/** what a session needs to make its own worktree per change. the old text in recordCleanup swaps to this */
+export function worktreesBlock(root: string): string[] {
+  return [
+    "A reference is the person's own clone. Change code in a git worktree, never in the clone. Give each independent task its own, inside this folder:",
+    "",
+    `    git -C <reference> worktree add ${root}/worktrees/<repo>-<task> -b <branch>`,
+    "",
+    "- a question, a review or an investigation needs no worktree. a change does",
+    "- a worktree shares the clone's `.git`: commits and branches show up in both straight away, uncommitted work does not",
+    "- a branch can be checked out in one worktree at a time. when `git checkout <branch>` refuses, that is why",
+    "- once its branch is merged, remove it with `git -C <reference> worktree remove <dir>`. never one with uncommitted work, never with `rm -rf`",
+    "- a working copy listed above is Grove's: leave it where it is",
+  ];
+}
+
 /**
  * every session started in the combo root loads this file, forks and background agents included.
  * so it carries the three things none of them can work out alone: what this folder is, where
@@ -35,16 +50,13 @@ export function renderClaudeMdStub(combo: Combo): string {
     "",
     ...(members.length ? members : ["- (no members yet)"]),
     "",
-    "A working copy is a git worktree: a second checkout of the original clone, sharing its `.git`.",
+    "## Worktrees",
     "",
-    "- commits and branches made here show up in the original clone straight away, and the other way round",
-    "- it started clean. uncommitted work in the original clone is not here",
-    "- a branch can be checked out in one worktree at a time. when `git checkout <branch>` refuses, that is why",
-    "- never remove a working copy with `rm -rf` or `git worktree remove`. Grove owns their lifecycle",
+    ...worktreesBlock(combo.root),
     "",
     "## Where things go",
     "",
-    "Nothing below belongs inside a working copy. Keep those clean, so nothing lands in a commit by accident.",
+    "Nothing below belongs inside a worktree. Keep those clean, so nothing lands in a commit by accident.",
     "",
     "- `plans/` - plans and designs, one file each: `YYYY-MM-DD-topic.md`. a plan that only exists in a chat is gone when the session ends or forks",
     "- `artifacts/` - generated things that are not source: reports, query results, exports, diagrams, scratch scripts",
@@ -59,7 +71,7 @@ export function renderClaudeMdStub(combo: Combo): string {
     "- before starting a task, read `context/`",
     "- when you decide something, learn something non-obvious, or finish a piece of work, write it to `context/<topic>.md` as a short dated entry",
     "- add to a file, do not rewrite it. another session may be reading it or adding to it",
-    "- before a large edit in a working copy, say what you are touching in `context/in-progress.md`, and remove your entry when done. two sessions editing the same files is what this prevents",
+    "- before a large edit in a worktree, say what you are touching in `context/in-progress.md`, and remove your entry when done. two sessions editing the same files is what this prevents",
     "",
     "This file was written once when the combo was created. It is yours to edit.",
     "",

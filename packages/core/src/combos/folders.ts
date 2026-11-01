@@ -24,6 +24,8 @@ export const COMBO_RESERVED_NAMES: ReadonlySet<string> = new Set([
   "claude.md",
   ".claude",
   ".git",
+  // where claude makes a worktree per task
+  "worktrees",
   ...COMBO_SHARED_DIRS,
   // what 0.10's record left at the root of a project that had it
   "cards",

@@ -13,6 +13,7 @@ import { getStateDir } from "../paths.ts";
 import { projectIdOf } from "../project/ids.ts";
 import { type HookSyncStatus, syncComboStatusHooks } from "../sessions/liveStatus.ts";
 import type { Combo, Warning } from "../types.ts";
+import { worktreesBlock } from "./claudeMd.ts";
 
 const SERVER = "grove";
 /** on the record's SessionStart hook */
@@ -145,6 +146,24 @@ const CLAUDE_MD: ReadonlyArray<readonly [string, string]> = [
   ],
 ];
 
+/** the 0.10 swaps, then what moves a project from one working copy per repo to task worktrees */
+const claudeMdSwaps = (combo: Combo): ReadonlyArray<readonly [string, string]> => [
+  ...CLAUDE_MD,
+  [
+    [
+      "A working copy is a git worktree: a second checkout of the original clone, sharing its `.git`.",
+      "",
+      "- commits and branches made here show up in the original clone straight away, and the other way round",
+      "- it started clean. uncommitted work in the original clone is not here",
+      "- a branch can be checked out in one worktree at a time. when `git checkout <branch>` refuses, that is why",
+      "- never remove a working copy with `rm -rf` or `git worktree remove`. Grove owns their lifecycle",
+    ].join("\n"),
+    ["## Worktrees", "", ...worktreesBlock(combo.root)].join("\n"),
+  ],
+  ["Nothing below belongs inside a working copy.", "Nothing below belongs inside a worktree."],
+  ["before a large edit in a working copy,", "before a large edit in a worktree,"],
+];
+
 async function swapLines(
   file: string,
   swaps: ReadonlyArray<readonly [string, string]>,
@@ -167,7 +186,8 @@ export async function cleanRecordFiles(combo: Combo): Promise<string[]> {
   const cleaned: string[] = [];
   if (await cleanMcpJson(combo.root)) cleaned.push(".mcp.json");
   if (await removeRules(combo.root)) cleaned.push(RULES_FILE);
-  if (await swapLines(path.join(combo.root, "CLAUDE.md"), CLAUDE_MD)) cleaned.push("CLAUDE.md");
+  if (await swapLines(path.join(combo.root, "CLAUDE.md"), claudeMdSwaps(combo)))
+    cleaned.push("CLAUDE.md");
   return cleaned;
 }
 
