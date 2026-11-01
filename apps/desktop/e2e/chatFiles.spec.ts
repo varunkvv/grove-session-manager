@@ -219,9 +219,9 @@ test("code is coloured in a chat window, as a viewer's text file is, and the car
   expect(await chat.locator('code[data-lang="nosuchlang"] span[style]').count()).toBe(0);
   // a link to a file opens it beside the conversation, coloured by its extension
   await chat.locator(".md-file", { hasText: "the app" }).click();
-  const py = chat.getByTestId("viewer").locator('code[data-lang="py"]');
+  const py = chat.getByTestId("viewer").locator(".cm-content");
   await expect(py).toContainText("def hello");
-  await expect.poll(() => py.locator("span[style]").count()).toBeGreaterThan(1);
+  await expect.poll(() => py.locator("span[class]").count()).toBeGreaterThan(1);
   // the main window's session card: the end of the answer, no colour, no file link
   await app.page.locator(`[data-testid="session-row"][data-id="${SID}"]`).click();
   await expect(app.page.getByTestId("card-tail")).toContainText("plain words");
@@ -407,4 +407,32 @@ test("a big image opens at its own size on a click and fits again on the next, a
   await cards.filter({ hasText: "notes.md" }).click();
   await expect(chat.getByTestId("viewer-text")).toContainText("notes");
   await expect(chat.getByTestId("viewer-open")).toHaveCount(0);
+});
+
+test("a file named in a message opens in a read-only editor, with the editor button", async () => {
+  const s = seed("");
+  const code = path.join(s.root, "app.ts");
+  writeFileSync(code, "const answer = 42;\nexport default answer;\n");
+  appendTurn(
+    s.file,
+    { sessionId: SID, cwd: s.root },
+    { prompt: "where", tools: [], reply: "It is in `app.ts`, and also app.ts:2 here." },
+  );
+  const chat = await open(s);
+  const links = chat.locator("button.md-file");
+  await expect(links).toHaveCount(2);
+  await links.first().click();
+  const viewer = chat.getByTestId("viewer");
+  await expect(viewer).toHaveAttribute("data-file", code);
+  const text = viewer.getByTestId("viewer-text");
+  await expect(text.locator(".cm-lineNumbers")).toBeVisible();
+  await expect(text.locator(".cm-content")).toContainText("const answer = 42;");
+  // read only: nothing to type into
+  await expect(text.locator(".cm-content")).toHaveAttribute("contenteditable", "false");
+  // coloured for typescript once its language has loaded
+  await expect.poll(() => text.locator(".cm-content span[class]").count()).toBeGreaterThan(0);
+  // rewritten on disk: the same editor, the new text
+  writeFileSync(code, "const answer = 43;\n");
+  await expect(text.locator(".cm-content")).toContainText("answer = 43");
+  await expect(viewer.getByTestId("viewer-editor")).toBeVisible();
 });

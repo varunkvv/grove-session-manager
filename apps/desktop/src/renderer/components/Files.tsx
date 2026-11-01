@@ -9,7 +9,8 @@ import type { ChatChange, ChatFileText } from "../../shared/ipc.ts";
 import { FILE_SCHEME, HTML_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { dirOf } from "../logic/links.ts";
 import { ChatScopeContext, useChatScope } from "../state/chatScope.ts";
-import { Highlighted, Markdown } from "./Markdown.tsx";
+import { CodeView } from "./CodeView.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { Button, cx, Diff, DiffCount, Icon, IconButton, Spinner } from "./ui.tsx";
 
 const api = () => window.grove;
@@ -244,7 +245,14 @@ export function Viewer({
           data-testid="viewer-frame"
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div
+          className={
+            // code scrolls in its own editor, so this holds still. the rest scrolls here
+            kind === undefined
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden p-2"
+              : "min-h-0 flex-1 overflow-auto p-4"
+          }
+        >
           {kind === "image" ? (
             // another file is fitted again
             <ImageFile
@@ -302,11 +310,7 @@ function TextFile({ file, v }: { file: string; v: number }) {
       </ChatScopeContext.Provider>
     );
   }
-  return (
-    <pre className="reading selectable font-mono text-sm text-fg-2" data-testid="viewer-text">
-      <Highlighted lang={file.slice(file.lastIndexOf(".") + 1)} code={got.text} />
-    </pre>
-  );
+  return <CodeView file={file} text={got.text} />;
 }
 
 /** every file the session wrote, then the project's plans and artifacts */
