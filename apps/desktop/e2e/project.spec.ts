@@ -49,6 +49,31 @@ const combos = (): Array<{
   folders: Array<{ path: string; mode: string }>;
 }> => JSON.parse(readFileSync(path.join(fx.root, "combos.json"), "utf8")).combos;
 
+/** a project with working copies, as 0.40 and before made them: the form no longer does */
+async function createLegacy(
+  page: Page,
+  name: string,
+  copies: string[],
+  references: string[] = [],
+): Promise<void> {
+  const res = await page.evaluate((draft) => window.grove.createProject(draft), {
+    name,
+    folders: [
+      ...copies.map((p) => ({
+        path: p,
+        mode: "worktree" as const,
+        branch: { kind: "detach" as const },
+      })),
+      ...references.map((p) => ({ path: p, mode: "reference" as const })),
+    ],
+  });
+  expect(res.ok).toBe(true);
+  await expect
+    .poll(() => folderStates(page, name), { timeout: 30_000 })
+    .toEqual([...copies.map(() => "ok"), ...references.map(() => "reference")]);
+  await show(page, name);
+}
+
 /** the New project form with its name and the picker's folders in. on a first run the window is the form already */
 async function fillNew(page: Page, name: string, repos: number): Promise<Locator> {
   if ((await page.getByTestId("project-form").count()) === 0) await page.keyboard.press("Meta+n");
@@ -57,8 +82,8 @@ async function fillNew(page: Page, name: string, repos: number): Promise<Locator
   await page.getByTestId("add-folder").click();
   const rows = page.getByTestId("repo-row");
   await expect(rows).toHaveCount(repos);
-  // main has looked at every one: each has its access control in place of the spinner
-  await expect(rows.getByRole("radiogroup")).toHaveCount(repos);
+  // main has looked at every one: the spinner is gone
+  await expect(rows.locator(".spinner")).toHaveCount(0);
   return rows;
 }
 
@@ -67,7 +92,7 @@ async function submit(page: Page): Promise<void> {
   await expect(page.getByTestId("project-form")).toHaveCount(0);
 }
 
-test("the first project: working copies, a reference, and nothing of the record", async () => {
+test("the first project: every repo a reference, and nothing of the record", async () => {
   fx = makeFixture({ withCompanion: true, withClaude: true });
   const apiRepo = makeRepo(fx, "api", { branches: ["release"] });
   const shared = makeRepo(fx, "shared");
@@ -89,22 +114,15 @@ test("the first project: working copies, a reference, and nothing of the record"
   await expect(form).toContainText(`Folder ${fx.root}/prod-debug`);
   await page.getByTestId("project-goal").fill("Find why webhooks go missing");
 
-  // a repo is a working copy unless it cannot be one
-  await expect(rows.nth(0)).toHaveAttribute("data-mode", "worktree");
-  await expect(rows.nth(1)).toHaveAttribute("data-mode", "worktree");
-  await expect(rows.nth(2)).toHaveAttribute("data-mode", "reference");
-  await expect(rows.nth(2).getByTestId("mode-worktree")).toBeDisabled();
-  await expect(rows.nth(2).getByTestId("branch-toggle")).toHaveCount(0);
-  await expect(rows.nth(2).getByTestId("repo-note")).toHaveText(
-    "Not a git repository, so it can only be a reference.",
+  // every repo is a reference, a git one or not. no choice of access, no branch to pick
+  for (const i of [0, 1, 2]) {
+    await expect(rows.nth(i)).toHaveAttribute("data-mode", "reference");
+    await expect(rows.nth(i).getByRole("radiogroup")).toHaveCount(0);
+    await expect(rows.nth(i).getByTestId("branch-toggle")).toHaveCount(0);
+  }
+  await expect(form).toContainText(
+    "Each repo is your own clone. Claude reads it and makes a worktree in the project folder for each change.",
   );
-
-  // detached unless the disclosure says otherwise. a new branch is named after the project
-  await expect(rows.nth(1).getByTestId("branch-new")).toHaveCount(0);
-  await rows.nth(1).getByTestId("branch-toggle").click();
-  await expect(rows.nth(1).getByTestId("branch-detach")).toBeChecked();
-  await rows.nth(1).getByTestId("branch-new").click();
-  await expect(rows.nth(1).getByTestId("new-branch-name")).toHaveValue("prod-debug");
 
   await expect(page.getByTestId("form-submit")).toHaveText("Create project");
   await submit(page);
@@ -125,17 +143,26 @@ test("the first project: working copies, a reference, and nothing of the record"
   const root = path.join(fx.root, "prod-debug");
   await expect
     .poll(() => folderStates(page, "prod-debug"), { timeout: 30_000 })
-    .toEqual(["ok", "ok", "reference"]);
+    .toEqual(["reference", "reference", "reference"]);
   expect(combos()).toMatchObject([
-    { name: "Prod debug", root, note: "Find why webhooks go missing" },
+    {
+      name: "Prod debug",
+      root,
+      note: "Find why webhooks go missing",
+      folders: [
+        { path: apiRepo, mode: "reference" },
+        { path: shared, mode: "reference" },
+        { path: logs, mode: "reference" },
+      ],
+    },
   ]);
-  expect(git(path.join(root, "api"), "branch", "--show-current")).toBe("");
-  expect(git(path.join(root, "shared"), "branch", "--show-current")).toBe("prod-debug");
-  // the reference is the person's own clone and is never touched
+  // no working copy is made: the references are the person's own clones and are never touched
+  expect(existsSync(path.join(root, "api"))).toBe(false);
+  expect(git(apiRepo, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
   expect(readdirSync(logs)).toEqual(["notes.txt"]);
   const claudeMd = readFileSync(path.join(root, "CLAUDE.md"), "utf8");
   expect(claudeMd).toContain("# Prod debug");
-  expect(claudeMd).toContain("A working copy is a git worktree");
+  expect(claudeMd).toContain("## Worktrees");
   for (const dir of ["plans", "artifacts", "context"]) {
     expect(existsSync(path.join(root, dir)), dir).toBe(true);
   }
@@ -233,10 +260,8 @@ test("Edit project: repos that were in it are fixed, and an edited goal is saved
   const rows = page.getByTestId("repo-row");
   await expect(rows).toHaveCount(2);
   for (const i of [0, 1]) await expect(rows.nth(i)).toHaveAttribute("data-locked", "true");
-  await expect(rows.nth(0).getByTestId("mode-worktree")).toBeDisabled();
-  await expect(rows.nth(0).getByTestId("mode-reference")).toBeDisabled();
+  await expect(rows.nth(0).getByRole("radiogroup")).toHaveCount(0);
   await expect(rows.nth(0).getByTestId("branch-toggle")).toHaveCount(0);
-  await expect(form).toContainText("To change how a repo is included, remove it and add it again.");
   // nothing grove could not write: nothing said
   await expect(page.getByTestId("sync-problem")).toHaveCount(0);
   const save = page.getByTestId("form-submit");
@@ -413,47 +438,6 @@ test("a project as 0.10 left it: the record is taken out at launch, and what was
   expect([files(), statSync(marks).mtimeMs]).toEqual(before);
 });
 
-test("a second project that wants the same branch is told, and the rest of it still builds", async () => {
-  fx = makeFixture({ withCompanion: true });
-  const apiRepo = makeRepo(fx, "api");
-  const shared = makeRepo(fx, "shared");
-
-  app = await launchApp(fx);
-  const { page } = app;
-
-  await stubDirectoryPicker(app.app, [apiRepo]);
-  let rows = await fillNew(page, "first", 1);
-  await rows.nth(0).getByTestId("branch-toggle").click();
-  await rows.nth(0).getByTestId("branch-new").click();
-  await submit(page);
-  await expect.poll(() => folderStates(page, "first"), { timeout: 30_000 }).toEqual(["ok"]);
-
-  // "first" on api is taken. shared is free, and has to be built anyway
-  await stubDirectoryPicker(app.app, [apiRepo, shared]);
-  rows = await fillNew(page, "second", 2);
-  for (const i of [0, 1]) {
-    await rows.nth(i).getByTestId("branch-toggle").click();
-    await rows.nth(i).getByTestId("branch-new").click();
-    await rows.nth(i).getByTestId("new-branch-name").fill("first");
-  }
-  // the form says so before anything is created
-  await expect(rows.nth(0)).toContainText("That branch is checked out at");
-  await submit(page);
-
-  const toast = page
-    .getByTestId("toast")
-    .filter({ hasText: 'branch "first" is already checked out' });
-  await expect(toast).toBeVisible({ timeout: 30_000 });
-  await expect(toast).toContainText("The rest of the project was created");
-
-  await expect
-    .poll(async () => (await folderStates(page, "second"))?.[1], { timeout: 30_000 })
-    .toBe("ok");
-  expect(git(path.join(fx.root, "second", "shared"), "branch", "--show-current")).toBe("first");
-  // the original clone is untouched by any of it
-  expect(git(apiRepo, "status", "--porcelain")).toBe("");
-});
-
 test("drift is a note on Edit project, and a repair fixes what it can", async () => {
   fx = makeFixture({ withCompanion: true });
   const apiRepo = makeRepo(fx, "api");
@@ -461,9 +445,7 @@ test("drift is a note on Edit project, and a repair fixes what it can", async ()
 
   app = await launchApp(fx);
   const { page } = app;
-  await stubDirectoryPicker(app.app, [apiRepo, shared]);
-  await fillNew(page, "prod-debug", 2);
-  await submit(page);
+  await createLegacy(page, "prod-debug", [apiRepo, shared]);
   await expect
     .poll(() => folderStates(page, "prod-debug"), { timeout: 30_000 })
     .toEqual(["ok", "ok"]);
@@ -502,12 +484,7 @@ test("removing working copies on Edit project takes the clean one down and keeps
 
   app = await launchApp(fx);
   const { page } = app;
-  await stubDirectoryPicker(app.app, [apiRepo, shared, logs]);
-  await fillNew(page, "prod-debug", 3);
-  await submit(page);
-  await expect
-    .poll(() => folderStates(page, "prod-debug"), { timeout: 30_000 })
-    .toEqual(["ok", "ok", "reference"]);
+  await createLegacy(page, "prod-debug", [apiRepo, shared], [logs]);
 
   const root = path.join(fx.root, "prod-debug");
   const dirty = path.join(root, "api", "work-in-progress.txt");
@@ -551,9 +528,7 @@ test("Delete project is for the disk: no checkbox, a working copy with changes b
 
   app = await launchApp(fx);
   const { page } = app;
-  await stubDirectoryPicker(app.app, [apiRepo, shared]);
-  await fillNew(page, "prod-debug", 2);
-  await submit(page);
+  await createLegacy(page, "prod-debug", [apiRepo, shared]);
   await expect
     .poll(() => folderStates(page, "prod-debug"), { timeout: 30_000 })
     .toEqual(["ok", "ok"]);
@@ -571,7 +546,7 @@ test("Delete project is for the disk: no checkbox, a working copy with changes b
   // nothing to tick: delete always takes the folder
   await expect(dialog.locator("input")).toHaveCount(0);
   await expect(dialog).toContainText(
-    "Delete is for getting disk space back. The clean working copies are removed and the project folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones and past sessions are not touched.",
+    "Delete is for getting disk space back. The clean working copies and the worktrees Claude made in the project folder are removed, and the folder, with its CLAUDE.md, plans and notes, goes to the Trash. Original clones and past sessions are not touched.",
   );
   // and which folder that is
   await expect(page.getByTestId("delete-folder")).toHaveAttribute("title", root);
@@ -674,7 +649,7 @@ test("repos people keep using are one click away, and two with one name say wher
   const rows = page.getByTestId("repo-row");
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(mine);
-  await expect(rows.first()).toHaveAttribute("data-mode", "worktree");
+  await expect(rows.first()).toHaveAttribute("data-mode", "reference");
   // an added folder leaves the strip, and the one left needs no parent to tell it apart
   await expect(chips).toHaveText(["api", "web"]);
   // the same folder from the picker is not added twice
