@@ -1,0 +1,6 @@
+one step before you open grove
+
+grove is not notarized by apple, so macos quarantines the copy you downloaded.
+run this once in terminal, then open grove:
+
+xattr -dr com.apple.quarantine /Applications/Grove.app

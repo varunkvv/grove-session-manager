@@ -59,3 +59,7 @@ dmg:
       y: 200
       type: link
       path: /Applications
+    - x: 275
+      y: 410
+      type: file
+      path: resources/read-me-first.txt
