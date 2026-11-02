@@ -488,7 +488,10 @@ export class ConversationFold {
 
   private commandOutput(output: string): void {
     const open = this.current();
-    if (open?.turn.prompt?.kind !== "command" || open.turn.output !== undefined) return;
+    const prompt = open?.turn.prompt;
+    // the sdk stores a slash command (/code-review) as plain text, so it opens a human turn
+    const slash = prompt?.kind === "human" && prompt.text.startsWith("/");
+    if (!open || (prompt?.kind !== "command" && !slash) || open.turn.output !== undefined) return;
     open.turn.output = output;
   }
 

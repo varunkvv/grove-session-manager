@@ -362,6 +362,17 @@ describe("what the real stretch does not have", () => {
     });
   });
 
+  it("a local command typed as plain text (/code-review in the sdk) keeps its output", async () => {
+    const state = await fold([
+      userLine([text("/code-review high https://example.com/pull/1")], 0),
+      localCommand("7 findings, most severe first", 5),
+      userLine([text("thanks")], 10),
+      localCommand("not for a later turn's first word", 11),
+    ]);
+    const t = turns(state);
+    expect(t.map((x) => x.output)).toEqual(["7 findings, most severe first", undefined]);
+  });
+
   it("a command's expansion is its content, not a second prompt, whichever tag comes first", async () => {
     const state = await fold([
       command("code-review", "since main", 0, true),
