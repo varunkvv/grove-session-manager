@@ -83,6 +83,8 @@ export interface SessionRecord extends ParsedMeta {
   model?: string;
   /** what it made or touched for people, its agents' too, oldest first. one url once */
   outputs?: SessionOutput[];
+  /** jira cloud id -> site its transcripts taught. an output still waiting on one (`need`) may be in another session's */
+  sites?: Record<string, string>;
 }
 
 export type ComboRelation = "root" | "inside";

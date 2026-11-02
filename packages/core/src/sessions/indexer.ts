@@ -4,7 +4,7 @@ import { isObject, mapLimit } from "../fsx.ts";
 import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
 import { pickTitle } from "../transcript/title.ts";
-import { outputRulesKey } from "../transcript/outputs.ts";
+import { outputRulesKey, resolveSite } from "../transcript/outputs.ts";
 import { type DayTally, summarizeUsage } from "../transcript/usage.ts";
 import type { ParsedMeta, SessionOutput, SessionRecord } from "../types.ts";
 import {
@@ -75,7 +75,8 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
   const models = usage ? summarizeUsage(Object.values(usage)) : [];
   // "" is the session's own transcript (scanSessionUsage)
   const own = usage?.[""] && summarizeUsage([usage[""]])[0]?.model;
-  const outputs = usage ? outputsOf(usage) : [];
+  const sites = Object.assign({}, ...Object.values(usage ?? {}).map((t) => t.sites ?? {})) as Record<string, string>;
+  const outputs = usage ? outputsOf(usage).map((o) => resolveSite(o, sites)) : [];
   return {
     ...m,
     ...pickTitle(m),
@@ -89,6 +90,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     ...(models.length ? { usage: models } : {}),
     ...(own ? { model: own } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(Object.keys(sites).length ? { sites } : {}),
   };
 }
 
