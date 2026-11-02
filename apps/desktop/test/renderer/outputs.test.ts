@@ -149,8 +149,8 @@ describe("the session card", () => {
     expect(sections.map((s) => [s.tone, s.title, s.items.map((o) => o.key ?? o.url)])).toEqual([
       ["made", "Jira cards", ["CDIT-2"]],
       ["made", "Pull requests", ["o/r#2", "o/r#1"]],
-      ["other", "Jira cards", ["CDIT-1"]],
-      ["other", "Google docs", ["d"]],
+      ["other", "Jira cards touched", ["CDIT-1"]],
+      ["other", "Google docs touched", ["d"]],
       ["inherited", "From before the fork", ["CDIT-3"]],
     ]);
   });

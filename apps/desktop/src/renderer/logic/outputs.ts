@@ -173,7 +173,11 @@ export function sectionsOf(outputs: readonly OutputView[] | undefined): Section[
   const by = (list: OutputView[], tone: "made" | "other"): Section[] => {
     const groups = new Map<string, OutputView[]>();
     for (const o of list) groups.set(o.label, [...(groups.get(o.label) ?? []), o]);
-    return [...groups].map(([label, items]) => ({ title: `${cap(label)}s`, items, tone }));
+    return [...groups].map(([label, items]) => ({
+      title: `${cap(label)}s${tone === "other" ? " touched" : ""}`,
+      items,
+      tone,
+    }));
   };
   const own = all.filter((o) => !o.inherited);
   const inherited = all.filter((o) => o.inherited);

@@ -97,7 +97,7 @@ export function OutputsScreen() {
               >
                 <OutputGlyph kind={glyphOf(o.kind)} {...(o.pr ? { look: lookOf(o.pr) } : {})} />
                 <span className="w-28 shrink-0 truncate">{cap(o.label)}</span>
-                <span className="shrink-0 tabular-nums text-fg-2">{o.key ? shortKey(o) : ""}</span>
+                {o.key && <span className="shrink-0 tabular-nums text-fg-2">{shortKey(o)}</span>}
                 <span className="min-w-0 truncate text-fg">{o.title ?? ""}</span>
               </button>
               <span className="w-20 shrink-0 text-sm text-fg-3">{o.verb}</span>
