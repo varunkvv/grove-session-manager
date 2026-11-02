@@ -108,21 +108,91 @@ interface Compiled {
 }
 
 const READ = new Set([
-  "get", "list", "search", "fetch", "read", "query", "find", "view", "lookup", "describe",
-  "download", "export", "whoami", "check", "load", "browse", "preview", "validate", "count",
+  "get",
+  "list",
+  "search",
+  "fetch",
+  "read",
+  "query",
+  "find",
+  "view",
+  "lookup",
+  "describe",
+  "download",
+  "export",
+  "whoami",
+  "check",
+  "load",
+  "browse",
+  "preview",
+  "validate",
+  "count",
 ]);
-const MADE = new Set(["create", "new", "send", "post", "publish", "copy", "duplicate", "generate", "open", "start"]);
+const MADE = new Set([
+  "create",
+  "new",
+  "send",
+  "post",
+  "publish",
+  "copy",
+  "duplicate",
+  "generate",
+  "open",
+  "start",
+]);
 const COMMENT = new Set(["comment", "reply", "react"]);
 const WRITE = new Set([
-  ...MADE, ...COMMENT, "update", "edit", "add", "write", "append", "insert", "push", "merge",
-  "transition", "share", "batch", "replace", "set", "move", "assign", "close", "resolve",
+  ...MADE,
+  ...COMMENT,
+  "update",
+  "edit",
+  "add",
+  "write",
+  "append",
+  "insert",
+  "push",
+  "merge",
+  "transition",
+  "share",
+  "batch",
+  "replace",
+  "set",
+  "move",
+  "assign",
+  "close",
+  "resolve",
 ]);
 /** never outputs, whatever their names say: they act on this machine or on Claude itself */
 const BUILTIN = new Set([
-  "Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "WebFetch",
-  "WebSearch", "Agent", "Task", "TaskCreate", "TaskUpdate", "TaskStop", "TodoWrite", "SendMessage",
-  "Skill", "ToolSearch", "AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "CronCreate",
-  "CronDelete", "ScheduleWakeup", "Monitor", "StructuredOutput", "Workflow", "EnterWorktree",
+  "Bash",
+  "Read",
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "Glob",
+  "Grep",
+  "WebFetch",
+  "WebSearch",
+  "Agent",
+  "Task",
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskStop",
+  "TodoWrite",
+  "SendMessage",
+  "Skill",
+  "ToolSearch",
+  "AskUserQuestion",
+  "ExitPlanMode",
+  "EnterPlanMode",
+  "CronCreate",
+  "CronDelete",
+  "ScheduleWakeup",
+  "Monitor",
+  "StructuredOutput",
+  "Workflow",
+  "EnterWorktree",
   "ExitWorktree",
 ]);
 const WAITING_MAX = 64;
@@ -179,11 +249,15 @@ export function toolName(name: string): string {
 }
 
 /** the first rule whose name ends the tool's, at a `__` or whole, and whose action fits */
-function toolRule(full: string, input: Record<string, unknown>): (ToolRule & { i: number }) | undefined {
+function toolRule(
+  full: string,
+  input: Record<string, unknown>,
+): (ToolRule & { i: number }) | undefined {
   const action = typeof input.action === "string" ? input.action : "";
   return compiled.tools.find((t) => {
     if (t.actions && !t.actions.includes(action)) return false;
-    if (t.tool.endsWith("__*")) return full.includes(`__${t.tool.slice(0, -1)}`) || full.startsWith(t.tool.slice(0, -1));
+    if (t.tool.endsWith("__*"))
+      return full.includes(`__${t.tool.slice(0, -1)}`) || full.startsWith(t.tool.slice(0, -1));
     return full === t.tool || full.endsWith(`__${t.tool}`);
   });
 }
@@ -226,20 +300,23 @@ function fill(
   let missing = false;
   // a template that is one field is a url already, and is not encoded
   const whole = /^\{[a-zA-Z0-9_.]+\}$/.test(tpl);
-  const url = tpl.replace(/\{(site:)?([a-zA-Z0-9_.]+)\}/g, (_, site: string | undefined, p: string) => {
-    const v = pathGet(scope, p);
-    if (typeof v !== "string" && typeof v !== "number") {
-      missing = true;
-      return "";
-    }
-    if (!site) return whole ? String(v) : encodeURIComponent(String(v));
-    const known = sites[String(v)];
-    if (known) return known.replace(/\/+$/, "");
-    // some installs take the site's host name where a cloud id goes
-    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(v))) return `https://${v}`;
-    need = String(v);
-    return "{site}";
-  });
+  const url = tpl.replace(
+    /\{(site:)?([a-zA-Z0-9_.]+)\}/g,
+    (_, site: string | undefined, p: string) => {
+      const v = pathGet(scope, p);
+      if (typeof v !== "string" && typeof v !== "number") {
+        missing = true;
+        return "";
+      }
+      if (!site) return whole ? String(v) : encodeURIComponent(String(v));
+      const known = sites[String(v)];
+      if (known) return known.replace(/\/+$/, "");
+      // some installs take the site's host name where a cloud id goes
+      if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(v))) return `https://${v}`;
+      need = String(v);
+      return "{site}";
+    },
+  );
   return missing ? undefined : { url, ...(need ? { need } : {}) };
 }
 
@@ -276,11 +353,19 @@ function resultText(entry: Record<string, unknown>, block: Record<string, unknow
   return parts.join("\n").replace(/\\\//g, "/");
 }
 
-function parsedResult(entry: Record<string, unknown>, block: Record<string, unknown>): Record<string, unknown> {
+function parsedResult(
+  entry: Record<string, unknown>,
+  block: Record<string, unknown>,
+): Record<string, unknown> {
   const tur = entry.toolUseResult;
   if (isObject(tur)) return tur;
   const c = Array.isArray(tur) ? tur : block.content;
-  const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => (isObject(b) && typeof b.text === "string" ? b.text : "")).join("") : "";
+  const text =
+    typeof c === "string"
+      ? c
+      : Array.isArray(c)
+        ? c.map((b) => (isObject(b) && typeof b.text === "string" ? b.text : "")).join("")
+        : "";
   try {
     const v: unknown = JSON.parse(text);
     return isObject(v) ? v : Array.isArray(v) ? { items: v } : {};
@@ -289,11 +374,15 @@ function parsedResult(entry: Record<string, unknown>, block: Record<string, unkn
   }
 }
 
-function hostMatch(url: string, vendorOf?: string): { rule: Compiled["hosts"][number]; m: RegExpExecArray } | undefined {
+function hostMatch(
+  url: string,
+  vendorOf?: string,
+): { rule: Compiled["hosts"][number]; m: RegExpExecArray } | undefined {
   for (const rule of compiled.hosts) {
     const m = rule.re.exec(url);
     if (!m || m.index !== 0) continue;
-    if (vendorOf !== undefined && !rule.vendor.some((v) => vendorOf.includes(v.toLowerCase()))) continue;
+    if (vendorOf !== undefined && !rule.vendor.some((v) => vendorOf.includes(v.toLowerCase())))
+      continue;
     return { rule, m };
   }
   return undefined;
@@ -328,37 +417,69 @@ export class OutputCollector {
     const msg = entry.message;
     if (!isObject(msg) || !Array.isArray(msg.content)) return;
     for (const b of msg.content) {
-      if (!isObject(b) || b.type !== "tool_use" || typeof b.id !== "string" || typeof b.name !== "string") continue;
+      if (
+        !isObject(b) ||
+        b.type !== "tool_use" ||
+        typeof b.id !== "string" ||
+        typeof b.name !== "string"
+      )
+        continue;
       const p = this.pending(b.name, isObject(b.input) ? b.input : {}, at, entry.uuid);
       if (!p) continue;
       this.s.waiting ??= {};
       this.s.waiting[b.id] = p;
       const ids = Object.keys(this.s.waiting);
       // a call whose result never came (an interrupt, a crash) must not keep every line parsed
-      for (const id of ids.slice(0, Math.max(0, ids.length - WAITING_MAX))) delete this.s.waiting[id];
+      for (const id of ids.slice(0, Math.max(0, ids.length - WAITING_MAX)))
+        delete this.s.waiting[id];
     }
   }
 
-  private pending(full: string, input: Record<string, unknown>, at: number, uuid: unknown): PendingCall | null {
+  private pending(
+    full: string,
+    input: Record<string, unknown>,
+    at: number,
+    uuid: unknown,
+  ): PendingCall | null {
     const name = toolName(full);
-    const base = { at, ...(typeof uuid === "string" ? { uuid } : {}), input: JSON.stringify(input).slice(0, INPUT_MAX) };
+    const base = {
+      at,
+      ...(typeof uuid === "string" ? { uuid } : {}),
+      input: JSON.stringify(input).slice(0, INPUT_MAX),
+    };
     if (name === "Bash" && full === "Bash") {
       const cmd = typeof input.command === "string" ? input.command : "";
       const i = compiled.bash.findIndex((r) => r.re.test(cmd));
       const rule = compiled.bash[i];
       if (!rule) return null;
       const title = rule.title ? flagValue(cmd, rule.title) : undefined;
-      return { ...base, tool: rule.head, verb: rule.verb, rule: i, bash: true, ...(title ? { title } : {}) };
+      return {
+        ...base,
+        tool: rule.head,
+        verb: rule.verb,
+        rule: i,
+        bash: true,
+        ...(title ? { title } : {}),
+      };
     }
     const rule = toolRule(full, input);
     if (rule?.skip) return null;
     if (rule?.learn) return { ...base, tool: full, verb: "updated", rule: rule.i };
     if (!rule && BUILTIN.has(full)) return null;
-    const verb = rule?.madeIf && pathGet(input, rule.madeIf.replace(/^input\./, "")) !== undefined ? "made" : (rule?.verb ?? verbOf(name));
+    const verb =
+      rule?.madeIf && pathGet(input, rule.madeIf.replace(/^input\./, "")) !== undefined
+        ? "made"
+        : (rule?.verb ?? verbOf(name));
     if (!verb) return null;
     const title = titleOf(input, rule?.title?.replace(/^input\./, ""));
     // the server is part of the name a vendor word is looked for in: `mcp__linear__create_issue`
-    return { ...base, tool: full, verb, ...(rule ? { rule: rule.i } : {}), ...(title ? { title } : {}) };
+    return {
+      ...base,
+      tool: full,
+      verb,
+      ...(rule ? { rule: rule.i } : {}),
+      ...(title ? { title } : {}),
+    };
   }
 
   /** a result's line: a user message with tool_result blocks */
@@ -377,7 +498,13 @@ export class OutputCollector {
     if (!Object.keys(w).length) delete this.s.waiting;
   }
 
-  private result(p: PendingCall, entry: Record<string, unknown>, block: Record<string, unknown>, id: string, at: number): void {
+  private result(
+    p: PendingCall,
+    entry: Record<string, unknown>,
+    block: Record<string, unknown>,
+    id: string,
+    at: number,
+  ): void {
     const rule = !p.bash && p.rule !== undefined ? compiled.tools[p.rule] : undefined;
     if (rule?.learn === "sites") {
       const r = parsedResult(entry, block);
@@ -402,7 +529,9 @@ export class OutputCollector {
     const title = p.title ?? resultTitle;
     const tool = toolName(p.tool);
     // a template with a field this call does not have falls through to the result's urls
-    const f = rule?.url ? fill(rule.url, { input, result }, { ...compiled.sites, ...this.s.sites }) : undefined;
+    const f = rule?.url
+      ? fill(rule.url, { input, result }, { ...compiled.sites, ...this.s.sites })
+      : undefined;
     if (rule && f) {
       const scope = { input, result };
       const key = rule.key ? fill(rule.key, scope, {})?.url : undefined;
@@ -478,9 +607,12 @@ export class OutputCollector {
 
   private add(o: Output): void {
     if (o.key === undefined) delete o.key;
-    const list = (this.s.outputs ??= []);
+    this.s.outputs ??= [];
+    const list = this.s.outputs;
     // a jira card reached through two site names is one card
-    const had = list.find((x) => x.url === o.url || (o.key && x.key === o.key && x.kind === o.kind));
+    const had = list.find(
+      (x) => x.url === o.url || (o.key && x.key === o.key && x.kind === o.kind),
+    );
     if (!had) {
       list.push(o);
       return;

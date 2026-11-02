@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isObject, mapLimit } from "../fsx.ts";
+import { outputRulesKey, resolveSite } from "../transcript/outputs.ts";
 import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
 import { pickTitle } from "../transcript/title.ts";
-import { outputRulesKey, resolveSite } from "../transcript/outputs.ts";
 import { type DayTally, summarizeUsage } from "../transcript/usage.ts";
 import type { ParsedMeta, SessionOutput, SessionRecord } from "../types.ts";
 import {
@@ -75,7 +75,10 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
   const models = usage ? summarizeUsage(Object.values(usage)) : [];
   // "" is the session's own transcript (scanSessionUsage)
   const own = usage?.[""] && summarizeUsage([usage[""]])[0]?.model;
-  const sites = Object.assign({}, ...Object.values(usage ?? {}).map((t) => t.sites ?? {})) as Record<string, string>;
+  const sites = Object.assign(
+    {},
+    ...Object.values(usage ?? {}).map((t) => t.sites ?? {}),
+  ) as Record<string, string>;
   const outputs = usage ? outputsOf(usage).map((o) => resolveSite(o, sites)) : [];
   return {
     ...m,
@@ -117,7 +120,9 @@ function outputsOf(usage: SessionTallies): SessionOutput[] {
         last: Math.max(had.last, o.last),
         touches: had.touches + o.touches,
         title: had.title ?? o.title,
-        ...(first ? { id: o.id, uuid: o.uuid, tool: o.tool, ...(agent ? { agent } : { agent: undefined }) } : {}),
+        ...(first
+          ? { id: o.id, uuid: o.uuid, tool: o.tool, ...(agent ? { agent } : { agent: undefined }) }
+          : {}),
       });
     }
   }

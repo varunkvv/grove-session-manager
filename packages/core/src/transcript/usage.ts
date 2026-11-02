@@ -210,7 +210,8 @@ export class UsageAccumulator {
       this.starts(entry, at);
       return;
     }
-    if (entry.type === "assistant") this.outputs.calls(entry, Number.isFinite(at) ? at : (this.tally.clock?.at ?? 0));
+    if (entry.type === "assistant")
+      this.outputs.calls(entry, Number.isFinite(at) ? at : (this.tally.clock?.at ?? 0));
     const u = usageOf(entry);
     if (!u) return;
     // a line with no time is counted on the day of the line before it

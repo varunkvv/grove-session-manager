@@ -1,8 +1,8 @@
 import { readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { isObject, readJsonGuarded, writeFileAtomic } from "../fsx.ts";
-import { PARSER_VERSION } from "../transcript/parse.ts";
 import { outputRulesKey } from "../transcript/outputs.ts";
+import { PARSER_VERSION } from "../transcript/parse.ts";
 import type { DayTally } from "../transcript/usage.ts";
 import type { ParsedMeta } from "../types.ts";
 import type { SessionTallies } from "./usage.ts";

@@ -40,7 +40,19 @@ const rows = [
   view({
     sessionId: "3",
     title: "Helm chart bump",
-    outputs: [{ url: "https://github.com/acme/queue/pull/1042", kind: "pr", label: "pull request", key: "acme/queue#1042", verb: "made", first: 0, last: 0, touches: 1, tool: "gh pr create" }],
+    outputs: [
+      {
+        url: "https://github.com/acme/queue/pull/1042",
+        kind: "pr",
+        label: "pull request",
+        key: "acme/queue#1042",
+        verb: "made",
+        first: 0,
+        last: 0,
+        touches: 1,
+        tool: "gh pr create",
+      },
+    ],
     lastPrompt: "ok commit it",
   }),
 ];
