@@ -61,6 +61,17 @@ describe("a fork's copy of an output", () => {
   });
 });
 
+describe("a fork's own work", () => {
+  it("keeps a copied output it touched again as its own", () => {
+    const a = rec("a", { createdAt: 1, outputs: [out({ url: PR, id: "t1", lastId: "t1" })] });
+    const b = rec("b", { createdAt: 2, outputs: [out({ url: PR, id: "t1", lastId: "t9" })] });
+    const c = rec("c", { createdAt: 3, outputs: [out({ url: PR, id: "t1", lastId: "t1" })] });
+    const views = outputViews([a, b, c]);
+    expect(views.get("b")?.[0]?.inherited).toBeUndefined();
+    expect(views.get("c")?.[0]?.inherited).toBe(true);
+  });
+});
+
 describe("outputs as rows have them", () => {
   it("marks the copy, joins github's word on a PR, and drops the need", () => {
     const a = rec("a", { createdAt: 1, outputs: [out({ url: PR, id: "t1", key: "o/r#7" })] });

@@ -21,6 +21,8 @@ export interface Output {
   tool: string;
   /** the tool_use id of the first call. a fork copies it, which is how a fork's copy is told apart */
   id?: string;
+  /** the tool_use id of the latest touch. a fork whose own calls touched it owns it too */
+  lastId?: string;
   /** the transcript line the first call was on */
   uuid?: string;
   /** the jira cloud id `{site}` waits on */
@@ -196,7 +198,9 @@ const BUILTIN = new Set([
   "ExitWorktree",
 ]);
 const WAITING_MAX = 64;
-const INPUT_MAX = 4000;
+const INPUT_MAX = 8000;
+/** long fields (a body, a doc's text) are cut one by one, so the JSON still parses */
+const INPUT_FIELD_MAX = 400;
 const URL_RE = /https?:\/\/[^\s"'\\<>()[\]{}|^`]+/g;
 
 let compiled = compile(SEED_RULES);
@@ -407,7 +411,8 @@ export class OutputCollector {
   /** a result line for a call it waits on. a substring test, before anything is parsed */
   wants(line: string): boolean {
     const w = this.s.waiting;
-    if (!w) return false;
+    // progress lines name the call too, and are never a result
+    if (!w || !line.includes('"tool_result"')) return false;
     for (const id in w) if (line.includes(id)) return true;
     return false;
   }
@@ -445,7 +450,9 @@ export class OutputCollector {
     const base = {
       at,
       ...(typeof uuid === "string" ? { uuid } : {}),
-      input: JSON.stringify(input).slice(0, INPUT_MAX),
+      input: JSON.stringify(input, (_, v) =>
+        typeof v === "string" && v.length > INPUT_FIELD_MAX ? v.slice(0, INPUT_FIELD_MAX) : v,
+      ).slice(0, INPUT_MAX),
     };
     if (name === "Bash" && full === "Bash") {
       const cmd = typeof input.command === "string" ? input.command : "";
@@ -537,7 +544,8 @@ export class OutputCollector {
       const key = rule.key ? fill(rule.key, scope, {})?.url : undefined;
       const hm = f.need ? undefined : hostMatch(f.url);
       this.add({
-        url: f.url,
+        // `…/edit` and the plain url are one doc
+        url: hm?.m[0] ?? f.url,
         kind: rule.kind ?? hm?.rule.kind ?? "link",
         label: rule.label ?? hm?.rule.label ?? "link",
         ...(key ? { key } : hm ? { key: keyFrom(hm.rule.key, hm.m) } : {}),
@@ -548,6 +556,7 @@ export class OutputCollector {
         touches: 1,
         tool,
         id,
+        lastId: id,
         ...(p.uuid ? { uuid: p.uuid } : {}),
         ...(f.need ? { need: f.need } : {}),
       });
@@ -581,6 +590,7 @@ export class OutputCollector {
       touches: 1,
       tool,
       id,
+      lastId: id,
       ...(p.uuid ? { uuid: p.uuid } : {}),
     });
   }
@@ -591,6 +601,8 @@ export class OutputCollector {
     if (typeof url !== "string" || !url) return;
     const hm = hostMatch(url);
     const uuid = entry.uuid;
+    // a fork copies these lines with their times: the time tells a copy from a new link
+    const id = `pr-link:${typeof entry.timestamp === "string" ? entry.timestamp : at}`;
     this.add({
       url: hm?.m[0] ?? url,
       kind: hm?.rule.kind ?? "pr",
@@ -601,6 +613,8 @@ export class OutputCollector {
       last: at,
       touches: 1,
       tool: "pr-link",
+      id,
+      lastId: id,
       ...(typeof uuid === "string" ? { uuid } : {}),
     });
   }
@@ -618,6 +632,7 @@ export class OutputCollector {
       return;
     }
     had.touches += 1;
+    if (o.last >= had.last && o.lastId) had.lastId = o.lastId;
     had.last = Math.max(had.last, o.last);
     had.first = Math.min(had.first, o.first);
     had.title ??= o.title;

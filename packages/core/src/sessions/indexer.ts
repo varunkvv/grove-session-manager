@@ -79,7 +79,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     {},
     ...Object.values(usage ?? {}).map((t) => t.sites ?? {}),
   ) as Record<string, string>;
-  const outputs = usage ? outputsOf(usage).map((o) => resolveSite(o, sites)) : [];
+  const outputs = usage ? merged(outputsOf(usage).map((o) => resolveSite(o, sites))) : [];
   return {
     ...m,
     ...pickTitle(m),
@@ -95,6 +95,19 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     ...(outputs.length ? { outputs } : {}),
     ...(Object.keys(sites).length ? { sites } : {}),
   };
+}
+
+/** a site filled in late can make two urls one: the first keeps its place, the rest add to it */
+function merged(list: SessionOutput[]): SessionOutput[] {
+  const by = new Map<string, SessionOutput>();
+  for (const o of list) {
+    const had = by.get(o.url);
+    by.set(
+      o.url,
+      had ? { ...had, touches: had.touches + o.touches, last: Math.max(had.last, o.last) } : o,
+    );
+  }
+  return [...by.values()];
 }
 
 /**
@@ -120,7 +133,9 @@ function outputsOf(usage: SessionTallies): SessionOutput[] {
         last: Math.max(had.last, o.last),
         touches: had.touches + o.touches,
         title: had.title ?? o.title,
-        ...(first
+        ...(o.last >= had.last && o.lastId ? { lastId: o.lastId } : {}),
+        // the earliest call keeps its place, and an id is never traded for none
+        ...(first && o.id
           ? { id: o.id, uuid: o.uuid, tool: o.tool, ...(agent ? { agent } : { agent: undefined }) }
           : {}),
       });

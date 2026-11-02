@@ -230,7 +230,7 @@ describe("the seeded tools", () => {
       ),
     );
     expect(s.outputs?.[0]).toMatchObject({
-      url: "https://docs.google.com/document/d/1V31-Vqb/edit",
+      url: "https://docs.google.com/document/d/1V31-Vqb",
       kind: "gdoc",
       verb: "updated",
     });
@@ -321,5 +321,52 @@ describe("a person's own rules", () => {
     expect(merged.tools.filter((t) => t.tool === "createJiraIssue")).toEqual([
       { tool: "createJiraIssue", skip: true },
     ]);
+  });
+});
+
+describe("review fixes", () => {
+  it("a doc made and then edited is one doc", () => {
+    const s = run([
+      ...call(
+        "mcp__gdocs__create_document",
+        { title: "plan" },
+        { url: "https://docs.google.com/document/d/D1/edit" },
+      ),
+      ...call("mcp__x__gdocs__insert_text", { document_id: "D1", text: "x" }, { id: "D1" }),
+    ]);
+    expect(s.outputs).toHaveLength(1);
+    expect(s.outputs?.[0]).toMatchObject({
+      url: "https://docs.google.com/document/d/D1",
+      verb: "made",
+      touches: 2,
+    });
+  });
+
+  it("a long field before the one a template needs does not lose it", () => {
+    const s = run(
+      call(
+        "mcp__gdocs__insert_text",
+        { text: "x".repeat(20_000), document_id: "D2" },
+        { id: "D2" },
+      ),
+    );
+    expect(s.outputs?.[0]?.url).toBe("https://docs.google.com/document/d/D2");
+  });
+
+  it("a progress line naming the call is not parsed", () => {
+    const c = new OutputCollector({});
+    const [a] = call("mcp__slack__slack_send_message", {}, "");
+    c.calls(a as Record<string, unknown>, T);
+    const id = `toolu_${n}`;
+    expect(c.wants(JSON.stringify({ type: "progress", toolUseID: id }))).toBe(false);
+  });
+
+  it("the latest touch is kept, so a fork's own touch can be told apart", () => {
+    const url = "https://acme.slack.com/archives/C1/p1";
+    const s = run([
+      ...call("mcp__slack__slack_send_message", {}, { message_link: url }),
+      ...call("mcp__slack__slack_update_message", {}, { message_link: url }),
+    ]);
+    expect(s.outputs?.[0]?.id).not.toBe(s.outputs?.[0]?.lastId);
   });
 });

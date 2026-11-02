@@ -70,7 +70,7 @@ export function inheritedIds(
   const by = new Map<string, SessionRecord[]>();
   for (const r of records) {
     for (const o of r.outputs ?? []) {
-      if (o.id) by.set(o.id, [...(by.get(o.id) ?? []), r]);
+      for (const id of new Set([o.id, o.lastId])) if (id) by.set(id, [...(by.get(id) ?? []), r]);
     }
   }
   const older = (a: SessionRecord, b: SessionRecord): number =>
@@ -144,7 +144,12 @@ export function outputViews(
           touches: o.touches,
           ...(o.agent ? { agent: o.agent } : {}),
           ...(pr ? { pr } : {}),
-          ...(o.id && inherited.get(r.path)?.has(o.id) ? { inherited: true as const } : {}),
+          // copied from an older session, and not touched since by this one's own calls
+          ...(o.id &&
+          inherited.get(r.path)?.has(o.id) &&
+          inherited.get(r.path)?.has(o.lastId ?? o.id)
+            ? { inherited: true as const }
+            : {}),
         };
       }),
     );
