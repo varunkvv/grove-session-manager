@@ -9,6 +9,7 @@ import type {
   FolderOutcome,
   FolderState,
   InboxKind,
+  IndexedFile,
   LiveState,
   LiveStatus,
   ModelUsage,
@@ -541,6 +542,8 @@ export interface Api {
   sessionAnswer(key: SessionKey, askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** grove chat: a reply from the session card, through the same claude the chat window talks to */
   sessionReply(key: SessionKey, text: string): Promise<Outcome>;
+  /** a session's files, as its chat window lists them, and what is changed in its folders. from a session row */
+  sessionFiles(key: SessionKey): Promise<{ files: IndexedFile[]; changes: ChatChange[] }>;
   /** grove chat: a new session in the project, in a window of its own. claude starts on the first key */
   newChat(project: ProjectId): Promise<Outcome>;
   /**
@@ -633,6 +636,7 @@ export const INVOKE_CHANNELS = [
   "sessionHost",
   "sessionAnswer",
   "sessionReply",
+  "sessionFiles",
   "newChat",
   "chatWindows",
   "showWindow",
@@ -1035,6 +1039,8 @@ export interface ChatApi {
   chatFiles(): Promise<{ plans: string[]; artifacts: string[] }>;
   /** what is changed and not committed in the session's folders that are git repos */
   chatChanges(): Promise<ChatChange[]>;
+  /** the session's files: touched by its tool calls, and tracked by git in its folders */
+  chatFileIndex(): Promise<IndexedFile[]>;
   /** one changed file's diff against the last commit, as `editDiff` lines. a new file is all "+" */
   chatChangeDiff(path: string): Promise<Outcome<string[]>>;
   /** a file of the session's, for the viewer. refused outside its folders */
@@ -1112,6 +1118,7 @@ export const CHAT_CHANNELS = [
   "chatExport",
   "chatFiles",
   "chatChanges",
+  "chatFileIndex",
   "chatChangeDiff",
   "chatReadFile",
   "chatOpenFile",

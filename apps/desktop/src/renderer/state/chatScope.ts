@@ -1,3 +1,4 @@
+import type { IndexedFile } from "@grove/core/pure";
 import { createContext, useContext } from "react";
 
 /**
@@ -8,8 +9,10 @@ export interface ChatScope {
   session: string;
   /** the folder a relative path is from: the session's for its messages, a file's own for a file */
   base: string;
-  /** a file, in the viewer beside the conversation */
-  open?: (file: string) => void;
+  /** the session's files: what the text names that resolves to one of them is a link */
+  files: IndexedFile[];
+  /** a file, in the viewer beside the conversation. a line: scrolled to and lit, for a text file */
+  open?: (file: string, line?: number) => void;
   /** the session's agents, in the drawer. with a call's id, the agent that call started */
   agents?: (call?: string) => void;
   /** what one of the session's edits changed, by its call's id. null: nothing to show */

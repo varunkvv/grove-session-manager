@@ -1,3 +1,4 @@
+import type { IndexedFile } from "@grove/core/pure";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,7 @@ import {
   matchCommand,
   type PaletteContext,
   paletteItems,
+  rankFiles,
 } from "../../src/renderer/logic/palette.ts";
 import type { ChatWindowView, FolderView, ProjectView, SessionHit } from "../../src/shared/ipc.ts";
 
@@ -349,5 +351,57 @@ describe("a window's row", () => {
     const asks = open("a", "a", { description: "count 429s per tenant" }, "page on 1%?");
     expect(row(asks)).toContain('data-testid="inbox-summary"');
     expect(row(asks)).not.toContain("count 429s per tenant");
+  });
+});
+
+describe("the Files group's ranking", () => {
+  const names = (files: IndexedFile[]) => files.map((f) => f.path);
+
+  it("puts an exact basename above a name it is only inside", () => {
+    const files: IndexedFile[] = [
+      { path: "/p/src/palette.test.ts" },
+      { path: "/p/src/palette.ts" },
+    ];
+    expect(names(rankFiles("palette.ts", files))).toEqual([
+      "/p/src/palette.ts",
+      "/p/src/palette.test.ts",
+    ]);
+    expect(names(rankFiles("palette", files))).toEqual([
+      "/p/src/palette.test.ts",
+      "/p/src/palette.ts",
+    ]);
+    expect(
+      names(rankFiles("palette.ts", [{ path: "/p/a/x-palette.ts" }, { path: "/p/b/palette.ts" }])),
+    ).toEqual(["/p/b/palette.ts", "/p/a/x-palette.ts"]);
+  });
+
+  it("puts a touched file above an untouched one, and the newer touch first", () => {
+    const files: IndexedFile[] = [
+      { path: "/p/a.ts" },
+      { path: "/p/b.ts", touchedAt: 1 },
+      { path: "/p/c.ts", touchedAt: 9 },
+    ];
+    expect(names(rankFiles("", files))).toEqual(["/p/c.ts", "/p/b.ts"]);
+    expect(names(rankFiles(".ts", files))).toEqual(["/p/c.ts", "/p/b.ts", "/p/a.ts"]);
+  });
+
+  it("lists only the touched files, newest first, for an empty query", () => {
+    const files: IndexedFile[] = [
+      { path: "/p/untouched.ts" },
+      { path: "/p/old.ts", touchedAt: 2 },
+      { path: "/p/new.ts", touchedAt: 5, edited: true },
+    ];
+    expect(names(rankFiles("   ", files))).toEqual(["/p/new.ts", "/p/old.ts"]);
+    expect(rankFiles("", [{ path: "/p/a.ts" }])).toEqual([]);
+  });
+
+  it("returns nothing when no file matches, and caps the group", () => {
+    const files: IndexedFile[] = [{ path: "/p/a.ts", touchedAt: 1 }];
+    expect(rankFiles("zzz", files)).toEqual([]);
+    const many: IndexedFile[] = Array.from({ length: 12 }, (_, i) => ({
+      path: `/p/f${i}.ts`,
+      touchedAt: i,
+    }));
+    expect(rankFiles("", many)).toHaveLength(8);
   });
 });

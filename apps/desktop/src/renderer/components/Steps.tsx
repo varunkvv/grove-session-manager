@@ -1,7 +1,7 @@
 // grove chat's view of a turn's work: the thinking and the steps between what it said, quiet and
 // folded until asked for. what it said is full-weight, in the turn, never in here.
-import { formatDuration, toolLabel } from "@grove/core/pure";
-import { useState } from "react";
+import { formatDuration, resolveFileRef, toolLabel } from "@grove/core/pure";
+import { useMemo, useState } from "react";
 import type { WorkStep } from "../logic/views.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -53,6 +53,15 @@ function Step({ step, going }: { step: WorkStep; going: boolean }) {
   /** an edit opened: what it changed, read when first opened. null: nothing to show */
   const [diff, setDiff] = useState<string[] | null>();
   const [open, setOpen] = useState(false);
+  // a read opens the file it read, when the session's files have it. the step names it relative
+  // to the folder, so it is resolved against them
+  const read = useMemo(
+    () =>
+      scope?.open && step.kind === "tool" && step.name === "Read" && !step.failed
+        ? resolveFileRef(step.target, scope.files)
+        : null,
+    [step, scope],
+  );
   if (step.kind === "thinking") return <Thought text={step.text} ms={step.ms} />;
   // an agent's step opens the agent: its own transcript, beside the conversation. a workflow's
   // opens the list, where its run and its agents are. a finished edit opens its diff in place
@@ -66,7 +75,9 @@ function Step({ step, going }: { step: WorkStep; going: boolean }) {
           setOpen(!open);
           if (diff === undefined) void scope?.diff?.(step.id).then(setDiff, () => setDiff(null));
         }
-      : undefined;
+      : read
+        ? () => scope?.open?.(read)
+        : undefined;
   const Row = click ? "button" : "div";
   const row = (
     <Row

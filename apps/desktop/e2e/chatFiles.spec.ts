@@ -161,18 +161,15 @@ test("what a turn wrote is a card in it, and opens beside the conversation, live
   // every file it wrote, then the project's plans and artifacts
   await chat.getByTestId("viewer-list").click();
   const files = chat.getByTestId("files");
-  await expect(files).toContainText("Written in this session");
-  await expect(files.getByTestId("file-item")).toHaveText([
-    /app\.ts/,
-    /page\.html/,
-    /plan\.md/,
-    /plan\.md/,
-    /d\.svg/,
-    /report\.md/,
-  ]);
+  // what it wrote, newest first, then what it read, then the project's plans and artifacts
+  await expect(files).toContainText("Edited");
+  await expect(files.getByTestId("change-item")).toHaveText([/app\.ts/, /page\.html/, /plan\.md/]);
+  for (const name of ["shot.png", "plan.md", "d.svg", "report.md"]) {
+    await expect(files.getByTestId("file-item").filter({ hasText: name })).toHaveCount(1);
+  }
 
   // a page runs in the sandbox, and cannot reach grove
-  await files.getByTestId("file-item").filter({ hasText: "page.html" }).click();
+  await chat.getByTestId("output-card").filter({ hasText: "page.html" }).click();
   const frame = chat.frameLocator('[data-testid="viewer-frame"]');
   await expect(frame.locator("h1")).toHaveText("mockup");
   await expect(frame.locator("#out")).toHaveText("grove: blocked");
@@ -416,7 +413,12 @@ test("a file named in a message opens in a read-only editor, with the editor but
   appendTurn(
     s.file,
     { sessionId: SID, cwd: s.root },
-    { prompt: "where", tools: [], reply: "It is in `app.ts`, and also app.ts:2 here." },
+    {
+      prompt: "where",
+      // read in the turn, so the session has touched it: a name links only when it resolves
+      tools: [{ name: "Read", input: { file_path: code } }],
+      reply: "It is in `app.ts`, and also app.ts:2 here.",
+    },
   );
   const chat = await open(s);
   const links = chat.locator("button.md-file");

@@ -57,6 +57,7 @@ import { startDefaults } from "../shared/newSession.ts";
 import type { ChatWindows } from "./chatWindows.ts";
 import type { AppEnv } from "./env.ts";
 import { AppError, toOutcomeError } from "./errors.ts";
+import { buildFileIndex, touchesOf } from "./fileIndex.ts";
 import { log } from "./log.ts";
 import { externalUrl, isTrustedUrl } from "./origin.ts";
 import type { Pusher } from "./push.ts";
@@ -472,6 +473,16 @@ function buildHandlers(deps: Deps): Handlers {
     async sessionReply(key, text) {
       chatOn();
       await chatOf().chatSend(requireSession(deps, key).sessionId, text);
+    },
+
+    async sessionFiles(key) {
+      // the chat window's own lists, by the session's id: a row in the main window has no window
+      const { sessionId } = requireSession(deps, key);
+      const [files, changes] = await Promise.all([
+        chatOf().chatFileIndex(sessionId),
+        chatOf().chatChanges(sessionId),
+      ]);
+      return { files, changes };
     },
 
     async newChat(project) {
@@ -1216,6 +1227,21 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       return lists.flat().slice(0, 300);
     },
 
+    async chatFileIndex(id) {
+      const gitPath = deps.settings().gitPath;
+      const row = newestRow(deps, id);
+      const state = row ? await readConversation(row.key).catch(() => null) : null;
+      return buildFileIndex({
+        touches: state ? touchesOf(state) : [],
+        folders: (await chatFolders(deps, id)) ?? [],
+        // no repo here: nothing tracked
+        listTracked: async (folder) => {
+          const out = await runGit(["ls-files", "-z"], { cwd: folder, gitPath });
+          return out.ok ? out.stdout.split("\0").filter(Boolean) : [];
+        },
+      });
+    },
+
     async chatChangeDiff(id, file) {
       const real = await allowed(id, file);
       const at = await where(rowOf(id));
@@ -1527,6 +1553,8 @@ function registerChatIpc(deps: Deps, handlers: Handlers): void {
         const id = deps.chatWindows.sessionOf(event.sender);
         if (!id) {
           if (name === "chatTarget" || name === "chatConversation") return null;
+          // a window with no session has no files: the index is empty, not an error
+          if (name === "chatFileIndex") return [];
           throw new AppError("no-chat", "This window has no session.");
         }
         const value = await api[name]?.(id, ...args);

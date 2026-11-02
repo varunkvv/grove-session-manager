@@ -3,8 +3,8 @@
 import { HighlightStyle, LanguageDescription, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { Compartment, EditorState, StateEffect, StateField } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 
@@ -20,6 +20,22 @@ const colours = HighlightStyle.define([
   { tag: [t.link, t.url], color: c("accent"), textDecoration: "underline" },
   { tag: [t.invalid], color: c("danger") },
 ]);
+
+/** a line asked for, by its start: the line is lit, and its class fades out (app.css) */
+const flashLine = StateEffect.define<number>();
+const flash = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(flashLine)) {
+        deco = Decoration.set([Decoration.line({ class: "cm-flash" }).range(e.value)]);
+      }
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 const theme = EditorView.theme({
   "&": {
@@ -64,7 +80,7 @@ const theme = EditorView.theme({
 });
 
 /** the file's text, read only. the editor stays while the text changes under it */
-export function CodeView({ file, text }: { file: string; text: string }) {
+export function CodeView({ file, text, line }: { file: string; text: string; line?: number }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const first = useRef(text);
@@ -86,6 +102,7 @@ export function CodeView({ file, text }: { file: string; text: string }) {
           keymap.of(searchKeymap),
           syntaxHighlighting(colours),
           lang.current.of([]),
+          flash,
           theme,
         ],
       }),
@@ -112,6 +129,17 @@ export function CodeView({ file, text }: { file: string; text: string }) {
     if (!v || v.state.doc.toString() === text) return;
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text } });
   }, [text]);
+
+  // a line asked for: centred, and lit by a class that fades (see app.css). a file shorter than it: nothing.
+  // TextFile mounts this per file (it shows a spinner between files), so the line is when, not what
+  useEffect(() => {
+    const v = view.current;
+    if (!v || !line || line > v.state.doc.lines) return;
+    const at = v.state.doc.line(line);
+    v.dispatch({
+      effects: [EditorView.scrollIntoView(at.from, { y: "center" }), flashLine.of(at.from)],
+    });
+  }, [line]);
 
   return <div ref={host} className="min-h-0 flex-1 selectable" data-testid="viewer-text" />;
 }

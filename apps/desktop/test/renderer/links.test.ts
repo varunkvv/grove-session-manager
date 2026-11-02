@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dirOf, localPath, webLink } from "../../src/renderer/logic/links.ts";
+import { dirOf, lineOf, localPath, webLink } from "../../src/renderer/logic/links.ts";
 
 describe("a link in what an agent wrote", () => {
   it("only a web link is a link", () => {
@@ -26,5 +26,13 @@ describe("a link in what an agent wrote", () => {
     expect(localPath(undefined, base)).toBeNull();
     expect(dirOf("/a/b/c.md")).toBe("/a/b");
     expect(dirOf("/c.md")).toBe("/");
+  });
+
+  it("a line is the #L fragment of a link, none otherwise", () => {
+    expect(lineOf("/r/a.ts#L42")).toBe(42);
+    expect(lineOf("/r/a.ts")).toBeUndefined();
+    expect(lineOf("notes.md#part")).toBeUndefined();
+    expect(lineOf(undefined)).toBeUndefined();
+    expect(localPath("/r/a.ts#L42", "/r")).toBe("/r/a.ts");
   });
 });

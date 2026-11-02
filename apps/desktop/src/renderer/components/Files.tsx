@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatChange, ChatFileText } from "../../shared/ipc.ts";
 import { FILE_SCHEME, HTML_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { dirOf } from "../logic/links.ts";
+import { splitSessionFiles } from "../logic/sessionFiles.ts";
 import { ChatScopeContext, useChatScope } from "../state/chatScope.ts";
 import { CodeView } from "./CodeView.tsx";
 import { Markdown } from "./Markdown.tsx";
@@ -154,21 +155,27 @@ function ImageFile({ src, alt }: { src: string; alt: string }) {
 export function Viewer({
   file,
   diff,
+  line,
   onList,
   onOpen,
   editor,
   onEditor,
+  onDiff,
   onClose,
 }: {
   file: string;
   /** what changed in it since the last commit, not the file itself */
   diff?: boolean;
+  /** a text file opens at this line, centred and lit. other kinds have no lines */
+  line?: number;
   onList: () => void;
   /** in the app the Mac opens it with */
   onOpen: (file: string) => void;
   /** the configured editor's name, and opening the file there, in its project's window */
   editor: string;
   onEditor: (file: string) => void;
+  /** a changed file: between its diff and the whole file. `diff` is the mode it is in now */
+  onDiff?: (diff: boolean) => void;
   onClose: () => void;
 }) {
   const scope = useChatScope();
@@ -200,6 +207,17 @@ export function Viewer({
             <span className="text-sm text-fg-4"> · {whereOf(file, scope.base)}</span>
           )}
         </span>
+        {onDiff && kind !== "image" && kind !== "video" && (
+          <Button
+            size="sm"
+            variant="quiet"
+            title={diff ? "Show the whole file" : "Show what changed since the last commit"}
+            data-testid="viewer-mode"
+            onClick={() => onDiff(!diff)}
+          >
+            {diff ? "Whole file" : "Changes"}
+          </Button>
+        )}
         {/* Preview or QuickTime has the zoom and the scrubbing. not a text file: a .ts opens xcode */}
         {!diff && (kind === "image" || kind === "video") && (
           <Button
@@ -271,7 +289,7 @@ export function Viewer({
               data-testid="viewer-video"
             />
           ) : (
-            <TextFile file={file} v={v} />
+            <TextFile file={file} v={v} line={line} />
           )}
         </div>
       )}
@@ -280,7 +298,7 @@ export function Viewer({
 }
 
 /** a text file: markdown drawn, from its own folder, anything else as it is */
-function TextFile({ file, v }: { file: string; v: number }) {
+function TextFile({ file, v, line }: { file: string; v: number; line?: number }) {
   const scope = useChatScope();
   const [read, setRead] = useState<{ at: string; got: ChatFileText | string }>();
   // biome-ignore lint/correctness/useExhaustiveDependencies: v is when it changed on disk
@@ -310,26 +328,25 @@ function TextFile({ file, v }: { file: string; v: number }) {
       </ChatScopeContext.Provider>
     );
   }
-  return <CodeView file={file} text={got.text} />;
+  return <CodeView file={file} text={got.text} line={line} />;
 }
 
-/** every file the session wrote, then the project's plans and artifacts */
+/** every file the session touched, edited first, then read, then the project's plans and artifacts */
 export function FileList({
-  written,
   rev,
   onClose,
   onChange,
 }: {
-  written: readonly string[];
   /** the transcript moved: a plan or an artifact may have come */
   rev: number;
   onClose: () => void;
-  /** a changed file: its diff, in the viewer */
+  /** an edited file: its diff, in the viewer */
   onChange: (file: string) => void;
 }) {
   const scope = useChatScope();
   const [listed, setListed] = useState<{ plans: string[]; artifacts: string[] }>();
-  const [changes, setChanges] = useState<ChatChange[]>([]);
+  // undefined until git has answered: no counts yet is not "0 added, 0 removed"
+  const [changes, setChanges] = useState<ChatChange[]>();
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev is when to look again
   useEffect(() => {
     void api()
@@ -341,11 +358,11 @@ export function FileList({
       .then(setChanges)
       .catch(() => setChanges([]));
   }, [rev]);
-  const ins = changes.reduce((n, c) => n + (c.added ?? 0), 0);
-  const del = changes.reduce((n, c) => n + (c.removed ?? 0), 0);
+  const ins = (changes ?? []).reduce((n, c) => n + (c.added ?? 0), 0);
+  const del = (changes ?? []).reduce((n, c) => n + (c.removed ?? 0), 0);
   if (!scope) return null;
+  const { edited, read } = splitSessionFiles(scope.files, changes ?? []);
   const groups: Array<[string, readonly string[]]> = [
-    ["Written in this session", written],
     ["Plans", listed?.plans ?? []],
     ["Artifacts", listed?.artifacts ?? []],
   ];
@@ -361,31 +378,51 @@ export function FileList({
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {changes.length > 0 && (
+        {edited.length > 0 && (
           <div className="mb-3" data-testid="changes">
             <h3 className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-fg-4">
-              <span className="flex-1">Not committed</span>
-              <DiffCount added={ins} removed={del} />
+              <span className="flex-1">Edited</span>
+              {changes && <DiffCount added={ins} removed={del} />}
             </h3>
-            {changes.map((c) => (
+            {edited.map((f) => (
               <button
-                key={c.path}
+                key={f.path}
                 type="button"
-                title={c.path}
+                title={f.path}
                 data-testid="change-item"
-                onClick={() => onChange(c.path)}
+                onClick={() => onChange(f.path)}
                 className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-fg">{nameOf(c.path)}</span>
-                  {c.fresh ? (
+                  <span className="min-w-0 flex-1 truncate text-fg">{nameOf(f.path)}</span>
+                  {f.fresh ? (
                     <span className="shrink-0 text-sm text-fg-4">new</span>
                   ) : (
-                    <DiffCount added={c.added} removed={c.removed} />
+                    <DiffCount added={f.added} removed={f.removed} />
                   )}
                 </span>
-                {whereOf(c.path, scope.base) && (
-                  <span className="truncate text-sm text-fg-4">{whereOf(c.path, scope.base)}</span>
+                {whereOf(f.path, scope.base) && (
+                  <span className="truncate text-sm text-fg-4">{whereOf(f.path, scope.base)}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        {read.length > 0 && (
+          <div className="mb-3" data-testid="reads">
+            <h3 className="px-2 py-1 text-sm font-medium text-fg-4">Read</h3>
+            {read.map((f) => (
+              <button
+                key={f.path}
+                type="button"
+                title={f.path}
+                data-testid="file-item"
+                onClick={() => scope.open?.(f.path)}
+                className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
+              >
+                <span className="truncate text-fg-3">{nameOf(f.path)}</span>
+                {whereOf(f.path, scope.base) && (
+                  <span className="truncate text-sm text-fg-4">{whereOf(f.path, scope.base)}</span>
                 )}
               </button>
             ))}
@@ -415,9 +452,12 @@ export function FileList({
             </div>
           ),
         )}
-        {listed && changes.length === 0 && groups.every(([, f]) => f.length === 0) && (
-          <p className="px-2 py-1 text-sm text-fg-4">Nothing written yet.</p>
-        )}
+        {listed &&
+          edited.length === 0 &&
+          read.length === 0 &&
+          groups.every(([, f]) => f.length === 0) && (
+            <p className="px-2 py-1 text-sm text-fg-4">Nothing written yet.</p>
+          )}
       </div>
     </section>
   );

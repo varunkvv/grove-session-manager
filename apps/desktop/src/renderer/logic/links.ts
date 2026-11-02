@@ -24,5 +24,11 @@ export function localPath(href: string | undefined, base: string): string | null
   }
 }
 
+/** the line a link asks for, from its `#L<N>` fragment: undefined when it names none */
+export function lineOf(href: string | undefined): number | undefined {
+  const m = href ? /#L(\d+)/.exec(href) : null;
+  return m ? Number(m[1]) : undefined;
+}
+
 /** the folder a file is in */
 export const dirOf = (file: string): string => file.slice(0, file.lastIndexOf("/")) || "/";

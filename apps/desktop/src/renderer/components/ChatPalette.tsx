@@ -5,6 +5,7 @@ import { type KeyboardEvent, useState } from "react";
 import type { ChatWindowView } from "../../shared/ipc.ts";
 import { type ChatAction, keysLabel } from "../logic/chatKeys.ts";
 import { type ChatPaletteItem, chatPaletteItems } from "../logic/palette.ts";
+import type { ChatScope } from "../state/chatScope.ts";
 import {
   HitRow,
   tallItemClass,
@@ -27,6 +28,8 @@ export function CommandPalette(props: {
   /** the window's own session */
   self: string;
   actions: readonly ChatAction[];
+  /** the window's files: the Files group, and opening one in the viewer */
+  scope: ChatScope | null;
   onClose: () => void;
   /** a session that would not open */
   onError: (message: string) => void;
@@ -39,12 +42,14 @@ function Open({
   self,
   actions,
   windows,
+  scope,
   onClose,
   onError,
 }: {
   self: string;
   actions: readonly ChatAction[];
   windows: readonly ChatWindowView[];
+  scope: ChatScope | null;
   onClose: () => void;
   onError: (message: string) => void;
 }) {
@@ -52,7 +57,8 @@ function Open({
   const [at, setAt] = useState(0);
   const sessions = useFoundSessions(query);
   const words = tokenize(query);
-  const sections = chatPaletteItems({ self, windows, actions, sessions }, query);
+  const files = scope ? { base: scope.base, files: scope.files } : undefined;
+  const sections = chatPaletteItems({ self, windows, actions, sessions, files }, query);
   const items = sections.flatMap((s) => s.items);
   const active = items[Math.min(at, items.length - 1)];
   // more than the actions: what to switch to is the first thing it is for
@@ -63,6 +69,7 @@ function Open({
     if (i.kind === "action") i.action.run();
     else if (i.kind === "window") void window.grove.showWindow(i.window.hit.sessionId);
     else if (i.kind === "all") void window.grove.showWindow(null);
+    else if (i.kind === "file") scope?.open?.(i.file.path);
     else {
       void window.grove
         .openChat(i.hit.key)
@@ -137,6 +144,11 @@ function Open({
                 <WindowRow item={i.window} words={words} />
               ) : i.kind === "session" ? (
                 <HitRow hit={i.hit} words={words} />
+              ) : i.kind === "file" ? (
+                <span className="min-w-0 flex-1 truncate">
+                  {i.folder && <span className="text-fg-4">{i.folder}/</span>}
+                  {i.name}
+                </span>
               ) : i.kind === "all" ? (
                 <>
                   {/* under the windows' titles, as their marks' column runs */}

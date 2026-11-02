@@ -447,6 +447,20 @@ dialog::backdrop {
   }
 }
 
+/* a line the viewer was sent to: lit, then fading out over 2s */
+@keyframes line-flash {
+  from {
+    background-color: var(--color-accent-soft);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.cm-flash {
+  animation: line-flash 2s ease-out;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

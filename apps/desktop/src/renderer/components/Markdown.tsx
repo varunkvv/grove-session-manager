@@ -3,12 +3,13 @@
 // added, and it is never added here. links go to the browser through main, http(s) only. in a
 // grove chat window a path is a file of the session's: an image drawn through <img> from main's
 // session scheme, which serves only the session's folders, or a link that opens the viewer.
-import { fileKind } from "@grove/core/pure";
+import { fileKind, type IndexedFile } from "@grove/core/pure";
 import {
   Fragment,
   memo,
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -19,7 +20,7 @@ import { FILE_SCHEME, sessionUrl } from "../../shared/sessionUrl.ts";
 import { blocks } from "../logic/blocks.ts";
 import { remarkFileRefs } from "../logic/fileRefs.ts";
 import { highlight, highlighted, type Run } from "../logic/highlight.ts";
-import { localPath, webLink } from "../logic/links.ts";
+import { lineOf, localPath, webLink } from "../logic/links.ts";
 import { useChatScope } from "../state/chatScope.ts";
 import { onLook, paletteNow } from "../state/look.ts";
 import { MermaidDiagram } from "./Mermaid.tsx";
@@ -44,13 +45,19 @@ function Image({ src, alt }: { src?: string; alt?: string }) {
   );
 }
 
-/** a link to a file: opened beside the conversation, in a chat window */
+/** a link to a file: opened beside the conversation, in a chat window, at its line if it names one */
 function FileLink({ href, children }: { href?: string; children: ReactNode }) {
   const scope = useChatScope();
   const file = scope?.open && localPath(href, scope.base);
   if (!file) return <span>{children}</span>;
+  const line = lineOf(href);
   return (
-    <button type="button" className="md-file" title={file} onClick={() => scope?.open?.(file)}>
+    <button
+      type="button"
+      className="md-file"
+      title={file}
+      onClick={() => scope?.open?.(file, line)}
+    >
       {children}
     </button>
   );
@@ -159,10 +166,11 @@ const components: Components = {
   code: ({ className, children }) => <Code className={className}>{children}</Code>,
 };
 
-const plugins = [remarkGfm, remarkFileRefs];
+const NO_FILES: IndexedFile[] = [];
 
-/** one part of a message: parsed once, and again only when its own text moves */
-const Part = memo(function Part({ text }: { text: string }) {
+/** one part of a message: parsed once, and again only when its own text or the session's files move */
+const Part = memo(function Part({ text, files }: { text: string; files: IndexedFile[] }) {
+  const plugins = useMemo(() => [remarkGfm, remarkFileRefs(files)], [files]);
   return (
     <ReactMarkdown remarkPlugins={plugins} components={components}>
       {text}
@@ -190,13 +198,14 @@ export const Markdown = memo(function Markdown({
   streaming?: boolean;
 }) {
   const scope = useChatScope();
+  const files = scope?.files ?? NO_FILES;
   return (
     <div className={className ? `md ${className}` : "md"}>
       {scope && (streaming || text.length > PARTS_FROM) ? (
         // biome-ignore lint/suspicious/noArrayIndexKey: a part's place in a message is what it is
-        blocks(text).map((part, i) => <Part key={i} text={part} />)
+        blocks(text).map((part, i) => <Part key={i} text={part} files={files} />)
       ) : (
-        <Part text={text} />
+        <Part text={text} files={files} />
       )}
     </div>
   );

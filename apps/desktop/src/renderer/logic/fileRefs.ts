@@ -1,15 +1,16 @@
 // a file an agent names without a link: `src/a.ts`, src/a.ts:12, ./notes.md. a remark plugin turns
-// these into links, and the chat window's link component opens them in the viewer
+// these into links when the session's files resolve to exactly one file, and the chat window's
+// link component opens them in the viewer, at the line named
+
+import { fileLine, type IndexedFile, resolveFileRef } from "@grove/core/pure";
 
 type Node = { type: string; value?: string; url?: string; children?: Node[] };
 
 const EXT = "[A-Za-z][A-Za-z0-9]{0,9}";
 const SEG = "[\\w@.+~-]+";
-/** in plain text: only a path with a folder in it, or a name with a common extension */
-const COMMON =
-  "ts|tsx|js|jsx|mjs|cjs|json|jsonl|md|mdx|py|rb|go|rs|java|kt|swift|sh|zsh|sql|yml|yaml|toml|txt|csv|html|css|scss|xml|log|lock|env|ini|cfg|conf|tf|proto|graphql|ipynb|png|jpg|jpeg|gif|svg|webp|mp4|mov|pdf";
+/** a name with an extension, optionally a folder or two, and a `:N` or `:N:M` line. resolved after */
 const TEXT_REF = new RegExp(
-  `(?<![\\w/.~@-])((?:\\.{0,2}/|~/)?(?:${SEG}/)+${SEG}\\.${EXT}|${SEG}\\.(?:${COMMON}))(?::\\d+(?::\\d+)?)?(?![\\w/-])`,
+  `(?<![\\w/.~@-])((?:\\.{0,2}/|~/)?(?:${SEG}/)*${SEG}\\.${EXT})(?::\\d+(?::\\d+)?)?(?![\\w/-])`,
   "g",
 );
 /** a product's name, not a file */
@@ -31,33 +32,43 @@ const link = (url: string, children: Node[]): Node => ({
   children,
 });
 
-function walk(node: Node) {
+/** the link to a resolved file: its line as a fragment, when the reference names one */
+const hrefOf = (file: string, token: string): string => {
+  const line = fileLine(token);
+  return line === undefined ? file : `${file}#L${line}`;
+};
+
+function walk(node: Node, files: readonly IndexedFile[]) {
   const kids = node.children;
   if (!kids || node.type === "link" || node.type === "linkReference") return;
   const out: Node[] = [];
   for (const k of kids) {
     if (k.type === "inlineCode" && k.value) {
-      const p = codeRef(k.value);
-      out.push(p ? link(p, [k]) : k);
+      const file = codeRef(k.value) && resolveFileRef(k.value, files);
+      out.push(file ? link(hrefOf(file, k.value), [k]) : k);
     } else if (k.type === "text" && k.value) {
       const text = k.value;
       let at = 0;
       for (const m of text.matchAll(TEXT_REF)) {
+        const token = m[0];
         const p = m[1] as string;
         if (p.includes("..") || p.startsWith("~") || PRODUCT.test(p)) continue;
+        const file = resolveFileRef(token, files);
+        if (!file) continue;
         if (m.index > at) out.push({ type: "text", value: text.slice(at, m.index) });
-        out.push(link(p, [{ type: "text", value: m[0] }]));
-        at = m.index + m[0].length;
+        out.push(link(hrefOf(file, token), [{ type: "text", value: token }]));
+        at = m.index + token.length;
       }
       out.push(at === 0 ? k : { type: "text", value: text.slice(at) });
     } else {
-      walk(k);
+      walk(k, files);
       out.push(k);
     }
   }
   node.children = out;
 }
 
-export function remarkFileRefs() {
-  return (tree: Node) => walk(tree);
+/** links the files of a session's index that the text names. nothing is linked without the index */
+export function remarkFileRefs(files: readonly IndexedFile[]) {
+  return () => (tree: Node) => walk(tree, files);
 }

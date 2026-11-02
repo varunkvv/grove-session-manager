@@ -1,7 +1,7 @@
 // grove chat's window: one session, its conversation in a reading column, the composer under it.
 // the transcript is what is drawn, as in the panel. the host adds what is not in it yet: the
 // answer being streamed, and what the agent is waiting on the person for.
-import { modelLabel, type TurnView } from "@grove/core/pure";
+import { type IndexedFile, modelLabel, type TurnView } from "@grove/core/pure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   ChatAgent,
@@ -382,7 +382,7 @@ export function ChatApp() {
    * id, or by the call that started it until the list is read). closed when the window opens
    */
   const [pane, setPane] = useState<
-    | { kind: "files"; file?: string; diff?: boolean }
+    | { kind: "files"; file?: string; diff?: boolean; changed?: boolean; line?: number }
     | { kind: "agents"; agent?: string; call?: string }
     | { kind: "outputs" }
     | { kind: "tasks" }
@@ -390,6 +390,8 @@ export function ChatApp() {
   >(null);
   /** every agent of the session, read when the agents pane is open */
   const [agents, setAgents] = useState<ChatAgent[]>();
+  /** the session's files, as the markdown links them. read again when the transcript moves */
+  const [indexed, setIndexed] = useState<IndexedFile[]>([]);
   /** the answer as main streams it, and as it is drawn: see `reading` */
   const stream = useRef("");
   const [shown, setShown] = useState("");
@@ -593,6 +595,22 @@ export function ChatApp() {
   useEffect(() => {
     if (rev !== undefined && rev > 0) void read();
   }, [rev, read]);
+
+  // the files the transcript touched moved with it. the same list keeps its place: no markdown is parsed again
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rev is when to read them again
+  useEffect(() => {
+    let live = true;
+    void api()
+      .chatFileIndex()
+      .then((next) => {
+        if (live)
+          setIndexed((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [rev]);
 
   // the agents pane reads them all: when it opens, when claude says one moved, when the transcript did
   const agentsOpen = pane?.kind === "agents";
@@ -875,7 +893,9 @@ export function ChatApp() {
   const scope = {
     session: session.sessionId,
     base: target.cwd,
-    open: (file: string) => setPane({ kind: "files", file }),
+    files: indexed,
+    open: (file: string, line?: number) =>
+      setPane({ kind: "files", file, ...(line ? { line } : {}) }),
     agents: (call?: string) => setPane({ kind: "agents", ...(call ? { call } : {}) }),
     diff: (call: string) => api().chatStepDiff(call),
     retry: (prompt: string) => void send(prompt),
@@ -1816,18 +1836,19 @@ export function ChatApp() {
               <Viewer
                 file={pane.file}
                 diff={pane.diff}
+                line={pane.line}
                 onList={() => setPane({ kind: "files" })}
                 onOpen={(file) => void openFile(file)}
                 editor={target.editor}
                 onEditor={(file) => void openFileInEditor(file)}
+                onDiff={pane.changed ? (diff) => setPane({ ...pane, diff }) : undefined}
                 onClose={() => setPane(null)}
               />
             ) : (
               <FileList
-                written={talk?.written ?? []}
                 rev={s.rev}
                 onClose={() => setPane(null)}
-                onChange={(file) => setPane({ kind: "files", file, diff: true })}
+                onChange={(file) => setPane({ kind: "files", file, diff: true, changed: true })}
               />
             ))}
           {pane?.kind === "tasks" && tasks.length > 0 && (
@@ -1922,6 +1943,7 @@ export function ChatApp() {
         <CommandPalette
           self={session.sessionId}
           actions={actions}
+          scope={scope}
           onClose={closeSheet}
           onError={setError}
         />

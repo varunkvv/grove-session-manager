@@ -1,9 +1,9 @@
 // what cmd-K lists for a query, in the main window and in a chat window. pure: the palettes draw
 // the items and run them by id.
-import { tokenize } from "@grove/core/pure";
+import { type IndexedFile, tokenize } from "@grove/core/pure";
 import type { ChatWindowView, ProjectView, SessionHit } from "../../shared/ipc.ts";
 import type { ChatAction } from "./chatKeys.ts";
-import { rank } from "./fuzzy.ts";
+import { fuzzy, rank } from "./fuzzy.ts";
 import { type SessionItem, startBlocked, stateOf } from "./views.ts";
 
 export type PaletteSection =
@@ -208,6 +208,7 @@ export type ChatPaletteItem =
   | { id: string; kind: "window"; window: SessionItem }
   | { id: "all-sessions"; kind: "all" }
   | { id: string; kind: "action"; action: ChatAction }
+  | { id: string; kind: "file"; file: IndexedFile; folder: string; name: string }
   | { id: string; kind: "session"; hit: SessionHit };
 
 export interface ChatPaletteContext {
@@ -218,6 +219,56 @@ export interface ChatPaletteContext {
   actions: readonly ChatAction[];
   /** findSessions' newest answer and the query it answered */
   sessions?: { query: string; hits: readonly SessionHit[] };
+  /** the session's files, for the Files group. a file's folder is shown from `base`, the session's */
+  files?: { base: string; files: readonly IndexedFile[] };
+}
+
+/**
+ * the files a query finds, for the Files group: touched files above untouched ones, then how the
+ * query matches the name (exact, then inside it, then its letters, then its folder), then newest
+ * touch first. an empty query lists the touched files only, newest first. `max` files at most
+ */
+export function rankFiles(query: string, files: readonly IndexedFile[], max = 8): IndexedFile[] {
+  const q = query.trim().toLowerCase();
+  const found: Array<{ file: IndexedFile; match: number }> = [];
+  for (const file of files) {
+    if (!q) {
+      if (file.touchedAt !== undefined) found.push({ file, match: 0 });
+    } else {
+      const match = fileMatch(q, file.path);
+      if (match !== null) found.push({ file, match });
+    }
+  }
+  found.sort(
+    (a, b) =>
+      Number(b.file.touchedAt !== undefined) - Number(a.file.touchedAt !== undefined) ||
+      b.match - a.match ||
+      (b.file.touchedAt ?? 0) - (a.file.touchedAt ?? 0) ||
+      (a.file.path < b.file.path ? -1 : a.file.path > b.file.path ? 1 : 0),
+  );
+  return found.slice(0, max).map((f) => f.file);
+}
+
+/** how a lowercase query matches a path: 4 the name exactly, 3 inside the name, 2 in the name's letters, 1 in the path's letters. null: not at all */
+function fileMatch(q: string, path: string): number | null {
+  const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+  if (name === q) return 4;
+  if (name.includes(q)) return 3;
+  if (fuzzy(q, name) !== null) return 2;
+  return fuzzy(q, path) === null ? null : 1;
+}
+
+/** a file's row: its name, and its folder from the session's, which is said quietly */
+function fileRow(file: IndexedFile, base: string): ChatPaletteItem {
+  const rel = file.path.startsWith(`${base}/`) ? file.path.slice(base.length + 1) : file.path;
+  const cut = rel.lastIndexOf("/");
+  return {
+    id: `file:${file.path}`,
+    kind: "file",
+    file,
+    folder: cut < 0 ? "" : rel.slice(0, cut),
+    name: rel.slice(cut + 1),
+  };
 }
 
 const GROUPS: ChatAction["group"][] = ["Session", "Message", "Composer", "View"];
@@ -243,16 +294,23 @@ export function chatPaletteItems(
     windows.push({ id: "all-sessions", kind: "all" });
   const live = ctx.actions.filter((a) => !a.off);
   const action = (a: ChatAction): ChatPaletteItem => ({ id: a.id, kind: "action", action: a });
+  const files = ctx.files;
+  const fileGroup = {
+    label: "Files",
+    items: files ? rankFiles(query, files.files).map((f) => fileRow(f, files.base)) : [],
+  };
   const sections = [{ label: "Windows", items: windows }];
   if (!typed) {
     for (const g of GROUPS) {
       sections.push({ label: g, items: live.filter((a) => a.group === g).map(action) });
     }
+    sections.push(fileGroup);
   } else {
     sections.push({
       label: "Actions",
       items: rank(live, query.trim(), (a) => a.label).map(action),
     });
+    sections.push(fileGroup);
     const open = new Set([ctx.self, ...ctx.windows.map((w) => w.hit.sessionId)]);
     const hits = ctx.sessions?.query === query ? ctx.sessions.hits : [];
     sections.push({

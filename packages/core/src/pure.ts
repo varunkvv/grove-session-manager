@@ -1,5 +1,6 @@
 // modules with no node: imports. safe for the app's renderer and anything else without fs.
 export * from "./combos/folders.ts";
+export * from "./fileIndex.ts";
 export * from "./git/branch.ts";
 export * from "./github/prs.ts";
 export * from "./project/derive.ts";
