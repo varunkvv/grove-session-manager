@@ -1,3 +1,21 @@
+## 0.47
+
+Grove chat knows the files a session touched, and opens them from wherever the name shows up. 0.47 adds a files list for each session, and makes a file named in a message open on a click.
+
+New:
+
+- a file the agent names opens in the viewer, by its name alone (`Files.tsx`) or with a line (`Files.tsx:42` opens at line 42, highlighted)
+- the chat window's Files pane lists what the session touched: edited files first, with their +/- counts and a diff, then the files it read, plans and artifacts
+- a session row in the sidebar expands to the same list. clicking a file opens that session's chat on it
+- cmd-k in a chat window has a Files group, with the files the session touched first
+- a Read step in the transcript opens its file
+
+Keep in mind:
+
+- a name links only when it matches one file the session touched or one git tracks. a name that could be two files stays plain text
+- an absolute path links only when the session touched that exact file
+- the per-turn output cards in the transcript are unchanged
+
 ## 0.46
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.46 keeps track of what your sessions made for people - pull requests, jira cards, slack messages, claude artifacts and docs, google docs, figma, linear, notion and more - and replaces the pull request marks.
