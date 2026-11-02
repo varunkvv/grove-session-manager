@@ -1,5 +1,5 @@
 import { tokenize } from "@grove/core/pure";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ProjectId, ProjectView, SessionRef } from "../../shared/ipc.ts";
 import { moved } from "../logic/keyboard.ts";
@@ -23,7 +23,6 @@ import {
 } from "../state/actions.ts";
 import { currentProject, listInput, type Section, useStore } from "../state/store.ts";
 import { InboxRow } from "./Inbox.tsx";
-import { FilesChevron, SessionFiles } from "./SessionFiles.tsx";
 import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
 import {
   AgentCount,
@@ -113,9 +112,6 @@ function SessionRow({
   const doing = state === "working" ? !described && hit.doing : watching && tasksLine(watching);
   const lines =
     1 + (snippet || described || doing ? 1 : 0) + (!snippet && described && doing ? 1 : 0);
-  // its files open under it, beside the chat: the chevron is there only where a click opens one
-  const [files, setFiles] = useState(false);
-  const chat = useStore((s) => s.settings?.chat === true);
   return (
     <div
       ref={ref}
@@ -130,13 +126,11 @@ function SessionRow({
       data-open={open || undefined}
       className={cx(
         "fade border-b border-line px-3 last:border-b-0",
-        files
-          ? "cv-tall py-2"
-          : lines === 1
-            ? "cv-line flex h-9 flex-col justify-center"
-            : lines === 2
-              ? "cv-row py-2"
-              : "cv-tall py-2",
+        lines === 1
+          ? "cv-line flex h-9 flex-col justify-center"
+          : lines === 2
+            ? "cv-row py-2"
+            : "cv-tall py-2",
         // the open row is marked whoever moved last. hover and the keyboard's row are the lighter grey
         open ? "bg-active" : "hover:bg-raised data-[active]:bg-raised",
       )}
@@ -152,7 +146,6 @@ function SessionRow({
       }}
     >
       <div className="flex h-5 items-center gap-3">
-        {chat && <FilesChevron open={files} onToggle={() => setFiles(!files)} />}
         <span className="min-w-0 flex-1 truncate text-fg" title={hit.title}>
           <Highlighted text={hit.title} tokens={tokens} />
         </span>
@@ -220,7 +213,6 @@ function SessionRow({
           {doing}
         </p>
       )}
-      {files && <SessionFiles session={hit.key} title={hit.title} />}
     </div>
   );
 }

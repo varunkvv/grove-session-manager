@@ -475,16 +475,6 @@ function buildHandlers(deps: Deps): Handlers {
       await chatOf().chatSend(requireSession(deps, key).sessionId, text);
     },
 
-    async sessionFiles(key) {
-      // the chat window's own lists, by the session's id: a row in the main window has no window
-      const { sessionId } = requireSession(deps, key);
-      const [files, changes] = await Promise.all([
-        chatOf().chatFileIndex(sessionId),
-        chatOf().chatChanges(sessionId),
-      ]);
-      return { files, changes };
-    },
-
     async newChat(project) {
       if (deps.settings().chat !== true) {
         throw new AppError("chat-off", "Grove chat is switched off in Settings.");

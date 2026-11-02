@@ -332,14 +332,13 @@ function TextFile({ file, v, line }: { file: string; v: number; line?: number })
 }
 
 /** every file the session touched, edited first, then read, then the project's plans and artifacts */
-export function FileList({
+/** the files list: edited, read, plans, artifacts. shared by the files pane and the outputs pane's fold */
+function FileGroups({
   rev,
-  onClose,
   onChange,
 }: {
   /** the transcript moved: a plan or an artifact may have come */
   rev: number;
-  onClose: () => void;
   /** an edited file: its diff, in the viewer */
   onChange: (file: string) => void;
 }) {
@@ -367,17 +366,7 @@ export function FileList({
     ["Artifacts", listed?.artifacts ?? []],
   ];
   return (
-    <section
-      className="flex min-h-0 w-72 shrink-0 flex-col border-l border-line bg-chrome"
-      data-testid="files"
-    >
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">
-        <h2 className="flex-1 font-medium text-fg">Files</h2>
-        <IconButton label="Close" onClick={onClose} data-testid="files-close">
-          <Icon name="x" size={12} />
-        </IconButton>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+    <>
         {edited.length > 0 && (
           <div className="mb-3" data-testid="changes">
             <h3 className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-fg-4">
@@ -458,7 +447,64 @@ export function FileList({
           groups.every(([, f]) => f.length === 0) && (
             <p className="px-2 py-1 text-sm text-fg-4">Nothing written yet.</p>
           )}
+    </>
+  );
+}
+
+export function FileList({
+  rev,
+  onClose,
+  onChange,
+}: {
+  /** the transcript moved: a plan or an artifact may have come */
+  rev: number;
+  onClose: () => void;
+  /** an edited file: its diff, in the viewer */
+  onChange: (file: string) => void;
+}) {
+  return (
+    <section
+      className="flex min-h-0 w-72 shrink-0 flex-col border-l border-line bg-chrome"
+      data-testid="files"
+    >
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">
+        <h2 className="flex-1 font-medium text-fg">Files</h2>
+        <IconButton label="Close" onClick={onClose} data-testid="files-close">
+          <Icon name="x" size={12} />
+        </IconButton>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <FileGroups rev={rev} onChange={onChange} />
       </div>
     </section>
+  );
+}
+
+/** the files, folded at the foot of the outputs pane: closed until asked for, and small */
+export function FilesFold({
+  rev,
+  onChange,
+}: {
+  rev: number;
+  onChange: (file: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4 border-t border-line pt-2" data-testid="files-fold">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="fade flex items-center gap-1.5 rounded-sm text-sm text-fg-4 hover:text-fg-2"
+      >
+        <Icon name="chevron" size={9} faint className={cx("fade", open && "rotate-90")} />
+        Files
+      </button>
+      {open && (
+        <div className="mt-1 -mx-2">
+          <FileGroups rev={rev} onChange={onChange} />
+        </div>
+      )}
+    </div>
   );
 }

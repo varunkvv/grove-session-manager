@@ -30,7 +30,7 @@ import { AgentList, AgentViewer } from "./Agents.tsx";
 import { Ask } from "./Asks.tsx";
 import { CommandPalette, ShortcutSheet } from "./ChatPalette.tsx";
 import { TasksPane } from "./ChatTasks.tsx";
-import { FileList, OutputCards, Viewer } from "./Files.tsx";
+import { FileList, FilesFold, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
@@ -1859,7 +1859,16 @@ export function ChatApp() {
             />
           )}
           {pane?.kind === "outputs" && !!session.outputs?.length && (
-            <OutputsPane outputs={session.outputs} onClose={() => setPane(null)} />
+            <OutputsPane
+              outputs={session.outputs}
+              onClose={() => setPane(null)}
+              footer={
+                <FilesFold
+                  rev={s.rev}
+                  onChange={(file) => setPane({ kind: "files", file, diff: true, changed: true })}
+                />
+              }
+            />
           )}
           {pane?.kind === "agents" &&
             (shownAgent ? (

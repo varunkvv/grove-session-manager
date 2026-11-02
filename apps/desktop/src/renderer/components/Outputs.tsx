@@ -183,9 +183,12 @@ export function OutputSection({
 export function OutputsPane({
   outputs,
   onClose,
+  footer,
 }: {
   outputs: readonly OutputView[] | undefined;
   onClose: () => void;
+  /** below the outputs: the session's files, folded */
+  footer?: ReactNode;
 }) {
   const now = useTick(false);
   return (
@@ -201,6 +204,7 @@ export function OutputsPane({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3">
         <OutputList outputs={outputs} now={now} />
+        {footer}
       </div>
     </section>
   );

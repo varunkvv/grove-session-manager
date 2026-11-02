@@ -542,8 +542,6 @@ export interface Api {
   sessionAnswer(key: SessionKey, askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** grove chat: a reply from the session card, through the same claude the chat window talks to */
   sessionReply(key: SessionKey, text: string): Promise<Outcome>;
-  /** a session's files, as its chat window lists them, and what is changed in its folders. from a session row */
-  sessionFiles(key: SessionKey): Promise<{ files: IndexedFile[]; changes: ChatChange[] }>;
   /** grove chat: a new session in the project, in a window of its own. claude starts on the first key */
   newChat(project: ProjectId): Promise<Outcome>;
   /**
@@ -636,7 +634,6 @@ export const INVOKE_CHANNELS = [
   "sessionHost",
   "sessionAnswer",
   "sessionReply",
-  "sessionFiles",
   "newChat",
   "chatWindows",
   "showWindow",
