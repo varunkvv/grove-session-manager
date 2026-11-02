@@ -2,7 +2,7 @@ import type { InboxRowView } from "../../shared/ipc.ts";
 import { moved } from "../logic/keyboard.ts";
 import { openSession as open, optionId, review } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { PrCell } from "./Pr.tsx";
+import { OutputCell } from "./Outputs.tsx";
 import {
   AgentCount,
   Button,
@@ -32,7 +32,7 @@ export function InboxRow({
   tokens,
   snippet,
   working,
-  prCol,
+  outCol,
   onClick,
 }: {
   row: InboxRowView;
@@ -46,7 +46,7 @@ export function InboxRow({
   /** it works on a turn claude started itself, and still needs him */
   working?: boolean;
   /** some row in the list has a PR: every row keeps the column */
-  prCol?: boolean;
+  outCol?: boolean;
   onClick: () => void;
 }) {
   const editor = useStore((s) => s.editor?.label ?? "the editor");
@@ -132,7 +132,7 @@ export function InboxRow({
           </Button>
         </span>
         {/* outside the swap: Open and Dismiss take the same room with or without it */}
-        {prCol && <PrCell prs={row.prs} />}
+        {outCol && <OutputCell outputs={row.outputs} />}
       </div>
       {snippet ? (
         <p className="mt-0.5 truncate text-fg-3" title={snippet} data-testid="session-snippet">

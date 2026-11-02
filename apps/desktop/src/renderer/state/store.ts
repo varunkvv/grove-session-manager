@@ -26,6 +26,8 @@ export type View =
   | { name: "sessions" }
   /** what the machine's agents used. not a list, and not any one project's */
   | { name: "usage" }
+  /** what the sessions of the list it was opened from made for people */
+  | { name: "outputs" }
   | { name: "new-project" }
   | { name: "edit-project" };
 

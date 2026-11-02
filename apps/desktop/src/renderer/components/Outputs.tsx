@@ -7,10 +7,22 @@ import {
   type PrReviewer,
   prDetail,
 } from "@grove/core/pure";
-import { type MouseEvent, useEffect, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { PrView } from "../../shared/ipc.ts";
-import { lookOf, ordered, prTooltip, rollup, shortRepo } from "../logic/prs.ts";
+import type { OutputView, PrView } from "../../shared/ipc.ts";
+import {
+  cap,
+  detailOf,
+  glyphOf,
+  lookOf,
+  type Mark,
+  markOf,
+  ordered,
+  type Section,
+  sectionsOf,
+  shortKey,
+  shortRepo,
+} from "../logic/outputs.ts";
 import { useTick } from "./Live.tsx";
 import {
   Button,
@@ -20,6 +32,7 @@ import {
   IconButton,
   Menu,
   type MenuItem,
+  OutputGlyph,
   PrGlyph,
   PrWords,
   Spinner,
@@ -28,66 +41,76 @@ import {
 const open = (url: string) => void window.grove.openExternal(url);
 const stop = (e: MouseEvent) => e.stopPropagation();
 
-/** a stack, open ones first (top of the stack first), merged and closed under a line, dimmed */
-function stackItems(prs: readonly PrView[]): MenuItem[] {
-  const { open: live, done } = ordered(prs);
-  const item = (p: PrView, i: number, dim: boolean): MenuItem => ({
-    key: p.url,
-    label: `#${p.number}${p.title ? ` ${p.title}` : ""}`,
-    description: `${shortRepo(p.repo)}${p.state ? ` · ${PR_STATE_WORD[p.state]}` : ""}`,
-    mark: <PrGlyph look={lookOf(p)} />,
-    ...(dim ? { dim, divider: i === 0 && live.length > 0 } : {}),
+/** the menu's rows: what it made, then what it only updated or commented on, below a line, dimmed */
+function menuItems(m: Mark): MenuItem[] {
+  const item = (o: OutputView, i: number, dim: boolean, divider: boolean): MenuItem => ({
+    key: String(i),
+    label: `${shortKey(o)}${o.title ? ` ${o.title}` : ""}`,
+    description: detailOf(o),
+    mark: <OutputGlyph kind={glyphOf(o.kind)} {...(o.pr ? { look: lookOf(o.pr) } : {})} />,
+    ...(dim ? { dim, divider } : {}),
   });
-  return [...live.map((p, i) => item(p, i, false)), ...done.map((p, i) => item(p, i, true))];
+  return [
+    ...m.made.map((o, i) => item(o, i, false, false)),
+    ...m.other.map((o, i) => item(o, m.made.length + i, true, i === 0 && m.made.length > 0)),
+  ];
 }
 
 /**
- * a row's PR, or its stack: the glyph and the number, or `3 PRs` over the open ones. one opens on
- * github, a stack opens a menu of them. `label` hides the words as the list narrows
+ * a row's outputs: the glyph and the key of the one, or the glyph of the latest it made and a
+ * count. one opens its url, several open a menu of them. `label` hides the words as the list
+ * narrows. a fork's copies never count
  */
-export function PrMark({
-  prs,
+export function OutputMark({
+  outputs,
   label,
   className,
-  onOpen,
+  onOpenPr,
   pressed,
 }: {
-  prs: readonly PrView[] | undefined;
+  outputs: readonly OutputView[] | undefined;
   /** classes for the words beside the glyph */
   label?: string;
   className?: string;
-  /** given: a click is this (the chat's PR pane), not github or the stack's menu */
-  onOpen?: () => void;
+  /** given: a click on a PR is this (the chat's PR pane), not github */
+  onOpenPr?: () => void;
   /** its pane is open */
   pressed?: boolean;
 }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
-  if (!prs?.length) return null;
-  const r = rollup(prs);
+  const m = markOf(outputs);
+  if (!m) return null;
+  const list = [...m.made, ...m.other];
+  const go = (o: OutputView) => {
+    if (o.pr && onOpenPr) onOpenPr();
+    else if (o.url) open(o.url);
+  };
   return (
     <>
       <button
         type="button"
         tabIndex={-1}
-        title={prTooltip(prs)}
-        data-testid="pr-mark"
-        data-state={r.single?.state ?? (r.look.done ? "done" : "stack")}
-        {...(onOpen ? { "aria-pressed": !!pressed } : {})}
+        title={list
+          .map((o) => [o.key ?? cap(o.label), o.title, o.verb].filter(Boolean).join(" · "))
+          .join("\n")}
+        data-testid="output-mark"
+        data-glyph={m.glyph}
+        data-state={m.single?.pr?.state ?? (m.single ? "one" : "several")}
+        {...(onOpenPr ? { "aria-pressed": !!pressed } : {})}
         className={cx(
           "no-drag fade -mr-1 inline-flex h-5 shrink-0 items-center gap-1 rounded px-1 text-sm tabular-nums hover:bg-active hover:text-fg",
-          r.look.done ? "text-fg-4" : "text-fg-3",
+          m.look?.done ? "text-fg-4" : "text-fg-3",
           pressed && "bg-raised text-fg",
           className,
         )}
         onClick={(e) => {
           e.stopPropagation();
-          if (onOpen) onOpen();
-          else if (r.single) open(r.single.url);
+          if (m.single) go(m.single);
           else setAnchor(e.currentTarget.getBoundingClientRect());
         }}
       >
-        <PrGlyph look={r.look} />
-        <span className={label}>{r.label}</span>
+        <OutputGlyph kind={m.glyph} {...(m.look ? { look: m.look } : {})} />
+        <span className={cx("truncate", label)}>{m.label}</span>
       </button>
       {anchor &&
         // a row is content-visibility: auto, which clips anything fixed inside it. and its click
@@ -98,14 +121,15 @@ export function PrMark({
           <div onClick={stop} onMouseMove={stop}>
             <Menu
               anchor={anchor}
-              items={stackItems(prs)}
+              items={menuItems(m)}
               width={360}
-              testId="pr-menu"
+              testId="output-menu"
               down={anchor.top < window.innerHeight / 2}
               onClose={() => setAnchor(null)}
-              onPick={(url) => {
+              onPick={(i) => {
                 setAnchor(null);
-                open(url);
+                const o = list[Number(i)];
+                if (o) go(o);
               }}
             />
           </div>,
@@ -116,10 +140,10 @@ export function PrMark({
 }
 
 /** the row's right edge after the time: the glyph alone while the list is narrow */
-export function PrCell({ prs }: { prs: readonly PrView[] | undefined }) {
+export function OutputCell({ outputs }: { outputs: readonly OutputView[] | undefined }) {
   return (
-    <span className="flex w-5 shrink-0 justify-end @xl:w-16" data-testid="session-pr">
-      <PrMark prs={prs} label="hidden @xl:inline" />
+    <span className="flex w-5 shrink-0 justify-end @xl:w-24" data-testid="session-output">
+      <OutputMark outputs={outputs} label="hidden @xl:inline" />
     </span>
   );
 }
@@ -144,7 +168,41 @@ function useFailingChecks(p: PrView): FailingCheck[] | undefined {
   return checks;
 }
 
-function PrRow({ p, now, dim }: { p: PrView; now: number; dim: boolean }) {
+const KEY_TONE = { made: "text-fg-2", other: "text-fg-3", inherited: "text-fg-4" } as const;
+const TITLE_TONE = { made: "text-fg", other: "text-fg-3", inherited: "text-fg-4" } as const;
+
+/** a card row opens its url. a link with links inside it cannot be an <a> */
+function CardLink({
+  url,
+  testId,
+  state,
+  children,
+}: {
+  url: string | undefined;
+  testId: string;
+  state?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a link with links inside it cannot be an <a>
+    <div
+      role={url ? "link" : undefined}
+      tabIndex={url ? 0 : undefined}
+      data-testid={testId}
+      data-state={state}
+      title={url}
+      onClick={() => url && open(url)}
+      onKeyDown={(e) => {
+        if (url && e.key === "Enter") open(url);
+      }}
+      className={cx("-mx-2 rounded-md px-2 py-1.5", url && "fade cursor-pointer hover:bg-raised")}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PrRow({ p, now, tone }: { p: PrView; now: number; tone: Section["tone"] }) {
   const checks = useFailingChecks(p);
   const ago = (at: number) => formatRelativeTime(at, now);
   const d =
@@ -160,27 +218,13 @@ function PrRow({ p, now, dim }: { p: PrView; now: number; dim: boolean }) {
       ago,
     );
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a link with links inside it cannot be an <a>
-    <div
-      role="link"
-      tabIndex={0}
-      data-testid="card-pr"
-      data-state={p.state}
-      title={p.url}
-      onClick={() => open(p.url)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") open(p.url);
-      }}
-      className="fade -mx-2 cursor-pointer rounded-md px-2 py-1.5 hover:bg-raised"
-    >
+    <CardLink url={p.url} testId="card-pr" state={p.state}>
       <div className="flex min-w-0 items-center gap-1.5">
         <PrGlyph look={lookOf(p)} />
-        <span className={cx("shrink-0 tabular-nums", dim ? "text-fg-4" : "text-fg-2")}>
+        <span className={cx("shrink-0 tabular-nums", KEY_TONE[tone])}>
           {shortRepo(p.repo)} #{p.number}
         </span>
-        {p.title && (
-          <span className={cx("min-w-0 truncate", dim ? "text-fg-4" : "text-fg")}>{p.title}</span>
-        )}
+        {p.title && <span className={cx("min-w-0 truncate", TITLE_TONE[tone])}>{p.title}</span>}
       </div>
       {d && (
         <p className="mt-0.5 text-sm text-fg-3">
@@ -209,26 +253,58 @@ function PrRow({ p, now, dim }: { p: PrView; now: number; dim: boolean }) {
           {p.stale && p.checkedAt ? ` · as of ${ago(p.checkedAt)}` : d.updated && ` · ${d.updated}`}
         </p>
       )}
-    </div>
+    </CardLink>
   );
 }
 
-/** the session card's Pull requests: the same order as a stack's menu */
-export function PrSection({ prs, now }: { prs: readonly PrView[] | undefined; now: number }) {
-  if (!prs?.length) return null;
-  const { open: live, done } = ordered(prs);
+/** anything but a PR: its key or title, then what was done, by whom, and when */
+function OutputRow({ o, now, tone }: { o: OutputView; now: number; tone: Section["tone"] }) {
+  const line = [o.verb, o.agent, formatRelativeTime(o.last, now)].filter(Boolean).join(" · ");
   return (
-    <div data-testid="card-prs">
-      <h3 className="text-sm font-medium text-fg-4">Pull requests</h3>
-      <div className="mt-1">
-        {live.map((p) => (
-          <PrRow key={p.url} p={p} now={now} dim={false} />
-        ))}
-        {live.length > 0 && done.length > 0 && <div className="my-1 border-t border-line" />}
-        {done.map((p) => (
-          <PrRow key={p.url} p={p} now={now} dim />
-        ))}
+    <CardLink url={o.url} testId="card-output">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <OutputGlyph kind={glyphOf(o.kind)} />
+        {o.key ? (
+          <>
+            <span className={cx("shrink-0 tabular-nums", KEY_TONE[tone])}>{o.key}</span>
+            {o.title && <span className={cx("min-w-0 truncate", TITLE_TONE[tone])}>{o.title}</span>}
+          </>
+        ) : (
+          <span className={cx("min-w-0 truncate", TITLE_TONE[tone])}>
+            {o.title ?? cap(o.label)}
+          </span>
+        )}
       </div>
+      <p className="mt-0.5 text-sm text-fg-3">{line}</p>
+    </CardLink>
+  );
+}
+
+/** the session card's Outputs: by kind, made first, then updated and commented on, then a fork's copies */
+export function OutputSection({
+  outputs,
+  now,
+}: {
+  outputs: readonly OutputView[] | undefined;
+  now: number;
+}) {
+  const sections = sectionsOf(outputs);
+  if (!sections.length) return null;
+  return (
+    <div data-testid="card-outputs">
+      <h3 className="text-sm font-medium text-fg-4">Outputs</h3>
+      {sections.map((sec) => (
+        <div key={`${sec.tone} ${sec.title}`} className="mt-1.5" data-tone={sec.tone}>
+          <h4 className="text-meta text-fg-4">{sec.title}</h4>
+          {sec.items.map((o, i) =>
+            o.pr ? (
+              <PrRow key={o.url} p={o.pr} now={now} tone={sec.tone} />
+            ) : (
+              <OutputRow key={o.url ?? `${o.key}${i}`} o={o} now={now} tone={sec.tone} />
+            ),
+          )}
+        </div>
+      ))}
     </div>
   );
 }

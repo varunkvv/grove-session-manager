@@ -31,7 +31,7 @@ import { type Section, useStore } from "../state/store.ts";
 import { Ask } from "./Asks.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { PrSection } from "./Pr.tsx";
+import { OutputSection } from "./Outputs.tsx";
 import { StepFold, StepList, Thought } from "./Steps.tsx";
 import {
   Button,
@@ -798,7 +798,7 @@ function SessionCard({
           ))}
         </div>
       )}
-      <PrSection prs={session.prs} now={now} />
+      <OutputSection outputs={session.outputs} now={now} />
       {agents.length > 0 && (
         <button
           type="button"

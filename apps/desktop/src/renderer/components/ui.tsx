@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import type { AgentsView, ChatMode, ProjectId } from "../../shared/ipc.ts";
-import type { PrGlyphKind, PrLook } from "../logic/prs.ts";
+import type { OutputGlyphKind, PrGlyphKind, PrLook } from "../logic/outputs.ts";
 import type { Slice } from "../logic/usage.ts";
 import { projectHues, runningFor, type SessionState } from "../logic/views.ts";
 import { optionId } from "../state/actions.ts";
@@ -1814,6 +1814,90 @@ export function PrGlyph({ look, size = 12 }: { look: PrLook; size?: number }) {
       <circle cx="4.5" cy="12.5" r="1.6" />
       <circle cx="11.5" cy={look.glyph === "merged" ? 9 : 12.5} r="1.6" />
       <path d={PR_PATH[look.glyph]} />
+    </svg>
+  );
+}
+
+const OUTPUT_PATH: Record<Exclude<OutputGlyphKind, "pr">, ReactNode> = {
+  issue: (
+    <>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M5.25 6.5h5.5M5.25 9.5h3" />
+    </>
+  ),
+  doc: (
+    <path d="M4 1.75h4.75L12 5v8.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1ZM8.75 1.75V5H12M5.5 8.5h5M5.5 11h3.5" />
+  ),
+  sheet: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+      <path d="M2.5 6.5h11M2.5 10h11M7 6.5v7" />
+    </>
+  ),
+  slides: (
+    <>
+      <rect x="2" y="3" width="12" height="8" rx="1.5" />
+      <path d="M8 11v3M5.5 14h5" />
+    </>
+  ),
+  design: (
+    <>
+      <circle cx="5" cy="5" r="2" />
+      <rect x="8.5" y="8.5" width="5" height="5" rx="1" />
+      <path d="M5 7v2.5a2 2 0 0 0 2 2h1.5" />
+    </>
+  ),
+  message: (
+    <path d="M2.5 4A1.5 1.5 0 0 1 4 2.5h8A1.5 1.5 0 0 1 13.5 4v5a1.5 1.5 0 0 1-1.5 1.5H7l-3 2.75V10.5A1.5 1.5 0 0 1 2.5 9V4Z" />
+  ),
+  artifact: (
+    <path d="M8 2.25v3.5M8 10.25v3.5M2.25 8h3.5M10.25 8h3.5M4.4 4.4l2 2M9.6 9.6l2 2M11.6 4.4l-2 2M6.4 9.6l-2 2" />
+  ),
+  deploy: (
+    <path d="M8 10.5V2.75M4.75 5.75 8 2.5l3.25 3.25M3 10.5v1.75a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V10.5" />
+  ),
+  calendar: (
+    <>
+      <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+      <path d="M2.5 6.75h11M5.5 2v3M10.5 2v3" />
+    </>
+  ),
+  link: (
+    <path d="M6.75 9.25a2.5 2.5 0 0 0 3.5 0l2.5-2.5a2.5 2.5 0 0 0-3.5-3.5l-.75.75M9.25 6.75a2.5 2.5 0 0 0-3.5 0l-2.5 2.5a2.5 2.5 0 0 0 3.5 3.5l.75-.75" />
+  ),
+};
+
+const PR_PLAIN: PrLook = { glyph: "open", tone: "faint", done: false };
+
+/**
+ * what an output is, as one small stroked icon per family of kinds. only a PR has a state colour,
+ * every other kind takes the colour of the words beside it
+ */
+export function OutputGlyph({
+  kind,
+  look,
+  size = 12,
+}: {
+  kind: OutputGlyphKind;
+  look?: PrLook;
+  size?: number;
+}) {
+  if (kind === "pr") return <PrGlyph look={look ?? PR_PLAIN} size={size} />;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+      aria-hidden
+      data-glyph={kind}
+    >
+      {OUTPUT_PATH[kind]}
     </svg>
   );
 }

@@ -7,6 +7,7 @@ import {
   SettingsDialog,
   StartDialog,
 } from "./components/Dialogs.tsx";
+import { OutputsScreen } from "./components/OutputsScreen.tsx";
 import { Palette } from "./components/Palette.tsx";
 import { ProjectForm } from "./components/ProjectForm.tsx";
 import { Sessions } from "./components/Sessions.tsx";
@@ -39,6 +40,7 @@ function Screen() {
   const project = useStore((s) => s.project);
   // the whole machine's, with or without a project
   if (view.name === "usage") return <Usage />;
+  if (view.name === "outputs") return <OutputsScreen />;
   // no projects at all: the form, whatever the view says
   if (!project) return <ProjectForm mode="new" first />;
   switch (view.name) {

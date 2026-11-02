@@ -21,7 +21,7 @@ import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
 import { splitModels } from "../logic/models.ts";
-import { prsKey } from "../logic/prs.ts";
+import { outputsKey, prsOf } from "../logic/outputs.ts";
 import { queuedRows, type SessionState, same, stateOf } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
@@ -34,7 +34,7 @@ import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { PrMark, PrPane } from "./Pr.tsx";
+import { OutputMark, PrPane } from "./Outputs.tsx";
 import { QUIET, QueuedRows, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -521,7 +521,7 @@ export function ChatApp() {
             was.description === hit.description &&
             was.where === hit.where &&
             t.project === hit.project &&
-            prsKey(was.prs) === prsKey(hit.prs) &&
+            outputsKey(was.outputs) === outputsKey(hit.outputs) &&
             // its background tasks: the header says Watching while one runs
             was.live === hit.live &&
             tasksKey(was) === tasksKey(hit)
@@ -1341,10 +1341,10 @@ export function ChatApp() {
             {session.title}
           </h1>
         )}
-        <PrMark
-          prs={session.prs}
+        <OutputMark
+          outputs={session.outputs}
           pressed={pane?.kind === "prs"}
-          onOpen={() => setPane(pane?.kind === "prs" ? null : { kind: "prs" })}
+          onOpenPr={() => setPane(pane?.kind === "prs" ? null : { kind: "prs" })}
         />
         {headerState && (
           <span className="flex items-center gap-1.5" data-testid="chat-state">
@@ -1831,8 +1831,8 @@ export function ChatApp() {
               onClose={() => setPane(null)}
             />
           )}
-          {pane?.kind === "prs" && !!session.prs?.length && (
-            <PrPane prs={session.prs} onClose={() => setPane(null)} />
+          {pane?.kind === "prs" && !!prsOf(session.outputs).length && (
+            <PrPane prs={prsOf(session.outputs)} onClose={() => setPane(null)} />
           )}
           {pane?.kind === "agents" &&
             (shownAgent ? (

@@ -1,5 +1,5 @@
-import { PR_REVIEW_WORD, PR_STATE_WORD, type PrState } from "@grove/core/pure";
-import type { PrView } from "../../shared/ipc";
+import { PR_STATE_WORD, type PrState } from "@grove/core/pure";
+import type { OutputView, PrView, SessionRef } from "../../shared/ipc";
 
 /** the glyph's shape. colour says how it is going, shape what it is */
 export type PrGlyphKind = "open" | "draft" | "merged" | "closed";
@@ -34,45 +34,216 @@ export function ordered(prs: readonly PrView[]): { open: PrView[]; done: PrView[
   return { open: newest.filter(isOpen), done: newest.filter((p) => !isOpen(p)) };
 }
 
-const WORST: PrState[] = ["failing", "pending", "draft", "ready"];
-
-/** what a row shows: one open PR as itself, several as the worst of them, all done as done */
-export function rollup(prs: readonly PrView[]): { look: PrLook; label: string; single?: PrView } {
-  const { open, done } = ordered(prs);
-  const only =
-    open.length === 1 ? open[0] : !open.length && done.length === 1 ? done[0] : undefined;
-  if (only) return { look: lookOf(only), label: `#${only.number}`, single: only };
-  if (open.length) {
-    const worst = WORST.find((w) => open.some((p) => (p.state ?? "pending") === w)) ?? "pending";
-    // a draft inside a stack still reads as an open stack waiting on something
-    return { look: LOOK[worst === "draft" ? "pending" : worst], label: `${open.length} PRs` };
-  }
-  const merged = done.some((p) => p.state === "merged");
-  return { look: LOOK[merged ? "merged" : "closed"], label: `${done.length} PRs` };
-}
-
-/** `owner/name #12 · checks passed · title`, one per line */
-export function prTooltip(prs: readonly PrView[]): string {
-  const { open, done } = ordered(prs);
-  return [...open, ...done]
-    .map((p) =>
-      [
-        `${p.repo} #${p.number}`,
-        p.state ? PR_STATE_WORD[p.state].toLowerCase() : undefined,
-        p.review && p.state !== "merged" && p.state !== "closed"
-          ? PR_REVIEW_WORD[p.review]
-          : undefined,
-        p.title,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-    )
-    .join("\n");
-}
-
 /** the repo's name without its owner: the panel and menus have room for the short one */
 export const shortRepo = (repo: string) => repo.split("/").pop() || repo;
 
-/** what a row's PRs look like: equal keys draw the same */
-export const prsKey = (prs: readonly PrView[] | undefined) =>
-  (prs ?? []).map((p) => `${p.url} ${p.state} ${p.review} ${p.title} ${p.stale}`).join("\n");
+// ---------- what an output looks like ----------
+
+/** one small stroked icon per family of kinds: ui.tsx draws them */
+export type OutputGlyphKind =
+  | "pr"
+  | "issue"
+  | "doc"
+  | "sheet"
+  | "slides"
+  | "design"
+  | "message"
+  | "artifact"
+  | "deploy"
+  | "calendar"
+  | "link";
+
+const FAMILY: Record<string, OutputGlyphKind> = {
+  pr: "pr",
+  mr: "pr",
+  issue: "issue",
+  jira: "issue",
+  linear: "issue",
+  asana: "issue",
+  clickup: "issue",
+  monday: "issue",
+  shortcut: "issue",
+  trello: "issue",
+  workitem: "issue",
+  pagerduty: "issue",
+  confluence: "doc",
+  gdoc: "doc",
+  notion: "doc",
+  coda: "doc",
+  gist: "doc",
+  gdrive: "doc",
+  microsoft: "doc",
+  gsheet: "sheet",
+  airtable: "sheet",
+  gslides: "slides",
+  figma: "design",
+  canva: "design",
+  miro: "design",
+  slack: "message",
+  discord: "message",
+  teams: "message",
+  claude: "artifact",
+  deploy: "deploy",
+  release: "deploy",
+  gcal: "calendar",
+};
+
+export const glyphOf = (kind: string): OutputGlyphKind => FAMILY[kind] ?? "link";
+
+/** the filter chips' words */
+export const FAMILY_WORD: Record<OutputGlyphKind, string> = {
+  pr: "Pull requests",
+  issue: "Cards",
+  doc: "Docs",
+  sheet: "Sheets",
+  slides: "Slides",
+  design: "Designs",
+  message: "Messages",
+  artifact: "Artifacts",
+  deploy: "Deploys",
+  calendar: "Events",
+  link: "Links",
+};
+
+export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** what a row's kind says in a line: `#2352` for a PR, its key, else the short label */
+export function shortKey(o: OutputView): string {
+  const n = o.kind === "pr" ? /#(\d+)$/.exec(o.key ?? "")?.[1] : undefined;
+  return n ? `#${n}` : (o.key ?? cap(o.label));
+}
+
+/** the second line of an output: what it is, and for a PR what github says */
+export const detailOf = (o: OutputView): string =>
+  o.pr
+    ? `${shortRepo(o.pr.repo)}${o.pr.state ? ` · ${PR_STATE_WORD[o.pr.state]}` : ""}`
+    : `${cap(o.label)} · ${o.verb}`;
+
+const newest = (a: OutputView, b: OutputView) => b.last - a.last;
+
+/** what a row's cell and a chat header show */
+export interface Mark {
+  glyph: OutputGlyphKind;
+  /** a PR's state colour. none for any other kind: those are plain */
+  look?: PrLook;
+  /** the key or short label of the one, else the count */
+  label: string;
+  single?: OutputView;
+  /** newest first. the ones it made, then the ones it only updated or commented on */
+  made: OutputView[];
+  other: OutputView[];
+}
+
+/** a fork's copies never count here. no outputs of its own: no mark */
+export function markOf(outputs: readonly OutputView[] | undefined): Mark | null {
+  const own = (outputs ?? []).filter((o) => !o.inherited).sort(newest);
+  if (!own.length) return null;
+  const made = own.filter((o) => o.verb === "made");
+  const other = own.filter((o) => o.verb !== "made");
+  const single = own.length === 1 ? own[0] : undefined;
+  const lead = single ?? made[0] ?? other[0];
+  if (!lead) return null;
+  return {
+    glyph: glyphOf(lead.kind),
+    ...(lead.pr ? { look: lookOf(lead.pr) } : {}),
+    label: single ? shortKey(single) : String(own.length),
+    ...(single ? { single } : {}),
+    made,
+    other,
+  };
+}
+
+/** the PRs of what a session made or touched, oldest first as `ordered` wants them. a fork's copies are not its own */
+export const prsOf = (outputs: readonly OutputView[] | undefined): PrView[] =>
+  [...(outputs ?? [])]
+    .filter((o) => o.pr && !o.inherited)
+    .sort((a, b) => a.first - b.first)
+    .flatMap((o) => (o.pr ? [o.pr] : []));
+
+/** one section of the session card: a kind's outputs, or the fork's copies */
+export interface Section {
+  title: string;
+  items: OutputView[];
+  tone: "made" | "other" | "inherited";
+}
+
+/** the card: made by kind, then updated and commented on by kind, then what came with a fork */
+export function sectionsOf(outputs: readonly OutputView[] | undefined): Section[] {
+  const all = [...(outputs ?? [])].sort(newest);
+  const by = (list: OutputView[], tone: "made" | "other"): Section[] => {
+    const groups = new Map<string, OutputView[]>();
+    for (const o of list) groups.set(o.label, [...(groups.get(o.label) ?? []), o]);
+    return [...groups].map(([label, items]) => ({ title: `${cap(label)}s`, items, tone }));
+  };
+  const own = all.filter((o) => !o.inherited);
+  const inherited = all.filter((o) => o.inherited);
+  return [
+    ...by(
+      own.filter((o) => o.verb === "made"),
+      "made",
+    ),
+    ...by(
+      own.filter((o) => o.verb !== "made"),
+      "other",
+    ),
+    ...(inherited.length
+      ? [{ title: "From before the fork", items: inherited, tone: "inherited" as const }]
+      : []),
+  ];
+}
+
+/** an output and the session it came from, for the Outputs screen */
+export interface Entry {
+  o: OutputView;
+  session: SessionRef;
+}
+
+const rank = (e: Entry) => (e.o.inherited ? 2 : e.o.verb === "made" ? 0 : 1);
+
+/**
+ * every output of the sessions, newest first. one url once and one (kind, key) once, so the same
+ * jira card by two site names is one. the one kept is the earliest maker's, and its time the
+ * newest any copy had
+ */
+export function screenOutputs(sessions: readonly SessionRef[]): Entry[] {
+  const all = sessions.flatMap((session) =>
+    (session.outputs ?? []).map((o): Entry => ({ o, session })),
+  );
+  all.sort((a, b) => rank(a) - rank(b) || a.o.first - b.o.first);
+  const kept = new Map<string, Entry>();
+  const out: Entry[] = [];
+  for (const e of all) {
+    const ids = [
+      ...(e.o.url ? [`u ${e.o.url}`] : []),
+      ...(e.o.key ? [`k ${e.o.kind} ${e.o.key}`] : []),
+    ];
+    const twin = ids.map((i) => kept.get(i)).find(Boolean);
+    if (twin) {
+      twin.o = { ...twin.o, last: Math.max(twin.o.last, e.o.last) };
+      for (const i of ids) kept.set(i, twin);
+      continue;
+    }
+    const mine = { ...e };
+    for (const i of ids) kept.set(i, mine);
+    out.push(mine);
+  }
+  return out.sort((a, b) => b.o.last - a.o.last);
+}
+
+/** the families present, for the filter chips, most first */
+export function familiesOf(
+  entries: readonly Entry[],
+): Array<{ glyph: OutputGlyphKind; n: number }> {
+  const n = new Map<OutputGlyphKind, number>();
+  for (const e of entries) n.set(glyphOf(e.o.kind), (n.get(glyphOf(e.o.kind)) ?? 0) + 1);
+  return [...n].map(([glyph, n]) => ({ glyph, n })).sort((a, b) => b.n - a.n);
+}
+
+/** what a row's outputs look like: equal keys draw the same */
+export const outputsKey = (outputs: readonly OutputView[] | undefined) =>
+  (outputs ?? [])
+    .map(
+      (o) =>
+        `${o.url} ${o.verb} ${o.inherited} ${o.pr?.state} ${o.pr?.review} ${o.pr?.title} ${o.pr?.stale}`,
+    )
+    .join("\n");

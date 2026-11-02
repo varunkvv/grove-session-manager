@@ -4,13 +4,14 @@ import { needsYouCount, startBlocked } from "../logic/views.ts";
 import {
   focusScreen,
   go,
+  goOutputs,
   goUsage,
   newProject,
   newSession,
   switchProject,
 } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Icon, IconButton, ProjectMark, SideGroup, SideItem } from "./ui.tsx";
+import { Icon, IconButton, OutputGlyph, ProjectMark, SideGroup, SideItem } from "./ui.tsx";
 
 /**
  * All sessions, which is every project's, and under it the projects. each says how many of its
@@ -100,6 +101,13 @@ export function Sidebar() {
           label="Usage"
           testId="nav-usage"
           onClick={goUsage}
+        />
+        <SideItem
+          selected={view === "outputs"}
+          mark={<OutputGlyph kind="deploy" size={14} />}
+          label="Outputs"
+          testId="nav-outputs"
+          onClick={goOutputs}
         />
       </div>
       <div className="mt-4 flex h-7 shrink-0 items-center justify-between pr-2 pl-4">

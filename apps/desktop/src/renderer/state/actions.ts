@@ -61,6 +61,11 @@ export function goUsage(): void {
   state().set({ view: { name: "usage" }, back: [], overlay: null, peek: null, filter: "" });
 }
 
+/** the Outputs screen: of the list the person came from, a project's or all of them */
+export function goOutputs(): void {
+  state().set({ view: { name: "outputs" }, back: [], overlay: null, peek: null, filter: "" });
+}
+
 export function back(): void {
   const s = state();
   s.set({ view: s.back.at(-1) ?? { name: s.section }, back: s.back.slice(0, -1) });
