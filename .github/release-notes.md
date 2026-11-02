@@ -1,3 +1,19 @@
+## 0.48
+
+Grove chat can put small jobs on cheaper models. 0.48 adds routing agents: a set of subagents Claude can hand work to, each pinned to a model and an effort. they are switched on per chat session, and off by default.
+
+New:
+
+- a routing switch in a chat window's model menu. turning it on restarts claude once its turn ends
+- an agents pane to turn each routing agent on or off, edit it, make your own, or reset a shipped one to its default
+- the subagents list labels each agent with its type, model and effort, read from the agent's own transcript
+
+Keep in mind:
+
+- the switch is off for every session and goes back to off when grove restarts
+- claude does not restart while a message is queued or a background task is running. it waits for them to finish
+- the first turn after a switch is a cold prompt cache, so it costs more than usual
+
 ## 0.47
 
 Grove chat knows the files a session touched, and opens them from wherever the name shows up.
