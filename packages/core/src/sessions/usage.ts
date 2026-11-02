@@ -72,14 +72,17 @@ function foldLines(
     // result - and an agent's tool results mostly carry no toolUseResult, so the block says it.
     // those are read with or without a text sink: the working time is counted from them
     const usage = line.includes('"usage"');
+    // the result of a call that could have made something: a substring test on the call's id
+    const result = !usage && acc.wants(line);
     const typed =
       !usage &&
+      !result &&
       line.includes('"type":"user"') &&
       !line.includes('"toolUseResult":') &&
       !line.includes('"type":"tool_result"');
     // the pull requests it opened or pushed to. a few short lines per session
-    const pr = !usage && !typed && line.includes('"type":"pr-link"');
-    if (!usage && !typed && !pr) continue;
+    const pr = !usage && !typed && !result && line.includes('"type":"pr-link"');
+    if (!usage && !typed && !pr && !result) continue;
     try {
       const v: unknown = JSON.parse(line);
       if (!isObject(v)) continue;

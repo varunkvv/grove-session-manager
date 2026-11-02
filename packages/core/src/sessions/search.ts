@@ -26,7 +26,7 @@ export function haystack(v: SessionView): string {
     v.gitBranch,
     cwd ? basename(cwd) : undefined,
     v.tag,
-    ...(v.prs ?? (v.pr ? [v.pr] : [])).map((p) => `#${p.number} ${p.repo ?? ""}`),
+    ...(v.outputs ?? []).map((o) => [o.key, o.title].filter(Boolean).join(" ")),
     v.sessionId,
   ]
     .filter(Boolean)

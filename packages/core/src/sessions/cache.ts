@@ -2,6 +2,7 @@ import { readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { isObject, readJsonGuarded, writeFileAtomic } from "../fsx.ts";
 import { PARSER_VERSION } from "../transcript/parse.ts";
+import { outputRulesKey } from "../transcript/outputs.ts";
 import type { DayTally } from "../transcript/usage.ts";
 import type { ParsedMeta } from "../types.ts";
 import type { SessionTallies } from "./usage.ts";
@@ -9,9 +10,9 @@ import type { SessionTallies } from "./usage.ts";
 /**
  * what a usage scan keeps per file. an entry counted under another number is counted again from
  * the start of its transcript, once: 2 is the first with day buckets, the advisor's tokens, the
- * 5m / 1h cache split and working time
+ * 5m / 1h cache split and working time. 3 adds outputs (transcript/outputs.ts)
  */
-export const USAGE_SCHEMA = 2;
+export const USAGE_SCHEMA = 3;
 
 export interface CacheEntry {
   key: string;
@@ -23,6 +24,8 @@ export interface CacheEntry {
   usage?: {
     /** USAGE_SCHEMA when it was counted */
     v?: number;
+    /** the output rules it was counted under (outputRulesKey). other rules read it again */
+    r?: string;
     key: string;
     files: SessionTallies;
     textChars?: number;
@@ -78,7 +81,8 @@ export async function loadCache(
     if (isObject(entry) && typeof entry.key === "string" && isObject(entry.meta)) {
       const e = entry as unknown as CacheEntry;
       // counted the old way: totals and an offset, so it would never be read again
-      if (e.usage && e.usage.v !== USAGE_SCHEMA) delete e.usage;
+      // or under other output rules: what it made has to be found again
+      if (e.usage && (e.usage.v !== USAGE_SCHEMA || e.usage.r !== outputRulesKey())) delete e.usage;
       map.set(file, e);
     }
   }

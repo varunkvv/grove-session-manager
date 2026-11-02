@@ -1,5 +1,6 @@
 // token counts and working time out of a transcript's lines. no node: imports, so the labels and
 // formatting are usable from the renderer too.
+import { OutputCollector, type OutputState } from "./outputs.ts";
 import { extractCommand, extractUserText } from "./prompt.ts";
 
 export interface TokenCounts {
@@ -44,7 +45,7 @@ type Parts = Array<[model: string, counts: Omit<ModelCounts, "ms">]>;
  * both sides of it, and a later block carries the final usage for the whole response. each keeps
  * the day it was counted on, so a later block takes it out of the right one.
  */
-export interface UsageTally {
+export interface UsageTally extends OutputState {
   offset: number;
   /** by local day, `YYYY-MM-DD` */
   days: Record<string, DayTally>;
@@ -54,8 +55,6 @@ export interface UsageTally {
    * anything ran after it, and the working time of the turn so far once a person has asked
    */
   clock?: { at: number; idle?: boolean; turn?: number };
-  /** every pull request the file linked (`pr-link` lines), oldest first, one url once */
-  prs?: Array<{ number: number; url: string; repo?: string }>;
 }
 
 const RECENT = 16;
@@ -187,22 +186,31 @@ function add(t: UsageTally, day: string, parts: Parts, sign: 1 | -1): void {
 export class UsageAccumulator {
   private readonly tally: UsageTally;
   private readonly seen = new Map<string, [string, Parts]>();
+  private readonly outputs: OutputCollector;
 
   constructor(tally: UsageTally) {
     this.tally = tally;
+    this.outputs = new OutputCollector(tally);
     for (const [id, day, parts] of tally.recent) this.seen.set(id, [day, parts]);
   }
 
+  /** a tool result line worth parsing: the result of a call that could have made something */
+  wants(line: string): boolean {
+    return this.outputs.wants(line);
+  }
+
   push(entry: Record<string, unknown>): void {
+    const at = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
     if (entry.type === "pr-link") {
-      this.link(entry);
+      this.outputs.prLink(entry, Number.isFinite(at) ? at : (this.tally.clock?.at ?? 0));
       return;
     }
-    const at = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
     if (entry.type === "user") {
+      this.outputs.results(entry, at);
       this.starts(entry, at);
       return;
     }
+    if (entry.type === "assistant") this.outputs.calls(entry, Number.isFinite(at) ? at : (this.tally.clock?.at ?? 0));
     const u = usageOf(entry);
     if (!u) return;
     // a line with no time is counted on the day of the line before it
@@ -217,15 +225,6 @@ export class UsageAccumulator {
     }
     add(this.tally, day, u.parts, 1);
     this.answers(entry, at, u.parts[0]?.[0] ?? "");
-  }
-
-  /** Claude Code writes the same link many times over. the first one keeps its place */
-  private link(entry: Record<string, unknown>): void {
-    const { prNumber: number, prUrl: url, prRepository: repo } = entry;
-    if (typeof number !== "number" || typeof url !== "string" || !url) return;
-    this.tally.prs ??= [];
-    if (this.tally.prs.some((p) => p.url === url)) return;
-    this.tally.prs.push({ number, url, ...(typeof repo === "string" && repo ? { repo } : {}) });
   }
 
   /** a line a turn starts with: a prompt, a command, a background task's news, an agent's brief */

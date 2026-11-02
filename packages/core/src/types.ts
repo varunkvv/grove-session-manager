@@ -1,3 +1,4 @@
+import type { Output } from "./transcript/outputs.ts";
 import type { ModelUsage } from "./transcript/usage.ts";
 
 export interface Warning {
@@ -25,6 +26,11 @@ export type TitleSource =
   | "firstPrompt"
   | "lastPrompt"
   | "firstCommand";
+
+/** an output with the agent that made it, when an agent did */
+export interface SessionOutput extends Output {
+  agent?: string;
+}
 
 export interface PrLink {
   number: number;
@@ -75,8 +81,8 @@ export interface SessionRecord extends ParsedMeta {
   usage?: ModelUsage[];
   /** the model of the session's own transcript, the biggest when it changed model on the way */
   model?: string;
-  /** every pull request its transcript linked, oldest first. one url once */
-  prs?: PrLink[];
+  /** what it made or touched for people, its agents' too, oldest first. one url once */
+  outputs?: SessionOutput[];
 }
 
 export type ComboRelation = "root" | "inside";

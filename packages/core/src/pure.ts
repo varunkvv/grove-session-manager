@@ -14,6 +14,7 @@ export * from "./sessions/timeline.ts";
 export * from "./slug.ts";
 export * from "./textScale.ts";
 export * from "./time.ts";
+export * from "./transcript/outputs.ts";
 export * from "./transcript/pricing.ts";
 export { pickTitle, squash } from "./transcript/title.ts";
 export * from "./transcript/usage.ts";

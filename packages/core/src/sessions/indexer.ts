@@ -4,8 +4,9 @@ import { isObject, mapLimit } from "../fsx.ts";
 import { parseTranscript } from "../transcript/parse.ts";
 import { readHeadTail } from "../transcript/reader.ts";
 import { pickTitle } from "../transcript/title.ts";
+import { outputRulesKey } from "../transcript/outputs.ts";
 import { type DayTally, summarizeUsage } from "../transcript/usage.ts";
-import type { ParsedMeta, PrLink, SessionRecord } from "../types.ts";
+import type { ParsedMeta, SessionOutput, SessionRecord } from "../types.ts";
 import {
   type CacheEntry,
   cacheKey,
@@ -74,7 +75,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
   const models = usage ? summarizeUsage(Object.values(usage)) : [];
   // "" is the session's own transcript (scanSessionUsage)
   const own = usage?.[""] && summarizeUsage([usage[""]])[0]?.model;
-  const prs = prsOf(m, usage?.[""]?.prs);
+  const outputs = usage ? outputsOf(usage) : [];
   return {
     ...m,
     ...pickTitle(m),
@@ -87,18 +88,38 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     activityMs: m.lastActivityMs ?? s.mtimeMs,
     ...(models.length ? { usage: models } : {}),
     ...(own ? { model: own } : {}),
-    ...(prs.length ? { prs } : {}),
+    ...(outputs.length ? { outputs } : {}),
   };
 }
 
 /**
- * the full pass's links, and the head and tail's last one when the full pass has not got it: a
- * session counted before links were collected only has those that were appended since
+ * the session's own outputs and its agents', one url once. the same url from two files keeps the
+ * strongest verb and the first time, and is the agent's only when no line of the session's own made it
  */
-function prsOf(meta: ParsedMeta, counted: PrLink[] = []): PrLink[] {
-  const last = meta.pr;
-  if (!last?.url || counted.some((p) => p.url === last.url)) return counted;
-  return [last, ...counted];
+function outputsOf(usage: SessionTallies): SessionOutput[] {
+  const by = new Map<string, SessionOutput>();
+  for (const [rel, t] of Object.entries(usage)) {
+    const agent = rel ? (agentIdOfTally(rel) ?? undefined) : undefined;
+    for (const o of t.outputs ?? []) {
+      const had = by.get(o.url);
+      if (!had) {
+        by.set(o.url, { ...o, ...(agent ? { agent } : {}) });
+        continue;
+      }
+      const rank = (v: string) => (v === "made" ? 2 : v === "updated" ? 1 : 0);
+      const first = o.first < had.first;
+      by.set(o.url, {
+        ...had,
+        verb: rank(o.verb) > rank(had.verb) ? o.verb : had.verb,
+        first: Math.min(had.first, o.first),
+        last: Math.max(had.last, o.last),
+        touches: had.touches + o.touches,
+        title: had.title ?? o.title,
+        ...(first ? { id: o.id, uuid: o.uuid, tool: o.tool, ...(agent ? { agent } : { agent: undefined }) } : {}),
+      });
+    }
+  }
+  return [...by.values()].sort((a, b) => a.first - b.first);
 }
 
 async function readSidecarTitle(s: FileStat): Promise<string | undefined> {
@@ -131,7 +152,7 @@ function displayKey(r: SessionRecord): string {
     r.relocatedCwd,
     r.gitBranch,
     r.tag,
-    r.prs?.map((p) => p.url).join(" "),
+    r.outputs?.map((o) => `${o.url} ${o.verb} ${o.touches}`).join(" "),
     r.activityMs,
     r.parsed,
     r.entrypoint,
@@ -411,6 +432,7 @@ export class SessionIndex {
     }
     entry.usage = {
       v: USAGE_SCHEMA,
+      r: outputRulesKey(),
       key: cacheKey(s),
       files,
       ...(textChars !== undefined ? { textChars } : {}),
