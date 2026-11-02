@@ -82,12 +82,11 @@ export interface OutputView {
   key?: string;
   title?: string;
   verb: "made" | "updated" | "commented";
+  first: number;
   last: number;
   touches: number;
-  /** the subagent that did it, when one did */
+  /** the name of the subagent that did it, when one did */
   agent?: string;
-  /** the transcript line, for opening the session at that step */
-  uuid?: string;
   /** a github PR: what github last said of it */
   pr?: PrView;
   /** a fork's copy of what an older session made: never counts on a row */

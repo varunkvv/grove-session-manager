@@ -109,6 +109,7 @@ describe("the PRs PrService asks about", () => {
     label: "Pull request",
     verb: "made" as const,
     last: 1,
+    first: 1,
     touches: 1,
     url,
     pr: { url, number: 1, repo: "o/r" },
@@ -121,7 +122,15 @@ describe("the PRs PrService asks about", () => {
       row(
         [
           pr("https://github.com/o/r/pull/10"),
-          { kind: "jira", label: "Jira card", verb: "made", last: 1, touches: 1, key: "A-1" },
+          {
+            kind: "jira",
+            label: "Jira card",
+            verb: "made",
+            first: 1,
+            last: 1,
+            touches: 1,
+            key: "A-1",
+          },
         ],
         0,
         true,

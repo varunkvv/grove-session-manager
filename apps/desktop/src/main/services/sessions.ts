@@ -135,7 +135,6 @@ function toRow(
   if (view.comboName) row.comboName = view.comboName;
   if (view.comboRelation) row.comboRelation = view.comboRelation;
   if (record.tag) row.tag = record.tag;
-  if (outputs?.length) row.outputs = outputs;
   if (record.entrypoint) row.entrypoint = record.entrypoint;
   if (record.usage) row.usage = record.usage;
   if (record.model) row.model = record.model;
@@ -149,6 +148,13 @@ function toRow(
   if (cut) row.interrupted = cut;
   const found = agents.get(record.path);
   if (found && found.agents.length > 0) row.agents = found.agents;
+  if (outputs?.length) {
+    // the agent is shown by name
+    const names = new Map((row.agents ?? []).map((a) => [a.id, a.description ?? a.agentType]));
+    row.outputs = outputs.map((o) =>
+      o.agent ? { ...o, agent: names.get(o.agent) ?? "agent" } : o,
+    );
+  }
   return row;
 }
 

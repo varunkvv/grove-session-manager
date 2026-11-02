@@ -139,10 +139,10 @@ export function outputViews(
           ...(o.key ? { key: o.key } : {}),
           ...(o.title ? { title: o.title } : {}),
           verb: o.verb,
+          first: o.first,
           last: o.last,
           touches: o.touches,
           ...(o.agent ? { agent: o.agent } : {}),
-          ...(o.uuid ? { uuid: o.uuid } : {}),
           ...(pr ? { pr } : {}),
           ...(o.id && inherited.get(r.path)?.has(o.id) ? { inherited: true as const } : {}),
         };
