@@ -178,6 +178,54 @@ export function screenOutputs(sessions: readonly SessionRef[]): Entry[] {
   return out.sort((a, b) => b.o.last - a.o.last);
 }
 
+/** a window of time, by when an output was last touched. `any` is no filter */
+export type DateRange = "any" | "today" | "week" | "month";
+
+export const DATE_RANGES: Array<{ value: DateRange; label: string }> = [
+  { value: "any", label: "Any time" },
+  { value: "today", label: "Today" },
+  { value: "week", label: "7 days" },
+  { value: "month", label: "30 days" },
+];
+
+/** the earliest time a range admits: local midnight for today, else that many days back */
+export function sinceOf(range: DateRange, now: number): number | undefined {
+  if (range === "any") return undefined;
+  if (range === "today") {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  return now - (range === "week" ? 7 : 30) * 86_400_000;
+}
+
+/** the filters on the Outputs screen. an empty list is no filter on that axis */
+export interface OutputFilter {
+  projects: readonly string[];
+  kinds: readonly OutputGlyphKind[];
+  /** from when, or none */
+  since?: number;
+}
+
+/** entries that pass every filter that is set: a project's name is `where`, a kind is its family */
+export function filterOutputs(entries: readonly Entry[], f: OutputFilter): Entry[] {
+  return entries.filter(
+    (e) =>
+      (f.projects.length === 0 || f.projects.includes(e.session.where)) &&
+      (f.kinds.length === 0 || f.kinds.includes(glyphOf(e.o.kind))) &&
+      (f.since === undefined || e.o.last >= f.since),
+  );
+}
+
+/** the projects present, for the filter chips, most outputs first */
+export function projectsOf(entries: readonly Entry[]): Array<{ name: string; n: number }> {
+  const n = new Map<string, number>();
+  for (const e of entries) n.set(e.session.where, (n.get(e.session.where) ?? 0) + 1);
+  return [...n]
+    .map(([name, n]) => ({ name, n }))
+    .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+}
+
 /** the families present, for the filter chips, most first */
 export function familiesOf(
   entries: readonly Entry[],

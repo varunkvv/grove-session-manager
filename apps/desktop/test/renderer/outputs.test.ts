@@ -3,13 +3,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { InboxRow } from "../../src/renderer/components/Inbox.tsx";
 import {
+  DATE_RANGES,
   familiesOf,
+  filterOutputs,
   glyphOf,
   lookOf,
   outputsKey,
+  projectsOf,
   screenOutputs,
   sectionsOf,
   shortKey,
+  sinceOf,
 } from "../../src/renderer/logic/outputs.ts";
 import type { InboxRowView, OutputView, PrView, SessionRef } from "../../src/shared/ipc.ts";
 
@@ -168,5 +172,68 @@ describe("the Outputs screen", () => {
       { glyph: "design", n: 1 },
     ]);
     expect(glyphOf("unheard-of")).toBe("link");
+  });
+});
+
+describe("the Outputs screen's filters", () => {
+  const s2 = (id: string, where: string, outputs: OutputView[]): SessionRef =>
+    ({ key: id, sessionId: id, title: id, where, outputs }) as SessionRef;
+
+  it("projects are chips, most outputs first, and each is its session's where", () => {
+    const entries = screenOutputs([
+      s2("a", "billing", [jira("B-1"), jira("B-2")]),
+      s2("b", "grove", [prOut(3)]),
+    ]);
+    expect(projectsOf(entries)).toEqual([
+      { name: "billing", n: 2 },
+      { name: "grove", n: 1 },
+    ]);
+  });
+
+  it("set filters are ANDed across axes and ORed within one, and none set is all", () => {
+    const entries = screenOutputs([
+      s2("a", "billing", [jira("B-1"), prOut(4)]),
+      s2("b", "grove", [prOut(3), jira("G-1")]),
+    ]);
+    expect(filterOutputs(entries, { projects: [], kinds: [] })).toHaveLength(4);
+    expect(filterOutputs(entries, { projects: ["grove"], kinds: [] })).toHaveLength(2);
+    expect(filterOutputs(entries, { projects: [], kinds: ["pr"] })).toHaveLength(2);
+    expect(filterOutputs(entries, { projects: ["grove"], kinds: ["pr"] })).toHaveLength(1);
+    expect(
+      filterOutputs(entries, { projects: ["billing", "grove"], kinds: ["issue", "pr"] }),
+    ).toHaveLength(4);
+  });
+});
+
+describe("the date filter", () => {
+  it("today starts at local midnight, a week and a month are days back, any is none", () => {
+    const now = new Date(2026, 10, 1, 15, 30).getTime();
+    expect(sinceOf("any", now)).toBeUndefined();
+    expect(sinceOf("today", now)).toBe(new Date(2026, 10, 1).getTime());
+    expect(sinceOf("week", now)).toBe(now - 7 * 86_400_000);
+    expect(sinceOf("month", now)).toBe(now - 30 * 86_400_000);
+    expect(DATE_RANGES.map((r) => r.value)).toEqual(["any", "today", "week", "month"]);
+  });
+
+  it("keeps outputs touched since the window opens, by their last touch", () => {
+    const now = new Date(2026, 10, 1, 15, 30).getTime();
+    const entries = screenOutputs([
+      {
+        key: "a",
+        sessionId: "a",
+        title: "a",
+        where: "p",
+        outputs: [jira("A-1", { last: now - 1000 }), jira("A-2", { last: now - 3 * 86_400_000 })],
+      } as SessionRef,
+    ]);
+    expect(
+      filterOutputs(entries, { projects: [], kinds: [], since: sinceOf("today", now) }),
+    ).toHaveLength(1);
+    expect(
+      filterOutputs(entries, { projects: [], kinds: [], since: sinceOf("week", now) }),
+    ).toHaveLength(2);
+    expect(
+      filterOutputs(entries, { projects: [], kinds: [], since: sinceOf("month", now) }),
+    ).toHaveLength(2);
   });
 });
