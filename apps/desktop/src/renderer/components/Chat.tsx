@@ -1,8 +1,8 @@
 // grove chat's window: one session, its conversation in a reading column, the composer under it.
 // the transcript is what is drawn, as in the panel. the host adds what is not in it yet: the
 // answer being streamed, and what the agent is waiting on the person for.
-import { type IndexedFile, modelLabel, type TurnView } from "@grove/core/pure";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type IndexedFile, listAgents, modelLabel, type TurnView } from "@grove/core/pure";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   ChatAgent,
   ChatAnswer,
@@ -22,6 +22,7 @@ import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
 import { splitModels } from "../logic/models.ts";
 import { outputsKey } from "../logic/outputs.ts";
+import { enabledCount } from "../logic/routing.ts";
 import { queuedRows, type SessionState, same, stateOf } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
@@ -35,6 +36,7 @@ import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { OutputsPane } from "./Outputs.tsx";
+import { RoutingPane } from "./Routing.tsx";
 import { QUIET, QueuedRows, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -54,6 +56,7 @@ import {
   ModeDot,
   Overlay,
   ProjectMark,
+  RoutingChip,
   Segmented,
   SendButton,
   Spinner,
@@ -182,7 +185,7 @@ function MenuSwitch({
   ultra,
 }: {
   label: string;
-  hint: string;
+  hint: ReactNode;
   testId: string;
   checked: boolean;
   onChange: (on: boolean) => void;
@@ -386,8 +389,13 @@ export function ChatApp() {
     | { kind: "agents"; agent?: string; call?: string }
     | { kind: "outputs" }
     | { kind: "tasks" }
+    /** the routing agents, listed and edited */
+    | { kind: "routing" }
     | null
   >(null);
+  /** the routing agents on, for the model menu: the edits are in the settings */
+  const routingEdits = useStore((st) => st.settings?.routingAgents);
+  const routingOn = enabledCount(listAgents(routingEdits));
   /** every agent of the session, read when the agents pane is open */
   const [agents, setAgents] = useState<ChatAgent[]>();
   /** the session's files, as the markdown links them. read again when the transcript moves */
@@ -501,7 +509,9 @@ export function ChatApp() {
     // the project marks' colours and the editor's name come from what the main window has
     void api()
       .bootstrap()
-      .then((b) => useStore.getState().set({ projects: b.projects, editor: b.editor }))
+      .then((b) =>
+        useStore.getState().set({ projects: b.projects, editor: b.editor, settings: b.settings }),
+      )
       .catch(() => {});
     void load();
     const offs = [
@@ -1203,6 +1213,12 @@ export function ChatApp() {
       run: () => toggle("files"),
     },
     {
+      id: "routing",
+      group: "View",
+      label: "Routing agents…",
+      run: () => setPane({ kind: "routing" }),
+    },
+    {
       id: "agents",
       group: "View",
       label: "Agents",
@@ -1767,6 +1783,7 @@ export function ChatApp() {
                         <Icon name="chevron" size={9} className="rotate-90" faint />
                       </ToolbarButton>
                       {s.ultracode && <UltraChip />}
+                      {s.routing && <RoutingChip pending={s.routingPending} />}
                       <span className="flex-1" />
                       {/* a usage limit close or hit: the one time it is worth a word */}
                       {s.limit && (
@@ -1870,6 +1887,7 @@ export function ChatApp() {
               }
             />
           )}
+          {pane?.kind === "routing" && <RoutingPane onClose={() => setPane(null)} />}
           {pane?.kind === "agents" &&
             (shownAgent ? (
               <AgentViewer
@@ -2049,6 +2067,41 @@ export function ChatApp() {
               />
               {s.effort === "max" && <p className="mt-1.5 text-sm text-fg-4">Max can run long.</p>}
             </div>
+          )}
+          {s.live && (
+            <MenuSwitch
+              label="Routing agents"
+              hint={
+                s.routingPending ? (
+                  <span className="text-waiting">Starts when claude restarts</span>
+                ) : s.routing ? (
+                  <>
+                    {routingOn} {routingOn === 1 ? "agent" : "agents"} on
+                    {" · "}
+                    <button
+                      type="button"
+                      className="no-drag fade text-fg-3 hover:text-fg hover:underline"
+                      data-testid="routing-edit"
+                      onClick={() => {
+                        closeMenu();
+                        setPane({ kind: "routing" });
+                      }}
+                    >
+                      edit
+                    </button>
+                  </>
+                ) : (
+                  "Sends small jobs to cheaper models"
+                )
+              }
+              testId="routing"
+              checked={!!s.routing}
+              onChange={(on) =>
+                void api()
+                  .chatSetRouting(on)
+                  .then((o) => setError(failed(o)))
+              }
+            />
           )}
           {s.live && s.ultracodeAvailable && (
             <MenuSwitch

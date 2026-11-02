@@ -95,3 +95,16 @@ describe("settings", () => {
     expect((await loadSettings(app)).summonKey).toBeUndefined();
   });
 });
+
+describe("routingAgents", () => {
+  it("is kept when valid, cleaned when not, and absent when there is nothing", async () => {
+    const app = makeSandbox("grove-settings-");
+    writeFileSync(
+      settingsFilePath(app),
+      JSON.stringify({ routingAgents: { writer: { enabled: false, model: "gpt" }, Bad: {} } }),
+    );
+    expect((await loadSettings(app)).routingAgents).toEqual({ writer: { enabled: false } });
+    writeFileSync(settingsFilePath(app), JSON.stringify({ routingAgents: { nope: 1 } }));
+    expect((await loadSettings(app)).routingAgents).toBeUndefined();
+  });
+});

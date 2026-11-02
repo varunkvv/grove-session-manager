@@ -142,13 +142,21 @@ function commands(ctx: PaletteContext): PaletteItem[] {
       mine("delete-project", "Delete project…", "remove trash disk space"),
     );
   }
-  items.push({
-    id: "settings",
-    section: "App",
-    label: "Settings…",
-    keywords: "preferences appearance theme notifications",
-    kbd: "⌘,",
-  });
+  items.push(
+    {
+      id: "routing",
+      section: "App",
+      label: "Routing agents…",
+      keywords: "subagents cheaper models haiku sonnet opus cost",
+    },
+    {
+      id: "settings",
+      section: "App",
+      label: "Settings…",
+      keywords: "preferences appearance theme notifications",
+      kbd: "⌘,",
+    },
+  );
   return items;
 }
 

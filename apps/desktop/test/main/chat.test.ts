@@ -341,6 +341,120 @@ describe("grove chat's host", () => {
     await expect(s.host.setUltracode(SESSION, s.where, true)).rejects.toThrow("does not take");
   });
 
+  describe("routing agents", () => {
+    type Init = { agents?: Record<string, Record<string, unknown>> };
+    const inits = (s: Setup): Init[] =>
+      s
+        .log()
+        .map((l) => l.in as { request?: Record<string, unknown> } | undefined)
+        .filter((m) => m?.request?.subtype === "initialize")
+        .map((m) => m?.request as Init);
+
+    it("are not sent until switched on", async () => {
+      const s = setup();
+      await s.host.warm(SESSION, s.where);
+      expect(inits(s)).toHaveLength(1);
+      expect(inits(s)[0]).not.toHaveProperty("agents");
+      expect(s.host.status(SESSION).routing).toBeUndefined();
+    });
+
+    it("go whole at the start when the switch was on before claude was up", async () => {
+      const s = setup(
+        2,
+        false,
+        undefined,
+        undefined,
+        {},
+        {
+          routingAgents: () => ({
+            writer: { enabled: false },
+            explore: { model: "sonnet" },
+            mine: { description: "my own", model: "haiku", effort: "medium", prompt: "do it" },
+          }),
+        },
+      );
+      await s.host.setRouting(SESSION, s.where, true);
+      await s.host.warm(SESSION, s.where);
+      const agents = inits(s)[0]?.agents ?? {};
+      expect(Object.keys(agents)).toHaveLength(21);
+      expect(agents.writer).toBeUndefined();
+      expect(agents.architect).toMatchObject({ model: "opus", effort: "xhigh" });
+      expect(agents.explore).toMatchObject({ model: "sonnet", effort: "medium" });
+      expect(agents.mine).toEqual({
+        description: "my own",
+        model: "haiku",
+        effort: "medium",
+        prompt: "do it",
+      });
+      expect(s.host.status(SESSION)).toMatchObject({ routing: true });
+    });
+
+    it("restart an idle claude with them when switched on, and again without when off", async () => {
+      const s = setup();
+      await s.host.warm(SESSION, s.where);
+      await s.host.setRouting(SESSION, s.where, true);
+      await until(() => !s.host.status(SESSION).live, "claude to close");
+      await s.host.warm(SESSION, s.where);
+      expect(inits(s)).toHaveLength(2);
+      expect(Object.keys(inits(s)[1]?.agents ?? {})).toHaveLength(21);
+      await s.host.setRouting(SESSION, s.where, false);
+      await until(() => !s.host.status(SESSION).live, "claude to close again");
+      await s.host.warm(SESSION, s.where);
+      expect(inits(s)).toHaveLength(3);
+      expect(inits(s)[2]).not.toHaveProperty("agents");
+    });
+
+    it("let a turn under way finish before claude restarts", async () => {
+      const s = setup();
+      await s.host.send(SESSION, s.where, COUNT);
+      await until(() => s.host.status(SESSION).running, "the turn to start");
+      await s.host.setRouting(SESSION, s.where, true);
+      expect(s.host.status(SESSION)).toMatchObject({ routing: true, routingPending: true });
+      // still going: the recording waits for an interrupt, so the switch has not closed it
+      await new Promise((r) => setTimeout(r, 100));
+      expect(s.host.status(SESSION).live).toBe(true);
+      await s.host.interrupt(SESSION);
+      await until(() => !s.host.status(SESSION).running, "the turn to end");
+      await until(() => !s.host.status(SESSION).live, "claude to close after the turn");
+      expect(s.host.status(SESSION).routingPending).toBe(false);
+    });
+
+    it("keep a message queued behind the turn: claude closes only once it has been answered", async () => {
+      const s = setup();
+      await s.host.send(SESSION, s.where, COUNT);
+      await until(() => s.host.status(SESSION).running, "the turn to start");
+      await s.host.setRouting(SESSION, s.where, true);
+      await s.host.send(SESSION, s.where, HELLO);
+      expect(s.host.status(SESSION).queued).toHaveLength(1);
+      await s.host.interrupt(SESSION);
+      await until(() => !s.host.status(SESSION).live, "claude to close after both turns");
+      // the queued message went to claude before it closed
+      expect(JSON.stringify(s.log())).toContain(HELLO);
+      expect(s.host.status(SESSION).routingPending).toBe(false);
+    });
+
+    it("do not restart for a switch that was put back before the turn ended", async () => {
+      const s = setup();
+      await s.host.send(SESSION, s.where, COUNT);
+      await until(() => s.host.status(SESSION).running, "the turn to start");
+      await s.host.setRouting(SESSION, s.where, true);
+      await s.host.setRouting(SESSION, s.where, false);
+      await s.host.interrupt(SESSION);
+      await until(() => !s.host.status(SESSION).running, "the turn to end");
+      await new Promise((r) => setTimeout(r, 100));
+      expect(s.host.status(SESSION)).toMatchObject({ live: true, routingPending: false });
+      expect(inits(s)).toHaveLength(1);
+    });
+
+    it("do nothing when the switch is already where it is asked to be", async () => {
+      const s = setup();
+      await s.host.warm(SESSION, s.where);
+      await s.host.setRouting(SESSION, s.where, false);
+      expect(s.host.status(SESSION).live).toBe(true);
+      expect(inits(s)).toHaveLength(1);
+    });
+  });
+
   it("asks for no thinking text when the person's settings do not", async () => {
     const s = setup();
     const settings = path.join(path.dirname(path.dirname(s.transcript)), "..", "settings.json");
@@ -1300,6 +1414,26 @@ describe("grove chat's host", () => {
         ended: 80,
       },
     ]);
+  });
+
+  it("gives each agent the model and effort its own transcript says, live or not", () => {
+    const live = [{ id: "a1", description: "lister", state: "running" as const, since: 100 }];
+    const base = { startedAt: 50, lastActivityAt: 80, state: "done" as const };
+    const rows = agentsOf(live, [
+      { ...base, id: "a1", agentType: "explore", model: "claude-haiku-5-5", effort: "medium" },
+      { ...base, id: "a2", agentType: "architect", model: "claude-opus-5", effort: "xhigh" },
+      { ...base, id: "a3", agentType: "general-purpose" },
+    ]);
+    const by = (id: string) => rows.find((r) => r.id === id);
+    expect(by("a1")).toMatchObject({ model: "claude-haiku-5-5", effort: "medium" });
+    expect(by("a2")).toMatchObject({
+      agentType: "architect",
+      model: "claude-opus-5",
+      effort: "xhigh",
+    });
+    // an agent whose transcript says nothing yet carries neither
+    expect(by("a3")).not.toHaveProperty("model");
+    expect(by("a3")).not.toHaveProperty("effort");
   });
 
   it("says a retry the way the live line has room for", () => {

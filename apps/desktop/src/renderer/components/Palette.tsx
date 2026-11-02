@@ -159,7 +159,7 @@ function Open({ windows }: { windows: readonly ChatWindowView[] }) {
   };
 
   const run = (item: PaletteItem) => {
-    const { set, toast } = useStore.getState();
+    const { set } = useStore.getState();
     // `project:{id}`, `session:{key}`
     const cut = item.id.indexOf(":");
     const name = cut < 0 ? item.id : item.id.slice(0, cut);
@@ -186,6 +186,8 @@ function Open({ windows }: { windows: readonly ChatWindowView[] }) {
       // a dialog takes the keyboard itself
       case "settings":
         return set({ overlay: null, dialog: { kind: "settings" } });
+      case "routing":
+        return set({ overlay: null, dialog: { kind: "routing" } });
     }
     // the rows of `This project`
     if (p) {

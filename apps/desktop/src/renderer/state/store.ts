@@ -34,6 +34,8 @@ export type View =
 export type DialogState =
   | null
   | { kind: "settings" }
+  /** the routing agents, listed and edited. the chat window has a pane for them instead */
+  | { kind: "routing" }
   | { kind: "delete"; project: ProjectId }
   /** what a background session in this project should do */
   | { kind: "start"; project: ProjectId }

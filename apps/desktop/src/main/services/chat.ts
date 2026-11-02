@@ -20,9 +20,11 @@ import type {
   UserDialogResult,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
+  type AgentEdits,
   attachedFileText,
   editDiff,
   firstSentence,
+  resolveAgents,
   TASK_MIN_MS,
   toolLabel,
   toolTarget,
@@ -365,6 +367,8 @@ export interface ChatHostOptions {
   projectsDir?: string;
   /** the cache keeper's setting: hours after a session's last turn its cache is kept. 0 is off */
   keepWarmHours?: () => number | undefined;
+  /** what the person changed in the routing agents, read each time a claude is started */
+  routingAgents?: () => AgentEdits | undefined;
   /**
    * the keeper's fork ids, each added before its fork starts and never taken out: claude lists a
    * fork's process in its registry while it runs, and the live service reads past these
@@ -694,6 +698,14 @@ interface Hosted {
    * as "opus" missed 1.2k of the cache (probe)
    */
   picked?: string;
+  /** the routing agents are on for this session. off unless switched on, and gone with the app */
+  routing?: boolean;
+  /**
+   * what its claude was started with, kept for as long as its cache is: the cache keeper's fork
+   * must send the same agents, which are part of the cached prefix, whatever was switched or
+   * edited since
+   */
+  launched?: { routing: boolean; agents?: Options["agents"] };
 }
 
 const emptyStatus = (): ChatStatus => ({
@@ -1128,6 +1140,40 @@ export class ChatHost {
     await this.settings(h);
   }
 
+  /**
+   * the sdk takes agents at launch and has no call to change them on a live claude, so a switch
+   * closes it and the next message resumes it with the new set. a turn under way is let finish,
+   * and a claude with commands or Monitors left running is not closed under them: both wait
+   */
+  async setRouting(id: string, where: ChatWhere, on: boolean): Promise<void> {
+    const h = this.entry(id, where);
+    if ((h.routing === true) === on) return;
+    h.routing = on;
+    this.set(h, { routing: on });
+    if (!h.q) return;
+    // checked again at each turn's end while something holds it: a queued message would be lost
+    // with the process, and a command or Monitor left running would be stopped under the person
+    const settle = () => {
+      if (!h.q) return;
+      if ((h.routing === true) === (h.launched?.routing === true)) {
+        // switched back before it restarted: nothing to apply
+        this.set(h, { routingPending: false });
+        return;
+      }
+      if (h.tasks.tasks.length > 0 || h.status.queued.length > 0) {
+        this.set(h, { routingPending: true });
+        h.afterTurn.push(settle);
+        return;
+      }
+      this.set(h, { routingPending: false });
+      h.q.close();
+    };
+    if (h.status.running) {
+      this.set(h, { routingPending: true });
+      h.afterTurn.push(settle);
+    } else settle();
+  }
+
   async setUltracode(id: string, where: ChatWhere, on: boolean): Promise<void> {
     await this.warm(id, where);
     const h = this.entry(id);
@@ -1289,6 +1335,12 @@ export class ChatHost {
   }> {
     // only here: with grove chat off the sdk is never even loaded
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
+    // a fork of a started claude sends what that claude was started with, a start sends the current set
+    const agents = h.launched
+      ? h.launched.agents
+      : h.routing
+        ? resolveAgents(this.o.routingAgents?.())
+        : undefined;
     const [bin, env, summaries] = await Promise.all([
       this.o.claudeBin(),
       this.o.env(),
@@ -1323,6 +1375,8 @@ export class ChatHost {
           ...(summaries ? { display: "summarized" as const } : {}),
         },
         includePartialMessages: true,
+        // routing agents put delegated work on a cheaper model. the sdk takes them at launch only
+        ...(agents ? { agents } : {}),
         env: hostEnv(env),
         supportedDialogKinds: DIALOG_KINDS,
         stderr: (data) => log.warn(`chat ${h.id.slice(0, 8)}:`, data.trimEnd()),
@@ -1416,7 +1470,9 @@ export class ChatHost {
     this.set(h, { starting: true, error: undefined });
     let q: Query | undefined;
     try {
+      h.launched = undefined;
       const { query, options } = await this.launch(h);
+      h.launched = { routing: h.routing === true, agents: options.agents };
       if (!h.model && h.where.fresh && h.where.model) h.picked = h.where.model;
       q = query({
         prompt: h.prompts,
@@ -1518,6 +1574,7 @@ export class ChatHost {
       live: false,
       starting: false,
       running: false,
+      routingPending: false,
       since: undefined,
       asks: [],
       tool: undefined,

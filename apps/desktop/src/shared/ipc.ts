@@ -1,6 +1,7 @@
 // the contract between the main process and the renderer. types only, plus the channel lists
 // the preload uses as its allowlist. nothing here may import node or electron.
 import type {
+  AgentEdits,
   BranchSpec,
   ComboRelation,
   ConversationView,
@@ -222,6 +223,8 @@ export interface AppSettings {
   keepWarmHours?: number;
   /** what the Usage screen shows, as last picked there. absent: the account's own numbers when it is billed by use */
   usageMode?: UsageMode;
+  /** edits to the routing agents: what changed in the shipped ones, and the ones the person made */
+  routingAgents?: AgentEdits;
 }
 
 /**
@@ -882,6 +885,10 @@ export interface ChatStatus {
   ultracode?: boolean;
   /** the model takes ultracode */
   ultracodeAvailable?: boolean;
+  /** the routing agents are on for this session */
+  routing?: boolean;
+  /** switched, but claude has not restarted with it yet: a turn is under way, or it has background work */
+  routingPending?: boolean;
   asks: ChatAsk[];
   /** when the turn under way started: the header's clock */
   since?: number;
@@ -943,6 +950,9 @@ export interface ChatAgent {
   /** the label its parent gave it, else the start of what it was asked */
   description: string;
   agentType?: string;
+  /** what its last response ran on, from its own transcript: a model id, and the effort */
+  model?: string;
+  effort?: string;
   /** the Agent call that started it */
   toolUseId?: string;
   state: "running" | "done" | "failed" | "stopped";
@@ -1061,6 +1071,8 @@ export interface ChatApi {
   /** one of the current model's effort levels, from the next turn on */
   chatSetEffort(level: string): Promise<Outcome>;
   chatSetUltracode(on: boolean): Promise<Outcome>;
+  /** the routing agents on or off for this session. a claude that is up restarts with it after its turn */
+  chatSetRouting(on: boolean): Promise<Outcome>;
   /** every subagent of the session: what claude says now, over what its transcripts say */
   chatAgents(): Promise<ChatAgent[]>;
   /** one subagent's own transcript, as a turn. null when it is not there */
@@ -1130,6 +1142,7 @@ export const CHAT_CHANNELS = [
   "chatSetModel",
   "chatSetEffort",
   "chatSetUltracode",
+  "chatSetRouting",
   "chatAgents",
   "chatAgent",
   "chatStopAgent",

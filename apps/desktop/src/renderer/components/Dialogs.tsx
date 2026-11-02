@@ -414,6 +414,23 @@ export function SettingsDialog() {
             <option value="actual">Account limits and spend</option>
           </Select>
         </Field>
+        {/* not a Field: a click on the button would otherwise focus the label's first control */}
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-fg-2">Routing agents</span>
+            <span className="block text-sm text-fg-4">
+              Small jobs go to cheaper models. Switched on per chat.
+            </span>
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => set({ dialog: { kind: "routing" } })}
+            data-testid="setting-routing"
+          >
+            Edit…
+          </Button>
+        </div>
         <Field
           label="Editor command"
           hint="Absolute path. An app opened from Finder does not see your shell PATH."

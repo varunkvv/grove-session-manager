@@ -13,8 +13,10 @@ import {
   AGENT_IDLE_DONE_MS,
   agentDigest,
   lastToolFromTail,
+  modelFromTail,
   parseAgentMeta,
   readAgentAsked,
+  readAgentModel,
   scanSessionAgents,
   subagentsDir,
 } from "../../src/sessions/agents.ts";
@@ -253,5 +255,55 @@ describe("an agent nobody labelled", () => {
     writeFileSync(tool, `${JSON.stringify({ type: "assistant", message: { content: [] } })}\n`);
     expect(await readAgentAsked(tool)).toBeUndefined();
     expect(await readAgentAsked(path.join(dir, "missing.jsonl"))).toBeUndefined();
+  });
+});
+
+describe("modelFromTail", () => {
+  const line = (o: unknown) => JSON.stringify(o);
+  const reply = (model: string, effort?: string) =>
+    line({ type: "assistant", message: { model, content: [] }, ...(effort ? { effort } : {}) });
+
+  it("is the model and effort of the last response", () => {
+    const text = [reply("claude-sonnet-5-5", "medium"), reply("claude-opus-5", "max")].join("\n");
+    expect(modelFromTail(text)).toEqual({ model: "claude-opus-5", effort: "max" });
+  });
+
+  it("skips claude's own error lines and anything that is not an assistant line", () => {
+    const text = [
+      reply("claude-haiku-5-5", "high"),
+      reply("<synthetic>"),
+      line({ type: "user", message: { model: "nope" } }),
+      "not json at all",
+    ].join("\n");
+    expect(modelFromTail(text)).toEqual({ model: "claude-haiku-5-5", effort: "high" });
+  });
+
+  it("has no effort when the line carries none, and nothing when no line has a model", () => {
+    expect(modelFromTail(reply("claude-opus-5"))).toEqual({ model: "claude-opus-5" });
+    expect(modelFromTail("")).toBeNull();
+    expect(modelFromTail(line({ type: "user" }))).toBeNull();
+  });
+});
+
+describe("readAgentModel", () => {
+  it("reads the model and effort from the head when the tail is all tool results", () => {
+    const dir = makeSandbox("grove-agent-model-");
+    const file = path.join(dir, "agent-x.jsonl");
+    const reply = JSON.stringify({
+      type: "assistant",
+      message: { model: "claude-opus-5", content: [] },
+      effort: "max",
+    });
+    // a tool result as long as the tail
+    const big = JSON.stringify({ type: "user", message: { content: "x".repeat(40_000) } });
+    writeFileSync(file, `${reply}\n${big}\n`);
+    return readAgentModel(file).then((got) => {
+      expect(got).toEqual({ model: "claude-opus-5", effort: "max" });
+      expect(modelFromTail(readFileSync(file, "utf8").slice(-16_384))).toBeNull();
+    });
+  });
+
+  it("is null for a file that is not there", async () => {
+    expect(await readAgentModel("/nonexistent/agent-x.jsonl")).toBeNull();
   });
 });

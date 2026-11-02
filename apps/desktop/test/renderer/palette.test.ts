@@ -72,6 +72,7 @@ describe("paletteItems", () => {
       "start-background",
       "archive-project",
       "delete-project",
+      "routing",
       "settings",
     ]);
   });
@@ -121,7 +122,7 @@ describe("paletteItems", () => {
   it("on the inbox, which is every project's: no This project. with no projects: the app's rows, and Usage, which is the machine's", () => {
     expect(sections(ctx({ project: null }))).toEqual(["Go to", "Projects", "App"]);
     expect(sections(ctx({ project: null, projects: [] }))).toEqual(["Go to", "App"]);
-    expect(ids(ctx({ project: null, projects: [] }))).toEqual(["go-usage", "settings"]);
+    expect(ids(ctx({ project: null, projects: [] }))).toEqual(["go-usage", "routing", "settings"]);
     expect(ids(ctx(), "usage")).toEqual(["go-usage"]);
   });
 

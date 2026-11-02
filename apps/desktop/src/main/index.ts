@@ -400,6 +400,8 @@ async function start(): Promise<void> {
     projectsDir,
     // the cache keeper reads it each tick: a change in Settings counts from the next one
     keepWarmHours: () => settings.keepWarmHours,
+    // read at each start: an edit counts from the next claude a session starts
+    routingAgents: () => settings.routingAgents,
     keeperForks,
     // /clear: a new session in the same window, made as cmd-N makes one, until its transcript lands
     onReset: (from, to, where) => {

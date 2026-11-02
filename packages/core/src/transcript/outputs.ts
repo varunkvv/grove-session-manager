@@ -426,7 +426,7 @@ function hostMatch(
 ): { rule: Compiled["hosts"][number]; m: RegExpExecArray } | undefined {
   for (const rule of compiled.hosts) {
     const m = rule.re.exec(url);
-    if (!m || m.index !== 0) continue;
+    if (m?.index !== 0) continue;
     if (vendorOf !== undefined && !rule.vendor.some((v) => vendorOf.includes(v.toLowerCase())))
       continue;
     return { rule, m };

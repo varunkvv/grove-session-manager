@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import type { ChatAgent } from "../../shared/ipc.ts";
 import { useTick } from "./Live.tsx";
 import { QUIET, Turn } from "./SessionPanel.tsx";
-import { AgentState, Button, cx, Icon, IconButton, Spinner } from "./ui.tsx";
+import { AgentState, AgentTag, Button, cx, Icon, IconButton, Spinner } from "./ui.tsx";
 
 const api = () => window.grove;
 
@@ -37,6 +37,7 @@ function AgentRow({
       <span className="flex min-w-0 items-center gap-1.5">
         <AgentState state={a.state} took={tookOf(a, now)} />
         {a.kind === "workflow" && <span className="text-sm text-fg-4">· workflow</span>}
+        <AgentTag type={a.agentType} model={a.model} effort={a.effort} />
         {a.step && (
           <span className="min-w-0 truncate text-sm text-fg-4" title={a.step}>
             · {a.step}
@@ -181,6 +182,7 @@ export function AgentViewer({
         <span className="min-w-0 flex-1 truncate font-medium text-fg" title={agent.description}>
           {agent.description}
         </span>
+        <AgentTag type={agent.agentType} model={agent.model} effort={agent.effort} />
         <AgentState state={agent.state} took={tookOf(agent, now)} />
         {/* a workflow's agent stops with its workflow, from the list */}
         {running && !agent.workflow && (

@@ -43,7 +43,6 @@ function CardLink({
   children: ReactNode;
 }) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a link with links inside it cannot be an <a>
     <div
       role={url ? "link" : undefined}
       tabIndex={url ? 0 : undefined}

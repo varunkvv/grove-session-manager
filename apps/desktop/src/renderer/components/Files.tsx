@@ -367,86 +367,86 @@ function FileGroups({
   ];
   return (
     <>
-        {edited.length > 0 && (
-          <div className="mb-3" data-testid="changes">
-            <h3 className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-fg-4">
-              <span className="flex-1">Edited</span>
-              {changes && <DiffCount added={ins} removed={del} />}
-            </h3>
-            {edited.map((f) => (
-              <button
-                key={f.path}
-                type="button"
-                title={f.path}
-                data-testid="change-item"
-                onClick={() => onChange(f.path)}
-                className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-fg">{nameOf(f.path)}</span>
-                  {f.fresh ? (
-                    <span className="shrink-0 text-sm text-fg-4">new</span>
-                  ) : (
-                    <DiffCount added={f.added} removed={f.removed} />
-                  )}
-                </span>
-                {whereOf(f.path, scope.base) && (
-                  <span className="truncate text-sm text-fg-4">{whereOf(f.path, scope.base)}</span>
+      {edited.length > 0 && (
+        <div className="mb-3" data-testid="changes">
+          <h3 className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-fg-4">
+            <span className="flex-1">Edited</span>
+            {changes && <DiffCount added={ins} removed={del} />}
+          </h3>
+          {edited.map((f) => (
+            <button
+              key={f.path}
+              type="button"
+              title={f.path}
+              data-testid="change-item"
+              onClick={() => onChange(f.path)}
+              className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-fg">{nameOf(f.path)}</span>
+                {f.fresh ? (
+                  <span className="shrink-0 text-sm text-fg-4">new</span>
+                ) : (
+                  <DiffCount added={f.added} removed={f.removed} />
                 )}
-              </button>
-            ))}
-          </div>
-        )}
-        {read.length > 0 && (
-          <div className="mb-3" data-testid="reads">
-            <h3 className="px-2 py-1 text-sm font-medium text-fg-4">Read</h3>
-            {read.map((f) => (
+              </span>
+              {whereOf(f.path, scope.base) && (
+                <span className="truncate text-sm text-fg-4">{whereOf(f.path, scope.base)}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {read.length > 0 && (
+        <div className="mb-3" data-testid="reads">
+          <h3 className="px-2 py-1 text-sm font-medium text-fg-4">Read</h3>
+          {read.map((f) => (
+            <button
+              key={f.path}
+              type="button"
+              title={f.path}
+              data-testid="file-item"
+              onClick={() => scope.open?.(f.path)}
+              className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
+            >
+              <span className="truncate text-fg-3">{nameOf(f.path)}</span>
+              {whereOf(f.path, scope.base) && (
+                <span className="truncate text-sm text-fg-4">{whereOf(f.path, scope.base)}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {groups.map(([title, files]) =>
+        files.length === 0 ? null : (
+          <div key={title} className="mb-3">
+            <h3 className="px-2 py-1 text-sm font-medium text-fg-4">{title}</h3>
+            {files.map((f) => (
               <button
-                key={f.path}
+                key={f}
                 type="button"
-                title={f.path}
+                title={f}
                 data-testid="file-item"
-                onClick={() => scope.open?.(f.path)}
-                className="fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised"
+                onClick={() => scope.open?.(f)}
+                className={cx(
+                  "fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised",
+                )}
               >
-                <span className="truncate text-fg-3">{nameOf(f.path)}</span>
-                {whereOf(f.path, scope.base) && (
-                  <span className="truncate text-sm text-fg-4">{whereOf(f.path, scope.base)}</span>
+                <span className="truncate text-fg">{nameOf(f)}</span>
+                {whereOf(f, scope.base) && (
+                  <span className="truncate text-sm text-fg-4">{whereOf(f, scope.base)}</span>
                 )}
               </button>
             ))}
           </div>
+        ),
+      )}
+      {listed &&
+        edited.length === 0 &&
+        read.length === 0 &&
+        groups.every(([, f]) => f.length === 0) && (
+          <p className="px-2 py-1 text-sm text-fg-4">Nothing written yet.</p>
         )}
-        {groups.map(([title, files]) =>
-          files.length === 0 ? null : (
-            <div key={title} className="mb-3">
-              <h3 className="px-2 py-1 text-sm font-medium text-fg-4">{title}</h3>
-              {files.map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  title={f}
-                  data-testid="file-item"
-                  onClick={() => scope.open?.(f)}
-                  className={cx(
-                    "fade flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-raised",
-                  )}
-                >
-                  <span className="truncate text-fg">{nameOf(f)}</span>
-                  {whereOf(f, scope.base) && (
-                    <span className="truncate text-sm text-fg-4">{whereOf(f, scope.base)}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          ),
-        )}
-        {listed &&
-          edited.length === 0 &&
-          read.length === 0 &&
-          groups.every(([, f]) => f.length === 0) && (
-            <p className="px-2 py-1 text-sm text-fg-4">Nothing written yet.</p>
-          )}
     </>
   );
 }
@@ -481,13 +481,7 @@ export function FileList({
 }
 
 /** the files, folded at the foot of the outputs pane: closed until asked for, and small */
-export function FilesFold({
-  rev,
-  onChange,
-}: {
-  rev: number;
-  onChange: (file: string) => void;
-}) {
+export function FilesFold({ rev, onChange }: { rev: number; onChange: (file: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="mt-4 border-t border-line pt-2" data-testid="files-fold">

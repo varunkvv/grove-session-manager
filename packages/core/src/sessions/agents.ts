@@ -91,6 +91,31 @@ export function lastToolFromTail(text: string): { name: string; at?: number } | 
 }
 
 /**
+ * the model and effort an agent's last response ran on, from the end of its transcript. every
+ * assistant line of its own carries both (`message.model`, and `effort` beside `message`). what
+ * claude writes for its own errors is `<synthetic>`, and is not a model
+ */
+export function modelFromTail(text: string): { model?: string; effort?: string } | null {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (line.charCodeAt(0) !== 0x7b || !line.includes('"assistant"')) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isObject(entry) || entry.type !== "assistant" || !isObject(entry.message)) continue;
+    const model = entry.message.model;
+    if (typeof model !== "string" || !model || model === "<synthetic>") continue;
+    const effort = typeof entry.effort === "string" && entry.effort ? entry.effort : undefined;
+    return { model, ...(effort ? { effort } : {}) };
+  }
+  return null;
+}
+
+/**
  * the tail of an agent's transcript as a handful of lines: the tools it called and what it last
  * said. this is what goes to the summariser - raw json would be most of the bytes and none of the
  * meaning, and it is worth reading on its own when no summary comes back.
@@ -128,8 +153,31 @@ export function agentDigest(tail: string, maxChars = 2000): string {
   return out.slice(-maxChars);
 }
 
+/** how far into an agent's file its first response is looked for: a prompt and its first results can run past 100KB (a real one: 8 lines, ~60KB before the first reply) */
+const MODEL_HEAD_BYTES = 262_144;
+
 /** where the prompt is looked for. a prompt that does not end inside it has no first line to give. */
 const PROMPT_HEAD_BYTES = 32_768;
+
+/**
+ * the model and effort from the head of an agent's transcript, for one whose tail is all tool
+ * results (a single result can be 40KB, so the last 16KB may hold no assistant line). they do not
+ * change for an agent, so this is only asked while they are unknown
+ */
+export async function readAgentModel(
+  file: string,
+): Promise<{ model?: string; effort?: string } | null> {
+  const fh = await open(file, constants.O_RDONLY).catch(() => null);
+  if (!fh) return null;
+  try {
+    const buf = Buffer.alloc(MODEL_HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, MODEL_HEAD_BYTES, 0);
+    const end = buf.subarray(0, bytesRead).lastIndexOf(0x0a);
+    return end < 0 ? null : modelFromTail(buf.toString("utf8", 0, end));
+  } finally {
+    await fh.close();
+  }
+}
 
 /**
  * the first line of what an agent was asked, from the head of its transcript: the first entry is
@@ -253,15 +301,27 @@ export async function scanSessionAgents(
 
     const mark = info ? `${info.mtimeMs}:${info.size}` : "";
     const unchanged = !!mark && opts.prev?.reads[id]?.mark === mark;
-    if (unchanged && was?.lastTool) {
-      agent.lastTool = was.lastTool;
+    if (unchanged && (was?.lastTool || was?.model)) {
+      if (was.lastTool) agent.lastTool = was.lastTool;
       if (was.lastToolAt !== undefined) agent.lastToolAt = was.lastToolAt;
+      if (was.model) agent.model = was.model;
+      if (was.effort) agent.effort = was.effort;
     } else if (info) {
       const tail = await readTail(file, AGENT_TAIL_BYTES).catch(() => null);
       const tool = tail ? lastToolFromTail(tail.text) : null;
       if (tool) {
         agent.lastTool = tool.name;
         if (tool.at !== undefined) agent.lastToolAt = tool.at;
+      }
+      const ran = tail ? modelFromTail(tail.text) : null;
+      if (ran?.model) agent.model = ran.model;
+      else if (was?.model) agent.model = was.model;
+      if (ran?.effort) agent.effort = ran.effort;
+      else if (was?.effort) agent.effort = was.effort;
+      if (!agent.model) {
+        const head = await readAgentModel(file);
+        if (head?.model) agent.model = head.model;
+        if (head?.effort && !agent.effort) agent.effort = head.effort;
       }
     }
     // nobody labelled it: the start of its prompt stands in. a prompt never changes once written.

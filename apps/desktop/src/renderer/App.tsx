@@ -10,6 +10,7 @@ import {
 import { OutputsScreen } from "./components/OutputsScreen.tsx";
 import { Palette } from "./components/Palette.tsx";
 import { ProjectForm } from "./components/ProjectForm.tsx";
+import { RoutingDialog } from "./components/Routing.tsx";
 import { Sessions } from "./components/Sessions.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TopBar } from "./components/TopBar.tsx";
@@ -188,6 +189,7 @@ export function App() {
       <Palette />
       <DeleteProjectDialog />
       <SettingsDialog />
+      <RoutingDialog />
       <StartDialog />
       <ConfirmDialog />
       <Toasts />

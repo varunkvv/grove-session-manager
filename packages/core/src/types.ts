@@ -246,6 +246,9 @@ export interface SessionAgent {
   lastActivityAt: number;
   lastTool?: string;
   lastToolAt?: number;
+  /** what its last response ran on, as its own transcript says: a model id, and the effort */
+  model?: string;
+  effort?: string;
   state: "running" | "done";
   /** one line from a cheap model reading the agent's own transcript: what it is doing right now */
   summary?: string;

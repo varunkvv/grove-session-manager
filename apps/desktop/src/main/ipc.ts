@@ -5,6 +5,7 @@ import {
   agentView,
   type Combo,
   classifyPath,
+  cleanEdits,
   conversationMarkdown,
   conversationView,
   type EditorTarget,
@@ -768,7 +769,13 @@ function buildHandlers(deps: Deps): Handlers {
         const why = deps.summonProblem(key.trim());
         if (why) throw new AppError("summon-key", why);
       }
-      const next = await saveSettings(env.appRoot, patch as Partial<Settings>);
+      // the editor sends the whole map: anything the core would drop is dropped here, not on the next load
+      const clean = patch as Partial<Settings>;
+      if (clean && "routingAgents" in clean) {
+        const edits = cleanEdits(clean.routingAgents);
+        clean.routingAgents = Object.keys(edits).length > 0 ? edits : undefined;
+      }
+      const next = await saveSettings(env.appRoot, clean);
       deps.setSettings(next);
       editor.applySettings(next);
       pusher.send("editor:status", await editor.status(true));
@@ -839,6 +846,7 @@ const CHAT_OUTCOMES: ReadonlySet<keyof ChatApi> = new Set<keyof ChatApi>([
   "chatSetModel",
   "chatSetEffort",
   "chatSetUltracode",
+  "chatSetRouting",
   "chatStopAgent",
   "chatStopTask",
   "chatAnswer",
@@ -987,7 +995,12 @@ export function agentsOf(
     const now = byId.get(a.id);
     const step = a.summary ?? a.lastTool;
     if (now) {
-      if (!now.step && step) byId.set(a.id, { ...now, step });
+      const more = {
+        ...(!now.step && step ? { step } : {}),
+        ...(!now.model && a.model ? { model: a.model } : {}),
+        ...(!now.effort && a.effort ? { effort: a.effort } : {}),
+      };
+      if (Object.keys(more).length > 0) byId.set(a.id, { ...now, ...more });
       continue;
     }
     const workflow = a.workflow && (runOf.get(a.workflow) ?? a.workflow);
@@ -1008,6 +1021,8 @@ export function agentsOf(
       id: a.id,
       description: a.description ?? a.asked ?? a.agentType,
       agentType: a.agentType,
+      ...(a.model ? { model: a.model } : {}),
+      ...(a.effort ? { effort: a.effort } : {}),
       ...(a.toolUseId ? { toolUseId: a.toolUseId } : {}),
       ...(workflow ? { workflow } : {}),
       state: a.state,
@@ -1361,6 +1376,11 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     async chatSetUltracode(id, on) {
       if (typeof on !== "boolean") throw new AppError("invalid", "That is not on or off.");
       await chat.setUltracode(id, await runWhere(id), on);
+    },
+
+    async chatSetRouting(id, on) {
+      if (typeof on !== "boolean") throw new AppError("invalid", "That is not on or off.");
+      await chat.setRouting(id, await runWhere(id), on);
     },
 
     async chatAgents(id) {

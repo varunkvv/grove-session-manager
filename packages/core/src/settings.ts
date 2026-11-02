@@ -1,5 +1,7 @@
 import path from "node:path";
 import { isObject, readJsonGuarded, stringifyLike, writeFileAtomic } from "./fsx.ts";
+import { cleanEdits } from "./routing/agents.ts";
+import type { AgentEdits } from "./routing/types.ts";
 import { isTextScale, type TextScale } from "./textScale.ts";
 import type { UsageMode } from "./usageLimits.ts";
 
@@ -41,6 +43,8 @@ export interface Settings {
   keepWarmHours?: number;
   /** what the Usage screen shows, as last picked there. absent: the account's own numbers when it is billed by use */
   usageMode?: UsageMode;
+  /** what the person changed in the routing agents grove ships, and the ones they made. see routing/agents.ts */
+  routingAgents?: AgentEdits;
 }
 
 export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
@@ -97,6 +101,8 @@ function clean(raw: unknown): Settings {
   if (raw.usageMode === "api-equivalent" || raw.usageMode === "actual") {
     s.usageMode = raw.usageMode;
   }
+  const agents = cleanEdits(raw.routingAgents);
+  if (Object.keys(agents).length > 0) s.routingAgents = agents;
   if (typeof raw.maxParsedSessions === "number" && raw.maxParsedSessions > 0) {
     s.maxParsedSessions = Math.floor(raw.maxParsedSessions);
   }

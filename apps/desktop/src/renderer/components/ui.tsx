@@ -3,6 +3,7 @@ import {
   highlightRanges,
   KIND_WORD,
   type LimitSeverity,
+  modelFamily,
   type Recap,
   type Runtime,
 } from "@grove/core/pure";
@@ -402,7 +403,14 @@ export function Segmented<T extends string>({
   disabled,
 }: {
   value: T;
-  options: Array<{ value: T; label: string; disabled?: boolean; testId?: string }>;
+  options: Array<{
+    value: T;
+    label: string;
+    disabled?: boolean;
+    testId?: string;
+    /** classes for the segment while it is the selected one, in place of the neutral ones */
+    tint?: string;
+  }>;
   onChange: (v: T) => void;
   label: string;
   size?: "sm" | "md";
@@ -435,10 +443,14 @@ export function Segmented<T extends string>({
               // a disabled group is dimmed whole, once
               !disabled && "disabled:opacity-40",
               size === "md" ? "h-[26px] px-3" : "h-[22px] px-2",
-              checked
-                ? "bg-canvas font-medium outline outline-1 outline-line-strong"
-                : !disabled && "hover:text-fg",
-              checked && !disabled ? "text-fg" : "text-fg-3",
+              checked && o.tint && !disabled
+                ? cx("font-medium", o.tint)
+                : cx(
+                    checked
+                      ? "bg-canvas font-medium outline outline-1 outline-line-strong"
+                      : !disabled && "hover:text-fg",
+                    checked && !disabled ? "text-fg" : "text-fg-3",
+                  ),
             )}
           >
             {o.label}
@@ -1557,6 +1569,94 @@ export function UltraChip() {
     >
       Ultracode
     </span>
+  );
+}
+
+/** the routing agents are on for this session: beside the model, dashed while they wait for claude to restart */
+export function RoutingChip({ pending }: { pending?: boolean }) {
+  return (
+    <span
+      data-testid="routing-chip"
+      title={pending ? "Starts when claude restarts" : "Routing agents are on"}
+      className={cx(
+        "inline-flex h-[18px] shrink-0 items-center rounded-full bg-accent-soft px-1.5 text-meta font-medium text-accent",
+        pending && "border border-dashed border-accent",
+      )}
+    >
+      Routing
+    </span>
+  );
+}
+
+/** a routing agent's tier: green for haiku, the accent for sonnet, ultra for opus */
+const TIER = {
+  haiku: { dot: "bg-hue-green", ring: "border-hue-green", tint: "bg-hue-green/15 text-hue-green" },
+  sonnet: { dot: "bg-accent", ring: "border-accent", tint: "bg-accent-soft text-accent" },
+  opus: { dot: "bg-ultra", ring: "border-ultra", tint: "bg-ultra-soft text-ultra" },
+} as const;
+
+/** the classes of a selected segment, for a Segmented of tiers */
+export const tierTint = (model: keyof typeof TIER): string => TIER[model].tint;
+
+/** 8px: filled while the agent is on, a ring while it is off */
+export function TierDot({ model, on }: { model: keyof typeof TIER; on: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cx(
+        "h-2 w-2 shrink-0 rounded-full",
+        on ? TIER[model].dot : cx("border", TIER[model].ring),
+      )}
+    />
+  );
+}
+
+/**
+ * which agent it is and what it ran on: `architect · opus · xhigh`, with the model's colour. what
+ * its own transcript says, so an agent grove did not route reads the same. nothing when none of it
+ * is known yet (a workflow row, an agent that has not answered)
+ */
+export function AgentTag({
+  type,
+  model,
+  effort,
+  className,
+}: {
+  type?: string;
+  model?: string;
+  effort?: string;
+  className?: string;
+}) {
+  const family = modelFamily(model);
+  const parts = [type, model ? (family ?? model) : undefined, effort].filter(Boolean);
+  if (parts.length === 0) return null;
+  const tier = family && family !== "fable" ? family : undefined;
+  return (
+    <span
+      className={cx("flex min-w-0 shrink-0 items-center gap-1.5 text-sm text-fg-4", className)}
+      title={[type, model, effort && `effort ${effort}`].filter(Boolean).join(" · ")}
+      data-testid="agent-tag"
+    >
+      {family && (
+        <span
+          aria-hidden
+          className={cx("h-2 w-2 shrink-0 rounded-full", tier ? TIER[tier].dot : "bg-fg-4")}
+        />
+      )}
+      <span className="truncate">{parts.join(" · ")}</span>
+    </span>
+  );
+}
+
+/** a shipped agent that was changed */
+export function EditedDot() {
+  return (
+    <span
+      role="img"
+      aria-label="Edited"
+      title="Edited"
+      className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+    />
   );
 }
 
