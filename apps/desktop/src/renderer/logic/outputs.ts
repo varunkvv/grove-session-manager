@@ -1,4 +1,4 @@
-import { PR_STATE_WORD, type PrState } from "@grove/core/pure";
+import type { PrState } from "@grove/core/pure";
 import type { OutputView, PrView, SessionRef } from "../../shared/ipc";
 
 /** the glyph's shape. colour says how it is going, shape what it is */
@@ -22,17 +22,6 @@ const LOOK: Record<PrState, PrLook> = {
 
 /** a PR gh has not answered for (no gh, or not yet) is an open one with nothing known */
 export const lookOf = (p: PrView): PrLook => LOOK[p.state ?? "pending"];
-
-const isOpen = (p: PrView) => !lookOf(p).done;
-
-/**
- * the order a menu and the panel list them in: open ones top of the stack first (the latest
- * linked), then merged and closed the same way
- */
-export function ordered(prs: readonly PrView[]): { open: PrView[]; done: PrView[] } {
-  const newest = [...prs].reverse();
-  return { open: newest.filter(isOpen), done: newest.filter((p) => !isOpen(p)) };
-}
 
 /** the repo's name without its owner: the panel and menus have room for the short one */
 export const shortRepo = (repo: string) => repo.split("/").pop() || repo;
@@ -113,52 +102,7 @@ export function shortKey(o: OutputView): string {
   return n ? `#${n}` : (o.key ?? cap(o.label));
 }
 
-/** the second line of an output: what it is, and for a PR what github says */
-export const detailOf = (o: OutputView): string =>
-  o.pr
-    ? `${shortRepo(o.pr.repo)}${o.pr.state ? ` · ${PR_STATE_WORD[o.pr.state]}` : ""}`
-    : `${cap(o.label)} · ${o.verb}`;
-
 const newest = (a: OutputView, b: OutputView) => b.last - a.last;
-
-/** what a row's cell and a chat header show */
-export interface Mark {
-  glyph: OutputGlyphKind;
-  /** a PR's state colour. none for any other kind: those are plain */
-  look?: PrLook;
-  /** the key or short label of the one, else the count */
-  label: string;
-  single?: OutputView;
-  /** newest first. the ones it made, then the ones it only updated or commented on */
-  made: OutputView[];
-  other: OutputView[];
-}
-
-/** a fork's copies never count here. no outputs of its own: no mark */
-export function markOf(outputs: readonly OutputView[] | undefined): Mark | null {
-  const own = (outputs ?? []).filter((o) => !o.inherited).sort(newest);
-  if (!own.length) return null;
-  const made = own.filter((o) => o.verb === "made");
-  const other = own.filter((o) => o.verb !== "made");
-  const single = own.length === 1 ? own[0] : undefined;
-  const lead = single ?? made[0] ?? other[0];
-  if (!lead) return null;
-  return {
-    glyph: glyphOf(lead.kind),
-    ...(lead.pr ? { look: lookOf(lead.pr) } : {}),
-    label: single ? shortKey(single) : String(own.length),
-    ...(single ? { single } : {}),
-    made,
-    other,
-  };
-}
-
-/** the PRs of what a session made or touched, oldest first as `ordered` wants them. a fork's copies are not its own */
-export const prsOf = (outputs: readonly OutputView[] | undefined): PrView[] =>
-  [...(outputs ?? [])]
-    .filter((o) => o.pr && !o.inherited)
-    .sort((a, b) => a.first - b.first)
-    .flatMap((o) => (o.pr ? [o.pr] : []));
 
 /** one section of the session card: a kind's outputs, or the fork's copies */
 export interface Section {

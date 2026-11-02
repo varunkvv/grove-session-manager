@@ -3,7 +3,6 @@ import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ProjectId, ProjectView, SessionRef } from "../../shared/ipc.ts";
 import { moved } from "../logic/keyboard.ts";
-import { markOf } from "../logic/outputs.ts";
 import {
   groupSessions,
   type SessionItem,
@@ -24,7 +23,6 @@ import {
 } from "../state/actions.ts";
 import { currentProject, listInput, type Section, useStore } from "../state/store.ts";
 import { InboxRow } from "./Inbox.tsx";
-import { OutputCell } from "./Outputs.tsx";
 import { SessionPanel, useHandoff } from "./SessionPanel.tsx";
 import {
   AgentCount,
@@ -93,7 +91,6 @@ function SessionRow({
   active,
   open,
   tokens,
-  outCol,
   onClick,
 }: {
   item: SessionItem;
@@ -101,8 +98,6 @@ function SessionRow({
   active: boolean;
   /** it is the one in the panel */
   open: boolean;
-  /** some row in the list has a PR: every row keeps the column */
-  outCol: boolean;
   /** the words of a search, marked wherever they show */
   tokens: readonly string[];
   onClick: () => void;
@@ -192,7 +187,6 @@ function SessionRow({
           since={state === "working" ? hit.since : watching && tasksSince(watching)}
           className="w-[60px] text-right"
         />
-        {outCol && <OutputCell outputs={hit.outputs} />}
       </div>
       {snippet ? (
         // why a search has it here: its title does not say
@@ -297,8 +291,6 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
   const typed = tokens.length > 0;
   const groups = useMemo(() => groupSessions(input), [input]);
   const items = useMemo(() => groups.flatMap((g) => g.items), [groups]);
-  // the PR column is there only when a row in the list has a PR
-  const outCol = useMemo(() => items.some((i) => markOf(i.hit.outputs)), [items]);
   const ids = useMemo(() => items.map((i) => i.hit.sessionId), [items]);
   const open = items.find((i) => i.hit.sessionId === peek);
   const older = groups.find((g) => g.key === "older");
@@ -409,7 +401,6 @@ export function Sessions({ scope }: { scope: ProjectId | null }) {
                 const row = {
                   active: id === active,
                   open: id === peek,
-                  outCol,
                   tokens,
                   onClick: () => {
                     pair.clicked(i.hit);

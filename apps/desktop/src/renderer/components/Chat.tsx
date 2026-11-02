@@ -21,7 +21,7 @@ import { type ChatAction, keysLabel, pressed } from "../logic/chatKeys.ts";
 import { type Walk, walk } from "../logic/history.ts";
 import { textSizeKey } from "../logic/keyboard.ts";
 import { splitModels } from "../logic/models.ts";
-import { outputsKey, prsOf } from "../logic/outputs.ts";
+import { outputsKey } from "../logic/outputs.ts";
 import { queuedRows, type SessionState, same, stateOf } from "../logic/views.ts";
 import { applyAppearance } from "../state/appearance.ts";
 import { ChatScopeContext } from "../state/chatScope.ts";
@@ -34,7 +34,7 @@ import { FileList, OutputCards, Viewer } from "./Files.tsx";
 import { FindBar } from "./Find.tsx";
 import { Clock, LiveLine } from "./Live.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { OutputMark, PrPane } from "./Outputs.tsx";
+import { OutputsPane } from "./Outputs.tsx";
 import { QUIET, QueuedRows, Turn } from "./SessionPanel.tsx";
 import { useSuggest } from "./Suggest.tsx";
 import {
@@ -384,7 +384,7 @@ export function ChatApp() {
   const [pane, setPane] = useState<
     | { kind: "files"; file?: string; diff?: boolean }
     | { kind: "agents"; agent?: string; call?: string }
-    | { kind: "prs" }
+    | { kind: "outputs" }
     | { kind: "tasks" }
     | null
   >(null);
@@ -1341,11 +1341,6 @@ export function ChatApp() {
             {session.title}
           </h1>
         )}
-        <OutputMark
-          outputs={session.outputs}
-          pressed={pane?.kind === "prs"}
-          onOpenPr={() => setPane(pane?.kind === "prs" ? null : { kind: "prs" })}
-        />
         {headerState && (
           <span className="flex items-center gap-1.5" data-testid="chat-state">
             <StateLabel state={headerState} within="panel" />
@@ -1365,6 +1360,17 @@ export function ChatApp() {
             <span className="tabular-nums">
               {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
             </span>
+          </Button>
+        )}
+        {!!session.outputs?.length && (
+          <Button
+            size="sm"
+            variant="quiet"
+            data-testid="chat-outputs"
+            aria-pressed={pane?.kind === "outputs"}
+            onClick={() => setPane(pane?.kind === "outputs" ? null : { kind: "outputs" })}
+          >
+            Outputs <span className="tabular-nums">{session.outputs.length}</span>
           </Button>
         )}
         {runningWords && (
@@ -1831,8 +1837,8 @@ export function ChatApp() {
               onClose={() => setPane(null)}
             />
           )}
-          {pane?.kind === "prs" && !!prsOf(session.outputs).length && (
-            <PrPane prs={prsOf(session.outputs)} onClose={() => setPane(null)} />
+          {pane?.kind === "outputs" && !!session.outputs?.length && (
+            <OutputsPane outputs={session.outputs} onClose={() => setPane(null)} />
           )}
           {pane?.kind === "agents" &&
             (shownAgent ? (

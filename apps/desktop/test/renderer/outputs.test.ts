@@ -1,17 +1,17 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { InboxRow } from "../../src/renderer/components/Inbox.tsx";
 import {
   familiesOf,
   glyphOf,
   lookOf,
-  markOf,
-  ordered,
   outputsKey,
-  prsOf,
   screenOutputs,
   sectionsOf,
   shortKey,
 } from "../../src/renderer/logic/outputs.ts";
-import type { OutputView, PrView, SessionRef } from "../../src/shared/ipc.ts";
+import type { InboxRowView, OutputView, PrView, SessionRef } from "../../src/shared/ipc.ts";
 
 const pr = (number: number, state?: PrView["state"], o: Partial<PrView> = {}): PrView => ({
   url: `https://github.com/o/r/pull/${number}`,
@@ -58,61 +58,28 @@ describe("a PR's look", () => {
     expect(lookOf(pr(1, "merged"))).toMatchObject({ glyph: "merged", done: true });
     expect(lookOf(pr(5))).toMatchObject({ glyph: "open", tone: "faint", done: false });
   });
-
-  it("menus and the chat's pane: open ones newest first, then merged and closed", () => {
-    const { open, done } = ordered([
-      pr(1, "merged"),
-      pr(2, "ready"),
-      pr(3, "closed"),
-      pr(4, "draft"),
-    ]);
-    expect(open.map((p) => p.number)).toEqual([4, 2]);
-    expect(done.map((p) => p.number)).toEqual([3, 1]);
-  });
 });
 
-describe("a row's cell", () => {
-  it("none: no mark, and a fork's copies alone are none", () => {
-    expect(markOf(undefined)).toBeNull();
-    expect(markOf([])).toBeNull();
-    expect(markOf([prOut(1, "ready", { inherited: true })])).toBeNull();
-  });
-
-  it("one PR: its glyph, `#n`, and its state colour", () => {
-    const m = markOf([prOut(2352, "failing")]);
-    expect(m).toMatchObject({ glyph: "pr", label: "#2352", look: { tone: "red" } });
-    expect(m?.single?.url).toBe("https://github.com/o/r/pull/2352");
-  });
-
-  it("one of another kind: its glyph and key, or the short label without one, no colour", () => {
-    const m = markOf([jira("CDIT-1462")]);
-    expect(m).toMatchObject({ glyph: "issue", label: "CDIT-1462" });
-    expect(m?.look).toBeUndefined();
-    expect(markOf([out({ kind: "claude", label: "claude artifact", url: "u" })])?.label).toBe(
-      "Claude artifact",
+describe("a row's outputs", () => {
+  it("a row draws none of them: no mark, no count, no label", () => {
+    const row: InboxRowView = {
+      key: "k",
+      sessionId: "s1",
+      title: "ship it",
+      where: "ingest",
+      project: "ingest",
+      kind: "turn",
+      at: 1,
+      summary: "",
+      open: {},
+      reviewKeys: [],
+      outputs: [prOut(7, "ready"), jira("CDIT-9")],
+    } as unknown as InboxRowView;
+    const html = renderToStaticMarkup(
+      createElement(InboxRow, { row, active: false, open: false, tokens: [], onClick: () => {} }),
     );
-  });
-
-  it("several: the glyph of the latest it made, and the count, made first in the menu", () => {
-    const m = markOf([
-      prOut(1, "ready", { last: 10 }),
-      jira("CDIT-1", { last: 30, verb: "updated" }),
-      jira("CDIT-2", { last: 20 }),
-    ]);
-    expect(m).toMatchObject({ glyph: "issue", label: "3" });
-    expect(m?.single).toBeUndefined();
-    expect(m?.made.map((o) => o.key)).toEqual(["CDIT-2", "o/r#1"]);
-    expect(m?.other.map((o) => o.key)).toEqual(["CDIT-1"]);
-  });
-
-  it("several with a PR as the latest made one keeps the PR's colour", () => {
-    const m = markOf([prOut(3, "ready", { last: 99 }), jira("CDIT-2")]);
-    expect(m).toMatchObject({ glyph: "pr", label: "2", look: { tone: "green" } });
-  });
-
-  it("a fork's copies never count in the number", () => {
-    const m = markOf([jira("CDIT-1"), jira("CDIT-2", { inherited: true })]);
-    expect(m).toMatchObject({ label: "CDIT-1" });
+    expect(html).toContain("ship it");
+    expect(html).not.toMatch(/output|CDIT-9|#7/i);
   });
 
   it("a PR's `#n` is short, any other key is itself", () => {
@@ -120,15 +87,7 @@ describe("a row's cell", () => {
     expect(shortKey(jira("CDIT-9"))).toBe("CDIT-9");
   });
 
-  it("the chat's PR pane lists the PRs oldest first, a fork's copies out", () => {
-    expect(
-      prsOf([prOut(5), jira("A-1"), prOut(2), prOut(9, "ready", { inherited: true })]).map(
-        (p) => p.number,
-      ),
-    ).toEqual([2, 5]);
-  });
-
-  it("the header redraws when a PR's look moves, not otherwise", () => {
+  it("a row redraws when a PR's look moves, not otherwise", () => {
     expect(outputsKey([prOut(1, "ready")])).toBe(
       outputsKey([prOut(1, "ready", { pr: pr(1, "ready", { checkedAt: 9 }) })]),
     );
