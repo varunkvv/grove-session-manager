@@ -21,6 +21,11 @@ Keep in mind:
 - the Outputs screen covers the sessions the list shows
 - jira cards link to your site once any session has looked it up (the atlassian tools do this on their own). until then they show the key only
 
+Fixed:
+
+- a slash command that claude code answers in text, like /code-review, shows its findings in the chat again
+
+
 ## 0.45.1
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.45.1 takes the link out of the Usage screen: it only names the choice you made in Settings.
