@@ -1,3 +1,21 @@
+## 0.46
+
+Grove tells you which Claude Code agents need you, and gets you to them. 0.46 keeps track of what your sessions made for people - pull requests, jira cards, slack messages, claude artifacts and docs, google docs, figma, linear, notion and more - and replaces the pull request marks.
+
+New:
+
+- the session panel has an Outputs section: everything the session and its agents made, updated or commented on, grouped by kind. pull requests still show their checks and review
+- the chat window has an Outputs pane, next to Files and Tasks
+- an Outputs screen in the sidebar lists everything made across sessions, newest first, with the session it came from
+- outputs come from the tool calls in the transcript and what they returned, so they survive compaction and cost no tokens. agents' pull requests count now (they never had a link before)
+- a new tool for a known product needs nothing: a tool named for linear that returns a linear.app link is a linear output. for anything else, add rules in `output-rules.json` in grove's state folder
+
+Keep in mind:
+
+- the first launch reads every transcript again, once, in the background (about 6s on a machine with 240 sessions)
+- session rows no longer show a pull request mark
+- jira cards link to your site once any session has looked it up (the atlassian tools do this on their own). until then they show the key only
+
 ## 0.45.1
 
 Grove tells you which Claude Code agents need you, and gets you to them. 0.45.1 takes the link out of the Usage screen: it only names the choice you made in Settings.
