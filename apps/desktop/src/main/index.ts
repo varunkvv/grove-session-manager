@@ -39,6 +39,7 @@ import { claudeStateFile, LimitsService } from "./services/limits.ts";
 import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier, toldTurn } from "./services/notify.ts";
+import { loadOutputRules, prWants } from "./services/outputs.ts";
 import { ProjectsService } from "./services/projects.ts";
 import { PrService, resolveGhBin } from "./services/prs.ts";
 import { RecapService, Slots } from "./services/recaps.ts";
@@ -194,6 +195,8 @@ async function start(): Promise<void> {
     row: (key) => sessions.get(key),
   });
 
+  // the person's own output rules, before the index reads a transcript
+  loadOutputRules(appEnv.stateDir);
   // made once loginEnv is: a row is built before then, with no PR status yet
   let prs: PrService | undefined;
   const sessions = new SessionService({
@@ -344,16 +347,8 @@ async function start(): Promise<void> {
     visible: () =>
       electron.BrowserWindow.getAllWindows().some((w) => w.isVisible() && !w.isMinimized()),
     // open rows only: live, or active in the last week. a PR never moves a row
-    wanted: () => {
-      const now = Date.now();
-      return sessions
-        .list()
-        .filter((r) => r.prs && (r.live || now - r.activityMs < PR_RECENT_MS))
-        .flatMap((r) => {
-          const busy = working(r.live, now);
-          return (r.prs ?? []).map((p) => ({ url: p.url, working: busy }));
-        });
-    },
+    wanted: () =>
+      prWants(sessions.list(), Date.now(), PR_RECENT_MS, (r) => working(r.live, Date.now())),
     onChange: () => sessions.prsChanged(),
   });
   const prService = prs;

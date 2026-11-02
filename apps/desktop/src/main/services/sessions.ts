@@ -11,7 +11,6 @@ import {
   type LiveStatus,
   mapLimit,
   type PrStatus,
-  parsePrUrl,
   projectDirLabel,
   type SessionIndex,
   type SessionRecord,
@@ -25,14 +24,15 @@ import {
 import { rowHaystack } from "../../shared/haystack.ts";
 import type {
   BackgroundView,
+  OutputView,
   ProjectId,
-  PrView,
   SessionKey,
   SessionRow,
   UsageView,
 } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { diffRows, PatchCoalescer } from "../patchCoalescer.ts";
+import { outputViews } from "./outputs.ts";
 import { buildUsageView } from "./usage.ts";
 
 const PATCH_INTERVAL_MS = 150;
@@ -100,31 +100,6 @@ export function interruptedView(
   return mark ? { why: "gone", at: mark.at } : undefined;
 }
 
-/** a link as a row has it, with what github last said */
-function prView(
-  url: string,
-  number: number,
-  repo: string | undefined,
-  status: PrStatusOf | undefined,
-): PrView {
-  const ref = parsePrUrl(url);
-  const view: PrView = { url, number, repo: repo ?? (ref ? `${ref.owner}/${ref.repo}` : "") };
-  if (!status) return view;
-  const { title, state, review, rollup, updatedAt, checkedAt, stale } = status;
-  return {
-    ...view,
-    title,
-    state,
-    ...(review ? { review } : {}),
-    ...(rollup ? { rollup } : {}),
-    ...(updatedAt ? { updatedAt } : {}),
-    checkedAt,
-    ...(stale ? { stale } : {}),
-  };
-}
-
-type PrStatusOf = PrStatus & { checkedAt: number; stale?: true };
-
 function toRow(
   record: SessionRecord & { comboName?: string },
   labels: ReadonlyMap<string, string>,
@@ -134,7 +109,7 @@ function toRow(
   interrupted: ReadonlyMap<string, { at: number }>,
   tasks: ReadonlyMap<string, SessionTasks>,
   named?: SessionServiceOptions["named"],
-  prStatus?: SessionServiceOptions["prStatus"],
+  outputs?: OutputView[],
 ): SessionRow {
   const cwd = record.relocatedCwd ?? record.cwd;
   const view = record as SessionView;
@@ -160,10 +135,7 @@ function toRow(
   if (view.comboName) row.comboName = view.comboName;
   if (view.comboRelation) row.comboRelation = view.comboRelation;
   if (record.tag) row.tag = record.tag;
-  const prs = (record.prs ?? (record.pr ? [record.pr] : [])).flatMap((p) =>
-    p.url ? [prView(p.url, p.number, p.repo, prStatus?.(p.url))] : [],
-  );
-  if (prs.length) row.prs = prs;
+  if (outputs?.length) row.outputs = outputs;
   if (record.entrypoint) row.entrypoint = record.entrypoint;
   if (record.usage) row.usage = record.usage;
   if (record.model) row.model = record.model;
@@ -318,7 +290,7 @@ export class SessionService {
     this.rebuild();
   }
 
-  /** github said something new of a PR a row links */
+  /** github said something new of a PR a row has */
   prsChanged(): void {
     this.rebuild();
   }
@@ -507,6 +479,7 @@ export class SessionService {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
+    const outputs = outputViews(records, this.opts.prStatus);
     const next = views.map((v) =>
       toRow(
         v,
@@ -517,7 +490,7 @@ export class SessionService {
         this.interrupted,
         this.tasks,
         this.opts.named,
-        this.opts.prStatus,
+        outputs.get(v.path),
       ),
     );
     const { upserts, removes } = diffRows(this.rows, next, (row) => row.key);

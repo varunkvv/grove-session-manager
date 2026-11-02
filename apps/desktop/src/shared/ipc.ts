@@ -70,6 +70,30 @@ export interface PrView {
   stale?: true;
 }
 
+/**
+ * something a session made or touched for people, as a row draws it. the url is the transcript's:
+ * absent while it waits on a jira site no transcript has named yet, when only the key shows
+ */
+export interface OutputView {
+  url?: string;
+  kind: string;
+  /** what kind of thing: Pull request, Jira card */
+  label: string;
+  key?: string;
+  title?: string;
+  verb: "made" | "updated" | "commented";
+  last: number;
+  touches: number;
+  /** the subagent that did it, when one did */
+  agent?: string;
+  /** the transcript line, for opening the session at that step */
+  uuid?: string;
+  /** a github PR: what github last said of it */
+  pr?: PrView;
+  /** a fork's copy of what an older session made: never counts on a row */
+  inherited?: true;
+}
+
 export interface SessionRow {
   key: SessionKey;
   sessionId: string;
@@ -89,8 +113,8 @@ export interface SessionRow {
   comboName?: string;
   comboRelation?: ComboRelation;
   tag?: string;
-  /** every pull request it linked, oldest first, with what github last said of it */
-  prs?: PrView[];
+  /** what it made or touched for people, oldest first. its PRs carry what github last said */
+  outputs?: OutputView[];
   entrypoint?: string;
   activityMs: number;
   parsed: boolean;
@@ -299,7 +323,7 @@ export interface SessionRef {
   open: OpenPlan;
   /** absent while recaps are off, and until one was asked for */
   recap?: RecapView;
-  prs?: PrView[];
+  outputs?: OutputView[];
 }
 
 /**
