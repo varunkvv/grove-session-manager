@@ -12,8 +12,10 @@ New:
 
 Keep in mind:
 
-- the first launch reads every transcript again, once, in the background (about 6s on a machine with 240 sessions)
+- the first launch reads every transcript again, once, in the background. search and usage rebuild with it
 - session rows no longer show a pull request mark
+- the pull request pane in the chat window is now the Outputs pane. each pull request carries its checks and review there, there is no separate pull request view
+- the Outputs screen covers the sessions the list shows
 - jira cards link to your site once any session has looked it up (the atlassian tools do this on their own). until then they show the key only
 
 ## 0.45.1
