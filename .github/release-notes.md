@@ -1,12 +1,12 @@
 ## 0.47
 
-Grove chat knows the files a session touched, and opens them from wherever the name shows up. 0.47 adds a files list for each session, and makes a file named in a message open on a click.
+Grove chat knows the files a session touched, and opens them from wherever the name shows up.
 
 New:
 
 - a file the agent names opens in the viewer, by its name alone (`Files.tsx`) or with a line (`Files.tsx:42` opens at line 42, highlighted)
 - the chat window's Files pane lists what the session touched: edited files first, with their +/- counts and a diff, then the files it read, plans and artifacts
-- a session row in the sidebar expands to the same list. clicking a file opens that session's chat on it
+- the outputs pane has a small Files fold at its foot, closed until you open it, with the same list
 - cmd-k in a chat window has a Files group, with the files the session touched first
 - a Read step in the transcript opens its file
 
