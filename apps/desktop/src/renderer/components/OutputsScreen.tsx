@@ -104,6 +104,9 @@ export function OutputsScreen() {
                 <span className="w-28 shrink-0 truncate">{cap(o.label)}</span>
                 {o.key && <span className="shrink-0 tabular-nums text-fg-2">{shortKey(o)}</span>}
                 <span className="min-w-0 truncate text-fg">{o.title ?? ""}</span>
+                {o.description && (
+                  <span className="min-w-0 flex-1 truncate text-fg-4">{o.description}</span>
+                )}
               </button>
               <span className="w-20 shrink-0 text-sm text-fg-3">{o.verb}</span>
               <button

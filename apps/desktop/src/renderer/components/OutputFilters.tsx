@@ -311,7 +311,7 @@ function WhenPicker({
                 className={cx(
                   "fade h-8 rounded-md text-sm tabular-nums",
                   end
-                    ? "bg-active font-medium text-fg outline outline-1 outline-line-strong"
+                    ? "bg-active font-semibold text-fg outline outline-1 outline-line-strong"
                     : inside
                       ? "bg-raised text-fg"
                       : cx("hover:bg-raised", set ? "text-fg-4" : "text-fg"),
