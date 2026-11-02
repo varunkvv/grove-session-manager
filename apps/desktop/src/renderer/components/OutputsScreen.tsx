@@ -1,11 +1,9 @@
 import { formatRelativeTime } from "@grove/core/pure";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionHit } from "../../shared/ipc.ts";
 import {
   cap,
-  DATE_RANGES,
-  type DateRange,
-  FAMILY_WORD,
+  type DayRange,
   familiesOf,
   filterOutputs,
   glyphOf,
@@ -15,10 +13,10 @@ import {
   projectsOf,
   screenOutputs,
   shortKey,
-  sinceOf,
 } from "../logic/outputs.ts";
 import { openSession } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
+import { OutputFilters } from "./OutputFilters.tsx";
 import { OutputGlyph } from "./ui.tsx";
 
 const open = (url: string) => void window.grove.openExternal(url);
@@ -55,16 +53,14 @@ export function OutputsScreen() {
     projects: [],
     kinds: [],
   });
-  const [range, setRange] = useState<DateRange>("any");
+  const [range, setRange] = useState<DayRange>({});
   // a filter that left the list is no filter
   const filter: OutputFilter = {
     projects: pick.projects.filter((p) => projects.some((x) => x.name === p)),
     kinds: pick.kinds.filter((k) => families.some((f) => f.glyph === k)),
-    since: sinceOf(range, now),
+    ...range,
   };
   const shown = filterOutputs(entries, filter);
-  const toggle = <T extends string>(list: readonly T[], v: T): T[] =>
-    list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 
   return (
     <div className="h-full overflow-y-auto [scrollbar-gutter:stable]" data-testid="outputs">
@@ -73,47 +69,16 @@ export function OutputsScreen() {
           <h1 className="text-title font-semibold">Outputs</h1>
           <span className="text-sm text-fg-3">all sessions</span>
         </div>
-        <FilterRow label="When">
-          {DATE_RANGES.map((r) => (
-            <FilterChip
-              key={r.value}
-              on={range === r.value}
-              testId={`outputs-when-${r.value}`}
-              onClick={() => setRange(r.value)}
-            >
-              {r.label}
-            </FilterChip>
-          ))}
-        </FilterRow>
-        {projects.length > 1 && (
-          <FilterRow label="Project">
-            {projects.map((p) => (
-              <FilterChip
-                key={p.name}
-                on={filter.projects.includes(p.name)}
-                testId={`outputs-project-${p.name}`}
-                onClick={() => setPick({ ...pick, projects: toggle(filter.projects, p.name) })}
-              >
-                {p.name} <span className="text-fg-4">{p.n}</span>
-              </FilterChip>
-            ))}
-          </FilterRow>
-        )}
-        {families.length > 1 && (
-          <FilterRow label="Kind">
-            {families.map((f) => (
-              <FilterChip
-                key={f.glyph}
-                on={filter.kinds.includes(f.glyph)}
-                testId={`outputs-kind-${f.glyph}`}
-                onClick={() => setPick({ ...pick, kinds: toggle(filter.kinds, f.glyph) })}
-              >
-                <OutputGlyph kind={f.glyph} />
-                {FAMILY_WORD[f.glyph]} <span className="text-fg-4">{f.n}</span>
-              </FilterChip>
-            ))}
-          </FilterRow>
-        )}
+        <OutputFilters
+          projects={projects}
+          families={families}
+          picked={filter}
+          range={range}
+          now={now}
+          onProjects={(next) => setPick({ ...pick, projects: next })}
+          onKinds={(next) => setPick({ ...pick, kinds: next })}
+          onRange={setRange}
+        />
         {hits && shown.length === 0 && (
           <p className="mt-6 text-fg-3" data-testid="outputs-empty">
             Nothing made yet.
@@ -159,43 +124,5 @@ export function OutputsScreen() {
         </ul>
       </div>
     </div>
-  );
-}
-
-/** a row of filters: every chip on at once is an OR, and none on is no filter */
-function FilterRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="mt-4 flex flex-wrap items-center gap-1.5" role="group" aria-label={label}>
-      <span className="mr-1 w-14 text-sm text-fg-4">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function FilterChip({
-  on,
-  onClick,
-  testId,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  testId: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      data-testid={testId}
-      onClick={onClick}
-      className={`fade flex h-7 items-center gap-1.5 rounded-md border px-2 text-sm ${
-        on
-          ? "border-line-strong bg-raised text-fg"
-          : "border-line text-fg-3 hover:border-line-strong hover:text-fg"
-      }`}
-    >
-      {children}
-    </button>
   );
 }

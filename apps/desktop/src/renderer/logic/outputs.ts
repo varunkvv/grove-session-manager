@@ -178,33 +178,80 @@ export function screenOutputs(sessions: readonly SessionRef[]): Entry[] {
   return out.sort((a, b) => b.o.last - a.o.last);
 }
 
-/** a window of time, by when an output was last touched. `any` is no filter */
-export type DateRange = "any" | "today" | "week" | "month";
+/** the first instant of the local day `ms` is in */
+export const startOfDay = (ms: number) => {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+};
 
-export const DATE_RANGES: Array<{ value: DateRange; label: string }> = [
+/** the last millisecond of that local day */
+export const endOfDay = (ms: number) => {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - 1;
+};
+
+/** the days between two picks, in whichever order they came, whole days both ends. one day is fine */
+export const dayRange = (a: number, b: number): { from: number; to: number } => ({
+  from: startOfDay(Math.min(a, b)),
+  to: endOfDay(Math.max(a, b)),
+});
+
+/** a window of local days, ends included. none set is any time */
+export interface DayRange {
+  from?: number;
+  to?: number;
+}
+
+export type Shortcut = "any" | "today" | "week" | "month" | "thisMonth" | "quarter";
+
+export const SHORTCUTS: Array<{ value: Shortcut; label: string }> = [
   { value: "any", label: "Any time" },
   { value: "today", label: "Today" },
-  { value: "week", label: "7 days" },
-  { value: "month", label: "30 days" },
+  { value: "week", label: "Last 7 days" },
+  { value: "month", label: "Last 30 days" },
+  { value: "thisMonth", label: "This month" },
+  { value: "quarter", label: "Last 90 days" },
 ];
 
-/** the earliest time a range admits: local midnight for today, else that many days back */
-export function sinceOf(range: DateRange, now: number): number | undefined {
-  if (range === "any") return undefined;
-  if (range === "today") {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
+/** a shortcut's days as of `now`: the last n days are today and the n - 1 before it */
+export function shortcutRange(name: Shortcut, now: number): DayRange {
+  const d = new Date(now);
+  const back = (n: number) =>
+    dayRange(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n + 1).getTime(), now);
+  switch (name) {
+    case "any":
+      return {};
+    case "today":
+      return back(1);
+    case "week":
+      return back(7);
+    case "month":
+      return back(30);
+    case "quarter":
+      return back(90);
+    case "thisMonth":
+      return dayRange(new Date(d.getFullYear(), d.getMonth(), 1).getTime(), now);
   }
-  return now - (range === "week" ? 7 : 30) * 86_400_000;
+}
+
+const SHORT_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+/** what the When button says: `Any time`, `Nov 1`, or `Oct 26 – Nov 1` */
+export function rangeLabel(r: DayRange): string {
+  if (r.from === undefined || r.to === undefined) return "Any time";
+  const a = SHORT_DAY.format(r.from);
+  const b = SHORT_DAY.format(r.to);
+  return a === b ? a : `${a} \u2013 ${b}`;
 }
 
 /** the filters on the Outputs screen. an empty list is no filter on that axis */
 export interface OutputFilter {
   projects: readonly string[];
   kinds: readonly OutputGlyphKind[];
-  /** from when, or none */
-  since?: number;
+  /** the first instant a touch may be at, or no start */
+  from?: number;
+  /** the last instant, or no end */
+  to?: number;
 }
 
 /** entries that pass every filter that is set: a project's name is `where`, a kind is its family */
@@ -213,7 +260,8 @@ export function filterOutputs(entries: readonly Entry[], f: OutputFilter): Entry
     (e) =>
       (f.projects.length === 0 || f.projects.includes(e.session.where)) &&
       (f.kinds.length === 0 || f.kinds.includes(glyphOf(e.o.kind))) &&
-      (f.since === undefined || e.o.last >= f.since),
+      (f.from === undefined || e.o.last >= f.from) &&
+      (f.to === undefined || e.o.last <= f.to),
   );
 }
 

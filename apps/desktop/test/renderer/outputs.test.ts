@@ -3,17 +3,24 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { InboxRow } from "../../src/renderer/components/Inbox.tsx";
 import {
-  DATE_RANGES,
+  OutputFilters,
+  type OutputFiltersProps,
+} from "../../src/renderer/components/OutputFilters.tsx";
+import {
+  dayRange,
   familiesOf,
   filterOutputs,
   glyphOf,
   lookOf,
+  type OutputFilter,
   outputsKey,
   projectsOf,
+  rangeLabel,
+  SHORTCUTS,
   screenOutputs,
   sectionsOf,
+  shortcutRange,
   shortKey,
-  sinceOf,
 } from "../../src/renderer/logic/outputs.ts";
 import type { InboxRowView, OutputView, PrView, SessionRef } from "../../src/shared/ipc.ts";
 
@@ -206,34 +213,107 @@ describe("the Outputs screen's filters", () => {
 });
 
 describe("the date filter", () => {
-  it("today starts at local midnight, a week and a month are days back, any is none", () => {
-    const now = new Date(2026, 10, 1, 15, 30).getTime();
-    expect(sinceOf("any", now)).toBeUndefined();
-    expect(sinceOf("today", now)).toBe(new Date(2026, 10, 1).getTime());
-    expect(sinceOf("week", now)).toBe(now - 7 * 86_400_000);
-    expect(sinceOf("month", now)).toBe(now - 30 * 86_400_000);
-    expect(DATE_RANGES.map((r) => r.value)).toEqual(["any", "today", "week", "month"]);
+  const now = new Date(2026, 10, 1, 15, 30).getTime();
+  const day = (m: number, d: number) => new Date(2026, m, d).getTime();
+  const endOf = (m: number, d: number) => new Date(2026, m, d + 1).getTime() - 1;
+
+  it("a shortcut is whole local days ending today, any is no range", () => {
+    expect(shortcutRange("any", now)).toEqual({});
+    expect(shortcutRange("today", now)).toEqual({ from: day(10, 1), to: endOf(10, 1) });
+    expect(shortcutRange("week", now)).toEqual({ from: day(9, 26), to: endOf(10, 1) });
+    expect(shortcutRange("month", now)).toEqual({ from: day(9, 3), to: endOf(10, 1) });
+    expect(shortcutRange("quarter", now)).toEqual({ from: day(7, 4), to: endOf(10, 1) });
+    expect(shortcutRange("thisMonth", now)).toEqual({ from: day(10, 1), to: endOf(10, 1) });
+    expect(shortcutRange("thisMonth", new Date(2026, 10, 20, 9).getTime()).from).toBe(day(10, 1));
+    expect(SHORTCUTS.map((r) => r.value)).toEqual([
+      "any",
+      "today",
+      "week",
+      "month",
+      "thisMonth",
+      "quarter",
+    ]);
   });
 
-  it("keeps outputs touched since the window opens, by their last touch", () => {
-    const now = new Date(2026, 10, 1, 15, 30).getTime();
+  it("two picks make a range in either order, and one day is a range", () => {
+    const want = { from: day(9, 26), to: endOf(10, 1) };
+    expect(dayRange(day(9, 26), day(10, 1))).toEqual(want);
+    expect(dayRange(day(10, 1), day(9, 26))).toEqual(want);
+    expect(dayRange(day(10, 1) + 5_000, day(10, 1))).toEqual({
+      from: day(10, 1),
+      to: endOf(10, 1),
+    });
+  });
+
+  it("the button says the range in short local days", () => {
+    expect(rangeLabel({})).toBe("Any time");
+    expect(rangeLabel(shortcutRange("week", now))).toBe("Oct 26 \u2013 Nov 1");
+    expect(rangeLabel(shortcutRange("today", now))).toBe("Nov 1");
+  });
+
+  it("keeps outputs last touched inside the days, both ends included", () => {
     const entries = screenOutputs([
       {
         key: "a",
         sessionId: "a",
         title: "a",
         where: "p",
-        outputs: [jira("A-1", { last: now - 1000 }), jira("A-2", { last: now - 3 * 86_400_000 })],
+        outputs: [
+          jira("A-1", { last: day(10, 1) }),
+          jira("A-2", { last: endOf(10, 1) }),
+          jira("A-3", { last: day(9, 31) + 5_000 }),
+          jira("A-4", { last: day(9, 25) }),
+        ],
       } as SessionRef,
     ]);
-    expect(
-      filterOutputs(entries, { projects: [], kinds: [], since: sinceOf("today", now) }),
-    ).toHaveLength(1);
-    expect(
-      filterOutputs(entries, { projects: [], kinds: [], since: sinceOf("week", now) }),
-    ).toHaveLength(2);
-    expect(
-      filterOutputs(entries, { projects: [], kinds: [], since: sinceOf("month", now) }),
-    ).toHaveLength(2);
+    const keys = (f: Partial<OutputFilter>) =>
+      filterOutputs(entries, { projects: [], kinds: [], ...f })
+        .map((e) => e.o.key)
+        .sort();
+    expect(keys(shortcutRange("today", now))).toEqual(["A-1", "A-2"]);
+    expect(keys(shortcutRange("week", now))).toEqual(["A-1", "A-2", "A-3"]);
+    expect(keys({ from: day(9, 25) })).toEqual(["A-1", "A-2", "A-3", "A-4"]);
+    expect(keys({ to: endOf(9, 31) })).toEqual(["A-3", "A-4"]);
+    expect(keys({ from: day(9, 31), to: endOf(9, 31) })).toEqual(["A-3"]);
+  });
+});
+
+describe("the filter bar", () => {
+  const props: OutputFiltersProps = {
+    projects: [
+      { name: "billing", n: 3 },
+      { name: "grove", n: 2 },
+      { name: "kirby", n: 1 },
+    ],
+    families: [
+      { glyph: "pr", n: 4 },
+      { glyph: "issue", n: 2 },
+    ],
+    picked: { projects: ["billing", "grove", "kirby"], kinds: ["pr"] },
+    range: shortcutRange("week", new Date(2026, 10, 1, 15).getTime()),
+    now: new Date(2026, 10, 1, 15).getTime(),
+    onProjects: () => {},
+    onKinds: () => {},
+    onRange: () => {},
+  };
+  const html = renderToStaticMarkup(createElement(OutputFilters, props));
+
+  it("Project, Kind and When are closed dropdown buttons", () => {
+    for (const id of ["outputs-project", "outputs-kind", "outputs-when"]) {
+      expect(html).toMatch(
+        new RegExp(`aria-haspopup="dialog"[^>]*aria-expanded="false"[^>]*data-testid="${id}"`),
+      );
+    }
+    expect(html).not.toContain("outputs-project-popover");
+  });
+
+  it("what is picked shows as chips, two and then +N, and the range as its days", () => {
+    expect(html).toContain("billing");
+    expect(html).toContain("grove");
+    expect(html).not.toContain(">kirby<");
+    expect(html).toContain("+1");
+    expect(html).toContain("Pull requests");
+    expect(html).toContain('aria-label="Remove billing"');
+    expect(html).toContain("Oct 26 \u2013 Nov 1");
   });
 });
