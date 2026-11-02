@@ -7,7 +7,9 @@ New:
 - the session panel has an Outputs section: everything the session and its agents made, updated or commented on, grouped by kind. pull requests still show their checks and review
 - the chat window has an Outputs pane, next to Files and Tasks
 - an Outputs screen in the sidebar lists everything made across sessions, newest first, with the session it came from
-- the Outputs screen always covers every project. filter it by project, by kind, or by when (today, 7 days, 30 days)
+- the Outputs screen always covers every project. filter it by project, by kind, or by a date range with shortcuts (today, last 7 or 30 days, this month)
+- outputs have a title and a line of description where the call gave one: a slack message is titled by its text and shows its channel, a claude artifact or doc takes its name from its call
+- an output that still comes without a title gets one from haiku, once, at low effort. titles are off with the recaps setting
 - outputs come from the tool calls in the transcript and what they returned, so they survive compaction and cost no tokens. agents' pull requests count now (they never had a link before)
 - a new tool for a known product needs nothing: a tool named for linear that returns a linear.app link is a linear output. for anything else, add rules in `output-rules.json` in grove's state folder
 

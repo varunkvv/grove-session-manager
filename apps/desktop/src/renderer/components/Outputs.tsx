@@ -134,6 +134,7 @@ function OutputRow({ o, now, tone }: { o: OutputView; now: number; tone: Section
           </span>
         )}
       </div>
+      {o.description && <p className="mt-0.5 truncate text-sm text-fg-4">{o.description}</p>}
       <p className="mt-0.5 text-sm text-fg-3">{line}</p>
     </CardLink>
   );

@@ -110,7 +110,9 @@ test("a session that starts needing him gets a recap: its row says what it needs
   expect(call?.argv).toEqual([
     "-p",
     "--model",
-    "claude-haiku-4-5-20251001",
+    "haiku",
+    "--effort",
+    "low",
     "--no-session-persistence",
     "--restricted",
     "--strict-mcp-config",

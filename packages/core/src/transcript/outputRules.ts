@@ -313,6 +313,8 @@ export const SEED_RULES: OutputRules = {
     },
   ],
   tools: [
+    // slack's message is the title, its channel a description once the channel is named
+    { tool: "slack_send_message", title: "input.message" },
     // jira's MCP returns the key and an api.atlassian.com link. the site comes from the cloud id
     { tool: "getAccessibleAtlassianResources", learn: "sites" },
     {
@@ -352,7 +354,12 @@ export const SEED_RULES: OutputRules = {
     { tool: "gdocs__*", url: "https://docs.google.com/document/d/{input.document_id}/edit" },
     // claude's own: an Artifact call with no action makes one from a type, publish makes or updates
     { tool: "Artifact", verb: "made", actions: ["", "publish"], url: "{result.url}" },
-    { tool: "Claude_Docs__batch", verb: "updated", madeIf: "input.container.create" },
+    {
+      tool: "Claude_Docs__batch",
+      verb: "updated",
+      madeIf: "input.container.create",
+      title: "input.container.create.name",
+    },
     { tool: "Claude_Docs__create", verb: "commented", actions: [""] },
     // writes to this machine or to a browser tab, whatever the name says
     { tool: "claude-in-chrome__*", skip: true },

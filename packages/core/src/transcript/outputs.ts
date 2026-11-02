@@ -13,6 +13,12 @@ export interface Output {
   /** `owner/repo#12`, `CDIT-1462` */
   key?: string;
   title?: string;
+  /** what the call said it was for, one line. from its input, cut short */
+  description?: string;
+  /** the words the call was given (a message, a body), cut short: what a title is written from */
+  hint?: string;
+  /** a slack channel's id, while its name is not known (`channels` on the record turns it into `#name`) */
+  channel?: string;
   verb: OutputVerb;
   first: number;
   last: number;
@@ -88,6 +94,11 @@ export interface PendingCall {
   at: number;
   uuid?: string;
   title?: string;
+  description?: string;
+  hint?: string;
+  channel?: string;
+  /** a slack read or search: its result names channels, and nothing here is an output */
+  learnChannels?: boolean;
   /** the input as JSON, cut short. a url in it was not made by this call */
   input: string;
   rule?: number;
@@ -99,6 +110,25 @@ export interface OutputState {
   waiting?: Record<string, PendingCall>;
   /** jira cloud id -> site, learned from results */
   sites?: Record<string, string>;
+  /** slack channel id -> name, learned from slack results */
+  channels?: Record<string, string>;
+}
+
+const CHANNEL_RE = /#([a-z0-9][a-z0-9._-]{0,79}) \((?:ID: )?([CGD][A-Z0-9]{6,})\)/g;
+
+/** the channel's name where a list named it, for a row whose output only has the id */
+export function withChannel(o: Output, channels: Record<string, string>): Output {
+  if (o.description || !o.channel || !channels[o.channel]) return o;
+  return { ...o, description: `#${channels[o.channel]}` };
+}
+
+/** the words a call was given, first of the usual names, cut short */
+function hintOf(input: Record<string, unknown>): string | undefined {
+  for (const k of ["message", "text", "body", "content", "commentBody", "markdown"]) {
+    const v = input[k];
+    if (typeof v === "string" && v.trim()) return v.trim().slice(0, 300);
+  }
+  return undefined;
 }
 
 interface Compiled {
@@ -324,13 +354,25 @@ function fill(
   return missing ? undefined : { url, ...(need ? { need } : {}) };
 }
 
-/** the title a call carries in its input, by the usual names */
+/** the title a call carries in its input, by the usual names. the first line of it */
 function titleOf(input: Record<string, unknown>, path?: string): string | undefined {
   for (const p of path ? [path] : ["title", "summary", "name", "subject"]) {
     const v = pathGet(input, p);
-    if (typeof v === "string" && v.trim()) return v.trim().slice(0, 200);
+    if (typeof v === "string" && v.trim()) return v.trim().split("\n")[0]?.trim().slice(0, 200);
   }
   return undefined;
+}
+
+/** what a call says it is for: the description it was given, when it gave one */
+function descriptionOf(input: Record<string, unknown>): string | undefined {
+  const v = input.description;
+  return typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : undefined;
+}
+
+/** a claude doc's first heading, from the xml its edit returns: the doc has no title field of its own */
+function docHeading(text: string): string | undefined {
+  const m = /heading='1'>([^<]{1,200})</.exec(text);
+  return m?.[1]?.trim() || undefined;
 }
 
 /** `gh pr create --title "x y"` -> `x y` */
@@ -467,23 +509,34 @@ export class OutputCollector {
         rule: i,
         bash: true,
         ...(title ? { title } : {}),
+        ...(descriptionOf(input) ? { description: descriptionOf(input) } : {}),
       };
     }
     const rule = toolRule(full, input);
     if (rule?.skip) return null;
     if (rule?.learn) return { ...base, tool: full, verb: "updated", rule: rule.i };
     if (!rule && BUILTIN.has(full)) return null;
+    // a slack read or search names the channels it is about: learn them, the call is no output
+    if (!rule && /slack/i.test(full) && verbOf(name) === null) {
+      return { ...base, tool: full, verb: "updated", learnChannels: true };
+    }
     const verb =
       rule?.madeIf && pathGet(input, rule.madeIf.replace(/^input\./, "")) !== undefined
         ? "made"
         : (rule?.verb ?? verbOf(name));
     if (!verb) return null;
     const title = titleOf(input, rule?.title?.replace(/^input\./, ""));
+    const description = descriptionOf(input);
+    const hint = hintOf(input);
+    const channel = typeof input.channel_id === "string" ? input.channel_id : undefined;
     // the server is part of the name a vendor word is looked for in: `mcp__linear__create_issue`
     return {
       ...base,
       tool: full,
       verb,
+      ...(description ? { description } : {}),
+      ...(hint ? { hint } : {}),
+      ...(channel ? { channel } : {}),
       ...(rule ? { rule: rule.i } : {}),
       ...(title ? { title } : {}),
     };
@@ -513,6 +566,13 @@ export class OutputCollector {
     at: number,
   ): void {
     const rule = !p.bash && p.rule !== undefined ? compiled.tools[p.rule] : undefined;
+    if (p.learnChannels) {
+      for (const m of resultText(entry, block).matchAll(CHANNEL_RE)) {
+        this.s.channels ??= {};
+        this.s.channels[m[2] ?? ""] = m[1] ?? "";
+      }
+      return;
+    }
     if (rule?.learn === "sites") {
       const r = parsedResult(entry, block);
       const list = Array.isArray(r.items) ? r.items : [];
@@ -533,7 +593,13 @@ export class OutputCollector {
     }
     const result = parsedResult(entry, block);
     const resultTitle = typeof result.title === "string" ? result.title : undefined;
-    const title = p.title ?? resultTitle;
+    // a claude doc's edit has no title in its input: its first heading is the nearest thing
+    // a title the tool cut short (it ends in an ellipsis) is no title: the titler writes one
+    const whole = (t: string | undefined) => (t && !t.endsWith("…") ? t : undefined);
+    const title =
+      whole(p.title) ??
+      whole(resultTitle) ??
+      (p.tool.includes("Claude_Docs") ? whole(docHeading(resultText(entry, block))) : undefined);
     const tool = toolName(p.tool);
     // a template with a field this call does not have falls through to the result's urls
     const f = rule?.url
@@ -550,6 +616,9 @@ export class OutputCollector {
         label: rule.label ?? hm?.rule.label ?? "link",
         ...(key ? { key } : hm ? { key: keyFrom(hm.rule.key, hm.m) } : {}),
         ...(title ? { title } : {}),
+        ...(p.description ? { description: p.description } : {}),
+        ...(p.hint ? { hint: p.hint } : {}),
+        ...(p.channel ? { channel: p.channel } : {}),
         verb: p.verb,
         first: at,
         last: at,
@@ -584,6 +653,9 @@ export class OutputCollector {
       label: pick.hm.rule.label,
       ...(key ? { key } : {}),
       ...(title ? { title } : {}),
+      ...(p.description ? { description: p.description } : {}),
+      ...(p.hint ? { hint: p.hint } : {}),
+      ...(p.channel ? { channel: p.channel } : {}),
       verb: p.verb,
       first: at,
       last: at,
@@ -636,6 +708,9 @@ export class OutputCollector {
     had.last = Math.max(had.last, o.last);
     had.first = Math.min(had.first, o.first);
     had.title ??= o.title;
+    had.description ??= o.description;
+    had.hint ??= o.hint;
+    had.channel ??= o.channel;
     if (rank(o.verb) > rank(had.verb)) {
       had.verb = o.verb;
       had.tool = o.tool;

@@ -85,6 +85,8 @@ export interface SessionRecord extends ParsedMeta {
   outputs?: SessionOutput[];
   /** jira cloud id -> site its transcripts taught. an output still waiting on one (`need`) may be in another session's */
   sites?: Record<string, string>;
+  /** slack channel id -> name, learned from the slack results of any transcript of the session */
+  channels?: Record<string, string>;
 }
 
 export type ComboRelation = "root" | "inside";

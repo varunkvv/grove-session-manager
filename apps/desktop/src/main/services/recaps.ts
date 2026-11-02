@@ -34,7 +34,8 @@ const TIMEOUT_MS = 30_000;
 const RETRY_MS = 60_000;
 /** how long a finished turn's notification waits for its recap */
 const SOON_MS = 15_000;
-const MODEL = "claude-haiku-4-5-20251001";
+/** the newest haiku, by its alias: grove never pins a version. low effort is the least it offers */
+const MODEL = "haiku";
 
 /**
  * every flag is needed, and docs/claude-code-facts.md says why: nothing is left on disk, no
@@ -46,6 +47,8 @@ export function recapArgs(): string[] {
     "-p",
     "--model",
     MODEL,
+    "--effort",
+    "low",
     "--no-session-persistence",
     "--restricted",
     "--strict-mcp-config",

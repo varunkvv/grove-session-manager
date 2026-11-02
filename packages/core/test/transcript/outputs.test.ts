@@ -7,6 +7,7 @@ import {
   resolveSite,
   setOutputRules,
   verbOf,
+  withChannel,
   words,
 } from "../../src/transcript/outputs.ts";
 
@@ -368,5 +369,45 @@ describe("review fixes", () => {
       ...call("mcp__slack__slack_update_message", {}, { message_link: url }),
     ]);
     expect(s.outputs?.[0]?.id).not.toBe(s.outputs?.[0]?.lastId);
+  });
+});
+
+describe("slack", () => {
+  it("a message is titled by its first line, and its channel is named once a read has named it", () => {
+    const s = run([
+      ...call(
+        "mcp__claude_ai_Slack__slack_send_message",
+        {
+          channel_id: "C096QEQGY4W",
+          message: "false alarm, safe to resolve\nthe schedulers were healthy",
+        },
+        { message_link: "https://acme.slack.com/archives/C096QEQGY4W/p1792169130192459" },
+      ),
+      ...call(
+        "mcp__claude_ai_Slack__slack_search_channels",
+        { query: "pager" },
+        "## Channels (1 results)\n1. #pagerduty-cdit (C096QEQGY4W) - public_channel",
+      ),
+    ]);
+    expect(s.channels).toEqual({ C096QEQGY4W: "pagerduty-cdit" });
+    const o = s.outputs?.[0];
+    expect(o).toMatchObject({
+      kind: "slack",
+      title: "false alarm, safe to resolve",
+      channel: "C096QEQGY4W",
+    });
+    expect(withChannel(o!, s.channels ?? {}).description).toBe("#pagerduty-cdit");
+  });
+
+  it("a slack read is no output, and it is never a pending write", () => {
+    const s = run(
+      call(
+        "mcp__claude_ai_Slack__slack_read_channel",
+        { channel_id: "C1" },
+        "Channel: #general (C1ABCDEF)",
+      ),
+    );
+    expect(s.outputs).toBeUndefined();
+    expect(s.channels).toEqual({ C1ABCDEF: "general" });
   });
 });

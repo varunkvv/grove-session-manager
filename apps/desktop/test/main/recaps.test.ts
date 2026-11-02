@@ -69,7 +69,9 @@ describe("a session's recap", () => {
     expect(recapArgs()).toEqual([
       "-p",
       "--model",
-      "claude-haiku-4-5-20251001",
+      "haiku",
+      "--effort",
+      "low",
       "--no-session-persistence",
       "--restricted",
       "--strict-mcp-config",

@@ -77,6 +77,8 @@ export interface PrView {
 export interface OutputView {
   url?: string;
   kind: string;
+  /** one line of what it is for: the call's own, a slack channel's name, or a title grove wrote for it */
+  description?: string;
   /** what kind of thing: Pull request, Jira card */
   label: string;
   key?: string;

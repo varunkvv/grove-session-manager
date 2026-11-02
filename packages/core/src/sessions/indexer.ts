@@ -79,6 +79,10 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     {},
     ...Object.values(usage ?? {}).map((t) => t.sites ?? {}),
   ) as Record<string, string>;
+  const channels = Object.assign(
+    {},
+    ...Object.values(usage ?? {}).map((t) => t.channels ?? {}),
+  ) as Record<string, string>;
   const outputs = usage ? merged(outputsOf(usage).map((o) => resolveSite(o, sites))) : [];
   return {
     ...m,
@@ -94,6 +98,7 @@ function toRecord(s: FileStat, meta: ParsedMeta | null, usage?: SessionTallies):
     ...(own ? { model: own } : {}),
     ...(outputs.length ? { outputs } : {}),
     ...(Object.keys(sites).length ? { sites } : {}),
+    ...(Object.keys(channels).length ? { channels } : {}),
   };
 }
 
@@ -133,6 +138,7 @@ function outputsOf(usage: SessionTallies): SessionOutput[] {
         last: Math.max(had.last, o.last),
         touches: had.touches + o.touches,
         title: had.title ?? o.title,
+        description: had.description ?? o.description,
         ...(o.last >= had.last && o.lastId ? { lastId: o.lastId } : {}),
         // the earliest call keeps its place, and an id is never traded for none
         ...(first && o.id

@@ -40,6 +40,7 @@ import { LiveService } from "./services/live.ts";
 import { LoginEnv } from "./services/loginEnv.ts";
 import { Notifier, toldTurn } from "./services/notify.ts";
 import { loadOutputRules, prWants } from "./services/outputs.ts";
+import { OutputTitles } from "./services/outputTitles.ts";
 import { ProjectsService } from "./services/projects.ts";
 import { PrService, resolveGhBin } from "./services/prs.ts";
 import { RecapService, Slots } from "./services/recaps.ts";
@@ -195,6 +196,14 @@ async function start(): Promise<void> {
     row: (key) => sessions.get(key),
   });
 
+  // a title for an output that came without one: haiku, low effort, through the person's own claude
+  const outputTitles = new OutputTitles({
+    stateDir: appEnv.stateDir,
+    claudeBin: () => resolveClaudeBin(appEnv.home, appEnv.claudeBinOverride ?? settings.claudePath),
+    env: () => loginEnv.get(),
+    enabled: writing,
+    onChange: () => sessions.titlesChanged(),
+  });
   // the person's own output rules, before the index reads a transcript
   loadOutputRules(appEnv.stateDir);
   // made once loginEnv is: a row is built before then, with no PR status yet
@@ -209,6 +218,8 @@ async function start(): Promise<void> {
     },
     named: (record) => titles.named(record),
     prStatus: (url) => prs?.get(url),
+    outputNamed: (url) => outputTitles.get(url),
+    wantTitles: (asks) => outputTitles.want(asks),
   });
 
   const reveals = new Reveals({ raise: showMain, notify: () => pusher.send("app:land", {}) });
@@ -649,6 +660,7 @@ async function start(): Promise<void> {
   await reviewed.load(cleanRecord ? await recordPrefixes(combos.list()) : undefined);
   await recaps.load();
   await titles.load();
+  await outputTitles.load();
   await sessions.loadCached(combos.list());
 
   /** settings saved, from the dialog or a key: everything that hangs off one moves with it */

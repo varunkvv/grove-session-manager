@@ -32,7 +32,8 @@ import type {
 } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
 import { diffRows, PatchCoalescer } from "../patchCoalescer.ts";
-import { outputViews } from "./outputs.ts";
+import { outputViews, untitledAsks } from "./outputs.ts";
+import type { Ask } from "./outputTitles.ts";
 import { buildUsageView } from "./usage.ts";
 
 const PATCH_INTERVAL_MS = 150;
@@ -50,6 +51,9 @@ export interface SessionServiceOptions {
   named?: (record: SessionRecord) => { title?: string; description?: string } | undefined;
   /** what github last said of a PR, by its link */
   prStatus?: (url: string) => (PrStatus & { checkedAt: number; stale?: true }) | undefined;
+  /** a title grove wrote for an output that came without one, and the asks for those still unwritten */
+  outputNamed?: (url: string) => { title: string; description?: string } | undefined;
+  wantTitles?: (asks: Ask[]) => void;
 }
 
 /** a row the instant filter could not find, found in its conversation instead */
@@ -301,6 +305,11 @@ export class SessionService {
     this.rebuild();
   }
 
+  /** a title was written for an output a row has */
+  titlesChanged(): void {
+    this.rebuild();
+  }
+
   /** combos changed: the same sessions, possibly in a different combo */
   reattribute(combos: Combo[]): void {
     this.combos = combos;
@@ -485,7 +494,8 @@ export class SessionService {
     const records = this.index.list().filter((r) => !r.stub);
     const views = assignCombos(records, this.combos);
     const labels = labelsByProjectDir(records);
-    const outputs = outputViews(records, this.opts.prStatus);
+    const outputs = outputViews(records, this.opts.prStatus, this.opts.outputNamed);
+    this.opts.wantTitles?.(untitledAsks(records, this.opts.outputNamed));
     const next = views.map((v) =>
       toRow(
         v,

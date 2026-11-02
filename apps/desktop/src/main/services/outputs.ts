@@ -7,9 +7,11 @@ import {
   type SessionOutput,
   type SessionRecord,
   setOutputRules,
+  withChannel,
 } from "@grove/core";
 import type { OutputView, PrView, SessionRow } from "../../shared/ipc.ts";
 import { log } from "../log.ts";
+import type { Ask } from "./outputTitles.ts";
 
 type PrStatusOf = PrStatus & { checkedAt: number; stale?: true };
 type Lookup = (url: string) => PrStatusOf | undefined;
@@ -116,8 +118,13 @@ function prViewOf(o: SessionOutput, status: PrStatusOf | undefined): PrView | un
 export function outputViews(
   records: readonly SessionRecord[],
   prStatus?: Lookup,
+  named?: (url: string) => { title: string; description?: string } | undefined,
 ): Map<string, OutputView[]> {
   const sites = Object.assign({}, ...records.map((r) => r.sites ?? {})) as Record<string, string>;
+  const channels = Object.assign({}, ...records.map((r) => r.channels ?? {})) as Record<
+    string,
+    string
+  >;
   const inherited = inheritedIds(records);
   const views = new Map<string, OutputView[]>();
   for (const r of records) {
@@ -132,12 +139,17 @@ export function outputViews(
             : undefined
           : o.url;
         const pr = url ? prViewOf({ ...o, url }, prStatus?.(url)) : undefined;
+        // a title grove wrote is only for an output that came without one
+        const wrote = url && !o.title ? named?.(url) : undefined;
+        const withName = withChannel({ ...o, ...(url ? { url } : {}) }, channels);
+        const description = withName.description ?? wrote?.description;
         return {
           ...(url ? { url } : {}),
           kind: o.kind,
           label: o.label,
           ...(o.key ? { key: o.key } : {}),
-          ...(o.title ? { title: o.title } : {}),
+          ...(o.title ? { title: o.title } : wrote ? { title: wrote.title } : {}),
+          ...(description ? { description } : {}),
           verb: o.verb,
           first: o.first,
           last: o.last,
@@ -173,4 +185,27 @@ export function prWants(
           : [],
       ),
     );
+}
+
+/**
+ * the outputs that want a title grove can write: a url, no title of their own, no key (a PR or a
+ * card already reads as itself), and none written yet. one per url
+ */
+export function untitledAsks(
+  records: readonly SessionRecord[],
+  named?: (url: string) => { title: string } | undefined,
+): Ask[] {
+  const by = new Map<string, Ask>();
+  for (const r of records) {
+    for (const o of r.outputs ?? []) {
+      if (o.need || !o.url || o.title || o.key || by.has(o.url) || named?.(o.url)) continue;
+      by.set(o.url, {
+        url: o.url,
+        kind: o.kind,
+        label: o.label,
+        ...(o.hint ? { hint: o.hint } : {}),
+      });
+    }
+  }
+  return [...by.values()];
 }
