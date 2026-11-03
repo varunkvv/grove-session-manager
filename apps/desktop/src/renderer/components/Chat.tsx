@@ -431,6 +431,25 @@ export function ChatApp() {
   const history = useRef<Walk | null>(null);
   const warmed = useRef(false);
   const [error, setError] = useState<string>();
+  /**
+   * a routing switch closes claude, and this window starts it again with the new agents. main
+   * answers a warm with where the session runs, so one with no transcript yet starts as it did
+   * the first time. without this the menu sat on "Starting Claude…" until the next message
+   */
+  const restartForRouting = useRef(false);
+  const seen = status ?? (target ? target.status : undefined);
+  const gone = seen && !seen.live && !seen.starting && !seen.running && !seen.routingPending;
+  const readOnlyNow = target ? target.readOnly : true;
+  useEffect(() => {
+    if (!restartForRouting.current || readOnlyNow || !gone) return;
+    restartForRouting.current = false;
+    warmed.current = true;
+    void api()
+      .chatWarm()
+      .then((o) => {
+        if (!o.ok) setError(o.error.message);
+      });
+  }, [gone, readOnlyNow]);
   /** what main said that is not a failure: when it will open in the editor */
   const [note, setNote] = useState<string>();
   const [moving, setMoving] = useState(false);
@@ -2096,11 +2115,12 @@ export function ChatApp() {
               }
               testId="routing"
               checked={!!s.routing}
-              onChange={(on) =>
+              onChange={(on) => {
+                restartForRouting.current = true;
                 void api()
                   .chatSetRouting(on)
-                  .then((o) => setError(failed(o)))
-              }
+                  .then((o) => setError(failed(o)));
+              }}
             />
           )}
           {s.live && s.ultracodeAvailable && (

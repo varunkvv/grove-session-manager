@@ -926,6 +926,25 @@ test("the keyboard reaches the model menu's effort and ultracode, not only its r
   await expect(menu).toHaveCount(0);
 });
 
+test("routing agents: the switch restarts claude with them on its own, and the menu comes back", async () => {
+  const s = seed(true);
+  const { app: electron, page } = await launch(s);
+  await openRow(page, s.id);
+  const chat = await chatWindow(electron, SID);
+  await chat.getByTestId("composer").press("Meta+Shift+e");
+  const menu = chat.getByTestId("model-menu");
+  await expect(menu.getByTestId("routing")).toBeVisible({ timeout: 15_000 });
+  await expect(menu.getByTestId("routing")).toHaveAttribute("aria-checked", "false");
+  await menu.getByTestId("routing").click();
+  // claude closes and starts again by itself: the menu is not left on "Starting Claude...", and
+  // the row is back reading on, with the chip on the model button
+  await expect(menu.getByTestId("routing")).toHaveAttribute("aria-checked", "true", {
+    timeout: 20_000,
+  });
+  await expect(chat.getByTestId("routing-chip")).toBeVisible();
+  await expect(chat.getByTestId("chat-starting")).toHaveCount(0);
+});
+
 test("older turns show on asking, and the conversation copies or exports as markdown", async () => {
   const fx = makeFixture({ withCompanion: true });
   writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: true }));
