@@ -21,8 +21,6 @@ const SID = {
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-/** three quiet sessions of the days before, `sid(10)` on: a day, two and three days back */
-const AGES = [26 * HOUR, 50 * HOUR, 74 * HOUR];
 /** 120 sessions of the weeks before that, `sid(OLD)` on, newest first */
 const OLD = 100;
 
@@ -34,6 +32,12 @@ const midnight = (back: number) => {
   return d.getTime();
 };
 /** the group a session that last moved this long ago is in, worked out as the app does */
+/**
+ * three quiet sessions, `sid(10)` on: one at noon of each of the three days before today. noon is
+ * never near a day's edge, so each lands in the same group whatever the hour the test runs at
+ */
+const AGES = [1, 2, 3].map((back) => Date.now() - (midnight(back) + 12 * HOUR));
+
 const day = (ageMs: number) => {
   const back = [0, 1, 2, 3].findIndex((n) => Date.now() - ageMs >= midnight(n));
   return ["today", "yesterday", "day-2", "day-3"][back] ?? "older";
@@ -103,7 +107,7 @@ const older = (page: Page) => page.getByTestId("older-toggle");
 const inOlder = (page: Page) => group(page, "older").getByTestId("session-row");
 const panel = (page: Page) => page.getByTestId("session-panel");
 const active = (page: Page) => page.locator('[role="option"][data-active]');
-/** the sessions of the days before that are in Older by now: it depends on the hour */
+/** none of the days before today are Older: the three are at noon, and Older starts past three days */
 const AGED = AGES.filter((a) => day(a) === "older").length;
 
 /** every session indexed: the ones that need him come with the page, the rest a moment later */
