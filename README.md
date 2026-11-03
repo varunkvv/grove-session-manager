@@ -2,6 +2,8 @@
 
 _Tells you which Claude Code agents need you, and gets you to them._
 
+[![ci](https://github.com/varunkvv/grove-session-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/varunkvv/grove-session-manager/actions/workflows/ci.yml)
+
 Grove is for one person running many Claude Code sessions across several projects. It watches every session, says
 which ones are waiting on you (a permission prompt, a finished turn, a failure, a session that stopped mid-turn), and
 opens the one you pick in VS Code, Cursor or Zed.
