@@ -1239,11 +1239,8 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
       return buildFileIndex({
         touches: state ? touchesOf(state) : [],
         folders: (await chatFolders(deps, id)) ?? [],
-        // no repo here: nothing tracked
-        listTracked: async (folder) => {
-          const out = await runGit(["ls-files", "-z"], { cwd: folder, gitPath });
-          return out.ok ? out.stdout.split("\0").filter(Boolean) : [];
-        },
+        // the same list as the palette's: tracked and untracked files, or a walk of a folder that is no repo
+        listTracked: (folder) => filesIn(folder, gitPath),
       });
     },
 
