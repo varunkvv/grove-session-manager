@@ -914,8 +914,10 @@ test("the keyboard reaches the model menu's effort and ultracode, not only its r
   await expect(menu.getByTestId("effort-low")).toBeFocused();
   await chat.keyboard.press("Enter");
   await expect(menu.getByTestId("effort-low")).toHaveAttribute("aria-checked", "true");
-  // on to the switch, and Space turns ultracode on
+  // on to the routing switch, then ultracode: Space turns it on
   for (let i = 0; i < 5; i++) await chat.keyboard.press("Tab");
+  await expect(menu.getByTestId("routing")).toBeFocused();
+  await chat.keyboard.press("Tab");
   await expect(menu.getByTestId("ultracode")).toBeFocused();
   await chat.keyboard.press("Space");
   await expect(chat.getByTestId("ultra-chip")).toBeVisible();

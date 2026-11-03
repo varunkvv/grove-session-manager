@@ -108,6 +108,7 @@ test("opens empty on its first item, the keys and the mouse run an item, Escape 
     "start-background",
     "archive-project",
     "delete-project",
+    "routing",
     "settings",
   ]);
   // the home screen by its name on screen
