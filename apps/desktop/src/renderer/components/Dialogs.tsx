@@ -529,11 +529,11 @@ export function SettingsDialog() {
         <div>
           <span className="mb-1.5 block text-sm font-medium text-fg-2">Chat</span>
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 text-sm text-fg-2">Grove chat (beta)</span>
+            <span className="min-w-0 flex-1 text-sm text-fg-2">Grove chat</span>
             <Switch
               checked={draft.chat === true}
               onChange={(v) => setDraft({ ...draft, chat: v })}
-              label="Grove chat (beta)"
+              label="Grove chat"
               testId="setting-chat"
             />
           </div>

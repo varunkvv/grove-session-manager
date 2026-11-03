@@ -18,11 +18,13 @@ describe("settings", () => {
     expect((await loadSettings(app)).editor).toBe("vscode");
   });
 
-  it("grove chat is off unless it is true", async () => {
+  it("grove chat is on unless it is false", async () => {
     const app = makeSandbox("grove-settings-");
-    expect((await loadSettings(app)).chat).toBeUndefined();
+    expect((await loadSettings(app)).chat).toBe(true);
     writeFileSync(settingsFilePath(app), JSON.stringify({ chat: "yes" }));
-    expect((await loadSettings(app)).chat).toBeUndefined();
+    expect((await loadSettings(app)).chat).toBe(true);
+    expect((await saveSettings(app, { chat: false })).chat).toBe(false);
+    expect((await loadSettings(app)).chat).toBe(false);
     expect((await saveSettings(app, { chat: true })).chat).toBe(true);
     expect((await loadSettings(app)).chat).toBe(true);
   });

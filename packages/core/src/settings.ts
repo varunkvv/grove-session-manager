@@ -35,7 +35,7 @@ export interface Settings {
   renameSessions?: boolean;
   /** no idle sleep, of the mac or its display, while an agent is mid-turn. on unless false. */
   keepAwake?: boolean;
-  /** grove chat (beta): a session opens in its own grove window, run through the agent sdk. off unless true. */
+  /** grove chat: a session opens in its own grove window, run through the agent sdk. on unless false. */
   chat?: boolean;
   /** with grove chat on, the key that brings grove forward from anywhere. "none" is none */
   summonKey?: string;
@@ -47,7 +47,7 @@ export interface Settings {
   routingAgents?: AgentEdits;
 }
 
-export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system" };
+export const DEFAULT_SETTINGS: Settings = { editor: "vscode", appearance: "system", chat: true };
 
 export function settingsFilePath(appRoot: string): string {
   return path.join(appRoot, "settings.json");
