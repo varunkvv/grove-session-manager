@@ -464,7 +464,7 @@ export function FileList({
 }) {
   return (
     <section
-      className="flex min-h-0 w-72 shrink-0 flex-col border-l border-line bg-chrome"
+      className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-line bg-chrome"
       data-testid="files"
     >
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">

@@ -11,7 +11,16 @@ import {
   switchProject,
 } from "../state/actions.ts";
 import { useStore } from "../state/store.ts";
-import { Icon, IconButton, OutputGlyph, ProjectMark, SideGroup, SideItem } from "./ui.tsx";
+import {
+  Icon,
+  IconButton,
+  OutputGlyph,
+  ProjectMark,
+  SideGroup,
+  SideItem,
+  useStoredWidth,
+  WidthHandle,
+} from "./ui.tsx";
 
 /**
  * All sessions, which is every project's, and under it the projects. each says how many of its
@@ -20,6 +29,7 @@ import { Icon, IconButton, OutputGlyph, ProjectMark, SideGroup, SideItem } from 
  * are under them, folded away
  */
 export function Sidebar() {
+  const [width, setWidth] = useStoredWidth("grove.width.sidebar");
   const projects = useStore((s) => s.projects);
   const project = useStore((s) => s.project);
   const view = useStore((s) => s.view.name);
@@ -76,9 +86,18 @@ export function Sidebar() {
   return (
     <nav
       aria-label="All sessions and projects"
-      className="flex w-[220px] shrink-0 flex-col border-r border-line bg-glass"
+      className="relative flex shrink-0 flex-col border-r border-line bg-glass max-w-[calc(100%-480px)]"
+      style={{ width: width ?? 220 }}
       data-testid="sidebar"
     >
+      <WidthHandle
+        edge="right"
+        min={180}
+        reserve={480}
+        label="Resize sidebar"
+        testId="sidebar-resize"
+        onWidth={setWidth}
+      />
       {/* the traffic lights sit in it, and the window is dragged by it */}
       <div className="drag h-11 shrink-0" />
       <div className="space-y-px px-2">

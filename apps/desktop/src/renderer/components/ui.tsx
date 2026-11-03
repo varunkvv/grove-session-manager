@@ -316,11 +316,169 @@ export function useRowDoubleClick<T>(run: (row: T) => void) {
   };
 }
 
+/** the width a panel was last dragged to, or null for its default. kept across windows */
+export function useStoredWidth(key: string): [number | null, (px: number | null) => void] {
+  const [px, setPx] = useState<number | null>(() => {
+    try {
+      const n = Number(localStorage.getItem(key));
+      return n > 0 ? n : null;
+    } catch {
+      return null;
+    }
+  });
+  return [
+    px,
+    (next) => {
+      setPx(next);
+      // localStorage can throw. a width that does not stick is no reason to fail
+      try {
+        if (next === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, String(Math.round(next)));
+      } catch {}
+    },
+  ];
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), Math.max(lo, hi));
+
+/**
+ * a pane beside a conversation or a list, with its left edge to drag. `storageKey` keeps the width
+ * it was dragged to, across windows, and `fallback` is the width until then. `atLeast` widens it
+ * for something inside that needs the room, without forgetting the width the user chose
+ */
+export function SidePane({
+  storageKey,
+  fallback,
+  atLeast,
+  children,
+}: {
+  storageKey: string;
+  fallback: string;
+  atLeast?: number;
+  children: ReactNode;
+}) {
+  const [width, setWidth] = useStoredWidth(storageKey);
+  const base = width === null ? fallback : `${width}px`;
+  return (
+    <div
+      className="relative flex min-h-0 shrink-0 max-w-[calc(100%-360px)]"
+      style={{ width: atLeast ? `max(${base}, ${atLeast}px)` : base }}
+    >
+      <WidthHandle
+        edge="left"
+        min={240}
+        reserve={360}
+        label="Resize pane"
+        testId="pane-resize"
+        onWidth={setWidth}
+      />
+      {children}
+    </div>
+  );
+}
+
+/**
+ * the edge of a panel that drags its width. the panel is the handle's parent, and the room it may
+ * take is the width of the panel's parent less `reserve`, what the rest of the screen needs. the
+ * width follows the pointer on the panel itself and is only handed back on release, so the
+ * content does not re-lay out for every pixel. a double click, or Enter, goes back to the default
+ */
+export function WidthHandle({
+  edge,
+  min,
+  reserve,
+  label,
+  testId,
+  onWidth,
+}: {
+  /** which edge of the panel the handle sits on */
+  edge: "left" | "right";
+  min: number;
+  reserve: number;
+  label: string;
+  testId?: string;
+  /** px to keep, or null to go back to the default */
+  onWidth: (px: number | null) => void;
+}) {
+  const drag = useRef<{ x: number; start: number; room: number; last: number } | null>(null);
+  // the width a screen reader is told: read when the handle takes focus, as it is then
+  const [now, setNow] = useState(0);
+  // a handle on a right edge grows its panel dragged right, a handle on a left edge dragged left
+  const sign = edge === "right" ? 1 : -1;
+  const panelOf = (el: HTMLElement) => el.parentElement as HTMLElement;
+  const room = (el: HTMLElement) => (panelOf(el).parentElement?.clientWidth ?? 0) - reserve;
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuemin={min}
+      aria-valuenow={now}
+      tabIndex={0}
+      data-testid={testId}
+      className={cx(
+        "no-drag group absolute inset-y-0 z-20 w-2 cursor-col-resize",
+        edge === "right" ? "-right-1" : "-left-1",
+      )}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const el = e.currentTarget;
+        const panel = panelOf(el);
+        el.setPointerCapture(e.pointerId);
+        const start = panel.getBoundingClientRect().width;
+        drag.current = { x: e.clientX, start, room: room(el), last: start };
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        el.dataset.dragging = "";
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        d.last = clamp(d.start + sign * (e.clientX - d.x), min, d.room);
+        panelOf(e.currentTarget).style.width = `${d.last}px`;
+      }}
+      onPointerUp={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        drag.current = null;
+        delete e.currentTarget.dataset.dragging;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        // a click that did not move keeps the default
+        if (d.last !== d.start) onWidth(d.last);
+      }}
+      onPointerCancel={(e) => {
+        drag.current = null;
+        delete e.currentTarget.dataset.dragging;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }}
+      onFocus={(e) => setNow(Math.round(panelOf(e.currentTarget).getBoundingClientRect().width))}
+      onDoubleClick={() => onWidth(null)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 64 : 16;
+        const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (dir) {
+          e.preventDefault();
+          // the keys are not the list's while the handle has them
+          e.stopPropagation();
+          const el = e.currentTarget;
+          const start = panelOf(el).getBoundingClientRect().width;
+          onWidth(clamp(start + sign * dir * step, min, room(el)));
+        }
+        if (e.key === "Enter") onWidth(null);
+      }}
+    >
+      <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-line-strong group-focus-visible:bg-accent-solid group-data-[dragging]:w-0.5 group-data-[dragging]:bg-accent-solid" />
+    </div>
+  );
+}
+
 /**
  * a list screen and the row that is open in it. the list keeps the left and scrolls by itself, the
- * panel takes the right half behind a line. the list is a container: a row drops its where cells
- * as it narrows, and beside the panel its state is the mark alone. `root` is what
- * `useRowDoubleClick` gives
+ * panel takes the right half behind a line, or the width it was dragged to. the list is a
+ * container: a row drops its where cells as it narrows, and beside the panel its state is the mark
+ * alone. `root` is what `useRowDoubleClick` gives
  */
 export function Split({
   panel,
@@ -347,6 +505,7 @@ export function Split({
     scroller.current?.scrollTo({ top: 0 });
   }, [from]);
   const shown = !!panel;
+  const [panelWidth, setPanelWidth] = useStoredWidth("grove.width.panel");
   // the list narrows when the panel opens and the rows above the open one grow: it stays on
   // screen. a landing names the row before its list has arrived, so this waits for the panel
   useEffect(() => {
@@ -367,9 +526,18 @@ export function Split({
       {panel && (
         <section
           aria-label={label}
-          className="h-full w-1/2 shrink-0 border-l border-line"
+          className="relative h-full shrink-0 border-l border-line max-w-[calc(100%-320px)]"
+          style={{ width: panelWidth ?? "50%" }}
           data-testid="panel"
         >
+          <WidthHandle
+            edge="left"
+            min={280}
+            reserve={320}
+            label="Resize panel"
+            testId="panel-resize"
+            onWidth={setPanelWidth}
+          />
           {panel}
         </section>
       )}

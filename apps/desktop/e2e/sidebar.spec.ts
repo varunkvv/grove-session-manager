@@ -235,3 +235,24 @@ test("a double-click on a project starts a new session in it, and one whose fold
   await page.waitForTimeout(500);
   expect(code()).toHaveLength(1);
 });
+
+// the sidebar's right edge drags wider, and a double click gives its default width back. a real
+// mouse, so the handle has to be the thing under the pointer: the sidebar's own drag strip is at its top
+test("the sidebar drags wider, and a double click gives its width back", async () => {
+  app = await launchApp(seed());
+  const { page } = app;
+  await expect(page.getByTestId("inbox-row")).toHaveCount(1, { timeout: 15_000 });
+  const sidebar = page.getByTestId("sidebar");
+  const handle = page.getByTestId("sidebar-resize");
+  const before = (await sidebar.boundingBox())!.width;
+  const box = (await handle.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 80, y, { steps: 8 });
+  await page.mouse.up();
+  expect((await sidebar.boundingBox())!.width).toBeGreaterThan(before + 60);
+  await handle.dblclick();
+  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(Math.round(before));
+});

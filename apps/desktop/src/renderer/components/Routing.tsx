@@ -33,6 +33,7 @@ import {
   inputClass,
   Modal,
   Segmented,
+  SidePane,
   Switch,
   TierDot,
   tierTint,
@@ -406,15 +407,15 @@ function AgentsPanel({
 export function RoutingPane({ onClose }: { onClose: () => void }) {
   const [wide, setWide] = useState(false);
   return (
-    <section
-      className={cx(
-        "flex min-h-0 shrink-0 flex-col border-l border-line bg-chrome",
-        wide ? "w-96" : "w-80",
-      )}
-      data-testid="routing-pane"
-    >
-      <AgentsPanel onClose={onClose} onEditing={setWide} />
-    </section>
+    // the editor asks for more room than a list: the width he dragged to still counts, as a floor
+    <SidePane storageKey="grove.width.pane" fallback="320px" atLeast={wide ? 384 : undefined}>
+      <section
+        className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-line bg-chrome"
+        data-testid="routing-pane"
+      >
+        <AgentsPanel onClose={onClose} onEditing={setWide} />
+      </section>
+    </SidePane>
   );
 }
 

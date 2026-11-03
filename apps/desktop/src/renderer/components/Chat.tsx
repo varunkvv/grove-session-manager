@@ -59,6 +59,7 @@ import {
   RoutingChip,
   Segmented,
   SendButton,
+  SidePane,
   Spinner,
   StateLabel,
   Switch,
@@ -1867,62 +1868,80 @@ export function ChatApp() {
               </div>
             </footer>
           </div>
-          {pane?.kind === "files" &&
-            (pane.file ? (
-              <Viewer
-                file={pane.file}
-                diff={pane.diff}
-                line={pane.line}
-                onList={() => setPane({ kind: "files" })}
-                onOpen={(file) => void openFile(file)}
-                editor={target.editor}
-                onEditor={(file) => void openFileInEditor(file)}
-                onDiff={pane.changed ? (diff) => setPane({ ...pane, diff }) : undefined}
-                onClose={() => setPane(null)}
-              />
-            ) : (
-              <FileList
-                rev={s.rev}
-                onClose={() => setPane(null)}
-                onChange={(file) => setPane({ kind: "files", file, diff: true, changed: true })}
-              />
-            ))}
-          {pane?.kind === "tasks" && tasks.length > 0 && (
-            <TasksPane
-              tasks={tasks}
-              onStop={(id) => void stopTask(id)}
-              onClose={() => setPane(null)}
-            />
-          )}
-          {pane?.kind === "outputs" && !!session.outputs?.length && (
-            <OutputsPane
-              outputs={session.outputs}
-              onClose={() => setPane(null)}
-              footer={
-                <FilesFold
+          {pane?.kind === "files" && (
+            <SidePane
+              key={pane.file ? "viewer" : "list"}
+              storageKey={pane.file ? "grove.width.viewer" : "grove.width.pane"}
+              fallback={pane.file ? "50%" : "288px"}
+            >
+              {pane.file ? (
+                <Viewer
+                  file={pane.file}
+                  diff={pane.diff}
+                  line={pane.line}
+                  onList={() => setPane({ kind: "files" })}
+                  onOpen={(file) => void openFile(file)}
+                  editor={target.editor}
+                  onEditor={(file) => void openFileInEditor(file)}
+                  onDiff={pane.changed ? (diff) => setPane({ ...pane, diff }) : undefined}
+                  onClose={() => setPane(null)}
+                />
+              ) : (
+                <FileList
                   rev={s.rev}
+                  onClose={() => setPane(null)}
                   onChange={(file) => setPane({ kind: "files", file, diff: true, changed: true })}
                 />
-              }
-            />
+              )}
+            </SidePane>
+          )}
+          {pane?.kind === "tasks" && tasks.length > 0 && (
+            <SidePane storageKey="grove.width.pane" fallback="320px">
+              <TasksPane
+                tasks={tasks}
+                onStop={(id) => void stopTask(id)}
+                onClose={() => setPane(null)}
+              />
+            </SidePane>
+          )}
+          {pane?.kind === "outputs" && !!session.outputs?.length && (
+            <SidePane storageKey="grove.width.pane" fallback="320px">
+              <OutputsPane
+                outputs={session.outputs}
+                onClose={() => setPane(null)}
+                footer={
+                  <FilesFold
+                    rev={s.rev}
+                    onChange={(file) => setPane({ kind: "files", file, diff: true, changed: true })}
+                  />
+                }
+              />
+            </SidePane>
           )}
           {pane?.kind === "routing" && <RoutingPane onClose={() => setPane(null)} />}
-          {pane?.kind === "agents" &&
-            (shownAgent ? (
-              <AgentViewer
-                agent={shownAgent}
-                onList={() => setPane({ kind: "agents" })}
-                onClose={() => setPane(null)}
-                onStop={() => void stopAgent(shownAgent.id)}
-              />
-            ) : (
-              <AgentList
-                agents={agents}
-                onOpen={(id) => setPane({ kind: "agents", agent: id })}
-                onStop={(id) => void stopAgent(id)}
-                onClose={() => setPane(null)}
-              />
-            ))}
+          {pane?.kind === "agents" && (
+            <SidePane
+              key={shownAgent ? "viewer" : "list"}
+              storageKey={shownAgent ? "grove.width.viewer" : "grove.width.pane"}
+              fallback={shownAgent ? "50%" : "288px"}
+            >
+              {shownAgent ? (
+                <AgentViewer
+                  agent={shownAgent}
+                  onList={() => setPane({ kind: "agents" })}
+                  onClose={() => setPane(null)}
+                  onStop={() => void stopAgent(shownAgent.id)}
+                />
+              ) : (
+                <AgentList
+                  agents={agents}
+                  onOpen={(id) => setPane({ kind: "agents", agent: id })}
+                  onStop={(id) => void stopAgent(id)}
+                  onClose={() => setPane(null)}
+                />
+              )}
+            </SidePane>
+          )}
         </div>
       </ChatScopeContext.Provider>
       {menu?.kind === "more" && (

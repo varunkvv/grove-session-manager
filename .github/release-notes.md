@@ -1,3 +1,19 @@
+## 0.49
+
+Every side panel in grove can be dragged wider or narrower. 0.49 puts a handle on the edge of the sidebar, the sessions panel, and the chat window's files, agents, background tasks, outputs and routing panes.
+
+New:
+
+- drag the edge of a panel to resize it. the edge shows a line while you hover it
+- a double click on the edge, or enter on it, goes back to the default width
+- the arrow keys move the edge when it has focus, shift for bigger steps
+- widths are remembered, and every window shares them
+
+Keep in mind:
+
+- a panel stops before it takes the room the rest of the screen needs, so a narrow window stops it sooner
+- the routing pane is at least as wide as its editor while you edit an agent, whatever width you dragged it to
+
 ## 0.48
 
 Grove chat can put small jobs on cheaper models. 0.48 adds routing agents: a set of subagents Claude can hand work to, each pinned to a model and an effort. they are switched on per chat session, and off by default.
