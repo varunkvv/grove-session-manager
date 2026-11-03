@@ -75,6 +75,8 @@ export function makeFixture(o: FixtureOptions = {}): Fixture {
     mkdirSync(d, { recursive: true });
   }
   writeFakeBin(fx.fakeCode, "code");
+  // grove chat is on by default: a fixture starts with it off, and a test that wants it writes its own settings
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ chat: false }));
   writeFakeBin(fx.fakeOpen, "open");
   writeFileSync(fx.execLog, "");
 

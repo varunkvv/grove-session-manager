@@ -25,7 +25,7 @@ function setup(appearance?: "system" | "light" | "dark", palette?: "rose-pine"):
   if (appearance) {
     writeFileSync(
       path.join(fx.root, "settings.json"),
-      JSON.stringify({ editor: "vscode", appearance, palette }),
+      JSON.stringify({ editor: "vscode", appearance, palette, chat: false }),
     );
   }
   return fx;

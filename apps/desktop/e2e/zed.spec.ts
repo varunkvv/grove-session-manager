@@ -30,7 +30,7 @@ test.afterEach(async () => {
 /** zed as the editor, its settings.json in the sandbox, and a project with one session */
 function seed() {
   const fx = makeFixture();
-  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ editor: "zed" }));
+  writeFileSync(path.join(fx.root, "settings.json"), JSON.stringify({ editor: "zed", chat: false }));
   // GROVE_EXTENSIONS_DIR is the sandbox's: the real ~/.config/zed is never read or written
   const zedSettings = path.join(fx.extensionsDir, "settings.json");
   writeFileSync(zedSettings, ZED_SETTINGS);
