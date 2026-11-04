@@ -369,6 +369,10 @@ export interface ChatHostOptions {
   keepWarmHours?: () => number | undefined;
   /** what the person changed in the routing agents, read each time a claude is started */
   routingAgents?: () => AgentEdits | undefined;
+  /** whether the routing agents were left on for a session, read when the session is first held */
+  routingOn?: (id: string) => boolean;
+  /** writes a session's routing switch down, so it is still on after a restart */
+  saveRouting?: (id: string, on: boolean) => Promise<void>;
   /**
    * the keeper's fork ids, each added before its fork starts and never taken out: claude lists a
    * fork's process in its registry while it runs, and the live service reads past these
@@ -698,7 +702,7 @@ interface Hosted {
    * as "opus" missed 1.2k of the cache (probe)
    */
   picked?: string;
-  /** the routing agents are on for this session. off unless switched on, and gone with the app */
+  /** the routing agents are on for this session. off unless switched on, and kept across restarts */
   routing?: boolean;
   /**
    * what its claude was started with, kept for as long as its cache is: the cache keeper's fork
@@ -802,11 +806,13 @@ export class ChatHost {
   private entry(id: string, where?: ChatWhere): Hosted {
     let h = this.hosted.get(id);
     if (!h) {
+      const routing = this.o.routingOn?.(id) === true;
       h = {
         id,
         where: where ?? { cwd: "", dirs: [] },
         prompts: new Prompts(),
-        status: emptyStatus(),
+        routing,
+        status: { ...emptyStatus(), ...(routing ? { routing } : {}) },
         text: "",
         dirty: null,
         waiting: new Map(),
@@ -839,7 +845,12 @@ export class ChatHost {
   }
 
   status(id: string): ChatStatus {
-    return this.hosted.get(id)?.status ?? emptyStatus();
+    return this.hosted.get(id)?.status ?? { ...emptyStatus(), ...this.routingSeed(id) };
+  }
+
+  /** the routing switch a session was left on with, for a session not held yet */
+  private routingSeed(id: string): Pick<ChatStatus, "routing"> {
+    return this.o.routingOn?.(id) ? { routing: true } : {};
   }
 
   text(id: string): string {
@@ -1148,6 +1159,8 @@ export class ChatHost {
   async setRouting(id: string, where: ChatWhere, on: boolean): Promise<void> {
     const h = this.entry(id, where);
     if ((h.routing === true) === on) return;
+    // written first: a switch that did not save is not shown as on
+    await this.o.saveRouting?.(h.id, on);
     h.routing = on;
     this.set(h, { routing: on });
     if (!h.q) return;
@@ -1692,6 +1705,11 @@ export class ChatHost {
         this.hosted.delete(from);
         h.id = m.new_conversation_id;
         this.hosted.set(h.id, h);
+        if (h.routing) {
+          // the switch follows the session to its new id, as the window does
+          this.o.saveRouting?.(from, false).catch((e) => log.warn(`chat ${from}: routing:`, e));
+          this.o.saveRouting?.(h.id, true).catch((e) => log.warn(`chat ${h.id}: routing:`, e));
+        }
         this.set(h, { notes: [], rev: h.status.rev + 1 });
         this.o.onReset?.(from, h.id, { ...h.where, fresh: true });
         this.o.onChange?.();

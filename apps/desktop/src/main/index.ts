@@ -47,6 +47,7 @@ import { RecapService, Slots } from "./services/recaps.ts";
 import { resolveClaudeBin } from "./services/resumeScript.ts";
 import { Reveals } from "./services/reveal.ts";
 import { ReviewedService } from "./services/reviewed.ts";
+import { RoutingSwitches } from "./services/routingSwitches.ts";
 import { SessionService } from "./services/sessions.ts";
 import { TitleService } from "./services/titles.ts";
 import { sweepUploads } from "./services/uploads.ts";
@@ -384,6 +385,8 @@ async function start(): Promise<void> {
   void sweepUploads(uploads, projectsDir)
     .then((gone) => gone.length && log.info(`removed the uploads of ${gone.length} gone sessions`))
     .catch((e) => log.warn("uploads sweep:", e));
+  const routingSwitches = new RoutingSwitches(appEnv.appRoot);
+  await routingSwitches.load();
   const chat = new ChatHost({
     claudeBin: async () => {
       // a test root never runs the real claude, only a stub it names
@@ -402,6 +405,9 @@ async function start(): Promise<void> {
     keepWarmHours: () => settings.keepWarmHours,
     // read at each start: an edit counts from the next claude a session starts
     routingAgents: () => settings.routingAgents,
+    // a session's switch outlives the app: routing.json, beside reviewed.json
+    routingOn: (id) => routingSwitches.has(id),
+    saveRouting: (id, on) => routingSwitches.set(id, on),
     keeperForks,
     // /clear: a new session in the same window, made as cmd-N makes one, until its transcript lands
     onReset: (from, to, where) => {

@@ -389,6 +389,32 @@ describe("grove chat's host", () => {
       expect(s.host.status(SESSION)).toMatchObject({ routing: true });
     });
 
+    it("are on from the start when the switch was left on, and written down when it changes", async () => {
+      const saved: Array<[string, boolean]> = [];
+      const s = setup(
+        2,
+        false,
+        undefined,
+        undefined,
+        {},
+        {
+          routingOn: (id) => id === SESSION,
+          saveRouting: async (id, on) => {
+            saved.push([id, on]);
+          },
+        },
+      );
+      expect(s.host.status(SESSION)).toMatchObject({ routing: true });
+      await s.host.warm(SESSION, s.where);
+      expect(Object.keys(inits(s)[0]?.agents ?? {})).toHaveLength(21);
+      await s.host.setRouting(SESSION, s.where, false);
+      await s.host.setRouting(SESSION, s.where, true);
+      expect(saved).toEqual([
+        [SESSION, false],
+        [SESSION, true],
+      ]);
+    });
+
     it("restart an idle claude with them when switched on, and again without when off", async () => {
       const s = setup();
       await s.host.warm(SESSION, s.where);

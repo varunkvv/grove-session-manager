@@ -14,6 +14,10 @@ Keep in mind:
 - a panel stops before it takes the room the rest of the screen needs, so a narrow window stops it sooner
 - the routing pane is at least as wide as its editor while you edit an agent, whatever width you dragged it to
 
+Fixed:
+
+- a chat's routing switch stays on or off when grove restarts, and follows the session through /clear
+
 ## 0.48
 
 Grove chat can put small jobs on cheaper models. 0.48 adds routing agents: a set of subagents Claude can hand work to, each pinned to a model and an effort. they are switched on per chat session, and off by default.
