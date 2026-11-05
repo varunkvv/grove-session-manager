@@ -901,7 +901,11 @@ async function chatShots(scheme: string, dir: string) {
   // the header button while one runs, else the turn's own count, which opens the same pane
   const header = chat.getByTestId("chat-agents");
   if ((await header.count()) > 0) await header.click();
-  else await chat.getByText(/^\d+ agents?$/).first().click();
+  else
+    await chat
+      .getByText(/^\d+ agents?$/)
+      .first()
+      .click();
   await chat.getByTestId("agent-row").first().waitFor();
   await chat.waitForTimeout(400);
   await chat.screenshot({ path: path.join(dir, "chat-agents.png") });
