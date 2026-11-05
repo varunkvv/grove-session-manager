@@ -285,9 +285,8 @@ is never markdown and never a link.
 
 ## The chat window
 
-Double-click a session and it opens in its own window: the conversation, with the composer under it. The window
-stays open while the session works, and closing it does not stop a turn. The turn's steps fold into a line you can
-open.
+Double-click a session and it opens in its own window: the conversation, with the composer under it, and that is
+where you talk to it. A turn's steps fold into one line you can open.
 
 <p align="center">
   <picture>
@@ -306,17 +305,17 @@ open.
 
 ## Agents
 
-The agents a turn starts are listed in the Agents pane. The header shows how many are running, and the `N agents`
-on a turn opens the same pane.
+The agents a session starts are listed in the Agents pane, running ones first, then the finished ones. The header
+shows how many are running, and the `N agents` on a turn opens the same pane.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/agents-dark.png">
-    <img src="docs/images/agents-light.png" alt="The Agents pane: one agent running with a Stop button, one done in 25 seconds" width="900">
+    <img src="docs/images/agents-light.png" alt="The Agents pane: three agents running, each with a Stop button, and six finished below them" width="900">
   </picture>
 </p>
 
-- each row says what the agent is for, whether it is running or done, how long it has run, and its kind and model
+- each row says what the agent is for, whether it is running or done, how long it has run or took, and its kind and model
 - a running agent has a **Stop** that ends that agent and no other
 
 ## Recaps
