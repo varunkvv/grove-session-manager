@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  # no paths-ignore here: `test` is a required check on main, and a skipped run would leave a pr waiting forever
   pull_request:
-    paths-ignore: ["**.md", "docs/**", "LICENSE"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -98,9 +98,9 @@ jobs:
           if-no-files-found: error
 
   release:
-    # every merge to main publishes a dmg. versions are <major>.<minor> from
-    # apps/desktop/package.json plus the run number, so each release is its own immutable tag
-    # and nothing is ever moved or overwritten.
+    # every merge to main publishes a developer build: a prerelease with a dmg. versions are
+    # <major>.<minor> from apps/desktop/package.json plus the run number, so each release is its
+    # own immutable tag and nothing is ever moved or overwritten. stable.yml promotes one on sundays.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: macos-latest
@@ -154,10 +154,12 @@ jobs:
           gh release create "v${{ steps.version.outputs.version }}" apps/desktop/dist/*.dmg \
             --target "${{ github.sha }}" \
             --title "Grove ${{ steps.version.outputs.version }}" \
-            --notes-file "$RUNNER_TEMP/notes.md"
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --prerelease
 
-      - name: keep the five newest releases
+      # only developer builds are pruned. stable.yml makes a release a full release, which keeps it here
+      - name: keep the five newest developer builds
         run: |
-          gh release list --limit 100 --json tagName,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+          gh release list --limit 100 --json tagName,createdAt,isPrerelease \
+            --jq '[.[] | select(.isPrerelease)] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
           while read -r tag; do gh release delete "$tag" --yes --cleanup-tag; done
