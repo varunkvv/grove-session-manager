@@ -855,37 +855,61 @@ async function chatWindowOf(electron: ElectronApplication, sessionId: string): P
 /** the chat window, and its agents pane: grove chat on, a row's double-click opens the window */
 async function chatShots(scheme: string, dir: string) {
   const { fx, turn, auth } = build(scheme);
-  // two of the turn's agents: one still running, one that came back with its answer
-  writeAgent(fx, {
-    cwd: auth,
-    sessionId: turn,
-    id: "a1ce0000000000001",
-    agentType: "general-purpose",
-    description: "check the okta admin console",
-    prompt: "check the okta admin console for an app named dashboard, and say what is there",
-    startedAgoMs: 4 * MIN,
-    steps: [
-      {
-        tool: "Bash",
-        input: { command: "curl -s https://dev.okta.example.com/api/v1/apps?q=dashboard" },
-        result: "[]",
-        at: 6,
-        took: 2,
-      },
-      { say: "no app named dashboard yet. checking the callback route in the repo.", at: 14 },
-    ],
-  });
-  writeAgent(fx, {
-    cwd: auth,
-    sessionId: turn,
-    id: "a1ce0000000000002",
-    agentType: "Explore",
-    description: "read the sso docs",
-    prompt: "read docs/sso.md and say which callback path it names",
-    startedAgoMs: 12 * MIN,
-    steps: [],
-    result: { text: "docs/sso.md names /auth/callback for both environments.", at: 25 },
-  });
+  // the turn's agents, the way a busy session has them: several still running, and a pile of finished
+  // ones, one of them failed. the pane lists them all, newest first
+  const running: Array<[string, string, number]> = [
+    ["check the okta admin console", "general-purpose", 4 * MIN],
+    ["write the callback route test", "general-purpose", 9 * MIN],
+    ["map the auth routes and their guards", "Explore", 22 * MIN],
+  ];
+  const finished: Array<[string, string, number, number]> = [
+    ["read the sso docs", "Explore", 12 * MIN, 25],
+    ["find the okta client id in the 1password notes", "general-purpose", 25 * MIN, 130],
+    ["review the terraform plan", "general-purpose", 40 * MIN, 1080],
+    ["list the redirect uris in staging", "Explore", 70 * MIN, 300],
+    ["check the old saml config", "general-purpose", 95 * MIN, 40],
+    ["summarise the okta audit log", "general-purpose", 3 * HOUR, 540],
+  ];
+  let n = 0;
+  for (const [description, agentType, startedAgoMs] of running) {
+    n += 1;
+    writeAgent(fx, {
+      cwd: auth,
+      sessionId: turn,
+      id: `a1ce${String(n).padStart(12, "0")}`,
+      agentType,
+      description,
+      prompt: description,
+      startedAgoMs,
+      steps: [
+        {
+          tool: "Bash",
+          input: { command: `grep -rn "${description.split(" ")[0]}" api/src` },
+          result: "api/src/auth/routes.ts:12",
+          at: 6,
+          took: 2,
+        },
+        { say: "looking at the routes next.", at: 14 },
+      ],
+    });
+  }
+  for (const [description, agentType, startedAgoMs, tookS] of finished) {
+    n += 1;
+    const id = `a1ce${String(n).padStart(12, "0")}`;
+    writeAgent(fx, {
+      cwd: auth,
+      sessionId: turn,
+      id,
+      agentType,
+      description,
+      prompt: description,
+      startedAgoMs,
+      steps: [],
+      ...(description.startsWith("check the old saml")
+        ? { apiError: { text: "API Error: 529 Overloaded", at: tookS } }
+        : { result: { text: `${description}: done`, at: tookS } }),
+    });
+  }
   writeFileSync(
     path.join(fx.root, "settings.json"),
     JSON.stringify({ editor: "vscode", appearance: scheme, chat: true }),
