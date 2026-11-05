@@ -1,0 +1,34 @@
+name: stable
+
+on:
+  # sunday 15:00 utc = 9am central (cst). github can start a scheduled run late, never early.
+  schedule:
+    - cron: "0 15 * * 0"
+  workflow_dispatch:
+
+jobs:
+  promote:
+    # stable is the newest developer build, promoted. same dmg, no rebuild: the release stops being a
+    # prerelease and becomes the latest. a no-op when stable already has the newest build, or when
+    # there is no newer developer build since the last one.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: promote the newest developer build to stable
+        run: |
+          newest=$(gh release list --limit 100 --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease)] | .[].tagName' | sort -V | tail -1)
+          stable=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -z "$newest" ]; then
+            echo "no developer build to promote"
+            exit 0
+          fi
+          if [ "$newest" = "$stable" ] || [ "$(printf '%s\n%s\n' "$stable" "$newest" | sort -V | tail -1)" != "$newest" ]; then
+            echo "stable is already at $stable, newest developer build is $newest. nothing to do"
+            exit 0
+          fi
+          gh release edit "$newest" --prerelease=false --latest
+          gh release view "$newest" --json tagName,isPrerelease,isLatest

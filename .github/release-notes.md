@@ -1,3 +1,16 @@
+## 1.0
+
+Grove tells you which Claude Code agents need you, and gets you to them. 1.0 starts two channels: developer and stable.
+
+New:
+
+- every merge to main publishes a developer build. it is a prerelease on github
+- stable is the newest developer build, promoted on sundays at 9am central. it is the same file as the developer build, not a rebuild
+
+Keep in mind:
+
+- grove is still self-signed, so the xattr step in the readme is still needed once
+
 ## 0.49
 
 Every side panel in grove can be dragged wider or narrower. 0.49 puts a handle on the edge of the sidebar, the sessions panel, and the chat window's files, agents, background tasks, outputs and routing panes.
