@@ -1,16 +1,55 @@
-# Grove
+<p align="center">
+  <img src="docs/images/icon.png" width="120" alt="Grove">
+</p>
 
-_Tells you which Claude Code agents need you, and gets you to them._
+<h1 align="center">Grove</h1>
 
-[![ci](https://github.com/varunkvv/grove-session-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/varunkvv/grove-session-manager/actions/workflows/ci.yml)
+<p align="center"><em>Tells you which Claude Code agents need you, and gets you to them.</em></p>
 
-Grove is for one person running many Claude Code sessions across several projects. It watches every session, says
-which ones are waiting on you (a permission prompt, a finished turn, a failure, a session that stopped mid-turn), and
-opens the one you pick in VS Code, Cursor or Zed.
+<p align="center">
+  <a href="https://github.com/varunkvv/grove-session-manager/actions/workflows/ci.yml"><img src="https://github.com/varunkvv/grove-session-manager/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/all-sessions.png" alt="All sessions: the sessions that need you at the top, each with what it is waiting for" width="900">
+</p>
+
+Grove is for when you run a lot of Claude Code sessions at once, across several projects, on a Mac. It keeps an eye on
+all of them, puts the ones waiting on you at the top, and opens the one you pick in VS Code, Cursor or Zed.
+
+- **Needs you, first.** Permission prompts, finished turns, failures and sessions that stopped mid-turn, from every
+  project, newest first
+- **Every session in one line.** A title, a one-line description and a short recap of what it was for and what it needs
+  from you
+- **Usage that adds up.** Cost, agent time and tokens by project and by model, and your account's own limits
+- **Gets you there.** A click opens a session in your editor. A new session starts in a project with a prompt you write
 
 Grove never types into a running session. It keeps files on disk, starts a session with one prompt when you ask for
 one, and hands off to the editor. You answer an agent in the agent's own chat. The one thing it asks a model for is a
 [recap](#recaps) of a session, through your own `claude`.
+
+<p align="center">
+  <img src="docs/images/usage.png" alt="Usage: cost, agent time and tokens over the last month, stacked by project" width="900">
+</p>
+
+## Install
+
+Download the latest `Grove-*-arm64.dmg` from [Releases](https://github.com/varunkvv/grove-session-manager/releases/latest),
+open it and drag Grove onto Applications. It runs on Apple Silicon Macs. Until Grove is notarized, macOS needs one
+command the first time, so the [install section](#install-it) has the details.
+
+Landing on a session needs the companion extension in VS Code or Cursor. Grove offers to install it the first time you
+open it.
+
+## Contents
+
+- [First run](#first-run) and [a project is a folder](#a-project-is-a-folder)
+- [The screens](#the-screens), where the sessions, the panel and usage live
+- [Recaps](#recaps), [titles and descriptions](#titles-and-descriptions)
+- [Usage](#usage), [notifications](#notifications), [background tasks](#background-tasks), [staying awake](#staying-awake)
+- [Opening and starting agents](#opening-and-starting-agents), [keyboard](#keyboard)
+- [Install it](#install-it), [things people will report as bugs](#things-people-will-report-as-bugs)
+- for developers, [docs/developing.md](docs/developing.md)
 
 ## First run
 
@@ -522,12 +561,13 @@ that has changes.
 
 ## Install it
 
+
 Download the latest `.dmg` from [Releases](https://github.com/varunkvv/grove-session-manager/releases/latest), open it,
 and drag **Grove** onto Applications. Apple Silicon only. Every merge to `main` publishes one: the workflow in
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the tests, builds the DMG on a clean macOS runner, and tags it
 `v<major>.<minor>.<run number>`. The five newest releases are kept.
 
-Or build it yourself:
+Or build it yourself. The developer notes are in [docs/developing.md](docs/developing.md):
 
 ```bash
 pnpm app:package
