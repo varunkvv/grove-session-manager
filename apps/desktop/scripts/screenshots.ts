@@ -23,6 +23,7 @@ import {
   makePlainDir,
   makeRepo,
   type UsageDaySpec,
+  writeAgent,
   writeSession,
   writeUsage,
 } from "../e2e/helpers/fixture.ts";
@@ -354,7 +355,8 @@ function build(scheme: string) {
   const fx = makeFixture({ withCompanion: true });
   writeFileSync(
     path.join(fx.root, "settings.json"),
-    JSON.stringify({ editor: "vscode", appearance: scheme }),
+    // grove chat is on by default, and a row would open its chat window. the panel shots need it off
+    JSON.stringify({ editor: "vscode", appearance: scheme, chat: false }),
   );
   const api = makeRepo(fx, "api");
   const projects = Object.fromEntries(
@@ -656,7 +658,7 @@ function build(scheme: string) {
   });
   interrupted(fx, { [stopped]: Date.now() - 25 * MIN });
   writeNames(fx);
-  return { fx, turn };
+  return { fx, turn, auth };
 }
 
 /** the built app on the fixture, with every session indexed and every status read */
@@ -838,12 +840,88 @@ async function usageShots(scheme: string, dir: string) {
   await empty.close();
 }
 
+/** the chat window that shows this session: a page on `#/chat` with it in its root */
+async function chatWindowOf(electron: ElectronApplication, sessionId: string): Promise<Page> {
+  for (let i = 0; i < 100; i++) {
+    for (const p of electron.windows()) {
+      if (!p.url().includes("#/chat")) continue;
+      if ((await p.locator(`[data-testid="chat"][data-id="${sessionId}"]`).count()) > 0) return p;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw new Error(`no chat window for ${sessionId}`);
+}
+
+/** the chat window, and its agents pane: grove chat on, a row's double-click opens the window */
+async function chatShots(scheme: string, dir: string) {
+  const { fx, turn, auth } = build(scheme);
+  // two of the turn's agents: one still running, one that came back with its answer
+  writeAgent(fx, {
+    cwd: auth,
+    sessionId: turn,
+    id: "a1ce0000000000001",
+    agentType: "general-purpose",
+    description: "check the okta admin console",
+    prompt: "check the okta admin console for an app named dashboard, and say what is there",
+    startedAgoMs: 4 * MIN,
+    steps: [
+      {
+        tool: "Bash",
+        input: { command: "curl -s https://dev.okta.example.com/api/v1/apps?q=dashboard" },
+        result: "[]",
+        at: 6,
+        took: 2,
+      },
+      { say: "no app named dashboard yet. checking the callback route in the repo.", at: 14 },
+    ],
+  });
+  writeAgent(fx, {
+    cwd: auth,
+    sessionId: turn,
+    id: "a1ce0000000000002",
+    agentType: "Explore",
+    description: "read the sso docs",
+    prompt: "read docs/sso.md and say which callback path it names",
+    startedAgoMs: 12 * MIN,
+    steps: [],
+    result: { text: "docs/sso.md names /auth/callback for both environments.", at: 25 },
+  });
+  writeFileSync(
+    path.join(fx.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme, chat: true }),
+  );
+  const app = await launch(fx);
+  const { page } = app;
+  await page.locator('[data-testid="project-item"][data-id="auth-sso"]').click();
+  await page.locator(`[data-testid="session-row"][data-id="${turn}"]`).dblclick();
+  const chat = await chatWindowOf(app.app, turn);
+  await chat.getByTestId("chat").waitFor();
+  await chat.waitForTimeout(600);
+  await chat.screenshot({ path: path.join(dir, "chat.png") });
+  // the header button while one runs, else the turn's own count, which opens the same pane
+  const header = chat.getByTestId("chat-agents");
+  if ((await header.count()) > 0) await header.click();
+  else
+    await chat
+      .getByText(/^\d+ agents?$/)
+      .first()
+      .click();
+  await chat.getByTestId("agent-row").first().waitFor();
+  await chat.waitForTimeout(400);
+  await chat.screenshot({ path: path.join(dir, "chat-agents.png") });
+  await app.close();
+}
+
 const schemes = ["light", "dark"].filter(
   (s) => (process.argv[3] ?? "both") === "both" || s === process.argv[3],
 );
 for (const scheme of schemes) {
   const dir = path.join(out, scheme);
   mkdirSync(dir, { recursive: true });
+  if (process.argv[4] === "chat") {
+    await chatShots(scheme, dir);
+    continue;
+  }
   await usageShots(scheme, dir);
   if (process.argv[4] === "usage") continue;
   const { fx, turn } = build(scheme);
