@@ -466,6 +466,10 @@ function buildHandlers(deps: Deps): Handlers {
       return deps.chat.status(requireSession(deps, key).sessionId);
     },
 
+    async sessionAgents(key) {
+      return agentsOfSession(deps, deps.chat, requireSession(deps, key).sessionId);
+    },
+
     async sessionAnswer(key, askId, answer) {
       chatOn();
       await chatOf().chatAnswer(requireSession(deps, key).sessionId, askId, answer);
@@ -863,6 +867,25 @@ type ChatHandlers = {
 /** the newest transcript of it: a session id can have more than one */
 const newestRow = (deps: Pick<Deps, "sessions">, id: string): SessionRow | undefined =>
   deps.sessions.byId(id).sort((a, b) => b.activityMs - a.activityMs)[0];
+
+/** every subagent of a session, finished ones too: its live state over its transcripts', by session id */
+async function agentsOfSession(
+  deps: Pick<Deps, "sessions">,
+  chat: Pick<ChatHost, "status">,
+  id: string,
+): Promise<ChatAgent[]> {
+  const row = newestRow(deps, id);
+  const scanned = row?.agents ?? [];
+  const ids = [...new Set(scanned.flatMap((a) => (a.workflow ? [a.workflow] : [])))];
+  const runs = Object.fromEntries(
+    (
+      await Promise.all(
+        ids.map(async (w) => [w, row && (await readWorkflowRun(row.key, w))] as const),
+      )
+    ).filter((e): e is readonly [string, WorkflowRun] => !!e[1]),
+  );
+  return agentsOf(chat.status(id).agents ?? [], scanned, runs);
+}
 
 /** a session grove chat made (cmd-N, /clear), named as its window names it until its transcript lands */
 function freshHit(
@@ -1381,17 +1404,7 @@ function buildChatHandlers(deps: Deps, handlers: Handlers): ChatHandlers {
     },
 
     async chatAgents(id) {
-      const row = newestRow(deps, id);
-      const scanned = row?.agents ?? [];
-      const ids = [...new Set(scanned.flatMap((a) => (a.workflow ? [a.workflow] : [])))];
-      const runs = Object.fromEntries(
-        (
-          await Promise.all(
-            ids.map(async (w) => [w, row && (await readWorkflowRun(row.key, w))] as const),
-          )
-        ).filter((e): e is readonly [string, WorkflowRun] => !!e[1]),
-      );
-      return agentsOf(chat.status(id).agents ?? [], scanned, runs);
+      return agentsOfSession(deps, chat, id);
     },
 
     async chatAgent(id, agentId) {
