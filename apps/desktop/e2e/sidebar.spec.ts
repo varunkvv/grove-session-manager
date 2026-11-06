@@ -91,7 +91,7 @@ test("nothing that takes a click sits in a window drag region", async () => {
       .first()
       .evaluate((e) => getComputedStyle(e).getPropertyValue("-webkit-app-region"));
   expect(await region('[data-testid="top-bar"]')).toBe("drag");
-  expect(await region('[data-testid="sidebar"] > div')).toBe("drag");
+  expect(await region('[data-testid="sidebar"] > div.drag')).toBe("drag");
   expect(await region('[data-testid="nav-inbox"]')).toBe("no-drag");
 });
 

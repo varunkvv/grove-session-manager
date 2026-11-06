@@ -642,12 +642,11 @@ export function ChatApp() {
     };
   }, [rev]);
 
-  // the agents pane reads them all: when it opens, when claude says one moved, when the transcript did
-  const agentsOpen = pane?.kind === "agents";
+  // the agents are read always, not only while the pane is open: the header keeps their count after
+  // the run is over, from the transcripts. read again when claude says one moved, and when the transcript did
   const liveAgents = status?.agents;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the live agents and rev are when, not what
   useEffect(() => {
-    if (!agentsOpen) return;
     let live = true;
     void api()
       .chatAgents()
@@ -656,7 +655,7 @@ export function ChatApp() {
     return () => {
       live = false;
     };
-  }, [agentsOpen, liveAgents, rev]);
+  }, [liveAgents, rev]);
   // a step's call names its agent once the list is read
   const call = pane?.kind === "agents" ? pane.call : undefined;
   useEffect(() => {
@@ -954,6 +953,16 @@ export function ChatApp() {
       ? `${runningWorkflows} ${runningWorkflows === 1 ? "workflow" : "workflows"}`
       : "",
     runningAgents ? `${runningAgents} ${runningAgents === 1 ? "agent" : "agents"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  // what ran, once nothing runs: the same words, counted over every agent the transcripts show
+  const ran = agents ?? s.agents ?? [];
+  const ranWorkflows = ran.filter((a) => a.kind === "workflow").length;
+  const ranAgents = ran.filter((a) => !a.kind && !a.workflow).length;
+  const ranWords = [
+    ranWorkflows ? `${ranWorkflows} ${ranWorkflows === 1 ? "workflow" : "workflows"}` : "",
+    ranAgents ? `${ranAgents} ${ranAgents === 1 ? "agent" : "agents"}` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1429,7 +1438,7 @@ export function ChatApp() {
             Outputs <span className="tabular-nums">{session.outputs.length}</span>
           </Button>
         )}
-        {runningWords && (
+        {(runningWords || ranWords) && (
           <Button
             size="sm"
             variant="quiet"
@@ -1438,7 +1447,7 @@ export function ChatApp() {
             onClick={() => setPane(pane?.kind === "agents" ? null : { kind: "agents" })}
           >
             <TaskMark />
-            <span className="tabular-nums">{runningWords}</span>
+            <span className="tabular-nums">{runningWords || ranWords}</span>
           </Button>
         )}
         <IconButton

@@ -325,10 +325,9 @@ test("the session card: what it waits on is answered from the main window, and a
   await expect(card.getByTestId("chat-queued")).toHaveCount(0);
   await expect(chat.getByTestId("composer")).toHaveValue(HELLO);
   // what runs for it is one line, and it opens the chat window's agents
-  await expect(card.getByTestId("card-agents")).toContainText(
-    "2 running · slow lister, long sleeper",
-  );
-  await card.getByTestId("card-agents").click();
+  await expect(card.getByTestId("card-agents-count")).toHaveText(" · 2 running");
+  await expect(card.getByTestId("card-agent")).toHaveCount(2);
+  await card.getByTestId("card-agent").first().click();
   await expect(chat.getByTestId("agents")).toBeVisible();
 });
 
@@ -1576,7 +1575,8 @@ test("agents: a count in the header, a list in the drawer with a stop each, and 
   await expect(chat.getByTestId("agent-state")).toHaveText([/^Stopped/, /^Done/], {
     timeout: 30_000,
   });
-  await expect(count).toHaveCount(0);
+  // the header keeps what ran after the run is over
+  await expect(count).toHaveText(/2 agents/);
   // a row opens the agent's own transcript: what it was asked, what it ran, what it said
   await rows.filter({ hasText: "slow lister" }).click();
   const viewer = chat.getByTestId("agent-viewer");
@@ -1622,7 +1622,7 @@ test("a workflow shows as one row with its agents under it, stops whole, and eac
   await expect(flow.getByTestId("workflow-row").getByTestId("agent-state")).toHaveText(/^Stopped/, {
     timeout: 30_000,
   });
-  await expect(count).toHaveCount(0);
+  await expect(count).toHaveText(/1 workflow/);
   // an agent of it opens its own transcript, like any agent
   await flow.getByTestId("agent-row").filter({ hasText: "step 1" }).click();
   const viewer = chat.getByTestId("agent-viewer");

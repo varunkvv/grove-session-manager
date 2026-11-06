@@ -2,12 +2,14 @@ import {
   type ConversationView,
   type FileMark,
   fileKind,
+  formatDuration,
   messageTime,
   type TurnView,
 } from "@grove/core/pure";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   AgentsView,
+  ChatAgent,
   ChatStatus,
   InboxRowView,
   Outcome,
@@ -34,6 +36,7 @@ import { Markdown } from "./Markdown.tsx";
 import { OutputSection } from "./Outputs.tsx";
 import { StepFold, StepList, Thought } from "./Steps.tsx";
 import {
+  AgentState,
   Button,
   ComposerFrame,
   CopyButton,
@@ -678,8 +681,26 @@ function SessionCard({
   const lastSaid =
     last?.text || last?.steps?.flatMap((x) => (x.kind === "text" ? [x.text] : [])).at(-1);
   const made = madeOf(talk);
-  // what runs for it: agents and workflows, not a workflow's own agents
-  const agents = (host?.agents ?? []).filter((a) => a.state === "running" && !a.workflow);
+  // every agent of the session, finished ones too: read again when its live agents or its transcript move
+  const [agents, setAgents] = useState<ChatAgent[]>([]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the live agents and the talk are when, not what
+  useEffect(() => {
+    let live = true;
+    void window.grove
+      .sessionAgents(key)
+      .then((a) => live && setAgents(a))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [key, host?.agents, talk]);
+  // a workflow's own agents sit under it in the agents pane, so the card lists the top level only
+  const ids = new Set(agents.map((a) => a.id));
+  const top = agents
+    .filter((a) => !a.workflow || !ids.has(a.workflow))
+    .sort((x, y) => Number(y.state === "running") - Number(x.state === "running"));
+  const runningCount = top.filter((a) => a.state === "running").length;
+  const doneCount = top.length - runningCount;
   const lastPrompt = talk?.items.findLast(
     (i): i is TurnView => i.kind === "turn" && i.prompt?.kind === "human",
   )?.prompt?.text;
@@ -799,18 +820,34 @@ function SessionCard({
         </div>
       )}
       <OutputSection outputs={session.outputs} now={now} />
-      {agents.length > 0 && (
-        <button
-          type="button"
-          data-testid="card-agents"
-          onClick={() => openChat(key, session.title, { agents: true })}
-          className="fade flex min-w-0 max-w-full items-center gap-1.5 self-start text-left text-sm text-fg-3 hover:text-fg"
-        >
-          <TaskMark />
-          <span className="truncate">
-            {agents.length} running · {agents.map((a) => a.description).join(", ")}
-          </span>
-        </button>
+      {top.length > 0 && (
+        <div className="mt-1" data-testid="card-agents">
+          <h3 className="text-sm font-medium text-fg-4">
+            Agents
+            <span className="font-normal text-fg-3" data-testid="card-agents-count">
+              {` · ${runningCount} running${doneCount ? ` · ${doneCount} done` : ""}`}
+            </span>
+          </h3>
+          <ul className="mt-1 space-y-0.5">
+            {top.map((a) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  data-testid="card-agent"
+                  data-id={a.id}
+                  onClick={() => openChat(key, session.title, { agents: true })}
+                  className="fade flex min-w-0 max-w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-sm text-fg-2 hover:bg-raised"
+                >
+                  <TaskMark />
+                  <span className="min-w-0 truncate" title={a.description}>
+                    {a.description}
+                  </span>
+                  <AgentState state={a.state} took={formatDuration((a.ended ?? now) - a.since)} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
