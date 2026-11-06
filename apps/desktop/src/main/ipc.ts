@@ -1575,6 +1575,8 @@ function registerChatIpc(deps: Deps, handlers: Handlers): void {
           if (name === "chatTarget" || name === "chatConversation") return null;
           // a window with no session has no files: the index is empty, not an error
           if (name === "chatFileIndex") return [];
+          // and no agents: the header counts them, a window that is not yet a session has none
+          if (name === "chatAgents") return [];
           throw new AppError("no-chat", "This window has no session.");
         }
         const value = await api[name]?.(id, ...args);
