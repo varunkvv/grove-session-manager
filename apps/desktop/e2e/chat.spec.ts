@@ -522,11 +522,10 @@ test("the mode is a menu: every mode the session can take, said in a line, and t
   await openRow(page, s.id);
   const chat = await chatWindow(electron, SID);
   const button = chat.getByTestId("chat-mode");
-  // before claude is up the button says nothing it does not know
-  await expect(button).toHaveText("Mode");
+  // claude starts on open, so the button shows the mode before a click: the recording started in bypass
+  await expect(button).toHaveText("Bypass permissions");
   await button.click();
   const menu = chat.getByTestId("mode-menu");
-  // opening it starts claude, which is what knows the mode: the recording started in bypass
   await expect(menu.getByTestId("menu-item")).toHaveText([
     /^Manual.*Asks before each edit and command/,
     /^Accept edits/,
@@ -1305,8 +1304,7 @@ test("the context ring shows once the conversation is half full, and compacts fr
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
   await openRow(page, s.id);
   const chat = await chatWindow(electron, SID);
-  await expect(chat.getByTestId("chat-context")).toHaveCount(0);
-  await chat.getByTestId("composer").press("a");
+  // claude starts on open and reads the context then, so the ring is there before a turn
   const ring = chat.getByTestId("chat-context");
   await expect(ring).toHaveText("72%");
   await ring.click();
