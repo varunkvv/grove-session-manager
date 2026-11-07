@@ -181,9 +181,9 @@ test("switched on, a double-click opens the session's own window, and a prompt s
     .getAttribute("data-hue");
   await expect(chat.getByTestId("chat-header")).toHaveClass(new RegExp(`bg-project-${hue}-soft`));
   await expect(chat.getByTestId("chat-project")).toHaveText("chat-trial/");
-  // the transcript is drawn before any claude runs
+  // the transcript is drawn, and claude starts on open, before any prompt goes to it
   await expect(chat.getByTestId("turn")).toHaveCount(1);
-  expect(sentToClaude(s.chatLog)).toEqual([]);
+  await expect.poll(() => sentToClaude(s.chatLog).length).toBe(1);
   // nothing opened in the editor
   expect(readExecLog(s.fx)).toEqual([]);
 
