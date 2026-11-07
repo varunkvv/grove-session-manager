@@ -1,3 +1,11 @@
+## 1.0.1
+
+Opening a chat starts its claude right away, so the model and permission mode show before you click or type.
+
+Keep in mind:
+
+- opening a chat to read it starts a claude for it. it is closed after 10 minutes with no window open
+
 ## 1.0
 
 Grove tells you which Claude Code agents need you, and gets you to them. 1.0 starts two channels: developer and stable.

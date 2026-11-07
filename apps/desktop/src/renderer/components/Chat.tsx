@@ -516,6 +516,10 @@ export function ChatApp() {
       .catch(() => null);
     setTarget(t);
     if (!t) return;
+    // a window that shows a chat starts its claude now, so the model and mode are there before a click.
+    // main leaves a background or read-only session alone. a failure is not shown here: the first
+    // send says why it did not start
+    void api().chatWarm();
     setStatus(t.status);
     // sent here (the session card, a fork) while this page was still loading
     if (t.show) showIt(t.show);

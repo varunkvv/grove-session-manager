@@ -1,6 +1,6 @@
 // grove chat draws what a session made: images and videos through main's session scheme, which
 // serves only the session's folders and the temp folder, cards for files it wrote, and a viewer
-// beside the conversation. no claude runs: the transcripts are written before launch.
+// beside the conversation. the transcripts are written before launch, and claude is a fake that answers nothing.
 import {
   copyFileSync,
   mkdirSync,
@@ -12,6 +12,7 @@ import {
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { FILE_SCHEME, sessionUrl } from "../src/shared/sessionUrl.ts";
+import { writeFakeClaude } from "./helpers/fakeClaude.ts";
 import { appendTurn, makeFixture, writeSession } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
@@ -41,7 +42,9 @@ function seed(reply: string) {
   writeFileSync(path.join(outside, "secret.png"), PNG);
   symlinkSync(outside, path.join(root, "escape"));
   const file = writeSession(fx, { cwd: root, sessionId: SID, title: "made things", reply });
-  return { fx, id, root, outside, file };
+  // the window starts claude when it opens, so the session needs one that runs
+  const fake = writeFakeClaude(fx.dir);
+  return { fx, id, root, outside, file, fake };
 }
 
 async function chatWindow(electron: ElectronApplication): Promise<Page> {
@@ -60,7 +63,7 @@ async function chatWindow(electron: ElectronApplication): Promise<Page> {
 }
 
 async function open(s: ReturnType<typeof seed>): Promise<Page> {
-  app = await launchApp(s.fx);
+  app = await launchApp(s.fx, { GROVE_CLAUDE_BIN: s.fake.bin });
   await app.page.locator(`[data-testid="project-item"][data-id="${s.id}"]`).click();
   await app.page.locator(`[data-testid="session-row"][data-id="${SID}"]`).dblclick();
   return chatWindow(app.app);
