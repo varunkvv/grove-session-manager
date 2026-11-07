@@ -8,6 +8,7 @@ export * from "./project/ids.ts";
 export * from "./project/inbox.ts";
 export * from "./routing/agents.ts";
 export * from "./routing/defaults.ts";
+export * from "./routing/role.ts";
 export * from "./routing/types.ts";
 export * from "./sessions/conversation.ts";
 export * from "./sessions/needsYou.ts";

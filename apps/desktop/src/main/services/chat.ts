@@ -24,6 +24,7 @@ import {
   attachedFileText,
   editDiff,
   firstSentence,
+  ORCHESTRATOR_ROLE,
   resolveAgents,
   TASK_MIN_MS,
   toolLabel,
@@ -1373,7 +1374,12 @@ export class ChatHost {
         settingSources: ["user", "project", "local"],
         // claude code's own prompt, as the vs code extension passes it. left out, the sdk sends an
         // empty one and the session runs without claude code's instructions
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        // routing on adds the orchestrator role to it, same launch and same switch as the agents
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          ...(agents && Object.keys(agents).length > 0 ? { append: ORCHESTRATOR_ROLE } : {}),
+        },
         // what the vs code extension starts every session with. checkpoints make grove's turns
         // rewindable later. the stop affordance keeps a stop from killing background agents:
         // each one is stopped from its own row
