@@ -1307,6 +1307,7 @@ test("the context ring shows once the conversation is half full, and compacts fr
   // claude starts on open and reads the context then, so the ring is there before a turn
   const ring = chat.getByTestId("chat-context");
   await expect(ring).toHaveText("72%");
+  await chat.getByTestId("composer").fill("a");
   await ring.click();
   await expect(chat.getByTestId("context-menu")).toContainText("700k of 967k tokens");
   await chat.getByTestId("context-menu").getByTestId("menu-item").click();
