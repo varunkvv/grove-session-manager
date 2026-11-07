@@ -1,6 +1,6 @@
 // grove chat draws what a session made: images and videos through main's session scheme, which
 // serves only the session's folders and the temp folder, cards for files it wrote, and a viewer
-// beside the conversation. no claude runs: the transcripts are written before launch.
+// beside the conversation. the transcripts are written before launch, and claude is a fake that answers nothing.
 import {
   copyFileSync,
   mkdirSync,
@@ -12,8 +12,8 @@ import {
 import path from "node:path";
 import { type ElectronApplication, expect, type Page, test } from "@playwright/test";
 import { FILE_SCHEME, sessionUrl } from "../src/shared/sessionUrl.ts";
-import { appendTurn, makeFixture, writeSession } from "./helpers/fixture.ts";
 import { writeFakeClaude } from "./helpers/fakeClaude.ts";
+import { appendTurn, makeFixture, writeSession } from "./helpers/fixture.ts";
 import { type LaunchedApp, launchApp, waitFor } from "./helpers/launchApp.ts";
 import { writeProject } from "./helpers/project.ts";
 
