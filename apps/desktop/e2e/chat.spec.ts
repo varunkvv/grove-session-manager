@@ -183,7 +183,11 @@ test("switched on, a double-click opens the session's own window, and a prompt s
   await expect(chat.getByTestId("chat-project")).toHaveText("chat-trial/");
   // the transcript is drawn, and claude starts on open, before any prompt goes to it
   await expect(chat.getByTestId("turn")).toHaveCount(1);
-  await expect.poll(() => sentToClaude(s.chatLog).length).toBe(1);
+  // the log has one line per spawn and one per message claude is sent (initialize, settings reads)
+  await expect.poll(() => sentToClaude(s.chatLog).filter((e) => "argv" in e).length).toBe(1);
+  expect(
+    sentToClaude(s.chatLog).some((e) => (e.in as { type?: unknown } | undefined)?.type === "user"),
+  ).toBe(false);
   // nothing opened in the editor
   expect(readExecLog(s.fx)).toEqual([]);
 
