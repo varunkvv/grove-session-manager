@@ -957,6 +957,8 @@ export function ChatApp() {
   ]
     .filter(Boolean)
     .join(" · ");
+  /** the header's own word for it: how many run now, or just "agents" once none do */
+  const agentsWords = runningWords || "agents";
   const shownAgent =
     pane?.kind === "agents" && pane.agent
       ? agents?.find((a) => a.id === pane.agent && a.kind !== "workflow")
@@ -1429,7 +1431,7 @@ export function ChatApp() {
             Outputs <span className="tabular-nums">{session.outputs.length}</span>
           </Button>
         )}
-        {runningWords && (
+        {!!s.agents?.length && (
           <Button
             size="sm"
             variant="quiet"
@@ -1437,8 +1439,8 @@ export function ChatApp() {
             title="The session's agents"
             onClick={() => setPane(pane?.kind === "agents" ? null : { kind: "agents" })}
           >
-            <TaskMark />
-            <span className="tabular-nums">{runningWords}</span>
+            {runningWords && <TaskMark />}
+            <span className="tabular-nums">{agentsWords}</span>
           </Button>
         )}
         <IconButton
