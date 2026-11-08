@@ -516,6 +516,10 @@ export function ChatApp() {
       .catch(() => null);
     setTarget(t);
     if (!t) return;
+    // a window that shows a chat starts its claude now, so the model and mode are there before a click.
+    // main leaves a background or read-only session alone. a failure is not shown here: the first
+    // send says why it did not start
+    void api().chatWarm();
     setStatus(t.status);
     // sent here (the session card, a fork) while this page was still loading
     if (t.show) showIt(t.show);
@@ -642,12 +646,11 @@ export function ChatApp() {
     };
   }, [rev]);
 
-  // the agents pane reads them all: when it opens, when claude says one moved, when the transcript did
-  const agentsOpen = pane?.kind === "agents";
+  // the agents are read always, not only while the pane is open: the header keeps their count after
+  // the run is over, from the transcripts. read again when claude says one moved, and when the transcript did
   const liveAgents = status?.agents;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the live agents and rev are when, not what
   useEffect(() => {
-    if (!agentsOpen) return;
     let live = true;
     void api()
       .chatAgents()
@@ -656,7 +659,7 @@ export function ChatApp() {
     return () => {
       live = false;
     };
-  }, [agentsOpen, liveAgents, rev]);
+  }, [liveAgents, rev]);
   // a step's call names its agent once the list is read
   const call = pane?.kind === "agents" ? pane.call : undefined;
   useEffect(() => {

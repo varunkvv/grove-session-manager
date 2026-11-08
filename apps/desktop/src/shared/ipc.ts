@@ -541,6 +541,8 @@ export interface Api {
   openChat(key: SessionKey, show?: ChatShow): Promise<Outcome>;
   /** grove chat: what grove's own claude for this session is doing and waiting on. idle when none */
   sessionHost(key: SessionKey): Promise<ChatStatus | null>;
+  /** grove chat: every subagent of the session, finished ones too: what its claude says now over what its transcripts say */
+  sessionAgents(key: SessionKey): Promise<ChatAgent[]>;
   /** grove chat: answer what it waits on from the main window's session card */
   sessionAnswer(key: SessionKey, askId: string, answer: ChatAnswer): Promise<Outcome>;
   /** grove chat: a reply from the session card, through the same claude the chat window talks to */
@@ -635,6 +637,7 @@ export const INVOKE_CHANNELS = [
   "openSession",
   "openChat",
   "sessionHost",
+  "sessionAgents",
   "sessionAnswer",
   "sessionReply",
   "newChat",

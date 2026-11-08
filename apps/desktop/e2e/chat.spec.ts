@@ -181,9 +181,13 @@ test("switched on, a double-click opens the session's own window, and a prompt s
     .getAttribute("data-hue");
   await expect(chat.getByTestId("chat-header")).toHaveClass(new RegExp(`bg-project-${hue}-soft`));
   await expect(chat.getByTestId("chat-project")).toHaveText("chat-trial/");
-  // the transcript is drawn before any claude runs
+  // the transcript is drawn, and claude starts on open, before any prompt goes to it
   await expect(chat.getByTestId("turn")).toHaveCount(1);
-  expect(sentToClaude(s.chatLog)).toEqual([]);
+  // the log has one line per spawn and one per message claude is sent (initialize, settings reads)
+  await expect.poll(() => sentToClaude(s.chatLog).filter((e) => "argv" in e).length).toBe(1);
+  expect(
+    sentToClaude(s.chatLog).some((e) => (e.in as { type?: unknown } | undefined)?.type === "user"),
+  ).toBe(false);
   // nothing opened in the editor
   expect(readExecLog(s.fx)).toEqual([]);
 
@@ -325,10 +329,9 @@ test("the session card: what it waits on is answered from the main window, and a
   await expect(card.getByTestId("chat-queued")).toHaveCount(0);
   await expect(chat.getByTestId("composer")).toHaveValue(HELLO);
   // what runs for it is one line, and it opens the chat window's agents
-  await expect(card.getByTestId("card-agents")).toContainText(
-    "2 running · slow lister, long sleeper",
-  );
-  await card.getByTestId("card-agents").click();
+  await expect(card.getByTestId("card-agents-count")).toHaveText(" · 2 running");
+  await expect(card.getByTestId("card-agent")).toHaveCount(2);
+  await card.getByTestId("card-agent").first().click();
   await expect(chat.getByTestId("agents")).toBeVisible();
 });
 
@@ -519,11 +522,10 @@ test("the mode is a menu: every mode the session can take, said in a line, and t
   await openRow(page, s.id);
   const chat = await chatWindow(electron, SID);
   const button = chat.getByTestId("chat-mode");
-  // before claude is up the button says nothing it does not know
-  await expect(button).toHaveText("Mode");
+  // claude starts on open, so the button shows the mode before a click: the recording started in bypass
+  await expect(button).toHaveText("Bypass permissions");
   await button.click();
   const menu = chat.getByTestId("mode-menu");
-  // opening it starts claude, which is what knows the mode: the recording started in bypass
   await expect(menu.getByTestId("menu-item")).toHaveText([
     /^Manual.*Asks before each edit and command/,
     /^Accept edits/,
@@ -1302,10 +1304,10 @@ test("the context ring shows once the conversation is half full, and compacts fr
   const { app: electron, page } = await launch(s, { GROVE_FAKE_CHAT_CONTEXT: "700000" });
   await openRow(page, s.id);
   const chat = await chatWindow(electron, SID);
-  await expect(chat.getByTestId("chat-context")).toHaveCount(0);
-  await chat.getByTestId("composer").press("a");
+  // claude starts on open and reads the context then, so the ring is there before a turn
   const ring = chat.getByTestId("chat-context");
   await expect(ring).toHaveText("72%");
+  await chat.getByTestId("composer").fill("a");
   await ring.click();
   await expect(chat.getByTestId("context-menu")).toContainText("700k of 967k tokens");
   await chat.getByTestId("context-menu").getByTestId("menu-item").click();
@@ -1576,7 +1578,8 @@ test("agents: a count in the header, a list in the drawer with a stop each, and 
   await expect(chat.getByTestId("agent-state")).toHaveText([/^Stopped/, /^Done/], {
     timeout: 30_000,
   });
-  await expect(count).toHaveCount(0);
+  // the header keeps what ran after the run is over
+  await expect(count).toHaveText(/2 agents/);
   // a row opens the agent's own transcript: what it was asked, what it ran, what it said
   await rows.filter({ hasText: "slow lister" }).click();
   const viewer = chat.getByTestId("agent-viewer");
@@ -1622,7 +1625,7 @@ test("a workflow shows as one row with its agents under it, stops whole, and eac
   await expect(flow.getByTestId("workflow-row").getByTestId("agent-state")).toHaveText(/^Stopped/, {
     timeout: 30_000,
   });
-  await expect(count).toHaveCount(0);
+  await expect(count).toHaveText(/1 workflow/);
   // an agent of it opens its own transcript, like any agent
   await flow.getByTestId("agent-row").filter({ hasText: "step 1" }).click();
   const viewer = chat.getByTestId("agent-viewer");

@@ -342,7 +342,10 @@ describe("grove chat's host", () => {
   });
 
   describe("routing agents", () => {
-    type Init = { agents?: Record<string, Record<string, unknown>> };
+    type Init = {
+      agents?: Record<string, Record<string, unknown>>;
+      appendSystemPrompt?: string;
+    };
     const inits = (s: Setup): Init[] =>
       s
         .log()
@@ -355,6 +358,7 @@ describe("grove chat's host", () => {
       await s.host.warm(SESSION, s.where);
       expect(inits(s)).toHaveLength(1);
       expect(inits(s)[0]).not.toHaveProperty("agents");
+      expect(inits(s)[0]).not.toHaveProperty("appendSystemPrompt");
       expect(s.host.status(SESSION).routing).toBeUndefined();
     });
 
@@ -407,6 +411,7 @@ describe("grove chat's host", () => {
       expect(s.host.status(SESSION)).toMatchObject({ routing: true });
       await s.host.warm(SESSION, s.where);
       expect(Object.keys(inits(s)[0]?.agents ?? {})).toHaveLength(21);
+      expect(inits(s)[0]?.appendSystemPrompt).toContain("You are the orchestrator");
       await s.host.setRouting(SESSION, s.where, false);
       await s.host.setRouting(SESSION, s.where, true);
       expect(saved).toEqual([
@@ -428,6 +433,7 @@ describe("grove chat's host", () => {
       await s.host.warm(SESSION, s.where);
       expect(inits(s)).toHaveLength(3);
       expect(inits(s)[2]).not.toHaveProperty("agents");
+      expect(inits(s)[2]).not.toHaveProperty("appendSystemPrompt");
     });
 
     it("let a turn under way finish before claude restarts", async () => {

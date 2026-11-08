@@ -45,6 +45,7 @@ open it.
 
 - [First run](#first-run) and [a project is a folder](#a-project-is-a-folder)
 - [The screens](#the-screens), where the sessions, the panel and usage live
+- [The chat window](#the-chat-window), where most of the work happens, and [agents](#agents)
 - [Recaps](#recaps), [titles and descriptions](#titles-and-descriptions)
 - [Usage](#usage), [notifications](#notifications), [background tasks](#background-tasks), [staying awake](#staying-awake)
 - [Opening and starting agents](#opening-and-starting-agents), [keyboard](#keyboard)
@@ -281,6 +282,41 @@ watches.
 What an agent wrote is not trusted. It is rendered as markdown without any HTML (a `<script>` shows as text), images
 show their description, and only `http(s)` links open - in your browser, never in the app. A recap is plain text: it
 is never markdown and never a link.
+
+## The chat window
+
+Double-click a session and it opens in its own window: the conversation, with the composer under it, and that is
+where you talk to it. A turn's steps fold into one line you can open.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/chat-dark.png">
+    <img src="docs/images/chat-light.png" alt="The chat window: a session's conversation, with its project and title in the header" width="900">
+  </picture>
+</p>
+
+- the header has the project and the title, and buttons for Files, Outputs and Tasks. Each opens a pane beside the
+  conversation. Agents has one too, while agents run, see below
+- files go in with the attach button or by dropping them on the window. Permission mode, model and effort are one key
+  away (`⇧⌘M`, `⇧⌘E`)
+- a message sent while the session works shows in the turn it landed in, marked "while it worked". `Esc` stops the turn,
+  and background agents keep running
+- a session that is open in VS Code is read-only here. The window says so, and it takes over once that tab is closed
+
+## Agents
+
+The agents a session starts are listed in the Agents pane, running ones first, then the finished ones. The header
+shows how many are running, and the `N agents` on a turn opens the same pane.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/agents-dark.png">
+    <img src="docs/images/agents-light.png" alt="The Agents pane: three agents running, each with a Stop button, and six finished below them" width="900">
+  </picture>
+</p>
+
+- each row says what the agent is for, whether it is running or done, how long it has run or took, and its kind and model
+- a running agent has a **Stop** that ends that agent and no other
 
 ## Recaps
 

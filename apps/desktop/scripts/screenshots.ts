@@ -23,6 +23,7 @@ import {
   makePlainDir,
   makeRepo,
   type UsageDaySpec,
+  writeAgent,
   writeSession,
   writeUsage,
 } from "../e2e/helpers/fixture.ts";
@@ -354,7 +355,8 @@ function build(scheme: string) {
   const fx = makeFixture({ withCompanion: true });
   writeFileSync(
     path.join(fx.root, "settings.json"),
-    JSON.stringify({ editor: "vscode", appearance: scheme }),
+    // grove chat is on by default, and a row would open its chat window. the panel shots need it off
+    JSON.stringify({ editor: "vscode", appearance: scheme, chat: false }),
   );
   const api = makeRepo(fx, "api");
   const projects = Object.fromEntries(
@@ -656,7 +658,7 @@ function build(scheme: string) {
   });
   interrupted(fx, { [stopped]: Date.now() - 25 * MIN });
   writeNames(fx);
-  return { fx, turn };
+  return { fx, turn, auth };
 }
 
 /** the built app on the fixture, with every session indexed and every status read */
@@ -838,12 +840,112 @@ async function usageShots(scheme: string, dir: string) {
   await empty.close();
 }
 
+/** the chat window that shows this session: a page on `#/chat` with it in its root */
+async function chatWindowOf(electron: ElectronApplication, sessionId: string): Promise<Page> {
+  for (let i = 0; i < 100; i++) {
+    for (const p of electron.windows()) {
+      if (!p.url().includes("#/chat")) continue;
+      if ((await p.locator(`[data-testid="chat"][data-id="${sessionId}"]`).count()) > 0) return p;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw new Error(`no chat window for ${sessionId}`);
+}
+
+/** the chat window, and its agents pane: grove chat on, a row's double-click opens the window */
+async function chatShots(scheme: string, dir: string) {
+  const { fx, turn, auth } = build(scheme);
+  // the turn's agents, the way a busy session has them: several still running, and a pile of finished
+  // ones, one of them failed. the pane lists them all, newest first
+  const running: Array<[string, string, number]> = [
+    ["check the okta admin console", "general-purpose", 4 * MIN],
+    ["write the callback route test", "general-purpose", 9 * MIN],
+    ["map the auth routes and their guards", "Explore", 22 * MIN],
+  ];
+  const finished: Array<[string, string, number, number]> = [
+    ["read the sso docs", "Explore", 12 * MIN, 25],
+    ["find the okta client id in the 1password notes", "general-purpose", 25 * MIN, 130],
+    ["review the terraform plan", "general-purpose", 40 * MIN, 1080],
+    ["list the redirect uris in staging", "Explore", 70 * MIN, 300],
+    ["check the old saml config", "general-purpose", 95 * MIN, 40],
+    ["summarise the okta audit log", "general-purpose", 3 * HOUR, 540],
+  ];
+  let n = 0;
+  for (const [description, agentType, startedAgoMs] of running) {
+    n += 1;
+    writeAgent(fx, {
+      cwd: auth,
+      sessionId: turn,
+      id: `a1ce${String(n).padStart(12, "0")}`,
+      agentType,
+      description,
+      prompt: description,
+      startedAgoMs,
+      steps: [
+        {
+          tool: "Bash",
+          input: { command: `grep -rn "${description.split(" ")[0]}" api/src` },
+          result: "api/src/auth/routes.ts:12",
+          at: 6,
+          took: 2,
+        },
+        { say: "looking at the routes next.", at: 14 },
+      ],
+    });
+  }
+  for (const [description, agentType, startedAgoMs, tookS] of finished) {
+    n += 1;
+    const id = `a1ce${String(n).padStart(12, "0")}`;
+    writeAgent(fx, {
+      cwd: auth,
+      sessionId: turn,
+      id,
+      agentType,
+      description,
+      prompt: description,
+      startedAgoMs,
+      steps: [],
+      ...(description.startsWith("check the old saml")
+        ? { apiError: { text: "API Error: 529 Overloaded", at: tookS } }
+        : { result: { text: `${description}: done`, at: tookS } }),
+    });
+  }
+  writeFileSync(
+    path.join(fx.root, "settings.json"),
+    JSON.stringify({ editor: "vscode", appearance: scheme, chat: true }),
+  );
+  const app = await launch(fx);
+  const { page } = app;
+  await page.locator('[data-testid="project-item"][data-id="auth-sso"]').click();
+  await page.locator(`[data-testid="session-row"][data-id="${turn}"]`).dblclick();
+  const chat = await chatWindowOf(app.app, turn);
+  await chat.getByTestId("chat").waitFor();
+  await chat.waitForTimeout(600);
+  await chat.screenshot({ path: path.join(dir, "chat.png") });
+  // the header button while one runs, else the turn's own count, which opens the same pane
+  const header = chat.getByTestId("chat-agents");
+  if ((await header.count()) > 0) await header.click();
+  else
+    await chat
+      .getByText(/^\d+ agents?$/)
+      .first()
+      .click();
+  await chat.getByTestId("agent-row").first().waitFor();
+  await chat.waitForTimeout(400);
+  await chat.screenshot({ path: path.join(dir, "chat-agents.png") });
+  await app.close();
+}
+
 const schemes = ["light", "dark"].filter(
   (s) => (process.argv[3] ?? "both") === "both" || s === process.argv[3],
 );
 for (const scheme of schemes) {
   const dir = path.join(out, scheme);
   mkdirSync(dir, { recursive: true });
+  if (process.argv[4] === "chat") {
+    await chatShots(scheme, dir);
+    continue;
+  }
   await usageShots(scheme, dir);
   if (process.argv[4] === "usage") continue;
   const { fx, turn } = build(scheme);
