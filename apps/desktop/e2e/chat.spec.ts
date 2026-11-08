@@ -1578,8 +1578,8 @@ test("agents: a count in the header, a list in the drawer with a stop each, and 
   await expect(chat.getByTestId("agent-state")).toHaveText([/^Stopped/, /^Done/], {
     timeout: 30_000,
   });
-  // the header keeps what ran after the run is over
-  await expect(count).toHaveText(/2 agents/);
+  // the header stays up once the run is over, bare now that nothing runs
+  await expect(count).toHaveText("agents");
   // a row opens the agent's own transcript: what it was asked, what it ran, what it said
   await rows.filter({ hasText: "slow lister" }).click();
   const viewer = chat.getByTestId("agent-viewer");
@@ -1625,7 +1625,8 @@ test("a workflow shows as one row with its agents under it, stops whole, and eac
   await expect(flow.getByTestId("workflow-row").getByTestId("agent-state")).toHaveText(/^Stopped/, {
     timeout: 30_000,
   });
-  await expect(count).toHaveText(/1 workflow/);
+  // the header stays up once the workflow stops, bare now that nothing runs
+  await expect(count).toHaveText("agents");
   // an agent of it opens its own transcript, like any agent
   await flow.getByTestId("agent-row").filter({ hasText: "step 1" }).click();
   const viewer = chat.getByTestId("agent-viewer");

@@ -960,16 +960,8 @@ export function ChatApp() {
   ]
     .filter(Boolean)
     .join(" · ");
-  // what ran, once nothing runs: the same words, counted over every agent the transcripts show
-  const ran = agents ?? s.agents ?? [];
-  const ranWorkflows = ran.filter((a) => a.kind === "workflow").length;
-  const ranAgents = ran.filter((a) => !a.kind && !a.workflow).length;
-  const ranWords = [
-    ranWorkflows ? `${ranWorkflows} ${ranWorkflows === 1 ? "workflow" : "workflows"}` : "",
-    ranAgents ? `${ranAgents} ${ranAgents === 1 ? "agent" : "agents"}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  /** the header's own word for it: how many run now, or just "agents" once none do */
+  const agentsWords = runningWords || "agents";
   const shownAgent =
     pane?.kind === "agents" && pane.agent
       ? agents?.find((a) => a.id === pane.agent && a.kind !== "workflow")
@@ -1442,7 +1434,7 @@ export function ChatApp() {
             Outputs <span className="tabular-nums">{session.outputs.length}</span>
           </Button>
         )}
-        {(runningWords || ranWords) && (
+        {!!s.agents?.length && (
           <Button
             size="sm"
             variant="quiet"
@@ -1450,8 +1442,8 @@ export function ChatApp() {
             title="The session's agents"
             onClick={() => setPane(pane?.kind === "agents" ? null : { kind: "agents" })}
           >
-            <TaskMark />
-            <span className="tabular-nums">{runningWords || ranWords}</span>
+            {runningWords && <TaskMark />}
+            <span className="tabular-nums">{agentsWords}</span>
           </Button>
         )}
         <IconButton
