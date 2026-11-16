@@ -8,6 +8,8 @@ Keep in mind:
 
 Fixed:
 
+- a routing session is reminded it is the orchestrator on the first message after grove starts its claude and every 8 messages after, so long and resumed sessions keep delegating. the reminder is hidden in the window
+- switching routing off tells the session once that it is off, so it stops acting on the role from earlier turns
 - routing sessions hand bigger plans to the planner agent and no longer read "review" as "wait for the agent"
 
 ## 1.0
