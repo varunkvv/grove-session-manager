@@ -24,7 +24,9 @@ import {
   attachedFileText,
   editDiff,
   firstSentence,
+  nextReminder,
   ORCHESTRATOR_ROLE,
+  type ReminderState,
   resolveAgents,
   TASK_MIN_MS,
   toolLabel,
@@ -163,14 +165,25 @@ export function dialogOf(
     const fallback = str(p.fallbackModel);
     if (!model || !fallback) return undefined;
     const category = str(p.apiRefusalCategory);
-    return { id, kind: "refusal", model, fallback, ...(category ? { category } : {}) };
+    return {
+      id,
+      kind: "refusal",
+      model,
+      fallback,
+      ...(category ? { category } : {}),
+    };
   }
   if (kind === "auto_mode_server_fallback") {
     const paragraphs = Array.isArray(p.paragraphs)
       ? p.paragraphs.flatMap((x) => (typeof x === "string" && x.trim() ? [cut(x, 2000)] : []))
       : [];
     const title = str(p.title);
-    return { id, kind: "auto-fallback", ...(title ? { title } : {}), paragraphs };
+    return {
+      id,
+      kind: "auto-fallback",
+      ...(title ? { title } : {}),
+      paragraphs,
+    };
   }
   return undefined;
 }
@@ -203,7 +216,11 @@ export function parseAnswer(raw: unknown): ChatAnswer {
     };
   }
   if (a.kind === "permission" && (a.allow === "once" || a.allow === "always" || a.allow === "no")) {
-    return { kind: "permission", allow: a.allow, ...(message ? { message } : {}) };
+    return {
+      kind: "permission",
+      allow: a.allow,
+      ...(message ? { message } : {}),
+    };
   }
   if (a.kind === "dialog" && (a.choice === null || CHOICES.has(a.choice as string))) {
     return { kind: "dialog", choice: a.choice as DialogChoice | null };
@@ -283,7 +300,12 @@ export function parseAttachments(raw: unknown): ChatAttachment[] {
     if (o.kind === "data") {
       if (!isName(o.name) || !isText(o.mediaType, 255)) throw bad();
       if (!isText(o.data, ATTACH.bytes) || !BASE64.test(o.data)) throw bad();
-      return { kind: "data", name: o.name, mediaType: o.mediaType, data: o.data };
+      return {
+        kind: "data",
+        name: o.name,
+        mediaType: o.mediaType,
+        data: o.data,
+      };
     }
     // by its path: nothing is read, so no size cap. it has to be a file there now, by that name
     if (o.kind === "file") {
@@ -301,7 +323,13 @@ export function parseAttachments(raw: unknown): ChatAttachment[] {
       if (!st) throw bad(`${o.name} is not there any more.`);
       if (!st.isFile()) throw bad(`${o.name} is not a file.`);
       const name = path.basename(o.path);
-      return { kind: "file", name, path: o.path, mediaType: o.mediaType, size: st.size };
+      return {
+        kind: "file",
+        name,
+        path: o.path,
+        mediaType: o.mediaType,
+        size: st.size,
+      };
     }
     throw bad();
   });
@@ -319,15 +347,24 @@ export function blocksFor(
   text: string,
   files: Placed[],
   pages = true,
+  reminder?: string,
 ): SDKUserMessage["message"]["content"] {
   return [
+    ...(reminder ? [{ type: "text" as const, text: reminder }] : []),
     ...files.map((f) =>
       f.kind === "image"
         ? {
             type: "image" as const,
-            source: { type: "base64" as const, media_type: f.mediaType, data: f.data },
+            source: {
+              type: "base64" as const,
+              media_type: f.mediaType,
+              data: f.data,
+            },
           }
-        : { type: "text" as const, text: attachedFileText({ ...f, whole: !pages && isPdf(f) }) },
+        : {
+            type: "text" as const,
+            text: attachedFileText({ ...f, whole: !pages && isPdf(f) }),
+          },
     ),
     ...(text ? [{ type: "text" as const, text }] : []),
   ];
@@ -501,7 +538,10 @@ const LIMIT_WINDOW: Record<string, string> = {
 
 /** the output styles there are, and the one it starts in, from init's answer */
 function stylesOf(init: unknown): Pick<ChatStatus, "style" | "styles"> {
-  const i = init as { available_output_styles?: unknown; output_style?: unknown };
+  const i = init as {
+    available_output_styles?: unknown;
+    output_style?: unknown;
+  };
   const styles = Array.isArray(i.available_output_styles)
     ? i.available_output_styles.filter((x): x is string => typeof x === "string")
     : [];
@@ -606,11 +646,15 @@ class Prompts implements AsyncIterable<SDKUserMessage> {
   private wake: (() => void) | null = null;
 
   /** returns the uuid it went with: claude's command_lifecycle frames and a take-back name it */
-  push(text: string, files: Placed[] = [], pages = true): string {
+  push(text: string, files: Placed[] = [], pages = true, reminder?: string): string {
     const uuid = randomUUID();
     this.queue.push({
       type: "user",
-      message: { role: "user", content: blocksFor(text, files, pages) },
+      message: {
+        role: "user",
+        // its own block, in front: cleanBlockText drops it from what the window shows
+        content: blocksFor(text, files, pages, reminder),
+      },
       parent_tool_use_id: null,
       // typed by a person: the sdk treats a message with no origin as nobody's
       origin: { kind: "human" },
@@ -705,6 +749,8 @@ interface Hosted {
   picked?: string;
   /** the routing agents are on for this session. off unless switched on, and kept across restarts */
   routing?: boolean;
+  /** what the last role reminder said and how many messages ago, so it is not sent on each one */
+  reminded?: ReminderState;
   /**
    * what its claude was started with, kept for as long as its cache is: the cache keeper's fork
    * must send the same agents, which are part of the cached prefix, whatever was switched or
@@ -754,7 +800,11 @@ function questionsOf(input: Record<string, unknown>): ChatQuestion[] {
         header: typeof o.header === "string" ? o.header : "",
         multiSelect: o.multiSelect === true,
         options: options.flatMap((x) => {
-          const o = x as { label?: unknown; description?: unknown; preview?: unknown } | null;
+          const o = x as {
+            label?: unknown;
+            description?: unknown;
+            preview?: unknown;
+          } | null;
           if (!o || typeof o !== "object" || typeof o.label !== "string") return [];
           return [
             {
@@ -846,7 +896,12 @@ export class ChatHost {
   }
 
   status(id: string): ChatStatus {
-    return this.hosted.get(id)?.status ?? { ...emptyStatus(), ...this.routingSeed(id) };
+    return (
+      this.hosted.get(id)?.status ?? {
+        ...emptyStatus(),
+        ...this.routingSeed(id),
+      }
+    );
   }
 
   /** the routing switch a session was left on with, for a session not held yet */
@@ -941,7 +996,9 @@ export class ChatHost {
         this.pdfPages ??= this.o.env().then((e) => onPath("pdftoppm", e.PATH));
         pages = await this.pdfPages;
       }
-      const uuid = h.prompts.push(text, placed, pages);
+      const reminder = nextReminder(h.reminded, h.routing === true);
+      h.reminded = reminder.state;
+      const uuid = h.prompts.push(text, placed, pages, reminder.text);
       // what was said along the way belongs to the turn before
       if (!queued && h.status.notes?.length) this.set(h, { notes: [] });
       if (queued) {
@@ -951,7 +1008,9 @@ export class ChatHost {
           ...files.flatMap((f) => (f.kind === "image" ? [] : [f.name])),
         ];
         const shown = named.length ? `${text}${text ? " " : ""}[${named.join(" · ")}]` : text;
-        this.set(h, { queued: [...h.status.queued, { id: uuid, text: shown, said: text }] });
+        this.set(h, {
+          queued: [...h.status.queued, { id: uuid, text: shown, said: text }],
+        });
       } else this.turnStarted(h);
     });
     h.sending = go.catch(() => {});
@@ -1019,7 +1078,9 @@ export class ChatHost {
   async side(id: string, where: ChatWhere, question: string): Promise<string | null> {
     await this.warm(id, where);
     const q = this.hosted.get(id)?.q as
-      | (Query & { askSideQuestion?: (q: string) => Promise<{ response: string } | null> })
+      | (Query & {
+          askSideQuestion?: (q: string) => Promise<{ response: string } | null>;
+        })
       | undefined;
     if (!q?.askSideQuestion) throw new Error("This claude takes no side questions.");
     return (await q.askSideQuestion(question))?.response ?? null;
@@ -1266,12 +1327,17 @@ export class ChatHost {
             behavior: "allow",
             updatedInput: w.input,
             ...(a.mode
-              ? { updatedPermissions: [{ type: "setMode", mode: a.mode, destination: "session" }] }
+              ? {
+                  updatedPermissions: [{ type: "setMode", mode: a.mode, destination: "session" }],
+                }
               : {}),
           }
         : { behavior: "deny", message: a.message?.trim() || "Keep planning." };
     } else if (a.allow === "no") {
-      result = { behavior: "deny", message: a.message?.trim() || "The user declined this." };
+      result = {
+        behavior: "deny",
+        message: a.message?.trim() || "The user declined this.",
+      };
     } else {
       result = {
         behavior: "allow",
@@ -1563,7 +1629,12 @@ export class ChatHost {
       // it would go out twice with the next start. a query that did start lets go of it as it ends
       if (!q) h.prompts = new Prompts();
       q?.close();
-      this.set(h, { starting: false, live: false, running: false, error: messageOf(e) });
+      this.set(h, {
+        starting: false,
+        live: false,
+        running: false,
+        error: messageOf(e),
+      });
     }
     this.o.onChange?.();
   }
@@ -1616,7 +1687,11 @@ export class ChatHost {
     // what became of a message sent while a turn ran (probe): queued, then started (folded into
     // the turn, where the transcript shows it), completed, or cancelled. not in the sdk's types.
     // taken, its row stays as sent until the window reads it from the transcript: a read follows
-    const life = m as unknown as { type: string; command_uuid?: string; state?: string };
+    const life = m as unknown as {
+      type: string;
+      command_uuid?: string;
+      state?: string;
+    };
     if (life.type === "command_lifecycle") {
       const row = h.status.queued.find((q) => q.id === life.command_uuid);
       if (!row || life.state === "queued") return;
@@ -1670,7 +1745,10 @@ export class ChatHost {
             });
           }
         } else if (m.subtype === "model_refusal_no_fallback") {
-          this.note(h, { kind: "denied", text: `${m.original_model} turned this request down.` });
+          this.note(h, {
+            kind: "denied",
+            text: `${m.original_model} turned this request down.`,
+          });
         } else if (m.subtype === "local_command_output") {
           this.note(h, { kind: "output", text: cut(m.content, 8000) });
         } else if (m.subtype === "informational") {
@@ -1734,7 +1812,9 @@ export class ChatHost {
           }
           if (ev.content_block.type === "text") this.setText(h, "");
           else if (ev.content_block.type === "tool_use")
-            this.set(h, { tool: { name: ev.content_block.name, since: this.now() } });
+            this.set(h, {
+              tool: { name: ev.content_block.name, since: this.now() },
+            });
         } else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
           this.setText(h, h.text + ev.delta.text);
         }
@@ -1906,7 +1986,11 @@ export class ChatHost {
       if (a.kind !== "workflow") return;
       for (const c of h.agents.values()) {
         if (c.workflow === a.id && c.state === "running")
-          put({ ...c, state: state === "done" ? "done" : "stopped", ended: now });
+          put({
+            ...c,
+            state: state === "done" ? "done" : "stopped",
+            ended: now,
+          });
       }
     };
     if (m.subtype === "task_started") {
@@ -1971,7 +2055,10 @@ export class ChatHost {
   private async settings(h: Hosted): Promise<void> {
     const q = h.q as
       | (Query & {
-          getSettings?: () => Promise<{ applied?: Applied; effective?: { fastMode?: unknown } }>;
+          getSettings?: () => Promise<{
+            applied?: Applied;
+            effective?: { fastMode?: unknown };
+          }>;
         })
       | undefined;
     const got = await q?.getSettings?.().catch(() => undefined);
@@ -2007,7 +2094,11 @@ export class ChatHost {
       tool === "AskUserQuestion"
         ? { id, kind: "question", questions: questionsOf(input) }
         : tool === "ExitPlanMode"
-          ? { id, kind: "plan", plan: typeof input.plan === "string" ? input.plan : "" }
+          ? {
+              id,
+              kind: "plan",
+              plan: typeof input.plan === "string" ? input.plan : "",
+            }
           : {
               id,
               kind: "permission",
@@ -2018,7 +2109,9 @@ export class ChatHost {
               canAlways: !!opts.suggestions?.length && !opts.suppressAlwaysAllowRule,
               // a subagent's call: the card names which one
               ...(opts.agentID
-                ? { agent: h.agents.get(opts.agentID)?.description ?? "An agent" }
+                ? {
+                    agent: h.agents.get(opts.agentID)?.description ?? "An agent",
+                  }
                 : {}),
             };
     return new Promise<PermissionResult>((resolve) => {
