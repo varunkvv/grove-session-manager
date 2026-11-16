@@ -452,8 +452,8 @@ async function play(turn, folded) {
       .map((c) => c.text ?? "")
       .join("");
     life(m.uuid, "started");
-    // the line keeps the uuid the host stamped, as claude code's does (recordings/d-atpath)
-    record("user", m.message, m.uuid ? { uuid: m.uuid } : {});
+    // the line keeps the uuid and origin the host stamped, as claude code's does (recordings/d-atpath)
+    record("user", m.message, { ...(m.uuid ? { uuid: m.uuid } : {}), ...(m.origin ? { origin: m.origin } : {}) });
     const folded = [];
     await play(turns.find((t) => t.text === text) ?? turns[0], folded);
     // claude code says these either side of the turn's result: here after it

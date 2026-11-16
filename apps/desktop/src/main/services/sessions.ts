@@ -140,6 +140,7 @@ function toRow(
   if (view.comboRelation) row.comboRelation = view.comboRelation;
   if (record.tag) row.tag = record.tag;
   if (record.entrypoint) row.entrypoint = record.entrypoint;
+  if (record.script) row.script = true;
   if (record.usage) row.usage = record.usage;
   if (record.model) row.model = record.model;
   const status = live.get(record.sessionId);

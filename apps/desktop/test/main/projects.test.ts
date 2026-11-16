@@ -160,6 +160,16 @@ function setup() {
 const inChat = { comboName: "chat", comboRelation: "root" } as const;
 
 describe("the inbox", () => {
+  it("leaves out an sdk script's runs, stopped or asking", () => {
+    const t = setup();
+    t.project("chat");
+    t.session("s-ask", { ...inChat, script: true, live: live("waiting", 5000) });
+    t.rows.push(row("s-cut", { ...inChat, script: true, interrupted: { why: "gone", at: 3000 } }));
+    t.session("s-mine", { ...inChat, live: live("waiting", 2000, { question: "Ship it?" }) });
+
+    expect(t.svc.inbox().rows.map((r) => r.sessionId)).toEqual(["s-mine"]);
+  });
+
   it("says what a session's recap says it needs, and asks for one when a row comes in", () => {
     const t = setup();
     t.project("chat");
