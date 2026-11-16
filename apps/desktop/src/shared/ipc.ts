@@ -119,6 +119,8 @@ export interface SessionRow {
   /** what it made or touched for people, oldest first. its PRs carry what github last said */
   outputs?: OutputView[];
   entrypoint?: string;
+  /** an SDK script's run, not a person's session: kept out of inboxes and lists */
+  script?: boolean;
   activityMs: number;
   parsed: boolean;
   /** tokens per model, subagents included, biggest first. absent until the whole file is counted. */

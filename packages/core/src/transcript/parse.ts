@@ -4,7 +4,7 @@ import { extractCommand, extractUserText } from "./prompt.ts";
 import { PROMPT_MAX, squash, TITLE_MAX } from "./title.ts";
 
 /** bump when parsing changes what ends up in the cache. it is part of the cache filename. */
-export const PARSER_VERSION = 2;
+export const PARSER_VERSION = 3;
 
 function str(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -141,6 +141,16 @@ export function parseTranscript(
   // so a format change can never hide real sessions.
   const all = tail === null ? headEntries : [...headEntries, ...tailEntries];
   if (all.length > 0 && all.every((e) => e.type === "teleported-from")) meta.stub = true;
+
+  // grove sends every prompt with origin human, so an sdk session with a user turn and none of
+  // those is somebody's script. only flagged on that positive match.
+  if (
+    meta.entrypoint?.startsWith("sdk") &&
+    all.some((e) => e.type === "user") &&
+    !all.some((e) => e.type === "user" && isObject(e.origin) && e.origin.kind === "human")
+  ) {
+    meta.script = true;
+  }
 
   const h = liftRecords(headEntries);
   const t = tail === null ? h : liftRecords(tailEntries);

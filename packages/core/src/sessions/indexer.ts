@@ -184,6 +184,7 @@ function displayKey(r: SessionRecord): string {
     r.activityMs,
     r.parsed,
     r.entrypoint,
+    r.script,
     r.usage,
   ]);
 }

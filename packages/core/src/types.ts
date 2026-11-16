@@ -59,6 +59,8 @@ export interface ParsedMeta {
   pr?: PrLink;
   /** a teleported-from marker with no conversation. listed by the index, hidden by default in UIs. */
   stub?: boolean;
+  /** an SDK script's run: sdk entrypoint and no prompt from a person. grove's own chats mark theirs. */
+  script?: boolean;
   /** complete lines that parsed as JSON objects. 0 means the shape moved or the file is junk. */
   recognized: number;
 }

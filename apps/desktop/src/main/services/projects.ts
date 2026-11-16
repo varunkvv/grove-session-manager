@@ -437,7 +437,7 @@ export class ProjectsService {
       active: new Map(),
     };
     for (const r of rows.values()) {
-      const id = r.live || r.interrupted ? projectOf(r, index) : undefined;
+      const id = !r.script && (r.live || r.interrupted) ? projectOf(r, index) : undefined;
       if (id) index.active.set(id, [...(index.active.get(id) ?? []), r]);
     }
     return index;
@@ -552,7 +552,7 @@ function siblings(row: SessionRow, index: Index): string[] {
 }
 
 /**
- * whether a list holds this session. always while it needs the person, runs or has left something
+ * whether a list holds this session. never a script's. always while it needs the person, runs or has left something
  * running. after that, one in a project when it was started in the project's folder, and one in no
  * project when a person started it: `claude -p` and SDK apps (`sdk-cli`, `sdk-ts`) are scripts,
  * and 28 of the 72 sessions outside a project on the machine this was measured on
@@ -563,10 +563,11 @@ const listed = (
   inProject: boolean,
   watching: boolean,
 ): boolean =>
-  needsYou ||
-  working(row.live, Date.now()) ||
-  watching ||
-  (inProject ? row.comboRelation === "root" : !row.entrypoint?.startsWith("sdk"));
+  !row.script &&
+  (needsYou ||
+    working(row.live, Date.now()) ||
+    watching ||
+    (inProject ? row.comboRelation === "root" : !row.entrypoint?.startsWith("sdk")));
 
 /** what /loop schedules its next wake-up with when it paces itself: a marker, not words */
 const LOOP = /^<<autonomous-loop(-dynamic)?>>$/;

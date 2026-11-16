@@ -196,6 +196,20 @@ describe("appended metadata records", () => {
     expect(parseTranscript("garbage\n", null).stub).toBeUndefined();
   });
 
+  it("an sdk session with no prompt from a person is a script", () => {
+    const sdk = { entrypoint: "sdk-ts" };
+    const human = { origin: { kind: "human" } };
+    const script = parseTranscript(toJsonl([userEntry("p", sdk), assistantEntry("a", sdk)]), null);
+    expect(script.script).toBe(true);
+    // grove stamps its prompts, wherever they land in the file
+    const grove = [userEntry("p", { ...sdk, ...human }), assistantEntry("a", sdk)];
+    expect(parseTranscript(toJsonl(grove), null).script).toBeUndefined();
+    expect(parseTranscript(toJsonl(grove.slice(1)), toJsonl(grove)).script).toBeUndefined();
+    // not sdk, or nothing said yet: not flagged
+    expect(parseTranscript(toJsonl([userEntry("p")]), null).script).toBeUndefined();
+    expect(parseTranscript(toJsonl([assistantEntry("a", sdk)]), null).script).toBeUndefined();
+  });
+
   it("a transcript that talks about transcripts cannot hijack a field", () => {
     const meta = parseTranscript(
       toJsonl([userEntry('grep for "customTitle":"evil" and "aiTitle":"also evil" in the file')]),
